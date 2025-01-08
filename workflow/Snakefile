@@ -49,13 +49,9 @@ log_dir = 'logs'
 # Helper function for building local paths
 ############################################
 def resource_file(config_path):
-    """
-    Returns a lambda that joins the decompress_resources output directory
-    with the basename of config_path. 
-    Example usage in rule input:
-        stat_dbss=lambda w, i: resource_file(stat_dbss)(w, i)
-    """
-    return lambda wildcards, inputs: os.path.join(inputs.resources_dir, os.path.basename(config_path))
+    def _wrap(wildcards, inputs):
+        return os.path.join(inputs.resources_dir, os.path.basename(config_path))
+    return _wrap
 
 ############################################
 # Rule all: Build all output files
