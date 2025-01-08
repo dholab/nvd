@@ -67,7 +67,7 @@ rule decompress_resources:
     input:
         tar_file = config["global"]["resources_tar_zst"]
     output:
-        decompressed = "decompressed.txt"
+        "decompressed.txt"
     log:
         f"{log_dir}/00_decompress_resources.log"
     shell:
