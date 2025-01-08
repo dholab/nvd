@@ -122,7 +122,7 @@ rule extract_potential_human_virus_family_reads:
         reads = f"{local_output_dir}/01_prepare_input/{{sample}}.fq.gz",
         human_virus_taxlist = human_virus_taxlist,
         stat_dbss = stat_dbss,
-        "resources",  # Wait for decompression
+        resources_dir = rules.decompress_resources.output.resources_dir,
     output:
         f"{local_output_dir}/02_extract_human_virus_reads/{{sample}}.fq.gz"
     log: f"{log_dir}/02_extract_human_virus_reads/{{sample}}.log"
@@ -274,7 +274,7 @@ rule classify_contigs_first_pass:
     input:
         fasta_file = f"{local_output_dir}/05_exclude_short_contigs/{{sample}}.fa",
         tree_filter = stat_index,
-        "resources",  # Wait for decompression
+        resources_dir = rules.decompress_resources.output.resources_dir,
     output:
         first_pass_stat_file = f"{local_output_dir}/06_classify_contigs/{{sample}}.firstpass.txt"
     threads: workflow.cores
@@ -310,7 +310,7 @@ rule classify_contigs_second_pass:
         tax_list = f"{local_output_dir}/06_classify_contigs/tax_list/{{sample}}.tax_list",
         fasta_file = f"{local_output_dir}/05_exclude_short_contigs/{{sample}}.fa",
         tree_filter = stat_dbss,
-        "resources",  # Wait for decompression
+        resources_dir = rules.decompress_resources.output.resources_dir,
     output:
         second_pass_stat_file = f"{local_output_dir}/06_classify_contigs/{{sample}}.secondpass.txt"
     threads: workflow.cores
@@ -412,7 +412,7 @@ rule megablast:
     """
     input:
         contigs = f"{local_output_dir}/09_extract_human_virus_contigs/{{sample}}.fa",
-        "resources",  # Wait for decompression
+        resources_dir = rules.decompress_resources.output.resources_dir,
     output:
         blast_results = touch(f"{local_output_dir}/10_megablast/{{sample}}.txt")
     params:
@@ -522,7 +522,7 @@ rule blastn_classify:
     """
     input:
         contigs = f"{local_output_dir}/13_remove_megablast_mapped_contigs/{{sample}}.pruned.fa",
-        "resources",  # Wait for decompression
+        resources_dir = rules.decompress_resources.output.resources_dir,
     output:
         blast_results = touch(f"{local_output_dir}/14_blastn_classify/{{sample}}.txt")
     params:
