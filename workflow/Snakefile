@@ -67,16 +67,16 @@ rule decompress_resources:
     input:
         tar_file = config["global"]["resources_tar_zst"]
     output:
-        "decompressed.txt"
+        decompressed = "decompressed.txt"
     log:
         f"{log_dir}/00_decompress_resources.log"
     shell:
         """
-        mkdir -p {output.resources_dir} \
+        mkdir -p resources \
         && cp {input.tar_file} resources.20241204.tar.zst \
-        && tar -I zstd -xvf resources.20241204.tar.zst -C {output.resources_dir} \
+        && tar -I zstd -xvf resources.20241204.tar.zst -C resources \
         && rm -f resources.20241204.tar.zst \
-        && touch {output.resources_dir}/done
+        && touch {output.decompressed}
         """
 
 rule prepare_input:
@@ -121,7 +121,7 @@ rule extract_potential_human_virus_family_reads:
         reads = f"{local_output_dir}/01_prepare_input/{{sample}}.fq.gz",
         human_virus_taxlist = human_virus_taxlist,
         stat_dbss = stat_dbss,
-        "decompressed.txt"
+        decompressed = "decompressed.txt"
     output:
         f"{local_output_dir}/02_extract_human_virus_reads/{{sample}}.fq.gz"
     log: f"{log_dir}/02_extract_human_virus_reads/{{sample}}.log"
@@ -273,7 +273,7 @@ rule classify_contigs_first_pass:
     input:
         fasta_file = f"{local_output_dir}/05_exclude_short_contigs/{{sample}}.fa",
         tree_filter = stat_index,
-        "decompressed.txt"
+        decompressed = "decompressed.txt"
     output:
         first_pass_stat_file = f"{local_output_dir}/06_classify_contigs/{{sample}}.firstpass.txt"
     threads: workflow.cores
@@ -309,7 +309,7 @@ rule classify_contigs_second_pass:
         tax_list = f"{local_output_dir}/06_classify_contigs/tax_list/{{sample}}.tax_list",
         fasta_file = f"{local_output_dir}/05_exclude_short_contigs/{{sample}}.fa",
         tree_filter = stat_dbss,
-        "decompressed.txt"
+        decompressed = "decompressed.txt"
     output:
         second_pass_stat_file = f"{local_output_dir}/06_classify_contigs/{{sample}}.secondpass.txt"
     threads: workflow.cores
@@ -411,7 +411,7 @@ rule megablast:
     """
     input:
         contigs = f"{local_output_dir}/09_extract_human_virus_contigs/{{sample}}.fa",
-        "decompressed.txt"
+        decompressed = "decompressed.txt"
     output:
         blast_results = touch(f"{local_output_dir}/10_megablast/{{sample}}.txt")
     params:
@@ -521,7 +521,7 @@ rule blastn_classify:
     """
     input:
         contigs = f"{local_output_dir}/13_remove_megablast_mapped_contigs/{{sample}}.pruned.fa",
-        "decompressed.txt"
+        decompressed = "decompressed.txt"
     output:
         blast_results = touch(f"{local_output_dir}/14_blastn_classify/{{sample}}.txt")
     params:
