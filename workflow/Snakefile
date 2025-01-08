@@ -73,9 +73,9 @@ rule decompress_resources:
     shell:
         """
         mkdir -p resources \
-        && cp {input.tar_file} resources.20241204.tar.zst \
-        && tar -I zstd -xvf resources.20241204.tar.zst -C resources \
-        && rm -f resources.20241204.tar.zst \
+        && cp {input.tar_file} resources.tar.zst \
+        && tar -I zstd -xvf resources.tar.zst -C resources \
+        && rm -f resources.tar.zst \
         && touch {output.decompressed}
         """
 
