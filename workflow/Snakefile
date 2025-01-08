@@ -63,8 +63,6 @@ def resource_file(config_path):
 
 rule all:
     input:
-        # Force the resources/ directory to be built first
-        rules.decompress_resources.output.resources_dir,
         expand([
             f"{{local_output_dir}}/09_extract_human_virus_contigs/{{sample}}.fa",
             f"{{local_output_dir}}/18_extract_unclassified_contigs/{{sample}}.unclassified.fa",
