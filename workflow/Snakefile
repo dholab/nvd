@@ -45,18 +45,23 @@ final_output_path = f"{config['global']['out_dir']}/{experiment}"
 local_output_dir = 'results'
 log_dir = 'logs'
 
+
 ############################################
-# Helper function for building local paths
+# 1) Helper function to combine config path with resources_dir
 ############################################
 def resource_file(config_path):
+    """
+    Returns a function that Snakemake calls with (wildcards, inputs).
+    We then build a path inside inputs.resources_dir using the basename of config_path.
+    """
     def _wrap(wildcards, inputs):
         return os.path.join(inputs.resources_dir, os.path.basename(config_path))
     return _wrap
 
-############################################
-# Rule all: Build all output files
-############################################
 
+############################################
+# 2) Rule all: Build final outputs
+############################################
 rule all:
     input:
         expand([
@@ -73,7 +78,7 @@ rule all:
     )
 
 ############################################
-# This rule decompresses the large tar.zst
+# 3) Decompress resources rule
 ############################################
 rule decompress_resources:
     """
@@ -81,9 +86,9 @@ rule decompress_resources:
     into the local 'resources/' directory and decompresses it.
     """
     input:
-        tar_file = config["global"]["resources_tar_zst"]
+        tar_file=config["global"]["resources_tar_zst"]
     output:
-        resources_dir = directory("resources")
+        resources_dir=directory("resources")
     log:
         f"{log_dir}/00_decompress_resources.log"
     shell:
@@ -94,13 +99,15 @@ rule decompress_resources:
         rm -f resources.tar.zst
         """
 
+############################################
+# 4) Rules
+############################################
 rule prepare_input:
     """
-    This workflow expects FASTQ sequences from either paired-end Illumina reads, ONT,
-    or SRA accessions (treated as ONT).
+    This workflow expects FASTQ sequences from Illumina/ONT or SRA accessions (treated as ONT).
     """
     input:
-        files=lambda wildcards: get_input_files(wildcards, config)
+        files=lambda w: get_input_files(w, config)
     output:
         f"{local_output_dir}/01_prepare_input/{{sample}}.fq.gz"
     params:
@@ -121,15 +128,21 @@ rule extract_potential_human_virus_family_reads:
     Filter to extract reads that are classified as human-infecting virus families by STAT.
     """
     input:
+        # Ensure resources_dir is available
         resources_dir=rules.decompress_resources.output.resources_dir,
+
+        # FASTQ reads
         reads=f"{local_output_dir}/01_prepare_input/{{sample}}.fq.gz",
-        # Map config references into local resource paths
+
+        # Dynamically map config references into local resource paths
         stat_dbss=resource_file(stat_dbss),
         human_virus_taxlist=resource_file(human_virus_taxlist),
     output:
         f"{local_output_dir}/02_extract_human_virus_reads/{{sample}}.fq.gz"
-    log: f"{log_dir}/02_extract_human_virus_reads/{{sample}}.log"
-    benchmark: f"{log_dir}/02_extract_human_virus_reads/{{sample}}.txt"
+    log:
+        f"{log_dir}/02_extract_human_virus_reads/{{sample}}.log"
+    benchmark:
+        f"{log_dir}/02_extract_human_virus_reads/{{sample}}.txt"
     threads: 4
     shell:
         """
@@ -234,7 +247,7 @@ rule mask_low_complexity_contigs:
 
 rule exclude_short_contigs:
     """
-    Remove N from ends of sequences and require at least 200bp of called bases after trimming.
+    Remove N from ends of sequences and require at least 200bp after trimming.
     """
     input:
         masked_contigs=f"{local_output_dir}/04_mask_low_complexity_contigs/{{sample}}.fa"
@@ -362,13 +375,15 @@ rule identify_human_virus_family_contigs:
     log: f"{log_dir}/08_identify_human_virus_family_contigs/{{sample}}.log"
     benchmark: f"{log_dir}/08_identify_human_virus_family_contigs/{{sample}}.txt"
     params:
-        taxa=["Adenoviridae","Anelloviridae","Arenaviridae","Arteriviridae",
-              "Astroviridae","Bornaviridae","Peribunyaviridae","Caliciviridae",
-              "Coronaviridae","Filoviridae","Flaviviridae","Hepadnaviridae",
-              "Hepeviridae","Orthoherpesviridae","Orthomyxoviridae","Papillomaviridae",
-              "Paramyxoviridae","Parvoviridae","Picobirnaviridae","Picornaviridae",
-              "Pneumoviridae","Polyomaviridae","Poxviridae","Sedoreoviridae",
-              "Retroviridae","Rhabdoviridae","Togaviridae","Kolmioviridae"],
+        # Hard-coded example of known families
+        taxa=[
+            "Adenoviridae","Anelloviridae","Arenaviridae","Arteriviridae","Astroviridae",
+            "Bornaviridae","Peribunyaviridae","Caliciviridae","Coronaviridae","Filoviridae",
+            "Flaviviridae","Hepadnaviridae","Hepeviridae","Orthoherpesviridae","Orthomyxoviridae",
+            "Papillomaviridae","Paramyxoviridae","Parvoviridae","Picobirnaviridae","Picornaviridae",
+            "Pneumoviridae","Polyomaviridae","Poxviridae","Sedoreoviridae","Retroviridae",
+            "Rhabdoviridae","Togaviridae","Kolmioviridae"
+        ],
         stringency=0.7,
         include_children=True
     script:
@@ -401,11 +416,10 @@ rule megablast:
     """
     input:
         resources_dir=rules.decompress_resources.output.resources_dir,
-        contigs=f"{local_output_dir}/09_extract_human_virus_contigs/{{sample}}.fa",
+        contigs=f"{local_output_dir}/09_extract_human_virus_contigs/{{sample}}.fa"
     output:
         blast_results=touch(f"{local_output_dir}/10_megablast/{{sample}}.txt")
     params:
-        # We'll build the local path to the BLAST DB from resources_dir:
         db=lambda w, i: os.path.join(i.resources_dir, os.path.basename(blast_db_path)),
         outfmt="6 qseqid qlen sseqid stitle length pident evalue bitscore sscinames staxids",
         max_target_seqs=5,
@@ -757,7 +771,7 @@ rule upload_files_to_labkey:
     """
     input:
         tarball=rules.create_tarball.output.tarball,
-        config_file="config/config.yaml",
+        config_file="config/config.yaml"
     output:
         done=f"{local_output_dir}/19_labkey/{{sample}}.upload.done"
     params:
