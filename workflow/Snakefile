@@ -46,6 +46,39 @@ local_output_dir = 'results'
 log_dir = 'logs'
 
 ############################################
+# Helper function for building local paths
+############################################
+def resource_file(config_path):
+    """
+    Returns a lambda that joins the decompress_resources output directory
+    with the basename of config_path. 
+    Example usage in rule input:
+        stat_dbss=lambda w, i: resource_file(stat_dbss)(w, i)
+    """
+    return lambda wildcards, inputs: os.path.join(inputs.resources_dir, os.path.basename(config_path))
+
+############################################
+# Rule all: Build all output files
+############################################
+
+rule all:
+    input:
+        # Force the resources/ directory to be built first
+        rules.decompress_resources.output.resources_dir,
+        expand([
+            f"{{local_output_dir}}/09_extract_human_virus_contigs/{{sample}}.fa",
+            f"{{local_output_dir}}/18_extract_unclassified_contigs/{{sample}}.unclassified.fa",
+            f"{{local_output_dir}}/19_labkey/{{sample}}.blast.tkn",
+            f"{{local_output_dir}}/19_labkey/{{sample}}.fasta.tkn",
+            f"{{local_output_dir}}/20_map_reads_to_contigs/{{sample}}.bam",
+            f"{{local_output_dir}}/21_create_tarball/{{sample}}.tar.zst",
+            f"{{local_output_dir}}/19_labkey/{{sample}}.upload.done"
+        ],
+        local_output_dir=local_output_dir,
+        sample=[s['name'] for s in config['samples']]
+    )
+
+############################################
 # This rule decompresses the large tar.zst
 ############################################
 rule decompress_resources:
@@ -66,36 +99,6 @@ rule decompress_resources:
         tar -I zstd -xvf resources.tar.zst -C {output.resources_dir}
         rm -f resources.tar.zst
         """
-
-############################################
-# Helper function for building local paths
-############################################
-def resource_file(config_path):
-    """
-    Returns a lambda that joins the decompress_resources output directory
-    with the basename of config_path. 
-    Example usage in rule input:
-        stat_dbss=lambda w, i: resource_file(stat_dbss)(w, i)
-    """
-    return lambda wildcards, inputs: os.path.join(inputs.resources_dir, os.path.basename(config_path))
-
-############################################
-rule all:
-    input:
-        # Force the resources/ directory to be built first
-        rules.decompress_resources.output.resources_dir,
-        expand([
-            f"{{local_output_dir}}/09_extract_human_virus_contigs/{{sample}}.fa",
-            f"{{local_output_dir}}/18_extract_unclassified_contigs/{{sample}}.unclassified.fa",
-            f"{{local_output_dir}}/19_labkey/{{sample}}.blast.tkn",
-            f"{{local_output_dir}}/19_labkey/{{sample}}.fasta.tkn",
-            f"{{local_output_dir}}/20_map_reads_to_contigs/{{sample}}.bam",
-            f"{{local_output_dir}}/21_create_tarball/{{sample}}.tar.zst",
-            f"{{local_output_dir}}/19_labkey/{{sample}}.upload.done"
-        ],
-        local_output_dir=local_output_dir,
-        sample=[s['name'] for s in config['samples']]
-    )
 
 rule prepare_input:
     """
