@@ -78,7 +78,7 @@ rule decompress_resources:
         """
         mkdir -p resources \
         && cp {input.tar_file} resources.tar.zst \
-        && tar -I zstd -xvf resources.tar.zst -C resources \
+        && tar -I zstd -xvf resources.tar.zst \
         && rm -f resources.tar.zst \
         && touch "decompressed.txt"
         """
