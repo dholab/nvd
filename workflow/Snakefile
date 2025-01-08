@@ -46,6 +46,8 @@ log_dir = 'logs'
 
 rule all:
     input:
+        # Add the 'resources/' directory so that all downstream steps wait for decompression:
+        "resources", 
         expand([
             f"{{local_output_dir}}/09_extract_human_virus_contigs/{{sample}}.fa",
             f"{{local_output_dir}}/18_extract_unclassified_contigs/{{sample}}.unclassified.fa",
@@ -58,6 +60,26 @@ rule all:
         local_output_dir=local_output_dir,
         sample=[s['name'] for s in config['samples']]
     )
+
+rule decompress_resources:
+    """
+    Copies resources.tar.zst from staging (exact file specified in config.yaml)
+    into the local 'resources/' directory and decompresses it.
+    """
+    input:
+        tar_file = config["global"]["resources_tar_zst"]
+    output:
+        resources_dir = directory("resources")
+    log:
+        f"{log_dir}/00_decompress_resources.log"
+    shell:
+        """
+        mkdir -p {output.resources_dir}
+        cp {input.tar_file} resources.20241204.tar.zst
+        tar -I zstd -xvf resources.20241204.tar.zst -C {output.resources_dir}
+        rm -f resources.20241204.tar.zst
+        """
+
 rule prepare_input:
     """
     This workflow expects FASTQ sequences
@@ -99,7 +121,8 @@ rule extract_potential_human_virus_family_reads:
     input:
         reads = f"{local_output_dir}/01_prepare_input/{{sample}}.fq.gz",
         human_virus_taxlist = human_virus_taxlist,
-        stat_dbss = stat_dbss
+        stat_dbss = stat_dbss,
+        "resources",  # Wait for decompression
     output:
         f"{local_output_dir}/02_extract_human_virus_reads/{{sample}}.fq.gz"
     log: f"{log_dir}/02_extract_human_virus_reads/{{sample}}.log"
@@ -250,7 +273,8 @@ rule classify_contigs_first_pass:
     """
     input:
         fasta_file = f"{local_output_dir}/05_exclude_short_contigs/{{sample}}.fa",
-        tree_filter = stat_index
+        tree_filter = stat_index,
+        "resources",  # Wait for decompression
     output:
         first_pass_stat_file = f"{local_output_dir}/06_classify_contigs/{{sample}}.firstpass.txt"
     threads: workflow.cores
@@ -285,7 +309,8 @@ rule classify_contigs_second_pass:
     input:
         tax_list = f"{local_output_dir}/06_classify_contigs/tax_list/{{sample}}.tax_list",
         fasta_file = f"{local_output_dir}/05_exclude_short_contigs/{{sample}}.fa",
-        tree_filter = stat_dbss
+        tree_filter = stat_dbss,
+        "resources",  # Wait for decompression
     output:
         second_pass_stat_file = f"{local_output_dir}/06_classify_contigs/{{sample}}.secondpass.txt"
     threads: workflow.cores
@@ -386,7 +411,8 @@ rule megablast:
     identification of viral sequences.
     """
     input:
-        contigs = f"{local_output_dir}/09_extract_human_virus_contigs/{{sample}}.fa"
+        contigs = f"{local_output_dir}/09_extract_human_virus_contigs/{{sample}}.fa",
+        "resources",  # Wait for decompression
     output:
         blast_results = touch(f"{local_output_dir}/10_megablast/{{sample}}.txt")
     params:
@@ -496,6 +522,7 @@ rule blastn_classify:
     """
     input:
         contigs = f"{local_output_dir}/13_remove_megablast_mapped_contigs/{{sample}}.pruned.fa",
+        "resources",  # Wait for decompression
     output:
         blast_results = touch(f"{local_output_dir}/14_blastn_classify/{{sample}}.txt")
     params:

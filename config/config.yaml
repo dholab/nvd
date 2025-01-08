@@ -6,6 +6,7 @@ global:
   stat_index: 'resources/tree_index.20240830.dbs'
   stat_annotation: 'resources/tree_filter.20240830.dbss.annotation'
   human_virus_taxlist: 'resources/human_viruses_taxlist.txt'
+  resources_tar_zst: '/staging/groups/oconnor_group/nvd/resources.20241204.tar.zst'
   out_dir: output
   gettax_sqlite_path: resources/gettax.sqlite
 samples:
