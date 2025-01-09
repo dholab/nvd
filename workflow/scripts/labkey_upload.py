@@ -62,7 +62,7 @@ def insert_blast_results(experiment, blast_results, mapped_reads_file, stat_db_v
                     print(f"Warning: No mapped reads found for qseqid '{normalized_qseqid}'", file=sys.stderr)
                 
                 blast_row = {
-                    'experiment': str(experiment),
+                    'experiment': int(experiment),
                     'blast_task': str(r.task),
                     'sample_id': str(r.sample),
                     'qseqid': normalized_qseqid,  

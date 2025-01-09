@@ -667,7 +667,7 @@ rule labkey_upload_blast:
     resources:
         mem_mb = 4000
     params:
-        experiment = int(config["global"]["experiment"]),
+        experiment = config["global"]["experiment"],
         blast_db_name = config["global"]["blast_db_name"],
         snakemake_run_id = snakemake_run_id,
         labkey_server = config["global"].get("labkey_server", ""),
@@ -696,7 +696,7 @@ rule labkey_upload_fasta:
     benchmark:
         f"{log_dir}/19_labkey/{{sample}}.fasta.txt"
     params:
-        experiment = int(config["global"]["experiment"]),
+        experiment = config["global"]["experiment"],
         labkey_server = config["global"].get("labkey_server", ""),
         project_name = config["global"].get("labkey_project_name", ""),        
         api_key = config["global"].get("labkey_api_key", ""),
