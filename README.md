@@ -31,6 +31,8 @@ NVD is an opinionated workflow for identifying and exploring metagenomes for fam
 
 This branch is designed to work with the `run_nvd.py` script on CHTC that handles file management and file creation from within a CHTC submit server. This branch will be irrelevant to anyone not using CHTC.
 
+Similarly, there is a small set of testing resources that are only useful if you have these files that are in the O'Connor lab. So in general, don't use this branch unless you are in the O'Connor or Johnson labs and are using CHTC.
+
 ### Why Another Metagenomic Workflow?
 
 Good question. When I started working on NVD in June 2024, I hoped to find a widely used, easy-to-use workflow optimized for viral metagenomics. [CZID](https://czid.org) is excellent, but downsamples to a subset of reads. Sometimes this isn't a problem; sometimes it causes substantial reductions in sensitivity. The outstanding [Sourmash](https://github.com/sourmash-bio/sourmash) tools perform informative, efficient searches against reference databases but do not generate contigs that can be used to characterize interesting viruses.
