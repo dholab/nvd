@@ -31,7 +31,7 @@ for sample in config['samples']:
 snakemake_run_id = str(config['run_id'])
 
 # From config.yaml globals
-experiment = config['global']['experiment']
+experiment = int(config['global']['experiment'])
 blast_db_path = config['global']['blast_db_path'] # downlaoded from NCBI
 blast_db_name = config['global']['blast_db_name'] # basename of BLAST db
 stat_dbss = config['global']['stat_dbss'] # provided by Kenneth Katz, NCBI
