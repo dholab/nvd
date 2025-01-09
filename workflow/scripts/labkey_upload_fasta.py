@@ -40,7 +40,7 @@ def insert_fasta_records(experiment, fasta_file, sample_name, api_key, snakemake
     fasta_records = []
     for header, sequence in parse_fasta(fasta_file):
         fasta_records.append({
-            'experiment': int(experiment),
+            'experiment': str(experiment),
             'sample_id': str(sample_name),
             'contig_id': str(header),
             'contig_sequence': str(sequence),
