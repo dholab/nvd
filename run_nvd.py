@@ -310,6 +310,9 @@ def create_submit_file(experiment_number, apptainer_path):
         apptainer_path (str): Path to the Apptainer image.
     """
     ensure_logs_directory()
+    # Create a .gitignore file and add 'logs' to it
+    with open(".gitignore", "w") as f:
+        f.write("logs\n")
     submit_file = f"{experiment_number}.sub"
     csv_file = f"{experiment_number}.csv"
     run_script_file = f"{experiment_number}.run.sh"
