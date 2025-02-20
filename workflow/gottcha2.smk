@@ -15,18 +15,16 @@ r2_fastq = config["r2_fastq"]
 clumped_output = config['global']["clumped_dir"]
 gottcha2_output = config['global']["gottcha2_dir"]
 
-FULL_OUT    = "out/{sample}_gottcha2.out.full.tsv"
-LINEAGE_OUT = "out/{sample}_gottcha2.out.lineage.tsv"
-TSV_OUT     = "out/{sample}_gottcha2.out.tsv"
+# Define output paths using Python string formatting
+FULL_OUT    = f"out/{sample}_gottcha2.out.full.tsv"
+LINEAGE_OUT = f"out/{sample}_gottcha2.out.lineage.tsv"
+TSV_OUT     = f"out/{sample}_gottcha2.out.tsv"
 
-##########################################
-# FINAL TARGET: Copy final results to BASE_FOLDER/out/<sample>/
-##########################################
 rule all:
     input:
-        os.path.join(gottcha2_output, "{sample}", "{sample}_gottcha2.out.full.tsv"),
-        os.path.join(gottcha2_output, "{sample}", "{sample}_gottcha2.out.lineage.tsv"),
-        os.path.join(gottcha2_output, "{sample}", "{sample}_gottcha2.out.tsv")
+        os.path.join(gottcha2_output, sample, f"{sample}_gottcha2.out.full.tsv"),
+        os.path.join(gottcha2_output, sample, f"{sample}_gottcha2.out.lineage.tsv"),
+        os.path.join(gottcha2_output, sample, f"{sample}_gottcha2.out.tsv")
 
 ##########################################
 # REFERENCE FILES (ref/)
@@ -56,8 +54,8 @@ rule copy_input:
         r1_fastq,
         r2_fastq
     output:
-        temp("{sample}_R1.fastq.gz"),
-        temp("{sample}_R2.fastq.gz"),
+        temp(f"{sample}_R1.fastq.gz"),
+        temp(f"{sample}_R2.fastq.gz"),
     shell:
         """
         cp {input[0]} {output[0]}
@@ -69,8 +67,8 @@ rule copy_input:
 ##########################################
 rule gottcha2:
     input:
-        r1 = "{sample}_R1.fastq.gz",
-        r2 = "{sample}_R2.fastq.gz",
+        r1 = f"{sample}_R1.fastq.gz",
+        r2 = f"{sample}_R2.fastq.gz",
         db_mmi   = "ref/gottcha_db.species.fna.mmi",
         db_stats = "ref/gottcha_db.species.fna.stats",
         db_tax   = "ref/gottcha_db.species.fna.tax.tsv"
@@ -79,7 +77,7 @@ rule gottcha2:
         lineage = LINEAGE_OUT,
         tsv     = TSV_OUT,
     params:
-        output_path = "out/{sample}",
+        output_path = f"out/{sample}",
     threads: 16
     shell:
         """
@@ -99,9 +97,9 @@ rule copy_results:
         lineage = LINEAGE_OUT,
         tsv     = TSV_OUT,
     output:
-        full    = os.path.join(gottcha2_output, "{sample}", "{sample}_gottcha2.out.full.tsv"),
-        lineage = os.path.join(gottcha2_output, "{sample}", "{sample}_gottcha2.out.lineage.tsv"),
-        tsv     = os.path.join(gottcha2_output, "{sample}", "{sample}_gottcha2.out.tsv"),
+        full    = os.path.join(gottcha2_output, sample, f"{sample}_gottcha2.out.full.tsv"),
+        lineage = os.path.join(gottcha2_output, sample, f"{sample}_gottcha2.out.lineage.tsv"),
+        tsv     = os.path.join(gottcha2_output, sample, f"{sample}_gottcha2.out.tsv"),
     shell:
         """
         mkdir -p $(dirname {output.full})
