@@ -16,45 +16,6 @@ clumped_output = config['global']["clumped_dir"]
 gottcha2_output = config['global']["gottcha2_dir"]
 
 ##########################################
-# CONFIGURATION FROM THE COMMAND LINE
-##########################################
-# Base folder where final outputs are copied (includes experiment number)
-BASE_FOLDER = gottcha2_output
-
-# Comma-separated lists of full paths to the original FASTQ files.
-R1_FILES = [f.strip() for f in config["r1_files"].split(",")]
-R2_FILES = [f.strip() for f in config["r2_files"].split(",")]
-
-# Debug flag: when true, intermediate files are preserved.
-DEBUG = config.get("debug_intermediates", False)
-
-# Final output directory: BASE_FOLDER/out
-OUT_DIR = os.path.join(BASE_FOLDER, "out")
-
-##########################################
-# BUILD SAMPLE-TO-FILE MAPPINGS
-##########################################
-# We extract the sample name from the basename by assuming that everything before "_R1" or "_R2" is the sample name.
-sample_to_r1 = {}
-sample_to_r2 = {}
-for f in R1_FILES:
-    base = os.path.basename(f)
-    m = re.match(r"(.*)_R1.*\.fastq\.gz", base)
-    if m:
-        sample = m.group(1)
-        sample_to_r1[sample] = f
-
-for f in R2_FILES:
-    base = os.path.basename(f)
-    m = re.match(r"(.*)_R2.*\.fastq\.gz", base)
-    if m:
-        sample = m.group(1)
-        sample_to_r2[sample] = f
-
-# Only use samples that have both R1 and R2.
-samples = sorted(set(sample_to_r1.keys()) & set(sample_to_r2.keys()))
-
-##########################################
 # INTERMEDIATE FILE NAMING (optionally temporary)
 ##########################################
 if DEBUG:
@@ -71,9 +32,9 @@ else:
 ##########################################
 rule all:
     input:
-        expand(os.path.join(OUT_DIR, "{sample}", "{sample}_gottcha2.out.full.tsv"), sample=samples),
-        expand(os.path.join(OUT_DIR, "{sample}", "{sample}_gottcha2.out.lineage.tsv"), sample=samples),
-        expand(os.path.join(OUT_DIR, "{sample}", "{sample}_gottcha2.out.tsv"), sample=samples),
+        os.path.join(gottcha2_output, "{sample}", "{sample}_gottcha2.out.full.tsv"),
+        os.path.join(gottcha2_output, "{sample}", "{sample}_gottcha2.out.lineage.tsv"),
+        os.path.join(gottcha2_output, "{sample}", "{sample}_gottcha2.out.tsv")
 
 ##########################################
 # REFERENCE FILES (ref/)
@@ -98,26 +59,17 @@ rule copy_gottcha_db:
 ##########################################
 # STAGE INPUT FILES: Copy the FASTQ files into the local "in/" folder.
 ##########################################
-rule copy_input_R1:
-    output:
-        "in/{sample}_R1.fastq.gz"
+rule copy_input:
     input:
-        lambda wc: sample_to_r1[wc.sample]
+        r1_fastq,
+        r2_fastq
+    output:
+        temp("{sample}_R1.fastq.gz"),
+        temp("{sample}_R2.fastq.gz"),
     shell:
         """
-        mkdir -p in
-        cp {input} {output}
-        """
-
-rule copy_input_R2:
-    output:
-        "in/{sample}_R2.fastq.gz"
-    input:
-        lambda wc: sample_to_r2[wc.sample]
-    shell:
-        """
-        mkdir -p in
-        cp {input} {output}
+        cp {input[0]} {output[0]}
+        cp {input[1]} {output[1]}
         """
 
 ##########################################
@@ -125,8 +77,8 @@ rule copy_input_R2:
 ##########################################
 rule gottcha2:
     input:
-        r1 = "in/{sample}_R1.fastq.gz",
-        r2 = "in/{sample}_R2.fastq.gz",
+        r1 = "{sample}_R1.fastq.gz",
+        r2 = "{sample}_R2.fastq.gz",
         db_mmi   = "ref/gottcha_db.species.fna.mmi",
         db_stats = "ref/gottcha_db.species.fna.stats",
         db_tax   = "ref/gottcha_db.species.fna.tax.tsv"
@@ -134,9 +86,8 @@ rule gottcha2:
         full    = FULL_OUT,
         lineage = LINEAGE_OUT,
         tsv     = TSV_OUT,
-        sam     = SAM_OUT
     params:
-        output_path = "out/{sample}_gottcha2.out"
+        output_path = "out/{sample}",
     threads: 16
     shell:
         """
@@ -156,9 +107,9 @@ rule copy_results:
         lineage = LINEAGE_OUT,
         tsv     = TSV_OUT,
     output:
-        full    = os.path.join(OUT_DIR, "{sample}", "{sample}_gottcha2.out.full.tsv"),
-        lineage = os.path.join(OUT_DIR, "{sample}", "{sample}_gottcha2.out.lineage.tsv"),
-        tsv     = os.path.join(OUT_DIR, "{sample}", "{sample}_gottcha2.out.tsv"),
+        full    = os.path.join(gottcha2_output, "{sample}", "{sample}_gottcha2.out.full.tsv"),
+        lineage = os.path.join(gottcha2_output, "{sample}", "{sample}_gottcha2.out.lineage.tsv"),
+        tsv     = os.path.join(gottcha2_output, "{sample}", "{sample}_gottcha2.out.tsv"),
     shell:
         """
         mkdir -p $(dirname {output.full})
