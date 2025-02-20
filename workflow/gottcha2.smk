@@ -15,17 +15,9 @@ r2_fastq = config["r2_fastq"]
 clumped_output = config['global']["clumped_dir"]
 gottcha2_output = config['global']["gottcha2_dir"]
 
-##########################################
-# INTERMEDIATE FILE NAMING (optionally temporary)
-##########################################
-if DEBUG:
-    FULL_OUT    = "out/{sample}_gottcha2.out.full.tsv"
-    LINEAGE_OUT = "out/{sample}_gottcha2.out.lineage.tsv"
-    TSV_OUT     = "out/{sample}_gottcha2.out.tsv"
-else:
-    FULL_OUT    = temp("out/{sample}_gottcha2.out.full.tsv")
-    LINEAGE_OUT = temp("out/{sample}_gottcha2.out.lineage.tsv")
-    TSV_OUT     = temp("out/{sample}_gottcha2.out.tsv")
+FULL_OUT    = "out/{sample}_gottcha2.out.full.tsv"
+LINEAGE_OUT = "out/{sample}_gottcha2.out.lineage.tsv"
+TSV_OUT     = "out/{sample}_gottcha2.out.tsv"
 
 ##########################################
 # FINAL TARGET: Copy final results to BASE_FOLDER/out/<sample>/
