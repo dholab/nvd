@@ -2,7 +2,7 @@
 configfile: "config/config.yaml"
 
 # Retrieve configuration parameters
-sample = config["sample_name"]
+sample = config['global']["sample_name"]
 r1_fastq = config["r1_fastq"]
 r2_fastq = config["r2_fastq"]
 clumped_output = config["clumped_dir"]
