@@ -1,8 +1,11 @@
+# Use samples from configfile: "config.yaml"
+configfile: "config/config.yaml"
+
 # Retrieve configuration parameters
 sample = config["sample_name"]
 r1_fastq = config["r1_fastq"]
 r2_fastq = config["r2_fastq"]
-clumped_output = config["global"]["clumped_dir"]
+clumped_output = config["clumped_dir"]
 
 # Define temporary and final output file names
 tmp_r1 = f"{sample}_R1.tmp.fastq.gz"
