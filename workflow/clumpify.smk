@@ -1,19 +1,15 @@
+import os
+
 # Use samples from configfile: "config.yaml"
 configfile: "config/config.yaml"
 
 # Retrieve configuration parameters
-# From command line
 sample = config["sample_name"]
 r1_fastq = config["r1_fastq"]
 r2_fastq = config["r2_fastq"]
-
-# From parameters file - updated path name
 clumped_output = config['global']["clumped_out_dir"]
 
-# Define temporary and final output file names
-tmp_r1 = f"{sample}_R1.tmp.fastq.gz"  # Removed tmp/ prefix
-tmp_r2 = f"{sample}_R2.tmp.fastq.gz"  # Removed tmp/ prefix
-
+# Define output paths
 final_r1 = f"{clumped_output}/{sample}/{sample}_R1.clumped.fastq.gz"
 final_r2 = f"{clumped_output}/{sample}/{sample}_R2.clumped.fastq.gz"
 
@@ -26,27 +22,23 @@ rule clumpify:
         final_r2 = final_r2
     params:
         sample = sample,
-        tmp_r1 = tmp_r1,
-        tmp_r2 = tmp_r2,
+        tmp_dir = "tmp",
+        tmp_r1 = "tmp/R1.tmp.fastq.gz",
+        tmp_r2 = "tmp/R2.tmp.fastq.gz",
         output_dir = lambda wildcards, output: os.path.dirname(output.final_r1)
     shell:
         """
-        # Create and move to temporary directory
-        mkdir -p tmp
-        cd tmp
+        # Create temporary directory
+        mkdir -p {params.tmp_dir}
 
-        # Copy input FASTQ files to current directory
-        cp {input.r1} .
-        cp {input.r2} .
+        # Copy input files to temp directory
+        cp {input.r1} {params.tmp_dir}/input_R1.fastq.gz
+        cp {input.r2} {params.tmp_dir}/input_R2.fastq.gz
 
-        # Get base names for input files
-        r1_basename=$(basename {input.r1})
-        r2_basename=$(basename {input.r2})
-
-        # Run clumpify
+        # Run clumpify with explicit paths
         clumpify.sh \
-            in=$r1_basename \
-            in2=$r2_basename \
+            in={params.tmp_dir}/input_R1.fastq.gz \
+            in2={params.tmp_dir}/input_R2.fastq.gz \
             out={params.tmp_r1} \
             out2={params.tmp_r2} \
             zl=9 pigz \
@@ -59,7 +51,6 @@ rule clumpify:
         mv {params.tmp_r1} {output.final_r1}
         mv {params.tmp_r2} {output.final_r2}
 
-        # Return to original directory and cleanup
-        cd ..
-        rm -rf tmp/
+        # Cleanup
+        rm -rf {params.tmp_dir}
         """
