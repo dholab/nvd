@@ -11,20 +11,19 @@ sample = config["sample_name"]
 r1_fastq = config["r1_fastq"]
 r2_fastq = config["r2_fastq"]
 
-# From parameters file
-clumped_output = config['global']["clumped_dir"]
-gottcha2_output = config['global']["gottcha2_dir"]
+# From parameters file - updated paths
+gottcha2_out_dir = config['global']["gottcha2_out_dir"]
 
 # Define output paths using Python string formatting
-FULL_OUT    = f"out/{sample}_gottcha2.out.full.tsv"
-LINEAGE_OUT = f"out/{sample}_gottcha2.out.lineage.tsv"
-TSV_OUT     = f"out/{sample}_gottcha2.out.tsv"
+FULL_OUT    = f"{sample}.full.tsv"
+LINEAGE_OUT = f"{sample}.lineage.tsv"
+TSV_OUT     = f"{sample}.tsv"
 
 rule all:
     input:
-        os.path.join(gottcha2_output, sample, f"{sample}_gottcha2.out.full.tsv"),
-        os.path.join(gottcha2_output, sample, f"{sample}_gottcha2.out.lineage.tsv"),
-        os.path.join(gottcha2_output, sample, f"{sample}_gottcha2.out.tsv")
+        os.path.join(gottcha2_out_dir, sample, f"{sample}_gottcha2.full.tsv"),
+        os.path.join(gottcha2_out_dir, sample, f"{sample}_gottcha2.lineage.tsv"),
+        os.path.join(gottcha2_out_dir, sample, f"{sample}_gottcha2.summary.tsv")
 
 ##########################################
 # REFERENCE FILES (ref/)
@@ -35,9 +34,9 @@ rule copy_gottcha_db:
         stats = "ref/gottcha_db.species.fna.stats",
         tax   = "ref/gottcha_db.species.fna.tax.tsv"
     input:
-        mmi   = "/staging/groups/oconnor_group/gottcha2/gottcha_db.species.fna.mmi",
-        stats = "/staging/groups/oconnor_group/gottcha2/gottcha_db.species.fna.stats",
-        tax   = "/staging/groups/oconnor_group/gottcha2/gottcha_db.species.fna.tax.tsv"
+        mmi   = config['global']['gottcha2_mmi'],
+        stats = config['global']['gottcha2_stats'],
+        tax   = config['global']['gottcha2_tax']
     shell:
         """
         mkdir -p ref
@@ -47,7 +46,7 @@ rule copy_gottcha_db:
         """
 
 ##########################################
-# STAGE INPUT FILES: Copy the FASTQ files into the local "in/" folder.
+# STAGE INPUT FILES: Copy the FASTQ files into local working directory
 ##########################################
 rule copy_input:
     input:
@@ -55,7 +54,7 @@ rule copy_input:
         r2_fastq
     output:
         temp(f"{sample}_R1.fastq.gz"),
-        temp(f"{sample}_R2.fastq.gz"),
+        temp(f"{sample}_R2.fastq.gz")
     shell:
         """
         cp {input[0]} {output[0]}
@@ -75,31 +74,31 @@ rule gottcha2:
     output:
         full    = FULL_OUT,
         lineage = LINEAGE_OUT,
-        tsv     = TSV_OUT,
+        tsv     = TSV_OUT
     params:
-        output_path = f"out/{sample}",
+        prefix = sample
     threads: 16
     shell:
         """
         gottcha2.py \
           --database "ref/gottcha_db.species.fna" \
-          --prefix {params.output_path} \
+          --prefix {params.prefix} \
           -t {threads} \
           -i {input.r1} {input.r2}
         """
 
 ##########################################
-# COPY FINAL RESULTS TO THE OUTPUT FOLDER
+# COPY FINAL RESULTS TO OUTPUT FOLDER
 ##########################################
 rule copy_results:
     input:
         full    = FULL_OUT,
         lineage = LINEAGE_OUT,
-        tsv     = TSV_OUT,
+        tsv     = TSV_OUT
     output:
-        full    = os.path.join(gottcha2_output, sample, f"{sample}_gottcha2.out.full.tsv"),
-        lineage = os.path.join(gottcha2_output, sample, f"{sample}_gottcha2.out.lineage.tsv"),
-        tsv     = os.path.join(gottcha2_output, sample, f"{sample}_gottcha2.out.tsv"),
+        full    = os.path.join(gottcha2_out_dir, sample, f"{sample}_gottcha2.full.tsv"),
+        lineage = os.path.join(gottcha2_out_dir, sample, f"{sample}_gottcha2.lineage.tsv"),
+        tsv     = os.path.join(gottcha2_out_dir, sample, f"{sample}_gottcha2.summary.tsv")
     shell:
         """
         mkdir -p $(dirname {output.full})

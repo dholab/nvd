@@ -32,15 +32,15 @@ snakemake_run_id = str(config['run_id'])
 
 # From config.yaml globals
 experiment = config['global']['experiment']
-blast_db_path = config['global']['blast_db_path'] # downlaoded from NCBI
-blast_db_name = config['global']['blast_db_name'] # basename of BLAST db
-stat_dbss = config['global']['stat_dbss'] # provided by Kenneth Katz, NCBI
-stat_index = config['global']['stat_index'] # provided by Kenneth Katz, NCBI
-stat_annotation = config['global']['stat_annotation'] # provided by Kenneth Katz, NCBI
-final_output_path = f"{config['global']['out_dir']}/{experiment}" # for local tarball of results
-human_virus_taxlist = config['global']['human_virus_taxlist'] # human virus family taxa + arteriviridae
+blast_db_path = config['global']['blast_db_path']
+blast_db_name = config['global']['blast_db_name']
+stat_dbss = config['global']['stat_dbss']
+stat_index = config['global']['stat_index']
+stat_annotation = config['global']['stat_annotation']
+final_output_path = f"{config['global']['nvd_out_dir']}/{experiment}"
+human_virus_taxlist = config['global']['human_virus_taxlist']
 
-# Path to results directory
+# Path to results directory 
 local_output_dir = 'results'
 log_dir = 'logs'
 
@@ -662,10 +662,7 @@ rule labkey_upload_blast:
         fastq_file = f"{local_output_dir}/01_prepare_input/{{sample}}.fq.gz"
     output:
         token = touch(f"{local_output_dir}/19_labkey/{{sample}}.blast.tkn"),
-        csv_file = f"{config['global']['out_dir']}/{{sample}}.csv"  # Ensures the CSV is always an output
-    threads: 1
-    resources:
-        mem_mb = 4000
+        csv_file = f"{config['global']['nvd_out_dir']}/{{sample}}.csv"
     params:
         experiment = config["global"]["experiment"],
         blast_db_name = config["global"]["blast_db_name"],
@@ -674,7 +671,7 @@ rule labkey_upload_blast:
         project_name = config["global"].get("labkey_project_name", ""),
         api_key = config["global"].get("labkey_api_key", ""),
         stat_db_version = config["global"]["stat_dbss"],
-        out_dir = config["global"]["out_dir"]
+        out_dir = config["global"]["nvd_out_dir"] 
     log:
         f"{log_dir}/19_labkey/{{sample}}.blast.log"
     benchmark:
@@ -806,7 +803,7 @@ rule upload_files_to_labkey:
         password = config["global"].get("labkey_password", ""),
         experiment = config["global"]["experiment"],
         snakemake_run_id = snakemake_run_id,
-        final_output_path = config["global"]["out_dir"]
+        final_output_path = config["global"]["nvd_out_dir"] 
     log:
         f"{log_dir}/19_labkey/{{sample}}.files.log"
     script:
