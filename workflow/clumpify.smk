@@ -10,8 +10,8 @@ r2_fastq = config["r2_fastq"]
 clumped_output = config['global']["clumped_out_dir"]
 
 # Define final output paths
-final_r1 = f"{clumped_output}/{sample}/{sample}_R1.clumped.fastq.gz"
-final_r2 = f"{clumped_output}/{sample}/{sample}_R2.clumped.fastq.gz"
+final_r1 = f"{clumped_output}/{sample}_R1.clumped.fastq.gz"
+final_r2 = f"{clumped_output}/{sample}_R2.clumped.fastq.gz"
 
 rule clumpify:
     input:
