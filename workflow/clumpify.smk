@@ -11,8 +11,8 @@ r2_fastq = config["r2_fastq"]
 clumped_output = config['global']["clumped_out_dir"]
 
 # Define temporary and final output file names
-tmp_r1 = f"{sample}_R1.tmp.fastq.gz"
-tmp_r2 = f"{sample}_R2.tmp.fastq.gz"
+tmp_r1 = f"tmp/{sample}_R1.tmp.fastq.gz"
+tmp_r2 = f"tmp/{sample}_R2.tmp.fastq.gz"
 
 final_r1 = f"{clumped_output}/{sample}/{sample}_R1.clumped.fastq.gz"
 final_r2 = f"{clumped_output}/{sample}/{sample}_R2.clumped.fastq.gz"
