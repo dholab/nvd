@@ -108,8 +108,6 @@ rule copy_results:
         cp {input.tsv} {output.tsv}
         """
 
-...existing code...
-
 rule upload_gottcha2_full:
     input:
         tsv = os.path.join(gottcha2_out_dir, sample, f"{sample}_gottcha2.full.tsv")
