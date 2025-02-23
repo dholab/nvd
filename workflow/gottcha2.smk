@@ -23,7 +23,8 @@ rule all:
     input:
         os.path.join(gottcha2_out_dir, sample, f"{sample}_gottcha2.full.tsv"),
         os.path.join(gottcha2_out_dir, sample, f"{sample}_gottcha2.lineage.tsv"),
-        os.path.join(gottcha2_out_dir, sample, f"{sample}_gottcha2.summary.tsv")
+        os.path.join(gottcha2_out_dir, sample, f"{sample}_gottcha2.summary.tsv"),
+        os.path.join(gottcha2_out_dir, sample, "gottcha2_full.upload.done")
 
 ##########################################
 # REFERENCE FILES (ref/)
@@ -106,3 +107,43 @@ rule copy_results:
         cp {input.lineage} {output.lineage}
         cp {input.tsv} {output.tsv}
         """
+
+...existing code...
+
+rule upload_gottcha2_full:
+    input:
+        tsv = os.path.join(gottcha2_out_dir, sample, f"{sample}_gottcha2.full.tsv")
+    output:
+        token = touch(os.path.join(gottcha2_out_dir, sample, "gottcha2_full.upload.done"))
+    params:
+        experiment = config["global"]["experiment"],
+        sample = config["sample_name"],
+        labkey_server = config["global"]["labkey_server"],
+        project_name = config["global"]["labkey_project_name"],
+        api_key = config["global"]["labkey_api_key"],
+        db_version = config["global"]["gottcha2_db_version"]
+    run:
+        import pandas as pd
+        from labkey.api_wrapper import APIWrapper
+
+        # Read TSV and add required columns
+        df = pd.read_csv(input.tsv, sep='\t')
+        df['SAMPLE'] = params.sample
+        df['EXPERIMENT'] = params.experiment
+        df['GOTTCHA2_DB_VERSION'] = params.db_version
+
+        # Initialize LabKey connection
+        api = APIWrapper(
+            params.labkey_server,
+            params.project_name,
+            api_key=params.api_key,
+            use_ssl=True
+        )
+
+        # Upload in chunks of 1000 rows
+        for chunk in [df[i:i+1000] for i in range(0, len(df), 1000)]:
+            api.query.insert_rows(
+                schema_name='lists',
+                query_name='gottcha2_full',
+                rows=chunk.to_dict('records')
+            )
