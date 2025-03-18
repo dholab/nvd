@@ -785,6 +785,8 @@ rule create_tarball:
                 tar -I zstd -cvf {output.tarball} $valid_files
             else
                 echo "No valid files to include in the tarball."
+                # Create empty tarball to satisfy workflow dependency
+                touch {output.tarball}
             fi
         }} > {log} 2>&1
         """
@@ -794,7 +796,7 @@ rule upload_files_to_labkey:
         tarball = rules.create_tarball.output.tarball,
         config_file = "config/config.yaml",
     output:
-        done = f"{local_output_dir}/19_labkey/{{sample}}.upload.done"
+        done = touch(f"{local_output_dir}/19_labkey/{{sample}}.upload.done")
     params:
         labkey_server = config["global"].get("labkey_server", ""),
         project_name = config["global"].get("labkey_project_name", ""),   
