@@ -83,11 +83,13 @@ rule gottcha2:
         extract = EXTRACT_FASTA
     params:
         prefix = sample,
-        nanopore_flag = "--nanopore" if is_nanopore else ""
+        nanopore_flag = "--nanopore" if is_nanopore else "",
+        outdir = "."  # Current directory as output directory
     threads: 16
-    run:
-        if is_nanopore:
-            shell("""
+    shell:
+        """
+        # Run gottcha2.py
+        if [[ "{is_nanopore}" == "True" ]]; then
             gottcha2.py \
               --database "ref/gottcha_db.species.fna" \
               --prefix {params.prefix} \
@@ -95,16 +97,32 @@ rule gottcha2:
               -i {input.r1} \
               {params.nanopore_flag} \
               -ef 20
-            """)
-        else:
-            shell("""
+        else
             gottcha2.py \
               --database "ref/gottcha_db.species.fna" \
               --prefix {params.prefix} \
               -t {threads} \
               -i {input.r1} {input.r2} \
               -ef 20
-            """)
+        fi
+        
+        # Check and create empty files if they don't exist
+        if [ ! -f "{output.full}" ]; then
+            touch {output.full}
+        fi
+        
+        if [ ! -f "{output.lineage}" ]; then
+            touch {output.lineage}
+        fi
+        
+        if [ ! -f "{output.tsv}" ]; then
+            touch {output.tsv}
+        fi
+        
+        if [ ! -f "{output.extract}" ]; then
+            touch {output.extract}
+        fi
+        """
 
 ##########################################
 # PARSE EXTRACTED FASTA TO TSV
