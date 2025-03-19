@@ -122,7 +122,6 @@ rule copy_results:
         full      = FULL_OUT,
         lineage   = LINEAGE_OUT,
         tsv       = TSV_OUT,
-        fasta_tsv = PARSED_FASTA_TSV
     output:
         full      = os.path.join(gottcha2_out_dir, sample, f"{sample}_gottcha2.full.tsv"),
         lineage   = os.path.join(gottcha2_out_dir, sample, f"{sample}_gottcha2.lineage.tsv"),
