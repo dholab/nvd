@@ -23,9 +23,9 @@ PARSED_FASTA_TSV = f"{sample}.extract.tsv"
 
 rule all:
     input:
-        os.path.join(gottcha2_out_dir, sample, f"{sample}.full.tsv"),
-        os.path.join(gottcha2_out_dir, sample, f"{sample}.lineage.tsv"),
-        os.path.join(gottcha2_out_dir, sample, f"{sample}.summary.tsv"),
+        os.path.join(gottcha2_out_dir, sample, f"{sample}_gottcha2.full.tsv"),
+        os.path.join(gottcha2_out_dir, sample, f"{sample}_gottcha2.lineage.tsv"),
+        os.path.join(gottcha2_out_dir, sample, f"{sample}_gottcha2.summary.tsv"),
         os.path.join(gottcha2_out_dir, sample, "gottcha2_full.upload.done"),
 
 ##########################################
