@@ -42,7 +42,6 @@ rule copy_gottcha_db:
         tax   = config['global']['gottcha2_tax']
     shell:
         """
-        mkdir -p ref
         cp {input.mmi} {output.mmi}
         cp {input.stats} {output.stats}
         cp {input.tax} {output.tax}
@@ -99,19 +98,7 @@ rule gottcha2:
               -t {threads} \
               -i {input.r1} {input.r2} \
         fi
-        
-        # Check and create empty files if they don't exist
-        if [ ! -f "{output.full}" ]; then
-            touch {output.full}
-        fi
-        
-        if [ ! -f "{output.lineage}" ]; then
-            touch {output.lineage}
-        fi
-        
-        if [ ! -f "{output.tsv}" ]; then
-            touch {output.tsv}
-        fi
+
         """
 
 ##########################################
