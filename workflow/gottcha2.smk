@@ -9,24 +9,22 @@ configfile: "config/config.yaml"
 # From command line
 sample = config["sample_name"]
 r1_fastq = config["r1_fastq"]
-r2_fastq = config.get("r2_fastq", None)  # Optional for ONT
-is_nanopore = config.get("is_nanopore", False)  # New parameter to identify ONT data
+r2_fastq = config["r2_fastq"]
 
 # From parameters file - updated paths
 gottcha2_out_dir = config['global']["gottcha2_out_dir"]
 
 # Define output paths using Python string formatting
-FULL_OUT    = f"{sample}.gottcha_species.full.tsv"
+FULL_OUT    = f"{sample}.full.tsv"
 LINEAGE_OUT = f"{sample}.lineage.tsv"
 TSV_OUT     = f"{sample}.tsv"
-PARSED_FASTA_TSV = f"{sample}.extract.tsv"
 
 rule all:
     input:
         os.path.join(gottcha2_out_dir, sample, f"{sample}_gottcha2.full.tsv"),
         os.path.join(gottcha2_out_dir, sample, f"{sample}_gottcha2.lineage.tsv"),
         os.path.join(gottcha2_out_dir, sample, f"{sample}_gottcha2.summary.tsv"),
-        os.path.join(gottcha2_out_dir, sample, "gottcha2_full.upload.done"),
+        os.path.join(gottcha2_out_dir, sample, "gottcha2_full.upload.done")
 
 ##########################################
 # REFERENCE FILES (ref/)
@@ -42,6 +40,7 @@ rule copy_gottcha_db:
         tax   = config['global']['gottcha2_tax']
     shell:
         """
+        mkdir -p ref
         cp {input.mmi} {output.mmi}
         cp {input.stats} {output.stats}
         cp {input.tax} {output.tax}
@@ -52,15 +51,16 @@ rule copy_gottcha_db:
 ##########################################
 rule copy_input:
     input:
-        r1 = r1_fastq,
-        r2 = r2_fastq if not is_nanopore else []
+        r1_fastq,
+        r2_fastq
     output:
-        r1 = temp(f"{sample}_R1.fastq.gz"),
-        r2 = temp(f"{sample}_R2.fastq.gz") if not is_nanopore else []
-    run:
-        shell(f"cp {input.r1} {output.r1}")
-        if not is_nanopore:
-            shell(f"cp {input.r2} {output.r2}")
+        temp(f"{sample}_R1.fastq.gz"),
+        temp(f"{sample}_R2.fastq.gz")
+    shell:
+        """
+        cp {input[0]} {output[0]}
+        cp {input[1]} {output[1]}
+        """
 
 ##########################################
 # GOTTCHA2 ANALYSIS
@@ -68,37 +68,24 @@ rule copy_input:
 rule gottcha2:
     input:
         r1 = f"{sample}_R1.fastq.gz",
-        r2 = f"{sample}_R2.fastq.gz" if not is_nanopore else [],
+        r2 = f"{sample}_R2.fastq.gz",
         db_mmi   = "ref/gottcha_db.species.fna.mmi",
         db_stats = "ref/gottcha_db.species.fna.stats",
         db_tax   = "ref/gottcha_db.species.fna.tax.tsv"
     output:
         full    = FULL_OUT,
         lineage = LINEAGE_OUT,
-        tsv     = TSV_OUT,
+        tsv     = TSV_OUT
     params:
-        prefix = sample,
-        nanopore_flag = "--nanopore" if is_nanopore else "",
-        outdir = "."  # Current directory as output directory
+        prefix = sample
     threads: 16
     shell:
         """
-        # Run gottcha2.py
-        if [[ "{is_nanopore}" == "True" ]]; then
-            gottcha2.py \
-              --database "ref/gottcha_db.species.fna" \
-              --prefix {params.prefix} \
-              -t {threads} \
-              -i {input.r1} \
-              {params.nanopore_flag} \
-        else
-            gottcha2.py \
-              --database "ref/gottcha_db.species.fna" \
-              --prefix {params.prefix} \
-              -t {threads} \
-              -i {input.r1} {input.r2} \
-        fi
-
+        gottcha2.py \
+          --database "ref/gottcha_db.species.fna" \
+          --prefix {params.prefix} \
+          -t {threads} \
+          -i {input.r1} {input.r2}
         """
 
 ##########################################
@@ -106,13 +93,13 @@ rule gottcha2:
 ##########################################
 rule copy_results:
     input:
-        full      = FULL_OUT,
-        lineage   = LINEAGE_OUT,
-        tsv       = TSV_OUT,
+        full    = FULL_OUT,
+        lineage = LINEAGE_OUT,
+        tsv     = TSV_OUT
     output:
-        full      = os.path.join(gottcha2_out_dir, sample, f"{sample}_gottcha2.full.tsv"),
-        lineage   = os.path.join(gottcha2_out_dir, sample, f"{sample}_gottcha2.lineage.tsv"),
-        tsv       = os.path.join(gottcha2_out_dir, sample, f"{sample}_gottcha2.summary.tsv"),
+        full    = os.path.join(gottcha2_out_dir, sample, f"{sample}_gottcha2.full.tsv"),
+        lineage = os.path.join(gottcha2_out_dir, sample, f"{sample}_gottcha2.lineage.tsv"),
+        tsv     = os.path.join(gottcha2_out_dir, sample, f"{sample}_gottcha2.summary.tsv")
     shell:
         """
         mkdir -p $(dirname {output.full})
