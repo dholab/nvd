@@ -37,7 +37,7 @@ for sample_info in config['samples']:
     sample_info['original_name'] = sample_info['name']
     sample_info['name'] = re.sub(r'[\s\-]+', '_', str(sample_info['name'])) # Ensure name is string and normalize
 
-SAMPLES = [s['name'] for s in config['samples']]
+SAMPLES = {s["name"]: s for s in config["samples"]}
 
 # --- Global Config Variables ---
 # Define variables used across multiple rules for clarity
@@ -50,7 +50,6 @@ STAT_INDEX = config['global']['stat_index'] # e.g., resources/ncbi_stat_db/datab
 STAT_ANNOTATION = config['global']['stat_annotation'] # e.g., resources/ncbi_stat_db/database.fasta.annotation.gz
 HUMAN_VIRUS_TAXLIST = config['global']['human_virus_taxlist'] # e.g., resources/human_virus_taxids.txt
 GOTTCHA2_DB_SPECIES = config['global']['gottcha2_db_species'] # e.g., resources/gottcha_db/20250221.gottcha_db.species.fna
-GOTTCHA2_DB_STRAIN = config['global']['gottcha2_db_strain'] # e.g., resources/gottcha_db/20250221.gottcha_db.strain.fna
 BLAST_VERIFY_DB = config['blast_verify']['db_prefix'] # e.g., resources/ref/core_nt
 GETTAX_SQLITE_PATH = config["global"]["gettax_sqlite_path"] # e.g., resources/gettax.sqlite
 
@@ -89,12 +88,11 @@ ALL_TARGETS.extend(expand(f"{RESULTS_DIR}/09_extract_human_virus_contigs/{{sampl
 ALL_TARGETS.extend(expand(f"{RESULTS_DIR}/21_extract_unclassified_contigs/{{sample}}.unclassified.fa", sample=SAMPLES))
 ALL_TARGETS.extend(expand(f"{RESULTS_DIR}/22_map_reads_to_contigs/{{sample}}.bam", sample=SAMPLES))
 ALL_TARGETS.extend(expand(f"{RESULTS_DIR}/23_count_mapped_reads/{{sample}}_mapped_counts.txt", sample=SAMPLES))
-ALL_TARGETS.extend(expand(f"{RESULTS_DIR}/20_merge_annotated_blast_results/{{sample}}.txt", sample=SAMPLES)) # Merged BLAST results
+ALL_TARGETS.extend(expand(f"{RESULTS_DIR}/20_merge_annotated_blast_results/{{sample}}.txt", sample=SAMPLES))
 
 # GOTTCHA2 Outputs
-ALL_TARGETS.extend(expand(f"{RESULTS_DIR}/10_gottcha2/{{sample}}/{sample}.gottcha_species.tsv", sample=SAMPLES))
-ALL_TARGETS.extend(expand(f"{RESULTS_DIR}/10_gottcha2/{{sample}}/{sample}.gottcha_species.full.tsv", sample=SAMPLES))
-ALL_TARGETS.extend(expand(f"{RESULTS_DIR}/10_gottcha2/{{sample}}/{sample}.gottcha_strain.sam", sample=SAMPLES))
+ALL_TARGETS.extend(expand(f"{RESULTS_DIR}/10_gottcha2/{{sample}}/{{sample}}.full.tsv", sample=SAMPLES))
+ALL_TARGETS.extend(expand(f"{RESULTS_DIR}/10_gottcha2/{{sample}}/{{sample}}.gottcha_strain.sam", sample=SAMPLES))
 
 # GOTTCHA2 Validation Outputs
 ALL_TARGETS.extend(expand(f"{RESULTS_DIR}/11_gottcha2_verify/{{sample}}/{{taxid}}/{{sample}}_{{taxid}}.classification.tsv", sample=SAMPLES, taxid=VALIDATION_TAXA))
@@ -127,14 +125,11 @@ rule all:
 rule manage_resources:
     output:
         touch(os.path.join(RESOURCES_DIR, ".resources_ready")),
-        # Explicitly list key resource files expected after setup
         stat_dbss_local=os.path.join(RESOURCES_DIR, os.path.basename(STAT_DBSS)),
         stat_index_local=os.path.join(RESOURCES_DIR, os.path.basename(STAT_INDEX)),
         stat_annotation_local=os.path.join(RESOURCES_DIR, os.path.basename(STAT_ANNOTATION)),
         human_virus_taxlist_local=os.path.join(RESOURCES_DIR, os.path.basename(HUMAN_VIRUS_TAXLIST)),
-        gottcha_species_local=os.path.join(RESOURCES_DIR, os.path.basename(GOTTCHA2_DB_SPECIES)),
-        gottcha_strain_local=os.path.join(RESOURCES_DIR, os.path.basename(GOTTCHA2_DB_STRAIN)),
-        # Add other essential resources like BLAST DB files if needed for explicit dependency tracking
+        gottcha_species_local=os.path.join(RESOURCES_DIR, os.path.basename(GOTTCHA2_DB_SPECIES) + ".mmi"),
     params:
         resources_archive=RESOURCES_TAR_ZST,
         resources_dir_config=RESOURCES_DIR_CONFIG,
@@ -147,45 +142,37 @@ rule manage_resources:
         TARGET_DIR="{params.target_dir}"
         SOURCE_ARCHIVE="{params.resources_archive}"
         SOURCE_DIR="{params.resources_dir_config}"
-
-        # Ensure target directory exists
-        mkdir -p $TARGET_DIR
-
+        
         if [ -n "$SOURCE_ARCHIVE" ] && [ -f "$SOURCE_ARCHIVE" ]; then
+            mkdir -p "$TARGET_DIR"
             echo "Unpacking resources from archive: $SOURCE_ARCHIVE to $TARGET_DIR" >> {log}
-            # Copy archive locally first to avoid network issues during extraction
             cp "$SOURCE_ARCHIVE" "$TARGET_DIR/$(basename $SOURCE_ARCHIVE)" >> {log} 2>&1
             tar -I pzstd -xf "$TARGET_DIR/$(basename $SOURCE_ARCHIVE)" -C "$TARGET_DIR" >> {log} 2>&1
-            # Optionally remove the copied archive after extraction
             rm "$TARGET_DIR/$(basename $SOURCE_ARCHIVE)" >> {log} 2>&1
             echo "Unpacking complete." >> {log}
-
+            RES_DIR=$(realpath "$TARGET_DIR")
         elif [ -n "$SOURCE_DIR" ] && [ -d "$SOURCE_DIR" ]; then
-            echo "Using existing resources from directory: $SOURCE_DIR" >> {log}
-            ABS_SOURCE_DIR=$(realpath "$SOURCE_DIR")
-            ABS_TARGET_DIR=$(realpath "$TARGET_DIR")
-
-            if [ "$ABS_SOURCE_DIR" != "$ABS_TARGET_DIR" ]; then
-                # Check if target is already a symlink or exists and is not empty
-                if [ -e "$TARGET_DIR" ] && [ ! -L "$TARGET_DIR" ] && [ "$(ls -A $TARGET_DIR)" ]; then
-                     echo "Warning: Target resource directory '$TARGET_DIR' exists and is not empty. Skipping symlink creation." >> {log}
-                elif [ -L "$TARGET_DIR" ]; then
-                     echo "Target resource directory '$TARGET_DIR' is already a symlink. Assuming it's correct." >> {log}
-                else
-                     # Remove if it exists but is empty or a file
-                     rm -rf "$TARGET_DIR" >> {log} 2>&1
-                     echo "Creating symlink from $ABS_SOURCE_DIR to $TARGET_DIR" >> {log}
-                     ln -s "$ABS_SOURCE_DIR" "$TARGET_DIR" >> {log} 2>&1
-                fi
+            RES_DIR=$(realpath "$SOURCE_DIR")
+            # Ensure that TARGET_DIR is a symlink to RES_DIR.
+            if [ -L "$TARGET_DIR" ]; then
+                echo "Target resource directory '$TARGET_DIR' is already a symlink." >> {log}
+            elif [ -e "$TARGET_DIR" ]; then
+                echo "Target resource directory '$TARGET_DIR' exists but is not a symlink." >> {log}
+                echo "Removing it and creating a symlink to the source resources." >> {log}
+                rm -rf "$TARGET_DIR"
+                ln -s "$RES_DIR" "$TARGET_DIR" >> {log} 2>&1
             else
-                echo "Resources directory '$TARGET_DIR' is the configured source directory. No action needed." >> {log}
+                echo "Creating symlink from $RES_DIR to $TARGET_DIR" >> {log}
+                ln -s "$RES_DIR" "$TARGET_DIR" >> {log} 2>&1
             fi
         else
-            echo "Error: Configuration must provide either 'resources_tar_zst' (a .tar.zst file) or 'resources_dir' (an existing directory)." >> {log}
+            echo "Error: Configuration must provide either a valid resources archive or an existing resources directory." >> {log}
             exit 1
         fi
-        # Verify essential files exist after setup
-        for f in {output.stat_dbss_local} {output.stat_index_local} {output.stat_annotation_local} {output.human_virus_taxlist_local} {output.gottcha_species_local} {output.gottcha_strain_local}; do
+
+        # Use RES_DIR for verification. This ensures that the essential files are looked up
+        # in the actual source directory now accessible via the symlink TARGET_DIR.
+        for f in "$RES_DIR/$(basename {output.stat_dbss_local})" "$RES_DIR/$(basename {output.stat_index_local})" "$RES_DIR/$(basename {output.stat_annotation_local})" "$RES_DIR/$(basename {output.human_virus_taxlist_local})" "$RES_DIR/$(basename {output.gottcha_species_local})"; do
             if [ ! -e "$f" ]; then
                 echo "Error: Essential resource file $f not found after setup." >> {log}
                 exit 1
@@ -301,7 +288,7 @@ rule extract_potential_human_virus_family_reads:
     shell:
         """
         seqkit fq2fa --threads 1 {input.reads} | \
-        aligns_to.3.1.1 \
+        aligns_to \
             -dbss {input.stat_dbss} \
             -num_threads {threads} \
             -tax_list {input.human_virus_taxlist} \
@@ -345,20 +332,20 @@ rule move_spades_output:
     input:
         # Depend on the marker file from run_spades
         spades_done=rules.run_spades.output.done,
-        # Actual contigs file path
-        contigs_raw=f"{RESULTS_DIR}/03_de_novo_assemble/{{sample}}/assembly/contigs.fasta"
     output:
-        contigs_fa=f"{RESULTS_DIR}/03_de_novo_assemble/{{sample}}.fa"
+        contigs_fa=f"{RESULTS_DIR}/03_de_novo_assemble/{{sample}}/{{sample}}.fa"
     params:
-        assembly_dir=f"{RESULTS_DIR}/03_de_novo_assemble/{{sample}}/assembly" # Directory to remove
+        assembly_dir=f"{RESULTS_DIR}/03_de_novo_assemble/{{sample}}/assembly", # Directory to remove,
+        contigs_raw=f"{RESULTS_DIR}/03_de_novo_assemble/{{sample}}/assembly/contigs.fasta"
+ 
     log:
         f"{LOG_DIR}/03_de_novo_assemble/{{sample}}_move.log"
     shell:
         """
         # Check if the raw contigs file exists and has size > 0
-        if [ -s "{input.contigs_raw}" ]; then
+        if [ -s {params.contigs_raw} ]; then
             echo "Moving SPAdes contigs." > {log}
-            mv "{input.contigs_raw}" "{output.contigs_fa}" >> {log} 2>&1
+            mv "{params.contigs_raw}" "{output.contigs_fa}" >> {log} 2>&1
             # Clean up the SPAdes output directory
             rm -rf "{params.assembly_dir}" >> {log} 2>&1
         else
@@ -440,7 +427,7 @@ rule classify_contigs_first_pass:
     shell:
         """
         if [ -s {input.fasta_file} ]; then
-            aligns_to.3.1.1 -dbs {input.stat_index} \
+            aligns_to -dbs {input.stat_index} \
                 -num_threads {threads} {input.fasta_file} > {output.first_pass_stat_file} 2> {log}
         else
             echo "Input filtered contigs file is empty. Creating empty output file." > {log}
@@ -479,7 +466,7 @@ rule classify_contigs_second_pass:
     shell:
         """
         if [ -s {input.fasta_file} ] && [ -s {input.tax_list} ]; then
-            aligns_to.3.1.1 \
+            aligns_to \
                 -tax_list {input.tax_list} \
                 -dbss {input.stat_dbss} \
                 -num_threads {threads} \
@@ -512,7 +499,7 @@ rule identify_human_virus_family_contigs:
     input:
         hits=rules.classify_contigs_second_pass.output.second_pass_stat_file
     output:
-        filtered_hits=f"{RESULTS_DIR}/08_identify_human_virus_family_contigs/{{sample}}.txt"
+        filtered=f"{RESULTS_DIR}/08_identify_human_virus_family_contigs/{{sample}}.txt"
     params:
         # List of target taxa families
         taxa=["Adenoviridae", "Anelloviridae", "Arenaviridae", "Arteriviridae",
@@ -535,7 +522,7 @@ rule identify_human_virus_family_contigs:
 rule extract_human_virus_contigs:
     priority: 8
     input:
-        human_virus_family_hits=rules.identify_human_virus_family_contigs.output.filtered_hits,
+        human_virus_family_hits=rules.identify_human_virus_family_contigs.output.filtered,
         contigs=rules.exclude_short_contigs.output.filtered_contigs # Use the filtered contigs
     output:
         extracted_fa=f"{RESULTS_DIR}/09_extract_human_virus_contigs/{{sample}}.fa"
@@ -560,31 +547,22 @@ rule run_gottcha2:
     priority: 10
     input:
         # Use the prepared input reads
-        r1=rules.prepare_input.output.fq_gz,
+        fastq=rules.prepare_input.output.fq_gz,
         # Gottcha needs the actual DB files, not just the marker
         db_species=rules.manage_resources.output.gottcha_species_local,
-        db_strain=rules.manage_resources.output.gottcha_strain_local,
-        # Need R2 only if input is paired-end Illumina
-        r2=lambda w: get_input_files(w, config)[1] if get_input_type(w, config) == 'illumina' and len(get_input_files(w, config)) > 1 else None
     output:
         # Define outputs within the sample-specific subdirectory
-        tsv_species=f"{RESULTS_DIR}/10_gottcha2/{{sample}}/{{sample}}.gottcha_species.tsv",
-        tsv_full=f"{RESULTS_DIR}/10_gottcha2/{{sample}}/{{sample}}.gottcha_species.full.tsv",
+        tsv_full=f"{RESULTS_DIR}/10_gottcha2/{{sample}}/{{sample}}.full.tsv",
         sam_strain=f"{RESULTS_DIR}/10_gottcha2/{{sample}}/{{sample}}.gottcha_strain.sam",
-        log_out=f"{RESULTS_DIR}/10_gottcha2/{{sample}}/{{sample}}.gottcha.log" # Combined log
+        log_out=f"{RESULTS_DIR}/10_gottcha2/{{sample}}/{{sample}}.gottcha_strain.log" # Combined log
     params:
         outdir=f"{RESULTS_DIR}/10_gottcha2/{{sample}}",
         prefix="{sample}.gottcha",
-        level_species="species",
-        level_strain="strain",
-        min_read_len=config["gottcha2"].get("min_read_len", 50),
-        min_mapq=config["gottcha2"].get("min_mapq", 0),
-        db_species_path=lambda w, input: os.path.splitext(input.db_species)[0], # Path without .fna
-        db_strain_path=lambda w, input: os.path.splitext(input.db_strain)[0]   # Path without .fna
+        db_species_path=lambda w, input: os.path.splitext(input.db_species)[0], # Path without .mmi
     threads: 12 # High priority, allocate significant threads
     log:
         # Use the output log file directly
-        f"{RESULTS_DIR}/10_gottcha2/{{sample}}/{{sample}}.gottcha.log"
+        f"{LOG_DIR}/10_gottcha2/{{sample}}/{{sample}}.gottcha.log"
     benchmark:
         f"{LOG_DIR}/10_gottcha2/{{sample}}.benchmark.txt"
     shell:
@@ -592,44 +570,13 @@ rule run_gottcha2:
         mkdir -p {params.outdir}
         echo "Running GOTTCHA2 Species Level for {wildcards.sample}" > {log}
         gottcha2.py \
-            -i {input.r1} $( [[ "{input.r2}" ]] && echo "{input.r2}" ) \
+            -i {input.fastq} \
             -d {params.db_species_path} \
             -t {threads} \
-            -o {params.outdir}/{params.prefix} \
-            -l {params.level_species} \
-            --minReadLen {params.min_read_len} \
-            --minMapq {params.min_mapq} >> {log} 2>&1
-
-        # Check if species output files were created
-        if [ ! -f "{params.outdir}/{params.prefix}.{params.level_species}.tsv" ]; then
-            echo "Error: GOTTCHA2 species TSV not created." >> {log}
-            # exit 1 # Optionally exit
-        else
-             # Rename species outputs to match expected output names
-             mv "{params.outdir}/{params.prefix}.{params.level_species}.tsv" "{output.tsv_species}" >> {log} 2>&1
-             mv "{params.outdir}/{params.prefix}.{params.level_species}.full.tsv" "{output.tsv_full}" >> {log} 2>&1
-        fi
-
-        echo "Running GOTTCHA2 Strain Level for {wildcards.sample}" >> {log}
-        gottcha2.py \
-            -i {input.r1} $( [[ "{input.r2}" ]] && echo "{input.r2}" ) \
-            -d {params.db_strain_path} \
-            -t {threads} \
-            -o {params.outdir}/{params.prefix} \
-            -l {params.level_strain} \
-            --minReadLen {params.min_read_len} \
-            --minMapq {params.min_mapq} >> {log} 2>&1
-
-        # Check if strain output SAM was created
-        if [ ! -f "{params.outdir}/{params.prefix}.{params.level_strain}.sam" ]; then
-             echo "Error: GOTTCHA2 strain SAM not created." >> {log}
-             # exit 1 # Optionally exit
-        else
-             # Rename strain output to match expected output name
-             mv "{params.outdir}/{params.prefix}.{params.level_strain}.sam" "{output.sam_strain}" >> {log} 2>&1
-        fi
-
-        echo "GOTTCHA2 finished for {wildcards.sample}" >> {log}
+            -o {params.outdir} \
+            -l strain \
+            --noCutoff \
+            >> {log} 2>&1
         """
 
 # --- GOTTCHA2 Validation Rules ---
@@ -637,7 +584,7 @@ rule gottcha2_extract_taxon:
     priority: 10
     input:
         sam=rules.run_gottcha2.output.sam_strain,
-        db_strain=rules.manage_resources.output.gottcha_strain_local # Use the actual DB file
+        db_species=rules.manage_resources.output.gottcha_species_local # Use the actual DB file
     output:
         # Note: gottcha2.py -e creates output based on prefix, need to rename
         fastq_tmp=temp(f"{RESULTS_DIR}/11_gottcha2_verify/{{sample}}/{{taxid}}/{{sample}}_{{taxid}}.gottcha_strain.extract.fastq"),
@@ -648,7 +595,7 @@ rule gottcha2_extract_taxon:
         outdir=f"{RESULTS_DIR}/11_gottcha2_verify/{{sample}}/{{taxid}}",
         prefix="{sample}_{taxid}", # Prefix used by gottcha2.py
         level="strain",
-        db_strain_path=lambda w, input: os.path.splitext(input.db_strain)[0] # Path without .fna
+        db_species_path=lambda w, input: os.path.splitext(input.db_species)[0] # Path without .fna
     threads: 4
     log:
          f"{RESULTS_DIR}/11_gottcha2_verify/{{sample}}/{{taxid}}/{{sample}}_{{taxid}}.extract.log" # Use output log
@@ -660,7 +607,7 @@ rule gottcha2_extract_taxon:
         echo "Extracting reads for taxid {params.taxid} from {input.sam}" > {log}
         gottcha2.py -e {params.taxid} --noCutoff \
             -s {input.sam} \
-            -d {params.db_strain_path} \
+            -d {params.db_species_path} \
             -t {threads} \
             -o {params.outdir}/{params.prefix} \
             -l {params.level} >> {log} 2>&1
@@ -750,7 +697,7 @@ rule gottcha2_extract_all_taxa:
     priority: 10
     input:
         sam=rules.run_gottcha2.output.sam_strain,
-        db_strain=rules.manage_resources.output.gottcha_strain_local
+        db_species=rules.manage_resources.output.gottcha_species_local
     output:
         # Expecting gottcha2.py -ef to create {prefix}.{level}.extract_filtered.fastq
         fastq_tmp=temp(f"{RESULTS_DIR}/12_gottcha2_extract_all/{{sample}}/{{sample}}.gottcha_strain.extract_filtered.fastq"),
@@ -760,7 +707,7 @@ rule gottcha2_extract_all_taxa:
         outdir=f"{RESULTS_DIR}/12_gottcha2_extract_all/{{sample}}",
         prefix="{sample}", # Prefix used by gottcha2.py
         level="strain",
-        db_strain_path=lambda w, input: os.path.splitext(input.db_strain)[0] # Path without .fna
+        db_species_path=lambda w, input: os.path.splitext(input.db_species)[0] # Path without .fna
     threads: 4
     log:
         f"{RESULTS_DIR}/12_gottcha2_extract_all/{{sample}}/{{sample}}.extract_20.log" # Use output log
@@ -772,7 +719,7 @@ rule gottcha2_extract_all_taxa:
         echo "Extracting top 20 reads per taxon from {input.sam}" > {log}
         gottcha2.py -ef --noCutoff \
             -s {input.sam} \
-            -d {params.db_strain_path} \
+            -d {params.db_species_path} \
             -t {threads} \
             -o {params.outdir}/{params.prefix} \
             -l {params.level} >> {log} 2>&1
@@ -1065,7 +1012,7 @@ rule aggregate_validation_results:
     priority: 3
     input:
         # Use expand with sample wildcard fixed
-        expand(f"{RESULTS_DIR}/11_gottcha2_verify/{{sample}}/{{taxid}}/{{sample}}_{{taxid}}.classification.tsv", taxid=VALIDATION_TAXA)
+        expand(f"{RESULTS_DIR}/11_gottcha2_verify/{{sample}}/{{taxid}}/{{sample}}_{{taxid}}.classification.tsv", taxid=VALIDATION_TAXA, sample=SAMPLES)
     output:
         summary=f"{RESULTS_DIR}/25_labkey/{{sample}}/gottcha_validation_summary.tsv"
     params:
@@ -1118,7 +1065,7 @@ rule create_tarball:
         # GOTTCHA2 outputs
         gottcha_full_tsv=rules.run_gottcha2.output.tsv_full,
         # GOTTCHA2 validation FASTAs (use expand with fixed sample)
-        validation_fastas=expand(f"{RESULTS_DIR}/11_gottcha2_verify/{{sample}}/{{taxid}}/{{sample}}_{{taxid}}.extract.fasta", taxid=VALIDATION_TAXA),
+        validation_fastas=expand(f"{RESULTS_DIR}/11_gottcha2_verify/{{sample}}/{{taxid}}/{{sample}}_{{taxid}}.extract.fasta", taxid=VALIDATION_TAXA, sample=SAMPLES),
         # GOTTCHA2 20-reads FASTA
         extract_20_fasta=rules.reformat_all_extracted_fastq.output.fasta,
     output:
@@ -1195,9 +1142,7 @@ rule labkey_upload_nvd_fasta:
     input:
         fasta=rules.extract_human_virus_contigs.output.extracted_fa
     output:
-        token=touch(f"{RESULTS_DIR}/25_labkey/{{sample}}/nvd_fasta_upload.tkn"),
-        # Intermediate single-line fasta if script needs it
-        singleline_fasta=temp(f"{RESULTS_DIR}/25_labkey/{{sample}}/nvd_contigs.tmp.fasta")
+        token=touch(f"{RESULTS_DIR}/25_labkey/{{sample}}/nvd_fasta_upload.tkn")
     params:
         sample="{sample}",
         experiment=EXPERIMENT,
@@ -1205,6 +1150,7 @@ rule labkey_upload_nvd_fasta:
         project_name=LABKEY_PROJECT_NAME,
         api_key=LABKEY_API_KEY,
         snakemake_run_id=config['run_id'],
+        singleline_fasta_path=temp(f"{RESULTS_DIR}/25_labkey/{{sample}}/nvd_contigs.tmp.fasta"),
         upload_type="nvd_fasta" # Specify upload type
     threads: 1
     log:
@@ -1218,7 +1164,6 @@ rule labkey_upload_gottcha:
     priority: 0
     input:
         # Main GOTTCHA results
-        tsv_species=rules.run_gottcha2.output.tsv_species,
         tsv_full=rules.run_gottcha2.output.tsv_full,
         # Aggregated validation summary
         validation_summary=rules.aggregate_validation_results.output.summary
