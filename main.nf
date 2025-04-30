@@ -20,7 +20,8 @@ nextflow run . \
 --stat_dbss ./db/tree_index.dense.dbss \
 --stat_annotation ./db/tree_index.dense.dbss.annotation \
 --human_virus_taxlist ./db/human_viruses_taxlist.txt \
---samplesheet test.csv
+--samplesheet test.csv \
+-resume
 
 */
 
