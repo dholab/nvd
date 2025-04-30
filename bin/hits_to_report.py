@@ -84,14 +84,9 @@ class TaxonomyDatabase:
         return Taxon(*row) if row else None
 
 
-def ensure_taxonomy_file(sqlite_cache: str) -> str | None:
+def ensure_taxonomy_file(sqlite_cache: str | None) -> str | None:
     try:
-        # Ensure the directory exists
-        dir_path = os.path.dirname(sqlite_cache)
-        if dir_path and not os.path.exists(dir_path):
-            os.makedirs(dir_path, exist_ok=True)
-            logger.info(f"Created directory: {dir_path}")
-
+        sqlite_cache = sqlite_cache if sqlite_cache else "gettax.sqlite"
         if not os.path.exists(sqlite_cache):
             logger.info(f"Downloading taxonomy file from {TAXONOMY_URL}")
             urllib.request.urlretrieve(TAXONOMY_URL, sqlite_cache)  # noqa: S310
@@ -100,6 +95,12 @@ def ensure_taxonomy_file(sqlite_cache: str) -> str | None:
         if not os.access(sqlite_cache, os.R_OK | os.W_OK):
             logger.error(f"SQLite file is not readable/writable: {sqlite_cache}")
             return None
+
+        # Ensure the directory exists
+        dir_path = os.path.dirname(sqlite_cache)
+        if dir_path and not os.path.exists(dir_path):
+            os.makedirs(dir_path, exist_ok=True)
+            logger.info(f"Created directory: {dir_path}")
 
     except Exception:
         logger.exception("Error ensuring taxonomy file")
@@ -400,7 +401,7 @@ def pad_tree(lines: list[str], separator: str):
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Taxonomic analysis tool")
     parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose mode")
-    parser.add_argument("-c", "--sqlite-cache", help="Path to the SQLite cache file")
+    parser.add_argument("-c", "--sqlite-cache", default=None, help="Path to the SQLite cache file")
     parser.add_argument(
         "-i",
         "--include-tax-id",
@@ -468,7 +469,7 @@ def main() -> None:
         output_file = args.output_file
 
     try:
-        # Ensure SQLite cache is set up
+        # Ensure gettax SQLite cache is set up
         args.sqlite_cache = ensure_taxonomy_file(args.sqlite_cache)
         if args.sqlite_cache is None:
             logger.error("Failed to ensure taxonomy file. Exiting.")

@@ -46,8 +46,8 @@ def contains_non_phage_viruses(group: str) -> bool:
 def main() -> None:
     check_args(sys.argv)
 
-    input_file = snakemake.input[0] if MODE == "snakemake" else sys.argv[0]
-    output_file = snakemake.output[0] if MODE == "snakemake" else sys.argv[1]
+    input_file = snakemake.input[0] if MODE == "snakemake" else sys.argv[1]
+    output_file = snakemake.output[1] if MODE == "snakemake" else sys.argv[2]
 
     # Check if the input file is empty
     # TODO(@Nick): This is necessary for snakemake, but could actually cause problems for Nextflow

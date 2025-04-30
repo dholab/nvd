@@ -8,12 +8,13 @@ process FETCH_FASTQ {
     errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
 
     input:
-    tuple val(platform), val(run_accession)
+    tuple val(id), val(platform), val(run_accession)
 
     output:
-    tuple val(run_accession), path("${run_accession}*.fastq")
+    tuple val(id), val(platform), path("${run_accession}*.fastq")
 
     script:
+    id = id ? id : run_accession
     """
     prefetch ${run_accession}
     fasterq-dump --split-3 ${run_accession}

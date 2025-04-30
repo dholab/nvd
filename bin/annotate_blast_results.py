@@ -102,9 +102,9 @@ def main() -> None:
         # parse and unwrap arguments
         args = parse_command_line_args()
         sqlite_cache = args.sqlite_cache
-        input_file = args.inpute_file
+        input_file = args.input_file
         output_file = args.output_file
-        sample_name = args.sample_file
+        sample_name = args.sample_name
         task = args.task
 
     try:

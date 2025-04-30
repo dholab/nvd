@@ -7,21 +7,21 @@ process MEGABLAST {
     tuple val(sample_id), path(human_virus_contigs), path(blast_db)
 
     output:
-    tuple val(sample_id), path("${sample_id}.txt")
+    tuple val(sample_id), path("${sample_id}.megablast.txt")
 
     script:
     def outfmt = "6 qseqid qlen sseqid stitle length pident evalue bitscore sscinames staxids"
     def max_target_seqs = 5
-    def task = "megablast"
+    def blast_task = "megablast"
     """
-    export BLASTDB=resources/
-    blastn -task ${task} \
-    -db ${blast_db} \
+    export BLASTDB=${blast_db}
+    blastn -task ${blast_task} \
+    -db ${blast_db}/${params.blast_db_prefix} \
     -query ${human_virus_contigs} \
     -num_threads ${task.cpus} \
     -outfmt "${outfmt}" \
     -max_target_seqs ${max_target_seqs} \
-    -out .
+    > ${sample_id}.megablast.txt
     """
 }
 
@@ -36,7 +36,6 @@ process ANNOTATE_MEGABLAST_RESULTS {
 
     output:
     tuple val(sample_id), path("${sample_id}.annotated_megablast.txt"), emit: hits
-    path "*.sqlite", emit: taxa_sqlite
 
     script:
     """
@@ -44,6 +43,7 @@ process ANNOTATE_MEGABLAST_RESULTS {
     --sqlite_cache ${sqlite_file} \
     --input_file ${blast_txt} \
     --output_file ${sample_id}.annotated_megablast.txt \
+    --sample_name ${sample_id} \
     --task 'megablast'
     """
 }
@@ -83,7 +83,8 @@ process REMOVE_MEGABLAST_MAPPED_CONTIGS {
     remove_megablast_mapped_contigs.py \
     --megablast_results ${filtered_megablast_nodes} \
     --contigs_fasta ${human_virus_contigs} \
-    --pruned_contigs ${sample_id}.pruned.fasta
+    --pruned_contigs ${sample_id}.pruned.fasta \
+    --classified_contigs ${sample_id}.classified.txt
     """
 }
 
@@ -93,24 +94,24 @@ process BLASTN_CLASSIFY {
     cpus 4
 
     input:
-    tuple val(sample_id), path(classified), path(pruned_contigs), path("resources/*")
+    tuple val(sample_id), path(classified), path(pruned_contigs), path(blast_db)
 
     output:
-    tuple val(sample_id), path("${sample_id}.txt")
+    tuple val(sample_id), path("${sample_id}.blastn.txt")
 
     script:
     def outfmt = "6 qseqid qlen sseqid stitle length pident evalue bitscore sscinames staxids"
     def max_target_seqs = 5
-    def task = "blastn"
+    def blast_task = "blastn"
     """
-    export BLASTDB=resources/
-    blastn -task ${task} \
-    -db resources/${params.blast_db_prefix} \
+    export BLASTDb=${blast_db}/
+    blastn -task ${blast_task} \
+    -db ${blast_db}/${params.blast_db_prefix} \
     -query ${pruned_contigs} \
     -num_threads ${task.cpus} \
     -outfmt "${outfmt}" \
     -max_target_seqs ${max_target_seqs} \
-    -out .
+    > ${sample_id}.blastn.txt
     """
 }
 
@@ -124,11 +125,12 @@ process ANNOTATE_BLASTN_RESULTS {
     tuple val(sample_id), path(blastn_txt), path(taxa_sqlite)
 
     output:
-    tuple val(sample_id), path("${sample_id}.txt")
+    tuple val(sample_id), path("${sample_id}.annotated_megablast.txt")
 
     script:
     """
     annotate_blast_results.py \
+    --sample_name ${sample_id} \
     --sqlite_cache ${taxa_sqlite} \
     --input_file ${blastn_txt} \
     --output_file ${sample_id}.annotated_megablast.txt \
@@ -161,7 +163,7 @@ process EXTRACT_UNCLASSIFIED_CONTIGS {
     cpus 1
 
     input:
-    tuple val(sample_id), path(contigs), path("${sample_id}_megablast.txt"), path("${sample_id}_blastn.txt")
+    tuple val(sample_id), path(classified_list), path(contigs), path("${sample_id}_megablast.txt"), path("${sample_id}_blastn.txt")
 
     output:
     tuple val(sample_id), path("${sample_id}.unclassified.fasta")

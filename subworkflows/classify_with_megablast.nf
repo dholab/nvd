@@ -25,9 +25,7 @@ workflow CLASSIFY_WITH_MEGABLAST {
     )
 
     REMOVE_MEGABLAST_MAPPED_CONTIGS(
-        MEGABLAST.out.mix(
-            ch_virus_contigs
-        ).groupTuple(by: 0)
+        MEGABLAST.out.join(ch_virus_contigs, by: 0)
     )
 
     emit:

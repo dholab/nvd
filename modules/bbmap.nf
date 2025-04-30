@@ -39,10 +39,10 @@ process INTERLEAVE_PAIRS {
 	cpus 4
 
 	input:
-	tuple val(sample_id), path(reads1), path(reads2)
+	tuple val(sample_id), val(platform), path(reads1), path(reads2)
 
 	output:
-	tuple val(sample_id), val("illumina"), path("${sample_id}.merged.fastq.gz")
+	tuple val(sample_id), val(platform), path("${sample_id}.interleaved.fastq.gz")
 
 	script:
 	"""
@@ -68,10 +68,10 @@ process MASK_LOW_COMPLEXITY {
 	memory 8.GB
 
 	input:
-	tuple val(sample_id), path(contigs)
+	tuple val(sample_id), val(platform), path(contigs)
 
 	output:
-	tuple val(sample_id), path("${sample_id}.masked.fasta")
+	tuple val(sample_id), val(platform), path("${sample_id}.masked.fasta")
 
 	script:
 	"""
@@ -96,10 +96,10 @@ process FILTER_SHORT_CONTIGS {
 	memory 8.GB
 
 	input:
-	tuple val(sample_id), path(masked_contigs)
+	tuple val(sample_id), val(platform), path(masked_contigs)
 
 	output:
-	tuple val(sample_id), path("${sample_id}.short_filtered.fasta")
+	tuple val(sample_id), val(platform), path("${sample_id}.short_filtered.fasta")
 
 	script:
 	"""

@@ -29,20 +29,18 @@ workflow CLASSIFY_WITH_BLASTN {
         ANNOTATE_BLASTN_RESULTS.out
     )
 
-    ch_merged_blast_results = FILTER_NON_VIRUS_MEGABLAST_NODES.out
-        .mix(
-            FILTER_NON_VIRUS_BLASTN_NODES
-        )
-        .groupTuple(by: 0)
-        .collectFile { sample_id, blast_file ->
+    // TODO: Eventually, does the pipeline need to support the scenario where either megablast
+    // or blastn (though really just blastn) comes up with no hits?
+    ch_merged_blast_results = FILTER_NON_VIRUS_BLASTN_NODES.out
+        .join(ch_megablast, by: 0)
+        .collectFile { sample_id, _virus_only_txt, blast_file ->
             ["${sample_id}.txt", file(blast_file).text + '\n']
         }
 
     EXTRACT_UNCLASSIFIED_CONTIGS(
-        ch_unmapped_contigs.mix(
-            ch_megablast,
-            BLASTN_CLASSIFY.out,
-        ).groupTuple(by: 0)
+        ch_unmapped_contigs
+        .join(ch_megablast, by: 0)
+        .join(BLASTN_CLASSIFY.out, by: 0)
     )
 
     emit:

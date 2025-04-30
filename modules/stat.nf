@@ -5,21 +5,21 @@ process EXTRACT_HUMAN_VIRUS_READS {
     cpus 2
 
     input:
-    tuple val(sample_id), val(sample_type), path(fastq), path(stat_dbss), path(human_virus_taxlist)
+    tuple val(sample_id), val(sample_type), path(fastq), path(stat_dbss), path(stat_annotation), path(human_virus_taxlist)
 
     output:
     tuple val(sample_id), val(sample_type), path("*.f*q.gz")
 
     script:
     """
-    seqkit fq2fa --threads 1 ${fastq} \
-    | aligns_to \
+    seqkit fq2fa --threads 1 ${fastq} -o ${sample_id}.all_reads.fasta
+    aligns_to \
     -dbss ${stat_dbss} \
     -num_threads ${task.cpus} \
     -tax_list ${human_virus_taxlist} \
-    stdin \
+    ${sample_id}.all_reads.fasta \
     | cut -f1 \
-    | seqkit grep -f - \
+    | seqkit grep -r -f - \
     ${fastq} \
     -o ${sample_id}.human_virus.fastq.gz
     """
@@ -30,7 +30,7 @@ process CLASSIFY_CONTIGS_FIRST_PASS {
     tag "${sample_id}"
 
     input:
-   tuple val(sample_id), path(filtered_contigs), path(stat_index)
+    tuple val(sample_id), val(platform), path(filtered_contigs), path(stat_index)
 
     output:
     tuple val(sample_id), path(filtered_contigs), path("${sample_id}.firstpass.txt")
@@ -67,7 +67,7 @@ process CLASSIFY_CONTIGS_SECOND_PASS {
     cpus 1
 
     input:
-    tuple val(sample_id), path(filtered_contigs), path(tax_list), path(stat_dbss)
+    tuple val(sample_id), path(filtered_contigs), path(tax_list), path(stat_dbss), path(stat_annotation)
 
     output:
     tuple val(sample_id), path("${sample_id}.secondpass.txt")
@@ -76,7 +76,7 @@ process CLASSIFY_CONTIGS_SECOND_PASS {
     """
     aligns_to \
     -tax_list ${tax_list} \
-    -dbss {stat_dbss} \
+    -dbss ${stat_dbss} \
     -num_threads ${task.cpus} \
     ${filtered_contigs} \
     > "${sample_id}.secondpass.txt"
@@ -89,17 +89,16 @@ process GENERATE_STAT_CONTIG_REPORT {
     tag "${sample_id}"
 
     input:
-    tuple val(sample_id), path(secondpass_file)
+    tuple val(sample_id), path(secondpass_file), path(gettax)
 
     output:
     tuple val(sample_id), path("${sample_id}.report"), emit: report
-    path "*.sqlite", emit: gettax_sqlite
 
     script:
     """
     hits_to_report.py \
     --cutoff-percent ${params.cutoff_percent} \
-    --sqlite_cache
+    --sqlite-cache ${gettax} \
     ${secondpass_file} \
     ${sample_id}.report
     """
@@ -124,7 +123,7 @@ process IDENTIFY_HUMAN_VIRUS_FAMILY_CONTIGS {
     --output_file ${sample_id}.report \
     --taxa ${virus_families} \
     --stringency ${params.tax_stringency} \
-    --include_children ${params.include_children}
+    --include_children
     """
 }
 

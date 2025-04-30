@@ -52,7 +52,16 @@ def extract_unique_ids(input_file, output_file, logger):
 
 
 def run_filterbyname(input_fasta, output_fasta, names_file, logger):
-    command = ["filterbyname.sh", f"in={input_fasta}", f"out={output_fasta}", f"names={names_file}"]
+    command = [
+        "seqkit",
+        "grep",
+        "-n",
+        "-f",
+        f"{names_file}",
+        "-o",
+        f"{output_fasta}",
+        f"{input_fasta}",
+    ]
     logger.info(f"Running command: {' '.join(command)}")
     try:
         result = subprocess.run(command, check=True, text=True, capture_output=True)
@@ -95,28 +104,32 @@ def parse_args() -> SimpleNamespace:
 def main() -> None:
     args = parse_args()
 
-    with open(args.log[0], "w") as log_file, redirect_stderr(log_file):
-        logger = setup_logger(args.log[0])
+    if args.log and len(args.log > 1):
+        with open(args.log[0], "w") as log_file, redirect_stderr(log_file):
+            logger = setup_logger(args.log[0])
+            logger.info("Starting remove_megablast_mapped_contigs script")
+    else:
+        logger = setup_logger(args.log)
         logger.info("Starting remove_megablast_mapped_contigs script")
 
-        try:
-            extract_unique_ids(
-                args.input.megablast_results,
-                args.output.classified_contigs,
-                logger,
-            )
+    try:
+        extract_unique_ids(
+            args.input.megablast_results,
+            args.output.classified_contigs,
+            logger,
+        )
 
-            run_filterbyname(
-                args.input.contigs_fasta,
-                args.output.pruned_contigs,
-                args.output.classified_contigs,
-                logger,
-            )
+        run_filterbyname(
+            args.input.contigs_fasta,
+            args.output.pruned_contigs,
+            args.output.classified_contigs,
+            logger,
+        )
 
-            logger.info("Script completed successfully")
-        except Exception:
-            logger.exception("An error occurred.")
-            raise
+        logger.info("Script completed successfully")
+    except Exception:
+        logger.exception("An error occurred.")
+        raise
 
 
 if __name__ == "__main__":

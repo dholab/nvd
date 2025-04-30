@@ -11,8 +11,8 @@ workflow NVD2_WORKFLOW  {
 
     main:
     assert (
-        params.blast_db              && file(params.blast_db).isDir()               &&
-        params.stat_dbs              && file(params.stat_dbs).exists()              &&
+        params.blast_db              && file(params.blast_db).isDirectory()         &&
+        params.stat_index            && file(params.stat_index).exists()            &&
         params.stat_dbss             && file(params.stat_dbss).exists()             &&
         params.stat_annotation       && file(params.stat_annotation).exists()       &&
         params.human_virus_taxlist   && file(params.human_virus_taxlist).exists()
@@ -21,7 +21,7 @@ workflow NVD2_WORKFLOW  {
     One or more required parameters are missing or point to non-existent files:
 
       blast_db            -> ${params.blast_db}
-      stat_dbs            -> ${params.stat_dbs}
+      stat_index          -> ${params.stat_index}
       stat_dbss           -> ${params.stat_dbss}
       stat_annotation     -> ${params.stat_annotation}
       human_virus_taxlist -> ${params.human_virus_taxlist}
@@ -29,22 +29,24 @@ workflow NVD2_WORKFLOW  {
     Please supply all of the above in your `-c nextflow.config` or via `-params-file`, and ensure each path exists.
     """
 
-    ch_blast_db_files = Channel.fromPath("${params.blast_db}/${params.blast_db_prefix}.*")
-    ch_stat_dbs = Channel.fromPath(params.stat_dbs)
+    ch_blast_db_files = Channel.fromPath(params.blast_db)
+    ch_stat_index = Channel.fromPath(params.stat_index)
     ch_stat_dbss = Channel.fromPath(params.stat_dbss)
-    _ch_stat_annotation = Channel.fromPath(params.stat_annotation)
+    ch_stat_annotation = Channel.fromPath(params.stat_annotation)
     ch_human_virus_taxlist = Channel.fromPath(params.human_virus_taxlist)
 
     PREPROCESS_CONTIGS(
         ch_sample_fastqs,
         ch_stat_dbss,
+        ch_stat_annotation,
         ch_human_virus_taxlist        
     )
 
     EXTRACT_HUMAN_VIRUSES(
         PREPROCESS_CONTIGS.out,
-        ch_stat_dbs,
-        ch_stat_dbss
+        ch_stat_index,
+        ch_stat_dbss,
+        ch_stat_annotation
     )
 
     CLASSIFY_WITH_MEGABLAST(
