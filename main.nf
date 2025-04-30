@@ -7,6 +7,23 @@ include { NVD2_WORKFLOW } from "./workflows/nvd2_workflow"
 
 workflow {
 
+/*
+
+EXAMPLE COMMAND
+----------------------------------
+
+nextflow run . \
+--tools nvd \
+--blast_db ./db \
+--blast_db_prefix ./db/PP819512-nt \
+--stat_index ./db/tree_index.dense.dbs \
+--stat_dbss ./db/tree_index.dense.dbss \
+--stat_annotation ./db/tree_index.dense.dbss.annotation \
+--human_virus_taxlist ./db/human_viruses_taxlist.txt \
+--samplesheet test.csv
+
+*/
+
     assert params.samplesheet && (params.samplesheet).isFile()
 
     ch_input_samplesheet = Channel.fromPath( params.samplesheet )
@@ -23,6 +40,10 @@ workflow {
 
     // if (params.all || params.gottcha2 || (params.tool && params.tool.contains("gottcha"))) {
     //     GOTTCHA2_WORKFLOW(GATHER_READS.out)
+    // }
+    //
+    // if (params.all || params.clumpify || (params.tool && params.tool.contains("clump"))
+    //     CLUMPIFY_WORKFLOW(GATHER_READS.out)
     // }
 
 }

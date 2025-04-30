@@ -27,6 +27,33 @@ process MERGE_PAIRS {
 	"""
 }
 
+process INTERLEAVE_PAIRS {
+
+	/* */
+
+	tag "${sample_id}"
+
+	errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
+	maxRetries 2
+
+	cpus 4
+
+	input:
+	tuple val(sample_id), path(reads1), path(reads2)
+
+	output:
+	tuple val(sample_id), val("illumina"), path("${sample_id}.merged.fastq.gz")
+
+	script:
+	"""
+	reformat.sh \
+	in=${reads1} \
+	in2=${reads2} \
+	out=${sample_id}.interleaved.fastq.gz \
+	threads=${task.cpus} \
+	-eoom
+	"""
+}
 
 process MASK_LOW_COMPLEXITY {
 
