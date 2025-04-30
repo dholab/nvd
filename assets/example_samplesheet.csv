@@ -1,0 +1,4 @@
+sample_id,srr,platform,fastq1,fastq2
+nanopore_test,,ont,nanopore.fastq.gz,
+illumina_test,,illumina,illumina_R1.fastq.gz,illumina_R1.fastq.gz
+sra_test,SRR33296246,,
