@@ -4,6 +4,7 @@ nextflow.enable.dsl = 2
 
 include { GATHER_READS } from "./workflows/gather_reads"
 include { NVD2_WORKFLOW } from "./workflows/nvd2_workflow"
+include { GOTTCHA2_WORKFLOW } from "./workflows/gottcha2_workflow"
 
 workflow {
 
@@ -15,7 +16,7 @@ EXAMPLE COMMAND
 nextflow run . \
 --tools nvd \
 --blast_db ./db \
---blast_db_prefix ./db/PP819512-nt \
+--blast_db_prefix PP819512-nt \
 --stat_index ./db/tree_index.dense.dbs \
 --stat_dbss ./db/tree_index.dense.dbss \
 --stat_annotation ./db/tree_index.dense.dbss.annotation \
@@ -39,10 +40,10 @@ nextflow run . \
         NVD2_WORKFLOW (GATHER_READS.out)
     }
 
-    // if (params.all || params.gottcha2 || (params.tool && params.tool.contains("gottcha"))) {
-    //     GOTTCHA2_WORKFLOW(GATHER_READS.out)
-    // }
-    //
+     if (params.all || params.gottcha2 || (params.tool && params.tool.contains("gottcha"))) {
+         GOTTCHA2_WORKFLOW(GATHER_READS.out)
+     }
+    
     // if (params.all || params.clumpify || (params.tool && params.tool.contains("clump"))
     //     CLUMPIFY_WORKFLOW(GATHER_READS.out)
     // }
