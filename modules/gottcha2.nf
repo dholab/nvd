@@ -4,29 +4,28 @@ process GOTTCHA2_PROFILE_NANOPORE {
     // publishDir params.gottcha_sam, mode: 'copy', overwrite: false, pattern: "*.sam"
     // publishDir params.gottcha_stats, mode: 'copy', overwrite: false, pattern: "*.tsv"
 
-    maxForks { params.max_tasks ? params.max_tasks : params.available_cpus }
     errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
 
     cpus 12
 
     input:
-    tuple val(sample_id), path(fastq), path(ref_db)
+    tuple val(sample_id), path(fastq), path(ref_mmi), path(stats), path(tax_tsv)
 
     output:
-    tuple val(sample_id), path("${sample_id}*.sam"), path(ref_db), emit: aligned
-    tuple val(sample_id), path("${sample_id}*.full.tsv"), path(ref_db), emit: full_tsv
+    tuple val(sample_id), path("${sample_id}*.sam"), path(ref_mmi), path(stats), path(tax_tsv), emit: aligned
+    tuple val(sample_id), path("${sample_id}*.full.tsv"), path(ref_mmi), path(stats), path(tax_tsv), emit: full_tsv
     path "*.tsv", emit: all_stats
 
     when:
     (params.tools && params.tools.contains("gottcha2") || params.tools.contains("gottcha")) || params.all || params.gottcha2
 
     script:
-    def ref_prefix = file(ref_db[0]).getBaseName().toString().replace(".mmi", "")
+    def ref_prefix = file(ref_mmi).getBaseName().toString().replace(".mmi", "")
     """
     gottcha2.py  \
     --database ${ref_prefix} \
     --prefix ${sample_id} \
-    --noCutoff ---dbLevel strain --threads ${task.cpus} \
+    --noCutoff --dbLevel strain --threads ${task.cpus} \
     --nanopore \
     --input ${fastq}
     """
@@ -38,29 +37,28 @@ process GOTTCHA2_PROFILE_ILLUMINA {
     // publishDir params.gottcha_sam, mode: 'copy', overwrite: false, pattern: "*.sam"
     // publishDir params.gottcha_stats, mode: 'copy', overwrite: false, pattern: "*.tsv"
 
-    maxForks { params.max_tasks ? params.max_tasks : params.available_cpus }
     errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
 
     cpus 12
 
     input:
-    tuple val(sample_id), path(fastq), path(ref_db)
+    tuple val(sample_id), path(fastq), path(ref_mmi), path(stats), path(tax_tsv)
 
     output:
-    tuple val(sample_id), path("${sample_id}*.sam"), path(ref_db), emit: aligned
-    tuple val(sample_id), path("${sample_id}*.full.tsv"), path(ref_db), emit: full_tsv
+    tuple val(sample_id), path("${sample_id}*.sam"), path(ref_mmi), path(stats), path(tax_tsv), emit: aligned
+    tuple val(sample_id), path("${sample_id}*.full.tsv"), path(ref_mmi), path(stats), path(tax_tsv), emit: full_tsv
     path "*.tsv", emit: all_stats
 
     when:
     (params.tools && params.tools.contains("gottcha2") || params.tools.contains("gottcha")) || params.all || params.gottcha2
 
     script:
-    def ref_prefix = file(ref_db[0]).getBaseName().toString().replace(".mmi", "")
+    def ref_prefix = file(ref_mmi).getBaseName().toString().replace(".mmi", "")
     """
     gottcha2.py \
     --database ${ref_prefix} \
     --prefix ${sample_id} \
-    --noCutoff ---dbLevel strain --threads ${task.cpus} \
+    --noCutoff --dbLevel strain --threads ${task.cpus} \
     --input ${fastq}
     """
 }
@@ -73,7 +71,7 @@ process GENERATE_FASTA {
     errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
 
     input:
-    tuple val(sample_id), path(sam), path(ref_db)
+    tuple val(sample_id), path(sam), path(ref_mmi), path(stats), path(tax_tsv)
 
     output:
     path "*"
@@ -82,10 +80,10 @@ process GENERATE_FASTA {
     (params.tools && params.tools.contains("gottcha2") || params.tools.contains("gottcha")) || params.all || params.gottcha
 
     script:
-    def ref_prefix = file(ref_db[0]).getBaseName().toString().replace(".mmi", "")
+    def ref_prefix = file(ref_mmi).getBaseName().toString().replace(".mmi", "")
     """
     gottcha2.py \
-    --noCutoff ---dbLevel strain --threads ${task.cpus} -ef \
+    --noCutoff --dbLevel strain --threads ${task.cpus} -ef \
     --database ${ref_prefix} \
     --prefix ${sample_id} \
     --sam ${sam}

@@ -9,10 +9,10 @@ workflow GOTTCHA2_WORKFLOW {
     ch_sample_fastqs // Queue channel of sample IDs, platforms, and (interleaved) FASTQ files: tuple val(sample_id), val(platform), path(fastq)
 
     main:
-    ch_gottcha2_db = Channel.fromPath("${params.gottcha2_db}*")
+    ch_gottcha2_db = Channel.fromPath("${params.gottcha2_db}*").collect(sort: true)
 
     ch_nanopore_fastqs = ch_sample_fastqs
-        .filter { _sample_id, platform, _fastq -> platform == "nanopore" }
+        .filter { _sample_id, platform, _fastq -> platform == "nanopore" || platform == "ont" }
         .map { sample_id, _platform, fastq -> tuple(sample_id, file(fastq)) }
 
     ch_illumina_fastqs = ch_sample_fastqs
@@ -20,11 +20,11 @@ workflow GOTTCHA2_WORKFLOW {
         .map { sample_id, _platform, fastq -> tuple(sample_id, file(fastq)) }
 
     GOTTCHA2_PROFILE_NANOPORE(
-        ch_nanopore_fastqs.combine(ch_gottcha2_db.collect())
+        ch_nanopore_fastqs.combine(ch_gottcha2_db.collect(sort: true))
     )
 
     GOTTCHA2_PROFILE_ILLUMINA(
-        ch_illumina_fastqs.combine(ch_gottcha2_db.collect())
+        ch_illumina_fastqs.combine(ch_gottcha2_db.collect(sort: true))
     )
 
     GENERATE_FASTA(

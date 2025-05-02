@@ -40,11 +40,11 @@ nextflow run . \
         NVD2_WORKFLOW (GATHER_READS.out)
     }
 
-     if (params.all || params.gottcha2 || (params.tool && params.tool.contains("gottcha"))) {
+     if (params.all || params.gottcha2 || (params.tools && params.tools.contains("gottcha"))) {
          GOTTCHA2_WORKFLOW(GATHER_READS.out)
      }
     
-    // if (params.all || params.clumpify || (params.tool && params.tool.contains("clump"))
+    // if (params.all || params.clumpify || (params.tools && params.tools.contains("clump"))
     //     CLUMPIFY_WORKFLOW(GATHER_READS.out)
     // }
 
