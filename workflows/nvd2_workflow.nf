@@ -62,10 +62,9 @@ workflow NVD2_WORKFLOW  {
         EXTRACT_HUMAN_VIRUSES.out.sqlite
     )
 
-    ch_completion = Channel.from("NVD Complete!")
+    ch_completion = CLASSIFY_WITH_BLASTN.out.merged_results.map { _results -> "NVD complete!" }
 
     emit:
-    complete = ch_completion
-
+    completion = ch_completion
 
 }

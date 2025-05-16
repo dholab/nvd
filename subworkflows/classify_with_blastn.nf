@@ -44,6 +44,6 @@ workflow CLASSIFY_WITH_BLASTN {
     )
 
     emit:
-    ch_merged_blast_results
+    merged_results = ch_merged_blast_results
 
 }
