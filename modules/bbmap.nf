@@ -111,3 +111,29 @@ process FILTER_SHORT_CONTIGS {
 	"""
 }
 
+process CLUMP_READS {
+
+    /* */
+
+	tag "${sample_id}"
+
+	errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
+	maxRetries 2
+
+	cpus 4
+
+	input:
+	tuple val(sample_id), path(reads)
+
+	output:
+    tuple val(sample_id), path("${sample_id}.clumped.fastq.gz")
+
+	script:
+	"""
+	clumpify.sh \
+	in=${reads} out=${sample_id}.clumped.fastq.gz \
+	reorder \
+	threads=${task.cpus} -eoom
+	"""
+
+}

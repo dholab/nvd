@@ -13,6 +13,8 @@
 !pixi.lock
 !pyproject.toml
 !uv.lock
+!.envrc
+!flake.nix
 
 # workflows
 !/workflows

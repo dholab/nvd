@@ -62,6 +62,10 @@ workflow NVD2_WORKFLOW  {
         EXTRACT_HUMAN_VIRUSES.out.sqlite
     )
 
-    // emit:
+    ch_completion = Channel.from("NVD Complete!")
+
+    emit:
+    complete = ch_completion
+
 
 }

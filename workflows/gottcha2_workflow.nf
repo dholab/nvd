@@ -30,4 +30,9 @@ workflow GOTTCHA2_WORKFLOW {
     GENERATE_FASTA(
         GOTTCHA2_PROFILE_NANOPORE.out.aligned.mix(GOTTCHA2_PROFILE_ILLUMINA.out.aligned)
     )
+
+    Channel.from("GOTTCHA2 complete!").set { completion }
+
+    emit:
+    completion = completion
 }

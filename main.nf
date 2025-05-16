@@ -5,6 +5,7 @@ nextflow.enable.dsl = 2
 include { GATHER_READS } from "./workflows/gather_reads"
 include { NVD2_WORKFLOW } from "./workflows/nvd2_workflow"
 include { GOTTCHA2_WORKFLOW } from "./workflows/gottcha2_workflow"
+include { CLUMPIFY_WORKFLOW } from "./workflows/clumpify"
 
 workflow {
 
@@ -34,18 +35,30 @@ nextflow run . \
         .filter { it -> !it[0].startsWith("#") }
         .unique()
 
+    // Start with an empty channel for completion tokens
+    Channel.empty().set { completion_tokens }
+
     GATHER_READS(ch_input_samplesheet)
 
     if (params.all || params.nvd || params.stat || (params.tools && params.tools.contains("nvd"))) {
-        NVD2_WORKFLOW (GATHER_READS.out)
+        nvd_token = NVD2_WORKFLOW(GATHER_READS.out).completion
+
+        // update the completion tokens channel
+        completion_tokens = completion_tokens.mix(nvd_token)
     }
 
      if (params.all || params.gottcha2 || (params.tools && params.tools.contains("gottcha"))) {
-         GOTTCHA2_WORKFLOW(GATHER_READS.out)
+        gottcha2_token = GOTTCHA2_WORKFLOW(GATHER_READS.out).completion
+
+        // update the completion tokens channel
+        completion_tokens = completion_tokens.mix(gottcha2_token)
      }
     
-    // if (params.all || params.clumpify || (params.tools && params.tools.contains("clump"))
-    //     CLUMPIFY_WORKFLOW(GATHER_READS.out)
-    // }
+    if (params.all || params.clumpify || (params.tools && params.tools.contains("clump"))) {
+        CLUMPIFY_WORKFLOW(
+            GATHER_READS.out,
+            completion_tokens.collect()
+        )
+    }
 
 }
