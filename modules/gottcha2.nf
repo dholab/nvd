@@ -1,3 +1,23 @@
+process READ_COMPRESSION_PASSTHROUGH {
+
+    input:
+    tuple val(sample_id), path(fastq), path(ref_mmi), path(stats), path(tax_tsv)
+
+    output:
+    tuple val(sample_id), path("*.fa*"), path(ref_mmi), path(stats), path(tax_tsv)
+
+    script:
+    def extension = file(fastq).getBaseName().replace(".gz", "")
+    if (file(fastq).getExtension().contains("gz"))
+        """
+        cat ${fastq} | gzip -c -d > ${sample_id}.${extension}
+        """
+    else
+        """
+        cp ${fastq} ${sample_id}.uncompressed.${extension}
+        """
+}
+
 process GOTTCHA2_PROFILE_NANOPORE {
 
     tag "${sample_id}"

@@ -1,4 +1,5 @@
 include {
+    READ_COMPRESSION_PASSTHROUGH ;
     GOTTCHA2_PROFILE_NANOPORE ;
     GOTTCHA2_PROFILE_ILLUMINA ;
     GENERATE_FASTA
@@ -19,8 +20,12 @@ workflow GOTTCHA2_WORKFLOW {
         .filter { _sample_id, platform, _fastq -> platform == "illumina" }
         .map { sample_id, _platform, fastq -> tuple(sample_id, file(fastq)) }
 
-    GOTTCHA2_PROFILE_NANOPORE(
+    READ_COMPRESSION_PASSTHROUGH(
         ch_nanopore_fastqs.combine(ch_gottcha2_db.collect(sort: true))
+    )
+
+    GOTTCHA2_PROFILE_NANOPORE(
+        READ_COMPRESSION_PASSTHROUGH.out
     )
 
     GOTTCHA2_PROFILE_ILLUMINA(
@@ -36,3 +41,5 @@ workflow GOTTCHA2_WORKFLOW {
     emit:
     completion = ch_completion
 }
+
+
