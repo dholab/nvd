@@ -41,10 +41,15 @@ nextflow run . \
     GATHER_READS(ch_input_samplesheet)
 
     if (params.all || params.nvd || params.stat || (params.tools && params.tools.contains("nvd"))) {
-        nvd_token = NVD2_WORKFLOW(GATHER_READS.out).completion
+        nvd_results = NVD2_WORKFLOW(GATHER_READS.out)
+        nvd_token = nvd_results.completion
 
         // update the completion tokens channel
         completion_tokens = completion_tokens.mix(nvd_token)
+
+        // Collect all LabKey logs as final process
+        nvd_results.labkey_log.collectFile(name: 'final_labkey_upload.log',
+            storeDir: params.results)
     }
 
      if (params.all || params.gottcha2 || (params.tools && params.tools.contains("gottcha"))) {
@@ -53,7 +58,7 @@ nextflow run . \
         // update the completion tokens channel
         completion_tokens = completion_tokens.mix(gottcha2_token)
      }
-    
+
     if (params.all || params.clumpify || (params.tools && params.tools.contains("clump"))) {
         CLUMPIFY_WORKFLOW(
             GATHER_READS.out,

@@ -31,6 +31,9 @@ workflow CLASSIFY_WITH_BLASTN {
 
     // TODO: Eventually, does the pipeline need to support the scenario where either megablast
     // or blastn (though really just blastn) comes up with no hits?
+    FILTER_NON_VIRUS_BLASTN_NODES.out.view{"DEBUG VIRUS BLASTN: $it"}
+    ch_megablast.view{"DEBUG MEGAblast: $it"}
+
     ch_merged_blast_results = FILTER_NON_VIRUS_BLASTN_NODES.out
         .join(ch_megablast, by: 0)
         .collectFile { sample_id, _virus_only_txt, blast_file ->

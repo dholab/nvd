@@ -1,3 +1,10 @@
+/*
+Perform rapid sequence similarity search using MEGABLAST.
+
+This rule aligns the assembled contigs against a comprehensive nucleotide database
+to identify similar known sequences. It's crucial for initial, broad_scale
+identification of viral sequences.
+*/
 process MEGABLAST {
     tag "${sample_id}"
 
@@ -25,6 +32,7 @@ process MEGABLAST {
     """
 }
 
+//Create file with megablast results annotated with megablast task and full taxonomic rank.
 process ANNOTATE_MEGABLAST_RESULTS {
 
     tag "${sample_id}"
@@ -48,6 +56,13 @@ process ANNOTATE_MEGABLAST_RESULTS {
     """
 }
 
+/*
+Remove any contigs that do not have at least one hit corresponding to viruses.
+
+This rule handles cases where the input file is empty and filters out
+groups where none of the entries are from superkingdom: Viruses
+or where the only viral hits are phages.
+*/
 process FILTER_NON_VIRUS_MEGABLAST_NODES {
 
     tag "${sample_id}"
@@ -66,6 +81,15 @@ process FILTER_NON_VIRUS_MEGABLAST_NODES {
     """
 }
 
+/*
+Create a list of contigs that are not classified by megablast.
+
+This rule generates two outputs:
+1. A list of classified contigs
+2. A pruned FASTA file containing only unclassified contigs
+
+The pruned file is used as input for more sensitive blastn searching.
+*/
 process REMOVE_MEGABLAST_MAPPED_CONTIGS {
 
     tag "${sample_id}"
@@ -88,6 +112,12 @@ process REMOVE_MEGABLAST_MAPPED_CONTIGS {
     """
 }
 
+/*
+Perform sequence similarity search using BLASTN.
+
+This rule aligns the assembled contigs against a comprehensive nucleotide database
+to identify similar known sequences with BLASTN
+*/
 process BLASTN_CLASSIFY {
     tag "${sample_id}"
 
@@ -115,6 +145,7 @@ process BLASTN_CLASSIFY {
     """
 }
 
+// Create file with blastn results annotated with blastn task and full taxonomic rank.
 process ANNOTATE_BLASTN_RESULTS {
 
     tag "${sample_id}"
@@ -138,6 +169,13 @@ process ANNOTATE_BLASTN_RESULTS {
     """
 }
 
+/*
+Remove any contigs that do not have at least one hit corresponding to viruses.
+
+This rule handles cases where the input file is empty and filters out
+groups where none of the entries are from superkingdom: Viruses
+or where the only viral hits are phages.
+*/
 process FILTER_NON_VIRUS_BLASTN_NODES {
 
     tag "${sample_id}"
@@ -156,6 +194,35 @@ process FILTER_NON_VIRUS_BLASTN_NODES {
     """
 }
 
+// Create file with merged megablast and blastn results.
+process MERGE_ANNOTATED_BLAST_RESULTS {
+
+    tag "${sample_id}"
+
+    cpus 1
+
+    input:
+    tuple val(sample_id), path(megablast_viruses)
+    tuple val(sample_id), path(blastn_viruses)
+
+    output:
+    tuple val(sample_id), path("${sample_id}_blast.merged.txt")
+
+    script:
+    """
+        {{
+        if [ -s ${megablast_viruses} ] || [ -s ${blastn_viruses} ]; then
+            cat ${megablast_viruses} ${blastn_viruses} > ${sample_id}_blast.merged.txt
+        else
+            touch ${sample_id}_blast.merged.txt
+            echo "Both input files are empty. Created an empty output file."
+        fi
+        }} > {log} 2>&1
+    """
+}
+
+// Extract unclassified contigs that do not have BLAST hits.
+// These could be highly divergent viruses, but are most often junk.
 process EXTRACT_UNCLASSIFIED_CONTIGS {
 
     tag "${sample_id}"
@@ -177,4 +244,3 @@ process EXTRACT_UNCLASSIFIED_CONTIGS {
     --unclassified ${sample_id}.unclassified.fasta
     """
 }
-
