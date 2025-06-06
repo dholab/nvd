@@ -6,19 +6,21 @@ include {
     BLASTN_CLASSIFY ;
     ANNOTATE_BLASTN_RESULTS ;
     FILTER_NON_VIRUS_BLASTN_NODES ;
-    EXTRACT_UNCLASSIFIED_CONTIGS
+    EXTRACT_UNCLASSIFIED_CONTIGS ;
+    MERGE_FILTERED_BLAST_RESULTS
 } from "../modules/blast"
 
 workflow CLASSIFY_WITH_BLASTN {
     take:
-    ch_unmapped_contigs
-    ch_megablast
+    ch_filtered_megablast
+    ch_megablast_contigs
     ch_blast_db_files
     ch_gettax_sqlite_path
 
     main:
+
     BLASTN_CLASSIFY(
-        ch_unmapped_contigs.combine(ch_blast_db_files)
+        ch_megablast_contigs.combine(ch_blast_db_files)
     )
 
     ANNOTATE_BLASTN_RESULTS(
@@ -29,22 +31,16 @@ workflow CLASSIFY_WITH_BLASTN {
         ANNOTATE_BLASTN_RESULTS.out
     )
 
-    // TODO: Eventually, does the pipeline need to support the scenario where either megablast
-    // or blastn (though really just blastn) comes up with no hits?
-    FILTER_NON_VIRUS_BLASTN_NODES.out.view{"DEBUG VIRUS BLASTN: $it"}
-    ch_megablast.view{"DEBUG MEGAblast: $it"}
-
-    ch_merged_blast_results = FILTER_NON_VIRUS_BLASTN_NODES.out
-        .join(ch_megablast, by: 0)
-        .collectFile { sample_id, _virus_only_txt, blast_file ->
-            ["${sample_id}.txt", file(blast_file).text + '\n']
-        }
-
-    EXTRACT_UNCLASSIFIED_CONTIGS(
-        ch_unmapped_contigs
-        .join(ch_megablast, by: 0)
-        .join(BLASTN_CLASSIFY.out, by: 0)
+    MERGE_FILTERED_BLAST_RESULTS(
+        ch_filtered_megablast,
+        FILTER_NON_VIRUS_BLASTN_NODES.out
     )
+
+    // TODO: Eventually, does the pipeline need to support the scenario where either megablast
+    // or blastn (though really just blastn) comes up with no hits
+
+    // FIXME
+    ch_merged_blast_results = MERGE_FILTERED_BLAST_RESULTS.out
 
     emit:
     merged_results = ch_merged_blast_results

@@ -20,6 +20,7 @@ workflow CLASSIFY_WITH_MEGABLAST {
         MEGABLAST.out.combine(ch_gettax_sqlite_path)
     )
 
+    // Capture this output for the LabKey table
     FILTER_NON_VIRUS_MEGABLAST_NODES(
         ANNOTATE_MEGABLAST_RESULTS.out.hits
     )
@@ -29,6 +30,7 @@ workflow CLASSIFY_WITH_MEGABLAST {
     )
 
     emit:
-    contigs = REMOVE_MEGABLAST_MAPPED_CONTIGS.out
+    filtered_megablast = FILTER_NON_VIRUS_MEGABLAST_NODES.out
+    megablast_contigs = REMOVE_MEGABLAST_MAPPED_CONTIGS.out
     megablast = MEGABLAST.out
 }

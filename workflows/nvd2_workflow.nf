@@ -60,8 +60,8 @@ workflow NVD2_WORKFLOW  {
     )
 
     CLASSIFY_WITH_BLASTN(
-        CLASSIFY_WITH_MEGABLAST.out.contigs,
-        CLASSIFY_WITH_MEGABLAST.out.megablast,
+        CLASSIFY_WITH_MEGABLAST.out.filtered_megablast,
+        CLASSIFY_WITH_MEGABLAST.out.megablast_contigs,
         ch_blast_db_files,
         EXTRACT_HUMAN_VIRUSES.out.sqlite
     )

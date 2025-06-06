@@ -73,11 +73,11 @@ process FILTER_NON_VIRUS_MEGABLAST_NODES {
     tuple val(sample_id), path(annotated_blast)
 
     output:
-    tuple val(sample_id), path("${sample_id}.virus_only.txt")
+    tuple val(sample_id), path("${sample_id}.mb_virus_only.txt")
 
     script:
     """
-    filter_non_virus_blast_nodes.py ${annotated_blast} ${sample_id}.virus_only.txt
+    filter_non_virus_blast_nodes.py ${annotated_blast} ${sample_id}.mb_virus_only.txt
     """
 }
 
@@ -186,16 +186,16 @@ process FILTER_NON_VIRUS_BLASTN_NODES {
     tuple val(sample_id), path(annotated_blast)
 
     output:
-    tuple val(sample_id), path("${sample_id}.virus_only.txt")
+    tuple val(sample_id), path("${sample_id}.nt_virus_only.txt")
 
     script:
     """
-    filter_non_virus_blast_nodes.py ${annotated_blast} ${sample_id}.virus_only.txt
+    filter_non_virus_blast_nodes.py ${annotated_blast} ${sample_id}.nt_virus_only.txt
     """
 }
 
 // Create file with merged megablast and blastn results.
-process MERGE_ANNOTATED_BLAST_RESULTS {
+process MERGE_FILTERED_BLAST_RESULTS {
 
     tag "${sample_id}"
 
@@ -206,23 +206,23 @@ process MERGE_ANNOTATED_BLAST_RESULTS {
     tuple val(sample_id), path(blastn_viruses)
 
     output:
-    tuple val(sample_id), path("${sample_id}_blast.merged.txt")
+    tuple val(sample_id), path("${sample_id}_blast.merged.tsv")
 
     script:
     """
-        {{
-        if [ -s ${megablast_viruses} ] || [ -s ${blastn_viruses} ]; then
-            cat ${megablast_viruses} ${blastn_viruses} > ${sample_id}_blast.merged.txt
-        else
-            touch ${sample_id}_blast.merged.txt
-            echo "Both input files are empty. Created an empty output file."
-        fi
-        }} > {log} 2>&1
+    if [ -s ${megablast_viruses} ] || [ -s ${blastn_viruses} ]; then
+        cat ${megablast_viruses} ${blastn_viruses} > ${sample_id}_blast.merged.tsv
+    else
+        touch ${sample_id}_blast.merged.tsv
+        echo "Both input files are empty. Created an empty output file."
+    fi
     """
+
 }
 
 // Extract unclassified contigs that do not have BLAST hits.
 // These could be highly divergent viruses, but are most often junk.
+// Not used currently, removed from logic of nvd-2 by WG
 process EXTRACT_UNCLASSIFIED_CONTIGS {
 
     tag "${sample_id}"
