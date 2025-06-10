@@ -52,6 +52,7 @@
 
 # configuration
 !/conf
+!/conf/results.config
 
 # assets
 !/assets

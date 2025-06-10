@@ -2,6 +2,9 @@ process EXTRACT_HUMAN_VIRUS_READS {
 
     tag "${sample_id}"
 
+    errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
+	maxRetries 2
+
     cpus 2
 
     input:
@@ -29,6 +32,9 @@ process CLASSIFY_CONTIGS_FIRST_PASS {
 
     tag "${sample_id}"
 
+    errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
+	maxRetries 2
+
     input:
     tuple val(sample_id), val(platform), path(filtered_contigs), path(stat_index)
 
@@ -48,6 +54,9 @@ process GENERATE_CONTIGS_TAXA_LIST {
 
     tag "${sample_id}"
 
+    errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
+	maxRetries 2
+
     input:
     tuple val(sample_id), path(filtered_contigs), path(first_pass_file)
 
@@ -63,6 +72,9 @@ process GENERATE_CONTIGS_TAXA_LIST {
 process CLASSIFY_CONTIGS_SECOND_PASS {
 
     tag "${sample_id}"
+
+    errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
+	maxRetries 2
 
     cpus 1
 
@@ -88,6 +100,9 @@ process GENERATE_STAT_CONTIG_REPORT {
 
     tag "${sample_id}"
 
+    errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
+	maxRetries 2
+
     input:
     tuple val(sample_id), path(secondpass_file), path(gettax)
 
@@ -107,6 +122,9 @@ process GENERATE_STAT_CONTIG_REPORT {
 process IDENTIFY_HUMAN_VIRUS_FAMILY_CONTIGS {
 
     tag "${sample_id}"
+
+    errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
+	maxRetries 2
 
     input:
     tuple val(sample_id), path(secondpass_file), path(tax_sqlite)

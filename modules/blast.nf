@@ -8,6 +8,9 @@ identification of viral sequences.
 process MEGABLAST {
     tag "${sample_id}"
 
+	errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
+	maxRetries 2
+
     cpus 4
 
     input:
@@ -36,6 +39,9 @@ process MEGABLAST {
 process ANNOTATE_MEGABLAST_RESULTS {
 
     tag "${sample_id}"
+
+	errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
+	maxRetries 2
 
     cpus 1
 
@@ -67,6 +73,9 @@ process FILTER_NON_VIRUS_MEGABLAST_NODES {
 
     tag "${sample_id}"
 
+	errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
+	maxRetries 2
+
     cpus 1
 
     input:
@@ -94,6 +103,9 @@ process REMOVE_MEGABLAST_MAPPED_CONTIGS {
 
     tag "${sample_id}"
 
+	errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
+	maxRetries 2
+
     cpus 1
 
     input:
@@ -120,6 +132,9 @@ to identify similar known sequences with BLASTN
 */
 process BLASTN_CLASSIFY {
     tag "${sample_id}"
+
+	errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
+	maxRetries 2
 
     cpus 4
 
@@ -149,6 +164,9 @@ process BLASTN_CLASSIFY {
 process ANNOTATE_BLASTN_RESULTS {
 
     tag "${sample_id}"
+
+	errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
+	maxRetries 2
 
     cpus 1
 
@@ -180,6 +198,9 @@ process FILTER_NON_VIRUS_BLASTN_NODES {
 
     tag "${sample_id}"
 
+	errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
+	maxRetries 2
+
     cpus 1
 
     input:
@@ -199,11 +220,14 @@ process MERGE_FILTERED_BLAST_RESULTS {
 
     tag "${sample_id}"
 
+	errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
+	maxRetries 2
+
     cpus 1
 
     input:
     tuple val(sample_id), path(megablast_viruses)
-    tuple val(sample_id), path(blastn_viruses)
+    tuple val(_sample_id), path(blastn_viruses)
 
     output:
     tuple val(sample_id), path("${sample_id}_blast.merged.tsv")
@@ -226,6 +250,9 @@ process MERGE_FILTERED_BLAST_RESULTS {
 process EXTRACT_UNCLASSIFIED_CONTIGS {
 
     tag "${sample_id}"
+
+	errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
+	maxRetries 2
 
     cpus 1
 

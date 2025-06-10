@@ -2,6 +2,9 @@ process FETCH_FASTQ {
 
     tag "${run_accession}, ${platform}"
 
+    errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
+	maxRetries 2
+
     maxForks params.max_concurrent_downloads
     cpus 3
 

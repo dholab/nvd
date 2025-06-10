@@ -1,5 +1,10 @@
 process READ_COMPRESSION_PASSTHROUGH {
 
+    tag "${sample_id}"
+
+	errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
+	maxRetries 2
+
     input:
     tuple val(sample_id), path(fastq), path(ref_mmi), path(stats), path(tax_tsv)
 
@@ -25,6 +30,7 @@ process GOTTCHA2_PROFILE_NANOPORE {
     // publishDir params.gottcha_stats, mode: 'copy', overwrite: false, pattern: "*.tsv"
 
     errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
+	maxRetries 2
 
     cpus 12
 
@@ -58,6 +64,7 @@ process GOTTCHA2_PROFILE_ILLUMINA {
     // publishDir params.gottcha_stats, mode: 'copy', overwrite: false, pattern: "*.tsv"
 
     errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
+	maxRetries 2
 
     cpus 12
 
@@ -89,6 +96,7 @@ process GENERATE_FASTA {
     // publishDir params.gottcha_fasta, mode: 'copy', overwrite: false, pattern: "*.fasta"
 
     errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
+	maxRetries 2
 
     input:
     tuple val(sample_id), path(sam), path(ref_mmi), path(stats), path(tax_tsv)

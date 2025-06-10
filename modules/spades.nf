@@ -2,6 +2,9 @@ process RUN_SPADES {
 
     tag "${sample_id}"
 
+    errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
+	maxRetries 2
+
     cpus 4
 
     input:

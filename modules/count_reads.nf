@@ -2,6 +2,9 @@ process COUNT_READS {
     tag "${meta}"
     label 'process_low'
 
+	errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
+	maxRetries 2
+
     input:
     tuple val(meta), val(library), path(fastq)
 
