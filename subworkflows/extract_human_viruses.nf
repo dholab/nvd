@@ -7,7 +7,6 @@ include {
     IDENTIFY_HUMAN_VIRUS_FAMILY_CONTIGS
 } from "../modules/stat"
 include { EXTRACT_HUMAN_VIRUS_CONTIGS         } from "../modules/seqkit"
-include { RETRIEVE_GETTAX } from "../modules/utils"
 
 workflow EXTRACT_HUMAN_VIRUSES {
     take:
@@ -15,6 +14,7 @@ workflow EXTRACT_HUMAN_VIRUSES {
     ch_stat_dbs
     ch_stat_dbss
     ch_stat_annotation
+    ch_gettax
 
     main:
     CLASSIFY_CONTIGS_FIRST_PASS(
@@ -29,14 +29,12 @@ workflow EXTRACT_HUMAN_VIRUSES {
         GENERATE_CONTIGS_TAXA_LIST.out.combine(ch_stat_dbss).combine(ch_stat_annotation)
     )
 
-    RETRIEVE_GETTAX()
-
     GENERATE_STAT_CONTIG_REPORT(
-        CLASSIFY_CONTIGS_SECOND_PASS.out.combine(RETRIEVE_GETTAX.out)
+        CLASSIFY_CONTIGS_SECOND_PASS.out.combine(ch_gettax)
     )
 
     IDENTIFY_HUMAN_VIRUS_FAMILY_CONTIGS(
-        CLASSIFY_CONTIGS_SECOND_PASS.out.combine(RETRIEVE_GETTAX.out)
+        CLASSIFY_CONTIGS_SECOND_PASS.out.combine(ch_gettax)
     )
 
     EXTRACT_HUMAN_VIRUS_CONTIGS(
@@ -50,6 +48,6 @@ workflow EXTRACT_HUMAN_VIRUSES {
 
     emit:
     contigs = EXTRACT_HUMAN_VIRUS_CONTIGS.out
-    sqlite = RETRIEVE_GETTAX.out
+    sqlite = ch_gettax
     
 }

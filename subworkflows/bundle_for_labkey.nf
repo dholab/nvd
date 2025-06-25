@@ -175,6 +175,8 @@ process PREPARE_FASTA_LABKEY {
 process LABKEY_UPLOAD_BLAST {
     label 'process_low'
 
+    secret 'nvd2'
+
     input:
     path csv_files
     val experiment_id
@@ -190,7 +192,7 @@ process LABKEY_UPLOAD_BLAST {
     --run-id '${run_id}' \
     --labkey-server '${params.labkey_server}' \
     --labkey-project-name '${params.labkey_project_name}' \
-    --labkey-api-key '${params.labkey_api_key}' \
+    --labkey-api-key \$nvd2 \
     --labkey-schema '${params.labkey_schema}' \
     --table-name '${params.labkey_blast_meta_hits_list}'
     """
@@ -198,6 +200,8 @@ process LABKEY_UPLOAD_BLAST {
 
 process LABKEY_UPLOAD_FASTA {
     label 'process_low'
+
+    secret 'nvd2'
 
     input:
     path csv_files
@@ -214,7 +218,7 @@ process LABKEY_UPLOAD_FASTA {
     --run-id '${run_id}' \
     --labkey-server '${params.labkey_server}' \
     --labkey-project-name '${params.labkey_project_name}' \
-    --labkey-api-key '${params.labkey_api_key}' \
+    --labkey-api-key \$nvd2 \
     --labkey-schema '${params.labkey_schema}' \
     --table-name '${params.labkey_blast_fasta_list}'
     """

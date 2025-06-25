@@ -1,9 +1,12 @@
+nextflow.enable.dsl=2
+
 include { PREPROCESS_CONTIGS } from "../subworkflows/preprocess_contigs"
 include { EXTRACT_HUMAN_VIRUSES } from "../subworkflows/extract_human_viruses"
 include { CLASSIFY_WITH_MEGABLAST } from "../subworkflows/classify_with_megablast"
 include { CLASSIFY_WITH_BLASTN } from "../subworkflows/classify_with_blastn"
 include { BUNDLE_FOR_LABKEY } from "../subworkflows/bundle_for_labkey"
 include { COUNT_READS } from "../modules/count_reads"
+include { RETRIEVE_GETTAX } from "../modules/utils"
 
 
 workflow NVD2_WORKFLOW  {
@@ -35,6 +38,7 @@ workflow NVD2_WORKFLOW  {
     ch_stat_dbss = Channel.fromPath(params.stat_dbss)
     ch_stat_annotation = Channel.fromPath(params.stat_annotation)
     ch_human_virus_taxlist = Channel.fromPath(params.human_virus_taxlist)
+    ch_gettax = RETRIEVE_GETTAX()
 
     // Count reads for each sample
     COUNT_READS(ch_sample_fastqs)
@@ -50,7 +54,8 @@ workflow NVD2_WORKFLOW  {
         PREPROCESS_CONTIGS.out,
         ch_stat_index,
         ch_stat_dbss,
-        ch_stat_annotation
+        ch_stat_annotation,
+        ch_gettax
     )
 
     CLASSIFY_WITH_MEGABLAST(
