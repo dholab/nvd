@@ -1,3 +1,5 @@
+
+
 workflow BUNDLE_FOR_LABKEY {
     take:
     blast_results     // channel: [ meta, csv ]
@@ -172,7 +174,6 @@ process PREPARE_FASTA_LABKEY {
 
 process LABKEY_UPLOAD_BLAST {
     label 'process_low'
-    publishDir params.outdir, mode: params.publish_dir_mode
 
     input:
     path csv_files
@@ -184,122 +185,19 @@ process LABKEY_UPLOAD_BLAST {
 
     script:
     """
-    #!/usr/bin/env python3
-
-    import os
-    import csv
-    import sys
-    from datetime import datetime
-
-    # LabKey configuration from nextflow params
-    LABKEY_SERVER = "${params.labkey_server}"
-    PROJECT_NAME = "${params.labkey_project_name}"
-    API_KEY = "${params.labkey_api_key}"
-    SCHEMA = "${params.labkey_schema}"
-    TABLE_NAME = "metagenomic_hits_test_nvd2"
-
-    log_entries = []
-    log_entries.append(f"LabKey BLAST Upload Log - {datetime.now()}")
-    log_entries.append(f"Experiment ID: ${experiment_id}")
-    log_entries.append(f"Run ID: ${run_id}")
-    log_entries.append(f"Server: {LABKEY_SERVER}")
-    log_entries.append(f"Project: {PROJECT_NAME}")
-    log_entries.append(f"Target Table: {TABLE_NAME}")
-    log_entries.append("=" * 80)
-
-    # Check if we have LabKey credentials
-    upload_enabled = bool(LABKEY_SERVER and PROJECT_NAME and API_KEY)
-
-    if upload_enabled:
-        try:
-            from labkey.api_wrapper import APIWrapper
-            import more_itertools
-            log_entries.append("LabKey API wrapper found - attempting real upload")
-
-            # Initialize API wrapper
-            api = APIWrapper(LABKEY_SERVER, PROJECT_NAME, api_key=API_KEY)
-
-        except ImportError as e:
-            log_entries.append(f"ERROR: LabKey API wrapper not available - {str(e)}")
-            log_entries.append("Falling back to simulation mode")
-            upload_enabled = False
-    else:
-        log_entries.append("No LabKey credentials provided - running in simulation mode")
-
-    # Get BLAST CSV files
-    csv_files = [f for f in os.listdir('.') if f.endswith('.csv') and 'blast' in f.lower()]
-    log_entries.append(f"Found {len(csv_files)} BLAST CSV files: {csv_files}")
-
-    total_records_processed = 0
-    total_records_uploaded = 0
-
-    for csv_file in sorted(csv_files):
-        log_entries.append(f"\\nProcessing BLAST file: {csv_file}")
-
-        # Count records
-        record_count = 0
-        if os.path.getsize(csv_file) > 0:
-            with open(csv_file, 'r') as f:
-                reader = csv.DictReader(f)
-                records = list(reader)
-                record_count = len(records)
-                total_records_processed += record_count
-
-                if record_count > 0:
-                    log_entries.append(f"  Records: {record_count}")
-                    log_entries.append(f"  Sample fields: {', '.join(list(records[0].keys())[:5])}")
-
-                    if upload_enabled:
-                        # Upload using LabKey API wrapper in chunks of 1000
-                        batch_size = 1000
-                        record_chunks = list(more_itertools.chunked(records, batch_size))
-                        success_count = 0
-
-                        for i, chunk in enumerate(record_chunks, 1):
-                            try:
-                                api.query.insert_rows(
-                                    schema_name=SCHEMA,
-                                    query_name=TABLE_NAME,
-                                    rows=chunk
-                                )
-                                log_entries.append(f"    Batch {i}/{len(record_chunks)}: SUCCESS ({len(chunk)} records)")
-                                success_count += len(chunk)
-
-                            except Exception as e:
-                                log_entries.append(f"    Batch {i}/{len(record_chunks)}: ERROR - {str(e)}")
-
-                        total_records_uploaded += success_count
-                        log_entries.append(f"  Upload complete: {success_count}/{record_count} records successful")
-                    else:
-                        # Simulation mode
-                        num_batches = (record_count + 999) // 1000  # Round up division
-                        log_entries.append(f"  Would upload in {num_batches} batch(es) (SIMULATION)")
-                        total_records_uploaded += record_count  # For simulation counting
-                else:
-                    log_entries.append(f"  No records found in file")
-        else:
-            log_entries.append(f"  Empty file - no records to upload")
-
-    log_entries.append("\\n" + "=" * 80)
-    log_entries.append("BLAST DATA UPLOAD SUMMARY")
-    log_entries.append(f"Files processed: {len(csv_files)}")
-    log_entries.append(f"Total records processed: {total_records_processed}")
-    if upload_enabled:
-        log_entries.append(f"Total records uploaded: {total_records_uploaded}")
-        log_entries.append("BLAST UPLOAD COMPLETE")
-    else:
-        log_entries.append(f"Total records that would be uploaded: {total_records_uploaded}")
-        log_entries.append("BLAST SIMULATION COMPLETE - No actual upload performed")
-
-    # Write log file
-    with open('blast_labkey_upload.log', 'w') as f:
-        f.write('\\n'.join(log_entries))
+    labkey_upload_blast_results.py \
+    --experiment-id '${experiment_id}' \
+    --run-id '${run_id}' \
+    --labkey-server '${params.labkey_server}' \
+    --labkey-project-name '${params.labkey_project_name}' \
+    --labkey-api-key '${params.labkey_api_key}' \
+    --labkey-schema '${params.labkey_schema}' \
+    --table-name '${params.labkey_blast_meta_hits_list}'
     """
 }
 
 process LABKEY_UPLOAD_FASTA {
     label 'process_low'
-    publishDir params.outdir, mode: params.publish_dir_mode
 
     input:
     path csv_files
@@ -311,115 +209,13 @@ process LABKEY_UPLOAD_FASTA {
 
     script:
     """
-    #!/usr/bin/env python3
-
-    import os
-    import csv
-    import sys
-    from datetime import datetime
-
-    # LabKey configuration from nextflow params
-    LABKEY_SERVER = "${params.labkey_server}"
-    PROJECT_NAME = "${params.labkey_project_name}"
-    API_KEY = "${params.labkey_api_key}"
-    SCHEMA = "${params.labkey_schema}"
-    TABLE_NAME = "fasta_hits_test_nvd2"
-
-    log_entries = []
-    log_entries.append(f"LabKey FASTA Upload Log - {datetime.now()}")
-    log_entries.append(f"Experiment ID: ${experiment_id}")
-    log_entries.append(f"Run ID: ${run_id}")
-    log_entries.append(f"Server: {LABKEY_SERVER}")
-    log_entries.append(f"Project: {PROJECT_NAME}")
-    log_entries.append(f"Target Table: {TABLE_NAME}")
-    log_entries.append("=" * 80)
-
-    # Check if we have LabKey credentials
-    upload_enabled = bool(LABKEY_SERVER and PROJECT_NAME and API_KEY)
-
-    if upload_enabled:
-        try:
-            from labkey.api_wrapper import APIWrapper
-            import more_itertools
-            log_entries.append("LabKey API wrapper found - attempting real upload")
-
-            # Initialize API wrapper
-            api = APIWrapper(LABKEY_SERVER, PROJECT_NAME, api_key=API_KEY)
-
-        except ImportError as e:
-            log_entries.append(f"ERROR: LabKey API wrapper not available - {str(e)}")
-            log_entries.append("Falling back to simulation mode")
-            upload_enabled = False
-    else:
-        log_entries.append("No LabKey credentials provided - running in simulation mode")
-
-    # Get FASTA CSV files
-    csv_files = [f for f in os.listdir('.') if f.endswith('.csv') and 'fasta' in f.lower()]
-    log_entries.append(f"Found {len(csv_files)} FASTA CSV files: {csv_files}")
-
-    total_records_processed = 0
-    total_records_uploaded = 0
-
-    for csv_file in sorted(csv_files):
-        log_entries.append(f"\\nProcessing FASTA file: {csv_file}")
-
-        # Count records
-        record_count = 0
-        if os.path.getsize(csv_file) > 0:
-            with open(csv_file, 'r') as f:
-                reader = csv.DictReader(f)
-                records = list(reader)
-                record_count = len(records)
-                total_records_processed += record_count
-
-                if record_count > 0:
-                    log_entries.append(f"  Records: {record_count}")
-                    log_entries.append(f"  Sample fields: {', '.join(list(records[0].keys())[:5])}")
-
-                    if upload_enabled:
-                        # Upload using LabKey API wrapper in chunks of 1000
-                        batch_size = 1000
-                        record_chunks = list(more_itertools.chunked(records, batch_size))
-                        success_count = 0
-
-                        for i, chunk in enumerate(record_chunks, 1):
-                            try:
-                                api.query.insert_rows(
-                                    schema_name=SCHEMA,
-                                    query_name=TABLE_NAME,
-                                    rows=chunk
-                                )
-                                log_entries.append(f"    Batch {i}/{len(record_chunks)}: SUCCESS ({len(chunk)} records)")
-                                success_count += len(chunk)
-
-                            except Exception as e:
-                                log_entries.append(f"    Batch {i}/{len(record_chunks)}: ERROR - {str(e)}")
-
-                        total_records_uploaded += success_count
-                        log_entries.append(f"  Upload complete: {success_count}/{record_count} records successful")
-                    else:
-                        # Simulation mode
-                        num_batches = (record_count + 999) // 1000  # Round up division
-                        log_entries.append(f"  Would upload in {num_batches} batch(es) (SIMULATION)")
-                        total_records_uploaded += record_count  # For simulation counting
-                else:
-                    log_entries.append(f"  No records found in file")
-        else:
-            log_entries.append(f"  Empty file - no records to upload")
-
-    log_entries.append("\\n" + "=" * 80)
-    log_entries.append("FASTA DATA UPLOAD SUMMARY")
-    log_entries.append(f"Files processed: {len(csv_files)}")
-    log_entries.append(f"Total records processed: {total_records_processed}")
-    if upload_enabled:
-        log_entries.append(f"Total records uploaded: {total_records_uploaded}")
-        log_entries.append("FASTA UPLOAD COMPLETE")
-    else:
-        log_entries.append(f"Total records that would be uploaded: {total_records_uploaded}")
-        log_entries.append("FASTA SIMULATION COMPLETE - No actual upload performed")
-
-    # Write log file
-    with open('fasta_labkey_upload.log', 'w') as f:
-        f.write('\\n'.join(log_entries))
+    labkey_upload_blast_fasta.py \
+    --experiment-id '${experiment_id}' \
+    --run-id '${run_id}' \
+    --labkey-server '${params.labkey_server}' \
+    --labkey-project-name '${params.labkey_project_name}' \
+    --labkey-api-key '${params.labkey_api_key}' \
+    --labkey-schema '${params.labkey_schema}' \
+    --table-name '${params.labkey_blast_fasta_list}'
     """
 }
