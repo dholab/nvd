@@ -102,7 +102,7 @@ process GENERATE_FASTA {
     tuple val(sample_id), path(sam), path(ref_mmi), path(stats), path(tax_tsv)
 
     output:
-    path "*"
+    tuple val(sample_id), path("*.extract.fasta"), path("*.full.tsv"), path("*.gottcha_strain.log"), path("*.lineage.tsv")
 
     when:
     (params.tools && params.tools.contains("gottcha2") || params.tools.contains("gottcha")) || params.all || params.gottcha

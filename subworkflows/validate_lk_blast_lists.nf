@@ -57,6 +57,6 @@ process VALIDATE_BLAST_FASTA_LIST {
         --list '${params.labkey_blast_fasta_list}' \
         --api_key \$nvd2 \
         --experiment_id ${params.experiment_id} \
-        --type fasta > fasta_validation_report.txt 2>&1
+        --type blast_fasta > fasta_validation_report.txt 2>&1
     """
 }

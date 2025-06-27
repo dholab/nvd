@@ -17,6 +17,20 @@ blast_fasta_fields = [
     'Notes', 'Snakemake Run Id'
 ]
 
+gottcha2_full_fields = [
+    'SAMPLE', 'EXPERIMENT', 'LEVEL', 'NAME', 'TAXID', 'READ COUNT',
+    'TOTAL BP MAPPED', 'TOTAL BP MISMATCH', 'LINEAR LEN', 'LINEAR DOC',
+    'ROLLUP DOC', 'REL ABUNDANCE', 'LINEAR COV', 'LINEAR COV MAPPED SIG',
+    'BEST LINEAR COV', 'MAPPED SIG LENGTH', 'TOL SIG LENGTH', 'ABUNDANCE',
+    'ZSCORE', 'NOTE', 'GOTTCHA2 DB VERSION'
+]
+
+gottcha2_fasta_fields = [
+    'Experiment', 'Sample Id', 'Header', 'Sequence',
+    'Notes', 'Snakemake Run Id', 'Upload Type'
+]
+
+
 def check_experiment_id_uniqueness(labkey, list_name, experiment_id):
     """
     Check if the experiment ID already exists in the LabKey list.
@@ -35,9 +49,13 @@ def check_experiment_id_uniqueness(labkey, list_name, experiment_id):
         
         # Use SQL query to efficiently check for existing experiment IDs
         # This only returns matching rows, not the entire dataset
-        sql_query = f"SELECT DISTINCT Experiment FROM lists.{list_name} WHERE Experiment = {experiment_id}"
-        
+        experiment_fields = ['Experiment', 'experiment', 'EXPERIMENT']
+        sql_query = " UNION ALL ".join([
+            f'SELECT DISTINCT `{field}` as Experiment FROM "lists"."{list_name}" WHERE `{field}` = {experiment_id}'
+            for field in experiment_fields
+        ])
         result = labkey.query.execute_sql("lists", sql_query)
+
         
         # If any rows are returned, the experiment ID already exists
         if result['rows']:
@@ -65,7 +83,7 @@ def main():
     parser.add_argument('--container')           # LabKey container path (e.g., project folder)
     parser.add_argument('--list')                # Name of the LabKey list to validate
     parser.add_argument('--api_key')             # API key with insert/delete permissions
-    parser.add_argument('--type', choices=['blast', 'fasta'], required=True)  # List type selector
+    parser.add_argument('--type', choices=['blast', 'blast_fasta', 'gottcha2_full', 'gottcha2_fasta'], required=True)
     parser.add_argument('--experiment_id', type=int, required=True)  # Experiment ID to check for uniqueness
     args = parser.parse_args()
 
@@ -86,9 +104,7 @@ def main():
         print("   Please update your pipeline configuration with a new experiment_id value.")
         print()
         print("Suggestions:")
-        print("   • Use a timestamp-based ID (e.g., YYYYMMDDHHMMSS format)")
-        print("   • Use an incremental counter from your last run")
-        print("   • Generate a random unique identifier")
+        print("   • Use a new LabKey experiment number")
         print("   • Check existing experiment IDs in LabKey to avoid conflicts")
         print()
         print("Configuration:")
@@ -122,7 +138,41 @@ def main():
             'Total Reads': 0.0,
             'Exclude': False
         }
-    else:
+    elif args.type == 'gottcha2_full':
+        dummy = {
+            'SAMPLE': '__DUMMY__SAMPLE__',
+            'EXPERIMENT': unique_experiment_id,
+            'LEVEL': '__DUMMY__LEVEL__',
+            'NAME': '__DUMMY__NAME__',
+            'TAXID': 0,
+            'READ COUNT': 0,
+            'TOTAL BP MAPPED': 0,
+            'TOTAL BP MISMATCH': 0,
+            'LINEAR LEN': 0,
+            'LINEAR DOC': 0.0,
+            'ROLLUP DOC': 0.0,
+            'REL ABUNDANCE': 0.0,
+            'LINEAR COV': 0.0,
+            'LINEAR COV MAPPED SIG': 0.0,
+            'BEST LINEAR COV': 0.0,
+            'MAPPED SIG LENGTH': 0,
+            'TOL SIG LENGTH': 0,
+            'ABUNDANCE': 0.0,
+            'ZSCORE': 0.0,
+            'NOTE': '__DUMMY__NOTE__',
+            'GOTTCHA2 DB VERSION': 'v0'
+        }
+    elif args.type == 'gottcha2_fasta':
+        dummy = {
+            'Experiment': unique_experiment_id,
+            'Sample Id': '__DUMMY__SAMPLE__',
+            'Header': '__DUMMY__HEADER__',
+            'Sequence': 'ATGCATGC',
+            'Notes': '__DUMMY__NOTES__',
+            'Snakemake Run Id': '__DUMMY__SMK__',
+            'Upload Type': 'fasta'
+        }
+    elif args.type == 'blast_fasta':
         dummy = {
             'Experiment': unique_experiment_id,
             'Sample Id': '__DUMMY__SAMPLE__',
