@@ -137,3 +137,30 @@ process CLUMP_READS {
 	"""
 
 }
+
+process REMOVE_MULTIMAPS {
+
+    /* */
+
+	tag "${sample_id}"
+
+	errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
+	maxRetries 2
+
+	cpus 4
+
+	input:
+	tuple val(sample_id), path(extracted_reads), path(full_tsv)
+
+	output:
+    tuple val(sample_id), path("${sample_id}.no_ambig.fasta"), path(full_tsv)
+
+	script:
+	"""
+	reformat.sh \
+	in=${extracted_reads} out=${sample_id}.no_ambig.fastq.gz \
+	nullifybrokenquality=t \
+	threads=${task.cpus} -eoom
+	"""
+
+}

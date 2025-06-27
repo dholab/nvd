@@ -10,6 +10,8 @@ include {
 include {
     BUNDLE_GOTTCHA2_FOR_LABKEY
 } from "../subworkflows/bundle_gottcha2_for_labkey"
+include { REMOVE_MULTIMAPS } from "../modules/bbmap"
+include { VERIFY_WITH_BLAST; STACK_VERIFIED_TABLES } from "../modules/blast"
 
 
 workflow GOTTCHA2_WORKFLOW {
@@ -26,6 +28,10 @@ workflow GOTTCHA2_WORKFLOW {
     ch_illumina_fastqs = ch_sample_fastqs
         .filter { _sample_id, platform, _fastq -> platform == "illumina" }
         .map { sample_id, _platform, fastq -> tuple(sample_id, file(fastq)) }
+
+    ch_taxids = Channel.from(params.verification_taxids)
+
+    ch_blast_db = Channel.fromPath(params.blast_db)
 
     VALIDATE_LK_GOTTCHA2()
 
@@ -45,12 +51,33 @@ workflow GOTTCHA2_WORKFLOW {
         GOTTCHA2_PROFILE_NANOPORE.out.aligned.mix(GOTTCHA2_PROFILE_ILLUMINA.out.aligned)
     )
 
+    REMOVE_MULTIMAPS(GENERATE_FASTA.out)
+
+    ch_hits_per_taxid = REMOVE_MULTIMAPS.out.combine(ch_taxids)
+
+    VERIFY_WITH_BLAST(
+        ch_hits_per_taxid.combine(ch_blast_db)
+    )
+
+    // TODO: Verify that the full tsv from GENERATE_FASTA is actually the full TSV (the full full TSV?)
+    ch_hits_to_stack = VERIFY_WITH_BLAST.out
+        .groupTuple(by: 0)
+        .join(
+            GENERATE_FASTA.out.map { id, _fasta, tsv, _log, _lineages -> tuple( id, tsv ) },
+            by: 0
+        )
+    
+    STACK_VERIFIED_TABLES(ch_hits_to_stack)
+
+
     BUNDLE_GOTTCHA2_FOR_LABKEY(
         GOTTCHA2_PROFILE_NANOPORE.out.full_tsv.mix(GOTTCHA2_PROFILE_ILLUMINA.out.full_tsv),
         GENERATE_FASTA.out
     )
 
     ch_completion = GENERATE_FASTA.out.map{ _results -> "GOTTCHA2 complete!" }
+
+    // ch_completion = VERIFY_WITH_BLAST.out.map{ _results -> "GOTTCHA2 complete!" }
 
     emit:
     completion = ch_completion

@@ -31,7 +31,7 @@ process VALIDATE_BLAST_HITS_LIST {
 
     script:
     """
-    validate_labkey.py \\
+    validate_labkey.py \
         --server '${params.labkey_server}' \
         --container '${params.labkey_project_name}' \
         --list '${params.labkey_blast_meta_hits_list}' \

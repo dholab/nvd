@@ -271,3 +271,65 @@ process EXTRACT_UNCLASSIFIED_CONTIGS {
     --unclassified ${sample_id}.unclassified.fasta
     """
 }
+
+process VERIFY_WITH_BLAST {
+
+    tag "${sample_id}"
+
+	errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
+	maxRetries 2
+
+    cpus 4
+
+    input:
+    tuple val(sample_id), path(extracted_fasta), path(full_tsv), val(taxid), path(blast_db)
+
+    output:
+    tuple val(sample_id), path("${sample_id}_${taxid}.verified_hits.tsv"), path("${sample_id}_${taxid}.classification.tsv")
+
+    script:
+    """
+    verify_gottcha2_with_blast.py \
+    --query ${extracted_fasta} \
+    --target-taxid ${taxid} \
+    --db ${blast_db}/${params.blast_db_prefix} \
+    --threads ${task.cpus} \
+    --word_size 64 \
+    --hits-out ${sample_id}_${taxid}.verified_hits.tsv \
+    --class-out ${sample_id}_${taxid}.classification.tsv
+    """
+}
+
+process STACK_VERIFIED_TABLES {
+
+    tag "${sample_id}"
+
+	errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
+	maxRetries 2
+
+    cpus 4
+
+    input:
+    tuple val(sample_id), path("hits/*.tsv"), path("classification/*.tsv"), path(full_tsv)
+
+    output:
+    tuple val(sample_id), path("${sample_id}.verified_hits.tsv"), path("${sample_id}.verified_classification.tsv"), path(full_tsv)
+
+    script:
+    """
+    #!/usr/bin/env python3
+
+    from pathlib import Path
+
+    import polars as pl
+
+    hit_tsvs = list(Path("hits").glob("*.tsv"))
+    class_tsvs = list(Path("class").glob("*.tsv"))
+
+    hit_df = pl.concat([pl.read_csv(tsv, separator="\t") for tsv in hit_tsvs])
+    class_df = pl.concat([pl.read_csv(tsv, separator="\t") for tsv in class_tsvs])
+
+    hit_df.write_csv("${sample_id}.verified_hits.tsv", separator="\t")
+    class_df.write_csv("${sample_id}.verified_classification.tsv", separator="\t")
+    """
+}
