@@ -1,6 +1,5 @@
 
-
-workflow BUNDLE_FOR_LABKEY {
+workflow BUNDLE_BLAST_FOR_LABKEY {
     take:
     blast_results     // channel: [ meta, csv ]
     contig_sequences  // channel: [ meta, fasta ]

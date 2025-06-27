@@ -4,9 +4,10 @@ include { PREPROCESS_CONTIGS } from "../subworkflows/preprocess_contigs"
 include { EXTRACT_HUMAN_VIRUSES } from "../subworkflows/extract_human_viruses"
 include { CLASSIFY_WITH_MEGABLAST } from "../subworkflows/classify_with_megablast"
 include { CLASSIFY_WITH_BLASTN } from "../subworkflows/classify_with_blastn"
-include { BUNDLE_FOR_LABKEY } from "../subworkflows/bundle_for_labkey"
+include { BUNDLE_BLAST_FOR_LABKEY } from "../subworkflows/bundle_blast_for_labkey"
 include { COUNT_READS } from "../modules/count_reads"
 include { RETRIEVE_GETTAX } from "../modules/utils"
+include { VALIDATE_LK_BLAST } from "../subworkflows/validate_lk_blast_lists.nf"
 
 
 workflow NVD2_WORKFLOW  {
@@ -40,6 +41,8 @@ workflow NVD2_WORKFLOW  {
     ch_human_virus_taxlist = Channel.fromPath(params.human_virus_taxlist)
     ch_gettax = RETRIEVE_GETTAX()
 
+    VALIDATE_LK_BLAST()
+
     // Count reads for each sample
     COUNT_READS(ch_sample_fastqs)
 
@@ -72,7 +75,7 @@ workflow NVD2_WORKFLOW  {
     )
 
     // Bundle results for LabKey upload simulation
-    BUNDLE_FOR_LABKEY(
+    BUNDLE_BLAST_FOR_LABKEY(
         CLASSIFY_WITH_BLASTN.out.merged_results,
         EXTRACT_HUMAN_VIRUSES.out.contigs,
         COUNT_READS.out.counts,
@@ -84,6 +87,6 @@ workflow NVD2_WORKFLOW  {
 
     emit:
     completion = ch_completion
-    labkey_log = BUNDLE_FOR_LABKEY.out.upload_log
+    labkey_log = BUNDLE_BLAST_FOR_LABKEY.out.upload_log
 
 }
