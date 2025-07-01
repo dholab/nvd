@@ -42,6 +42,7 @@ workflow GOTTCHA2_WORKFLOW {
         ch_nanopore_fastqs.combine(ch_gottcha2_db.collect(sort: true))
     )
 
+    // TODO error handling for empty samples
     GOTTCHA2_PROFILE_NANOPORE(
         READ_COMPRESSION_PASSTHROUGH.out
     )
@@ -80,10 +81,9 @@ workflow GOTTCHA2_WORKFLOW {
 
     STACK_VERIFIED_TABLES(ch_hits_to_stack)
 
-
     BUNDLE_GOTTCHA2_FOR_LABKEY(
         GOTTCHA2_PROFILE_NANOPORE.out.full_tsv.mix(GOTTCHA2_PROFILE_ILLUMINA.out.full_tsv),
-        GENERATE_FASTA.out
+        REMOVE_MULTIMAPS.out
     )
 
     ch_completion = GENERATE_FASTA.out.map{ _results -> "GOTTCHA2 complete!" }

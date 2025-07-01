@@ -45,7 +45,7 @@ process LABKEY_UPLOAD_GOTTCHA2_FULL {
     """
 }
 
-//[illumina_test.extract.fasta, illumina_test.full.tsv, illumina_test.gottcha_strain.log, illumina_test.lineage.tsv, illumina_test.tsv]
+// Take from after multimaps are removed
 
 process LABKEY_UPLOAD_GOTTCHA2_FASTA {
 
@@ -54,7 +54,7 @@ process LABKEY_UPLOAD_GOTTCHA2_FASTA {
     secret 'nvd2'
 
     input:
-    tuple val(sample_id), path(fasta), path(full_tsv), path(strain_log), path(lineage_tsv)
+    tuple val(sample_id), path(fasta), path(full_tsv)
 
     output:
     path("${sample_id}_df.tsv")
@@ -69,10 +69,13 @@ process LABKEY_UPLOAD_GOTTCHA2_FASTA {
     NF > 1 {
         header = \$1;
         sub(/^>/, "", header);
-        gsub(/\\n/, "", \$2);  # remove newlines in sequence
-        sequence = \$2;
+        sequence = "";
+        for (i = 2; i <= NF; i++) {
+            gsub(/\\n/, "", \$i);
+            sequence = sequence \$i;
+        }
         if (length(sequence) > 0) {
-            print ${params.experiment_id}, "${sample_id}", header, sequence, "gottcha2", "GOTTCHA2_UPLOAD", "fasta";
+            print "${params.experiment_id}", "${sample_id}", header, sequence, "gottcha2", "GOTTCHA2_UPLOAD", "fasta";
         }
     }' ${fasta} > ${sample_id}_df.tsv
 
@@ -82,7 +85,6 @@ process LABKEY_UPLOAD_GOTTCHA2_FASTA {
         --list ${params.labkey_gottcha_fasta_list} \
         --api_key \$nvd2 \
         --input_tsv ${sample_id}_df.tsv
-
     """
 }
 
