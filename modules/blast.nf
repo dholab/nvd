@@ -272,9 +272,31 @@ process EXTRACT_UNCLASSIFIED_CONTIGS {
     """
 }
 
+// Step to filter down the extracted fasta to have only species and strain level
+// representative sequences.
+process FILTER_DOWN_TO_SPECIES_STRAIN {
+    
+    tag "${sample_id}"
+
+    cpus 4
+    
+    input:
+    tuple val(sample_id), path(extracted_fasta), path(full_tsv)
+
+    output:
+    tuple val(sample_id), path("${sample_id}.filtered.fasta"), path(full_tsv)
+
+    script:
+    """
+    filter_gottcha_fasta.py --input ${extracted_fasta} --output ${sample_id}.filtered.fasta
+    """
+}
+//Input tuple does not match tuple declaration in process `GOTTCHA2_WORKFLOW:FILTER_DOWN_TO_SPECIES_STRAIN` -- offending value: [illumina_test, /home/willgardner/nvd_lk/nvd/work/1f/00ae105995302c84b44e19e966a209/illumina_test.no_ambig.fasta, /home/willgardner/nvd_lk/nvd/work/1f/00ae105995302c84b44e19e966a209/illumina_test.full.tsv]
+
+
 process VERIFY_WITH_BLAST {
 
-    tag "${sample_id}"
+    tag "${sample_id} - ${taxid}"
 
 	errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
 	maxRetries 2
@@ -289,6 +311,8 @@ process VERIFY_WITH_BLAST {
 
     script:
     """
+    export BLASTDB=${blast_db}
+
     verify_gottcha2_with_blast.py \
     --query ${extracted_fasta} \
     --target-taxid ${taxid} \
@@ -324,10 +348,10 @@ process STACK_VERIFIED_TABLES {
     import polars as pl
 
     hit_tsvs = list(Path("hits").glob("*.tsv"))
-    class_tsvs = list(Path("class").glob("*.tsv"))
+    class_tsvs = list(Path("classification").glob("*.tsv"))
 
-    hit_df = pl.concat([pl.read_csv(tsv, separator="\t") for tsv in hit_tsvs])
-    class_df = pl.concat([pl.read_csv(tsv, separator="\t") for tsv in class_tsvs])
+    hit_df = pl.concat([pl.read_csv(tsv, separator="\t") for tsv in hit_tsvs]).unique()
+    class_df = pl.concat([pl.read_csv(tsv, separator="\t") for tsv in class_tsvs]).unique()
 
     hit_df.write_csv("${sample_id}.verified_hits.tsv", separator="\t")
     class_df.write_csv("${sample_id}.verified_classification.tsv", separator="\t")

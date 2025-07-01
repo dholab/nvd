@@ -158,9 +158,8 @@ process REMOVE_MULTIMAPS {
 	script:
 	"""
 	reformat.sh \
-	in=${extracted_reads} out=${sample_id}.no_ambig.fastq.gz \
+	in=${extracted_reads} out=${sample_id}.no_ambig.fasta \
 	nullifybrokenquality=t \
 	threads=${task.cpus} -eoom
 	"""
-
 }

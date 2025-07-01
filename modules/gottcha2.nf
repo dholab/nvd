@@ -117,3 +117,5 @@ process GENERATE_FASTA {
     --sam ${sam}
     """
 }
+// Gottcha2 -ef meaning
+// Extract up to 20 sequences per reference from the SAM file and save them to a FASTA file. Equivalent to using: -e 'all:20:fasta'.

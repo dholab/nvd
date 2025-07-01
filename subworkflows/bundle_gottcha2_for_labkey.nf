@@ -6,8 +6,7 @@ workflow BUNDLE_GOTTCHA2_FOR_LABKEY {
     main:
 
     //gottcha2_results.view()
-
-    gottcha2_extracted_fastas.view()
+    //ottcha2_extracted_fastas.view()
 
     LABKEY_UPLOAD_GOTTCHA2_FULL(gottcha2_results)
 
@@ -40,9 +39,9 @@ process LABKEY_UPLOAD_GOTTCHA2_FULL {
     --labkey-server '${params.labkey_server}' \
     --labkey-project-name '${params.labkey_project_name}' \
     --labkey-api-key \$nvd2 \
-    --db-version 'placeholder' \
+    --db-version ${params.gottcha2_db_version} \
     --labkey-schema '${params.labkey_schema}' \
-    --table-name '${params.labkey_gottcha_full_list}'
+    --table-name '${params.labkey_gottcha_full_list}' \
     """
 }
 

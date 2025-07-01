@@ -11,7 +11,10 @@ include {
     BUNDLE_GOTTCHA2_FOR_LABKEY
 } from "../subworkflows/bundle_gottcha2_for_labkey"
 include { REMOVE_MULTIMAPS } from "../modules/bbmap"
-include { VERIFY_WITH_BLAST; STACK_VERIFIED_TABLES } from "../modules/blast"
+include {
+    VERIFY_WITH_BLAST; STACK_VERIFIED_TABLES ;
+    FILTER_DOWN_TO_SPECIES_STRAIN    
+} from "../modules/blast"
 
 
 workflow GOTTCHA2_WORKFLOW {
@@ -51,9 +54,15 @@ workflow GOTTCHA2_WORKFLOW {
         GOTTCHA2_PROFILE_NANOPORE.out.aligned.mix(GOTTCHA2_PROFILE_ILLUMINA.out.aligned)
     )
 
-    REMOVE_MULTIMAPS(GENERATE_FASTA.out)
+    // Map the channel to match multimaps input
+    ch_to_remove_multimaps = GENERATE_FASTA.out
+        .map {id, fasta, full_tsv, _log, _lineages -> tuple(id, fasta, full_tsv)}
 
-    ch_hits_per_taxid = REMOVE_MULTIMAPS.out.combine(ch_taxids)
+    REMOVE_MULTIMAPS(ch_to_remove_multimaps)
+
+    FILTER_DOWN_TO_SPECIES_STRAIN(REMOVE_MULTIMAPS.out)
+
+    ch_hits_per_taxid = FILTER_DOWN_TO_SPECIES_STRAIN.out.combine(ch_taxids)
 
     VERIFY_WITH_BLAST(
         ch_hits_per_taxid.combine(ch_blast_db)
@@ -67,6 +76,8 @@ workflow GOTTCHA2_WORKFLOW {
             by: 0
         )
     
+    ch_hits_to_stack.view()
+
     STACK_VERIFIED_TABLES(ch_hits_to_stack)
 
 
