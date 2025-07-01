@@ -291,50 +291,123 @@ process FILTER_DOWN_TO_SPECIES_STRAIN {
     filter_gottcha_fasta.py --input ${extracted_fasta} --output ${sample_id}.filtered.fasta
     """
 }
-//Input tuple does not match tuple declaration in process `GOTTCHA2_WORKFLOW:FILTER_DOWN_TO_SPECIES_STRAIN` -- offending value: [illumina_test, /home/willgardner/nvd_lk/nvd/work/1f/00ae105995302c84b44e19e966a209/illumina_test.no_ambig.fasta, /home/willgardner/nvd_lk/nvd/work/1f/00ae105995302c84b44e19e966a209/illumina_test.full.tsv]
 
-
-process VERIFY_WITH_BLAST {
+// Extract sequences for whitelisted taxids and create per-strain FASTAs
+process EXTRACT_WHITELISTED_FASTAS {
 
     tag "${sample_id} - ${taxid}"
-
-	errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
-	maxRetries 2
-
-    cpus 4
 
     input:
     tuple val(sample_id), path(extracted_fasta), path(full_tsv), val(taxid), path(blast_db)
 
     output:
-    tuple val(sample_id), path("${sample_id}_${taxid}.verified_hits.tsv"), path("${sample_id}_${taxid}.classification.tsv")
+    tuple val(sample_id), val(taxid), path(full_tsv), path("${sample_id}_${taxid}.pre_blast_check.fasta"), path("${taxid}_taxids.txt"), path("*taxon_specific.fasta")
 
     script:
     """
-    export BLASTDB=${blast_db}
+    extract_whitelisted_reads.py \
+    --taxid ${taxid} \
+    --nodes ${blast_db}/nodes.dmp \
+    --fasta ${extracted_fasta} \
+    --output ${sample_id}_${taxid}.pre_blast_check.fasta \
+    --taxid-list ${taxid}_taxids.txt \
+    --sample-id ${sample_id}
 
-    verify_gottcha2_with_blast.py \
-    --query ${extracted_fasta} \
-    --target-taxid ${taxid} \
-    --db ${blast_db}/${params.blast_db_prefix} \
-    --threads ${task.cpus} \
-    --word_size 64 \
-    --hits-out ${sample_id}_${taxid}.verified_hits.tsv \
-    --class-out ${sample_id}_${taxid}.classification.tsv
+    # Ensure at least one taxon_specific file exists for Nextflow
+    if ! ls *taxon_specific.fasta 1> /dev/null 2>&1; then
+        touch ${sample_id}-empty.taxon_specific.fasta
+        echo "No taxon-specific files created, created empty placeholder"
+    fi
     """
 }
+
+// It gets a bit confusing here but for every whitelisted TAXID it could be a species, a genus, a family.
+// We then take that info and expand the nodes.dmp taxon file to find all strains (called no rank) that match.
+// Then we extract each strain into its own fasta from the whitelisted TAXID so we can perform a BLAST run
+// by strain. So we have expanded the process to run from per sample to per sample x white_list_taxis x child_taxid_fasta
+process VERIFY_WITH_BLAST {
+
+    tag "${sample_id} - ${parent_taxid} - ${strain_taxid}"
+
+    errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
+    maxRetries 2
+
+    cpus 4
+
+    input:
+    tuple val(sample_id), val(parent_taxid), path(full_tsv), path(descendants_list), val(strain_taxid), path(strain_fasta)
+
+    output:
+    tuple val(sample_id), val(strain_taxid), path("${sample_id}_${strain_taxid}.verified_hits.tsv"), path("${sample_id}_${strain_taxid}.classification.tsv")
+
+    when:
+    strain_fasta.size() > 0
+
+    script:
+    """
+    export BLASTDB=${params.blast_db}
+
+    # Only proceed if FASTA file is not empty
+    if [ -s ${strain_fasta} ]; then
+        blastn -task megablast -query ${strain_fasta} \
+            -db ${params.blast_db}/${params.blast_db_prefix} \
+            -word_size 64 \
+            -num_threads ${task.cpus} \
+            -outfmt '6 qseqid sseqid stitle pident qcovhsp evalue bitscore staxids sscinames' \
+            -out ${sample_id}_${strain_taxid}.verified_hits.tsv
+
+    # Classification script
+    python3 - <<EOF
+    import csv
+    import sys
+
+    blast_file = "${sample_id}_${strain_taxid}.verified_hits.tsv"
+    output_file = "${sample_id}_${strain_taxid}.classification.tsv"
+    expected_taxid = "${strain_taxid}"
+
+    total_hits = 0
+    correct_hits = 0
+
+    try:
+        with open(blast_file) as bf:
+            reader = csv.reader(bf, delimiter='\\t')
+            for row in reader:
+                if len(row) >= 8:  # Ensure we have enough columns
+                    total_hits += 1
+                    staxids = row[7].split(';') if row[7] else []
+                    if expected_taxid in staxids:
+                        correct_hits += 1
+    except FileNotFoundError:
+        print(f"BLAST output file not found: {blast_file}")
+
+    with open(output_file, "w") as outf:
+        outf.write("strain_taxid\\ttotal_hits\\tmatching_hits\\tconfidence\\n")
+        confidence = correct_hits / total_hits if total_hits > 0 else 0
+        outf.write(f"{expected_taxid}\\t{total_hits}\\t{correct_hits}\\t{confidence:.3f}\\n")
+    EOF
+        else
+            # Create empty output files for empty input
+            touch ${sample_id}_${strain_taxid}.verified_hits.tsv
+            echo -e "strain_taxid\\ttotal_hits\\tmatching_hits\\tconfidence\\n${strain_taxid}\\t0\\t0\\t0.000" > ${sample_id}_${strain_taxid}.classification.tsv
+        fi
+    """
+}
+
+// We have the values returned from the megablast
+// We also have the number of representative fasta for each strain.
+// We can check through the rep strain and check that 
 
 process STACK_VERIFIED_TABLES {
 
     tag "${sample_id}"
 
-	errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
-	maxRetries 2
+    errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
+    maxRetries 2
 
-    cpus 4
+    cpus 2
 
     input:
-    tuple val(sample_id), path("hits/*.tsv"), path("classification/*.tsv"), path(full_tsv)
+    tuple val(sample_id), path("hits/*"), path("classification/*"), path(full_tsv)
 
     output:
     tuple val(sample_id), path("${sample_id}.verified_hits.tsv"), path("${sample_id}.verified_classification.tsv"), path(full_tsv)
@@ -344,16 +417,55 @@ process STACK_VERIFIED_TABLES {
     #!/usr/bin/env python3
 
     from pathlib import Path
+    import pandas as pd
+    import sys
 
-    import polars as pl
-
+    # Collect all TSV files
     hit_tsvs = list(Path("hits").glob("*.tsv"))
     class_tsvs = list(Path("classification").glob("*.tsv"))
 
-    hit_df = pl.concat([pl.read_csv(tsv, separator="\t") for tsv in hit_tsvs]).unique()
-    class_df = pl.concat([pl.read_csv(tsv, separator="\t") for tsv in class_tsvs]).unique()
+    print(f"Found {len(hit_tsvs)} hit files and {len(class_tsvs)} classification files")
 
-    hit_df.write_csv("${sample_id}.verified_hits.tsv", separator="\t")
-    class_df.write_csv("${sample_id}.verified_classification.tsv", separator="\t")
+    # Process hits files
+    if hit_tsvs:
+        hit_dfs = []
+        for tsv in hit_tsvs:
+            try:
+                df = pd.read_csv(tsv, sep='\\t', header=None)
+                if not df.empty:
+                    hit_dfs.append(df)
+            except Exception as e:
+                print(f"Error reading {tsv}: {e}")
+        
+        if hit_dfs:
+            hit_df = pd.concat(hit_dfs, ignore_index=True).drop_duplicates()
+            hit_df.to_csv("${sample_id}.verified_hits.tsv", sep='\\t', index=False, header=False)
+        else:
+            # Create empty file with proper structure
+            open("${sample_id}.verified_hits.tsv", 'w').close()
+    else:
+        open("${sample_id}.verified_hits.tsv", 'w').close()
+
+    # Process classification files
+    if class_tsvs:
+        class_dfs = []
+        for tsv in class_tsvs:
+            try:
+                df = pd.read_csv(tsv, sep='\\t')
+                if not df.empty:
+                    class_dfs.append(df)
+            except Exception as e:
+                print(f"Error reading {tsv}: {e}")
+        
+        if class_dfs:
+            class_df = pd.concat(class_dfs, ignore_index=True).drop_duplicates()
+            class_df.to_csv("${sample_id}.verified_classification.tsv", sep='\\t', index=False)
+        else:
+            # Create empty file with header
+            pd.DataFrame(columns=['strain_taxid', 'total_hits', 'matching_hits', 'confidence']).to_csv(
+                "${sample_id}.verified_classification.tsv", sep='\\t', index=False)
+    else:
+        pd.DataFrame(columns=['strain_taxid', 'total_hits', 'matching_hits', 'confidence']).to_csv(
+            "${sample_id}.verified_classification.tsv", sep='\\t', index=False)
     """
 }

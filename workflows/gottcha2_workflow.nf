@@ -13,7 +13,8 @@ include {
 include { REMOVE_MULTIMAPS } from "../modules/bbmap"
 include {
     VERIFY_WITH_BLAST; STACK_VERIFIED_TABLES ;
-    FILTER_DOWN_TO_SPECIES_STRAIN    
+    FILTER_DOWN_TO_SPECIES_STRAIN ;
+    EXTRACT_WHITELISTED_FASTAS
 } from "../modules/blast"
 
 
@@ -63,21 +64,48 @@ workflow GOTTCHA2_WORKFLOW {
 
     FILTER_DOWN_TO_SPECIES_STRAIN(REMOVE_MULTIMAPS.out)
 
-    ch_hits_per_taxid = FILTER_DOWN_TO_SPECIES_STRAIN.out.combine(ch_taxids)
+    // Create channel with whitelist taxids
+    ch_hits_per_taxid = FILTER_DOWN_TO_SPECIES_STRAIN.out
+        .combine(Channel.from(params.verification_taxids))
+        .combine(Channel.fromPath(params.blast_db))
 
-    VERIFY_WITH_BLAST(
-        ch_hits_per_taxid.combine(ch_blast_db)
-    )
+    EXTRACT_WHITELISTED_FASTAS(ch_hits_per_taxid)
 
-    // TODO: Verify that the full tsv from GENERATE_FASTA is actually the full TSV (the full full TSV?)
+    // Transform the output to create individual strain FASTA channels
+    ch_fasta_by_taxid = EXTRACT_WHITELISTED_FASTAS.out
+        .flatMap { sample_id, parent_taxid, full_tsv, pre_blast_check, taxid_descendants, strain_fastas ->
+            // Convert strain_fastas to a list if it's not already
+            def fasta_list = strain_fastas instanceof List ? strain_fastas : [strain_fastas]
+            
+            fasta_list.findAll { fasta ->
+                // Only process non-empty FASTA files
+                fasta.size() > 0
+            }.collect { fasta ->
+                // Extract strain taxid from filename: sample-taxid.taxon_specific.fasta
+                def basename = fasta.getName()
+                def strain_taxid = basename.replaceAll(/.*-(\d+)\.taxon_specific\.fasta/, '$1')
+                
+                tuple(sample_id, parent_taxid, full_tsv, taxid_descendants, strain_taxid, fasta)
+            }
+        }
+
+    // Only proceed with non-empty channels
+    ch_fasta_by_taxid = ch_fasta_by_taxid.filter { it.size() == 6 }
+
+    VERIFY_WITH_BLAST(ch_fasta_by_taxid)
+
+    // Group results by sample for stacking
     ch_hits_to_stack = VERIFY_WITH_BLAST.out
+        .map { sample_id, strain_taxid, hits, classif -> 
+            tuple(sample_id, hits, classif) 
+        }
         .groupTuple(by: 0)
         .join(
-            GENERATE_FASTA.out.map { id, _fasta, tsv, _log, _lineages -> tuple( id, tsv ) },
+            GENERATE_FASTA.out.map { id, fasta, tsv, log, lineages -> 
+                tuple(id, tsv) 
+            },
             by: 0
         )
-    
-    ch_hits_to_stack.view()
 
     STACK_VERIFIED_TABLES(ch_hits_to_stack)
 
@@ -92,6 +120,7 @@ workflow GOTTCHA2_WORKFLOW {
 
     emit:
     completion = ch_completion
+    verification_results = STACK_VERIFIED_TABLES.out
 }
 
 
