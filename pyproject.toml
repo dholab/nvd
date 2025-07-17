@@ -10,6 +10,7 @@ requires-python = ">= 3.11"
 version = "0.1.0"
 dependencies = [
   "biopython>=1.85",
+  "labkey>=3.4.0",
   "loguru>=0.7.3",
   "lxml>=5.4.0",
   "more-itertools>=10.7.0",
@@ -81,6 +82,7 @@ strobealign = ">=0.16.0,<0.17"
 # currently on the market: https://github.com/soedinglab/mmseqs2
 mmseqs2 = ">=17.b804f,<18" # clustering and querying toolkit
 sra-tools = ">=3.2.1,<4"
+taxonkit = ">=0.20.0,<0.21"
 # ----------------------------------------------------------------------------------- #
 
 [tool.pixi.target.linux-64.dependencies]
