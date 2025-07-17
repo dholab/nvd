@@ -73,7 +73,7 @@ process PREPARE_BLAST_LABKEY {
     val run_id
 
     output:
-    tuple val(meta), path("${output_name}"), emit: csv
+    tuple val(meta), path("${output_name}.csv"), emit: csv
 
     script:
     """
@@ -114,13 +114,13 @@ process PREPARE_BLAST_LABKEY {
 
     # Write formatted data
     if blast_data:
-        with open('${output_name}', 'w') as f:
+        with open('${output_name}.csv', 'w') as f:
             writer = csv.DictWriter(f, fieldnames=blast_data[0].keys())
             writer.writeheader()
             writer.writerows(blast_data)
     else:
         # Create empty file if no data
-        open('${output_name}', 'w').close()
+        open('${output_name}.csv', 'w').close()
     """
 }
 
@@ -197,6 +197,7 @@ process LABKEY_UPLOAD_BLAST {
     """
 }
 
+// Uploading BLAST FASTA
 process LABKEY_UPLOAD_FASTA {
     label 'process_low'
 

@@ -41,7 +41,10 @@ workflow NVD2_WORKFLOW  {
     ch_human_virus_taxlist = Channel.fromPath(params.human_virus_taxlist)
     ch_gettax = RETRIEVE_GETTAX()
 
-    VALIDATE_LK_BLAST()
+
+    if (params.labkey != null) {
+        VALIDATE_LK_BLAST()
+    }
 
     // Count reads for each sample
     COUNT_READS(ch_sample_fastqs)
@@ -74,19 +77,23 @@ workflow NVD2_WORKFLOW  {
         EXTRACT_HUMAN_VIRUSES.out.sqlite
     )
 
-    // Bundle results for LabKey upload simulation
-    BUNDLE_BLAST_FOR_LABKEY(
-        CLASSIFY_WITH_BLASTN.out.merged_results,
-        EXTRACT_HUMAN_VIRUSES.out.contigs,
-        COUNT_READS.out.counts,
-        params.experiment_id,
-        workflow.runName
-    )
+    if (params.labkey != null) {
+        BUNDLE_BLAST_FOR_LABKEY(
+            CLASSIFY_WITH_BLASTN.out.merged_results,
+            EXTRACT_HUMAN_VIRUSES.out.contigs,
+            COUNT_READS.out.counts,
+            params.experiment_id,
+            workflow.runName
+        )
+        labkey_log_ch = BUNDLE_BLAST_FOR_LABKEY.out.upload_log
+    } else {
+        // If no labkey upload then just pass an empty channel
+        labkey_log_ch = Channel.empty()
+    }
 
     ch_completion = CLASSIFY_WITH_BLASTN.out.merged_results.map { _results -> "NVD complete!" }
 
     emit:
     completion = ch_completion
-    labkey_log = BUNDLE_BLAST_FOR_LABKEY.out.upload_log
-
+    labkey_log = labkey_log_ch
 }

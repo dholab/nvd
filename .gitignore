@@ -53,6 +53,7 @@
 # configuration
 !/conf
 !/conf/results.config
+!/conf/labkey.config
 
 # assets
 !/assets

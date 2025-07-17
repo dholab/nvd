@@ -48,8 +48,10 @@ nextflow run . \
         completion_tokens = completion_tokens.mix(nvd_token)
 
         // Collect all LabKey logs as final process
-        nvd_results.labkey_log.collectFile(name: 'final_labkey_upload.log',
-            storeDir: params.results)
+        if (params.labkey != null) {
+            nvd_results.labkey_log.collectFile(name: 'final_labkey_upload.log',
+                storeDir: params.results)
+        }
     }
 
      if (params.all || params.gottcha2 || (params.tools && params.tools.contains("gottcha"))) {
