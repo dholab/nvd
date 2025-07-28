@@ -44,45 +44,10 @@ blast = ">=2.16.0,<3"
 
 # System Dependencies
 # ----------------------------------------------------------------------------------- #
-rust = ">=1.86.0,<1.87"
 openssl = ">=3.5.0,<4"
 pkg-config = ">=0.29.2,<0.30"
 compilers = ">=1.9.0,<2"
 
-# Metagenomic ToolKits
-# ----------------------------------------------------------------------------------- #
-# Feature-rich k-mer hashing, querying, and profiling toolkit built around FracMinHash
-# sketches: https://github.com/sourmash-bio/sourmash
-sourmash = ">=4.8.14,<5"
-
-# minimap2 wrapper with carefully curated database: https://github.com/poeli/GOTTCHA2
-gottcha2 = ">=2.1.8.11,<3"
-
-# K-mer-based, coverage-sensitive metagenomic profiler for massive reference datasets,
-# written by Wei Shen: https://github.com/shenwei356/kmcp
-kmcp = ">=0.9.4,<0.10"
-
-# K-mer-based metagenomic profiler and containment ANI calculator with special support
-# for low-coverage genomes and Nanopore reads. Also probably the fastest on this list:
-# https://sylph-docs.github.io/
-sylph = ">=0.8.1,<0.9"
-sylph-tax = ">=1.2.0,<2"
-
-# Protein reference-based classifier (possibly best for short reads?):
-# https://github.com/bioinformatics-centre/kaiju
-kaiju = ">=1.10.1,<2"
-
-# BLAST suit alternative created by Wei Shen for querying enormous databases
-lexicmap = ">=0.7.0,<0.8"
-
-# Innovative strobemer-based minimap2 alternative with better sensitivity and specificity
-strobealign = ">=0.16.0,<0.17"
-
-# Among the highest-quality and best thought-out clustering and querying toolkits
-# currently on the market: https://github.com/soedinglab/mmseqs2
-mmseqs2 = ">=17.b804f,<18" # clustering and querying toolkit
-sra-tools = ">=3.2.1,<4"
-taxonkit = ">=0.20.0,<0.21"
 # ----------------------------------------------------------------------------------- #
 
 [tool.pixi.target.linux-64.dependencies]
@@ -114,7 +79,7 @@ build-backend = "setuptools.build_meta:__legacy__"
 py-modules = ["bin"]
 
 [project.scripts]
-"hash-browns" = "bin.__main__:main"
+"nvd" = "bin.__main__:main"
 
 [tool.uv]
 compile-bytecode = true

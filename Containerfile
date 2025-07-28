@@ -18,7 +18,7 @@ ENTRYPOINT ["bash"]
 
 # run a few apt installs
 RUN apt-get update && \
-    apt-get install -y curl wget git gcc g++ cmake && \
+    apt-get install -y curl wget git gcc g++ cmake util-linux && \
     rm -rf /var/lib/apt/lists/* && \
     mkdir /dependencies && \
     dpkg -l > /dependencies/apt-get.lock
@@ -35,22 +35,16 @@ RUN cd $HOME && PIXI_ARCH=x86_64 curl -fsSL https://pixi.sh/install.sh | bash
 # 3) make sure pixi and pixi installs are on the $PATH
 ENV PATH=$PATH:$HOME/.pixi/bin
 
-# 4) install everything else (save for a crates.io rust dependency) with pixi
-RUN cd $HOME && pixi install --frozen && pixi clean cache --assume-yes && pixi add cxx-compiler cmake make
+# 4) install everything else with pixi
+RUN cd $HOME && \
+    script -q -c "pixi install --frozen" && \
+    script -q -c "pixi clean cache --assume-yes" && \
+    script -q -c "pixi add cxx-compiler cmake make"
 
-# 5) install the rust dependency with cargo, which will be slow because it involves compilation
-RUN cd $HOME && pixi run install-scidataflow
-
-# 6) Make sure the cargo-installed binaries are on $PATH
-ENV PATH=$PATH:$HOME/.cargo/bin
-
-# 7) Set up the global scidataflow configuration
-RUN sdf config --name "Docker Bot" --email "nrminor@wisc.edu" --affiliation "University of Wisconsin - Madison"
-
-# 7) modify the shell config so that each container launches within the pixi env
+# 5) modify the shell config so that each container launches within the pixi env
 RUN echo "export PATH=$PATH:$HOME/.pixi/envs/default/bin" >> $HOME/.bashrc
 
-# 8) modify some nextflow environment variables
+# 6) modify some nextflow environment variables
 RUN echo "export NXF_CACHE_DIR=/scratch" >> $HOME/.bashrc
 RUN echo "export NXF_HOME=/scratch" >> $HOME/.bashrc
 
@@ -67,7 +61,6 @@ RUN mkdir -p /.ncbi && \
     git clone -b 3.2.0 https://github.com/ncbi/ngs-tools.git && \
     git clone -b 3.2.1 https://github.com/ncbi/ncbi-vdb.git && \
     git clone -b 3.2.1 https://github.com/ncbi/sra-tools.git && \
-    # Fix CMake compatibility issue and verify
     sed -i 's/cmake_minimum_required[[:space:]]*([[:space:]]*VERSION[[:space:]]*2\.8\.12[[:space:]]*)/cmake_minimum_required(VERSION 3.5)/' /build/ngs-tools/CMakeLists.txt && \
     echo "Verifying CMake version change:" && \
     grep "cmake_minimum_required" /build/ngs-tools/CMakeLists.txt
