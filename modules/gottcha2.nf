@@ -26,8 +26,8 @@ process READ_COMPRESSION_PASSTHROUGH {
 process GOTTCHA2_PROFILE_NANOPORE {
 
     tag "${sample_id}"
-    publishDir params.gottcha_sam, mode: 'copy', overwrite: false, pattern: "*.sam"
-    publishDir params.gottcha_stats, mode: 'copy', overwrite: false, pattern: "*.tsv"
+    publishDir params.gottcha2_profiles, mode: 'copy', overwrite: false, pattern: "*.sam"
+    publishDir params.gottcha2_profiles, mode: 'copy', overwrite: false, pattern: "*.tsv"
 
     errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
 	maxRetries 2
@@ -60,8 +60,8 @@ process GOTTCHA2_PROFILE_NANOPORE {
 process GOTTCHA2_PROFILE_ILLUMINA {
 
     tag "${sample_id}"
-    publishDir params.gottcha_sam, mode: 'copy', overwrite: false, pattern: "*.sam"
-    publishDir params.gottcha_stats, mode: 'copy', overwrite: false, pattern: "*.tsv"
+    publishDir params.gottcha2_profiles, mode: 'copy', overwrite: false, pattern: "*.sam"
+    publishDir params.gottcha2_profiles, mode: 'copy', overwrite: false, pattern: "*.tsv"
 
     errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
 	maxRetries 2
@@ -93,7 +93,7 @@ process GOTTCHA2_PROFILE_ILLUMINA {
 process GENERATE_FASTA {
 
     tag "${sample_id}"
-    publishDir params.gottcha_fasta, mode: 'copy', overwrite: false, pattern: "*.fasta"
+    publishDir params.extracted_reads, mode: 'copy', overwrite: false, pattern: "*.fasta"
 
     errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
 	maxRetries 2
