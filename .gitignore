@@ -54,6 +54,7 @@
 !/conf
 !/conf/results.config
 !/conf/labkey.config
+!/conf/user-settings.mkfg
 
 # assets
 !/assets

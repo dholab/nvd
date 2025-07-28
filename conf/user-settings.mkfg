@@ -1,0 +1,12 @@
+## auto-generated configuration file - DO NOT EDIT ##
+
+/LIBS/GUID = "57f16f92-1249-45b1-a9dd-7d8d94a10db8"
+/config/default = "false"
+/repository/user/ad/public/apps/file/volumes/flatAd = "."
+/repository/user/ad/public/apps/refseq/volumes/refseqAd = "."
+/repository/user/ad/public/apps/sra/volumes/sraAd = "."
+/repository/user/ad/public/apps/sraPileup/volumes/ad = "."
+/repository/user/ad/public/apps/sraRealign/volumes/ad = "."
+/repository/user/ad/public/apps/wgs/volumes/wgsAd = "."
+/repository/user/ad/public/root = "."
+/repository/user/default-path = "/scratch/ncbi"
