@@ -49,6 +49,7 @@ process GOTTCHA2_PROFILE_NANOPORE {
     def ref_prefix = file(ref_mmi).getBaseName().toString().replace(".mmi", "")
     """
     gottcha2.py  \
+    --verbose --debug \
     --database ${ref_prefix} \
     --prefix ${sample_id} \
     --noCutoff --dbLevel strain --threads ${task.cpus} \
@@ -83,6 +84,7 @@ process GOTTCHA2_PROFILE_ILLUMINA {
     def ref_prefix = file(ref_mmi).getBaseName().toString().replace(".mmi", "")
     """
     gottcha2.py \
+    --verbose --debug \
     --database ${ref_prefix} \
     --prefix ${sample_id} \
     --noCutoff --dbLevel strain --threads ${task.cpus} \
@@ -111,6 +113,7 @@ process GENERATE_FASTA {
     def ref_prefix = file(ref_mmi).getBaseName().toString().replace(".mmi", "")
     """
     gottcha2.py \
+    --verbose --debug \
     --noCutoff --dbLevel strain --threads ${task.cpus} -ef \
     --database ${ref_prefix} \
     --prefix ${sample_id} \
