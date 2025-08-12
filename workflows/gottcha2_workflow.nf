@@ -12,7 +12,8 @@ include {
 } from "../subworkflows/bundle_gottcha2_for_labkey"
 include { REMOVE_MULTIMAPS } from "../modules/bbmap"
 include {
-    VERIFY_WITH_BLAST; STACK_VERIFIED_TABLES ;
+    VERIFY_WITH_BLAST ;
+    STACK_VERIFIED_TABLES ;
     FILTER_DOWN_TO_SPECIES_STRAIN ;
     EXTRACT_WHITELISTED_FASTAS
 } from "../modules/blast"
@@ -25,29 +26,24 @@ workflow GOTTCHA2_WORKFLOW {
     main:
     ch_gottcha2_db = Channel.fromPath("${params.gottcha2_db}*").collect(sort: true)
 
-    ch_nanopore_fastqs = ch_sample_fastqs
-        .filter { _sample_id, platform, _fastq -> platform == "nanopore" || platform == "ont" }
-        .map { sample_id, _platform, fastq -> tuple(sample_id, file(fastq)) }
-
-    ch_illumina_fastqs = ch_sample_fastqs
-        .filter { _sample_id, platform, _fastq -> platform == "illumina" }
-        .map { sample_id, _platform, fastq -> tuple(sample_id, file(fastq)) }
-
-    ch_taxids = Channel.from(params.verification_taxids)
-
-    ch_blast_db = Channel.fromPath(params.blast_db)
-
     if (params.labkey != null) {
         VALIDATE_LK_GOTTCHA2()
     }
 
-    READ_COMPRESSION_PASSTHROUGH(
-        ch_nanopore_fastqs.combine(ch_gottcha2_db.collect(sort: true))
-    )
+    READ_COMPRESSION_PASSTHROUGH(ch_sample_fastqs)
 
-    // TODO error handling for empty samples
+    ch_nanopore_fastqs = READ_COMPRESSION_PASSTHROUGH.out
+        .filter { _sample_id, platform, _fastq -> platform == "nanopore" || platform == "ont" }
+        .map { sample_id, _platform, fastq -> tuple(sample_id, file(fastq)) }
+        .filter { _id, fastq -> file(fastq).countFastq() >= 100 }
+
+    ch_illumina_fastqs = READ_COMPRESSION_PASSTHROUGH.out
+        .filter { _sample_id, platform, _fastq -> platform == "illumina" }
+        .map { sample_id, _platform, fastq -> tuple(sample_id, file(fastq)) }
+        .filter { _id, fastq -> file(fastq).countFastq() >= 100 }
+
     GOTTCHA2_PROFILE_NANOPORE(
-        READ_COMPRESSION_PASSTHROUGH.out
+        ch_nanopore_fastqs.combine(ch_gottcha2_db.collect(sort: true))
     )
 
     GOTTCHA2_PROFILE_ILLUMINA(
