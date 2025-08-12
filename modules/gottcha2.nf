@@ -118,6 +118,15 @@ process GENERATE_FASTA {
     --database ${ref_prefix} \
     --prefix ${sample_id} \
     --sam ${sam}
+
+    if [[-f ${sample_id}.tsv ]]; then
+        echo "Renaming the lineage tsv '${sample_id}.tsv' to include the lineage suffix..."
+        mv ${sample_id}.tsv ${sample_id}.lineage.tsv
+    elif [[ -f ${sample_id}.lineage.tsv ]]; then
+        echo "A valid lineage TSV file was successfully produced"
+    else
+        echo "[WARN] No valid lineage TSV was produced. Downstream processes that depend on it will not run."
+    fi
     """
 }
 // Gottcha2 -ef meaning
