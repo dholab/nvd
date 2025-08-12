@@ -42,7 +42,7 @@ workflow NVD2_WORKFLOW  {
     ch_gettax = RETRIEVE_GETTAX()
 
 
-    if (params.labkey != null) {
+    if (params.labkey) {
         VALIDATE_LK_BLAST()
     }
 
@@ -77,7 +77,7 @@ workflow NVD2_WORKFLOW  {
         EXTRACT_HUMAN_VIRUSES.out.sqlite
     )
 
-    if (params.labkey != null) {
+    if (params.labkey) {
         BUNDLE_BLAST_FOR_LABKEY(
             CLASSIFY_WITH_BLASTN.out.merged_results,
             EXTRACT_HUMAN_VIRUSES.out.contigs,

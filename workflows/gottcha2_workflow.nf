@@ -26,7 +26,7 @@ workflow GOTTCHA2_WORKFLOW {
     main:
     ch_gottcha2_db = Channel.fromPath("${params.gottcha2_db}*").collect(sort: true)
 
-    if (params.labkey != null) {
+    if (params.labkey) {
         VALIDATE_LK_GOTTCHA2()
     }
 
@@ -60,54 +60,7 @@ workflow GOTTCHA2_WORKFLOW {
 
     REMOVE_MULTIMAPS(ch_to_remove_multimaps)
 
-    FILTER_DOWN_TO_SPECIES_STRAIN(REMOVE_MULTIMAPS.out)
-
-    // Create channel with whitelist taxids
-    ch_hits_per_taxid = FILTER_DOWN_TO_SPECIES_STRAIN.out
-        .combine(Channel.from(params.verification_taxids))
-        .combine(Channel.fromPath(params.blast_db))
-
-    EXTRACT_WHITELISTED_FASTAS(ch_hits_per_taxid)
-
-    // Transform the output to create individual strain FASTA channels
-    ch_fasta_by_taxid = EXTRACT_WHITELISTED_FASTAS.out
-        .flatMap { sample_id, parent_taxid, full_tsv, pre_blast_check, taxid_descendants, strain_fastas ->
-            // Convert strain_fastas to a list if it's not already
-            def fasta_list = strain_fastas instanceof List ? strain_fastas : [strain_fastas]
-            
-            fasta_list.findAll { fasta ->
-                // Only process non-empty FASTA files
-                fasta.size() > 0
-            }.collect { fasta ->
-                // Extract strain taxid from filename: sample-taxid.taxon_specific.fasta
-                def basename = fasta.getName()
-                def strain_taxid = basename.replaceAll(/.*-(\d+)\.taxon_specific\.fasta/, '$1')
-                
-                tuple(sample_id, parent_taxid, full_tsv, taxid_descendants, strain_taxid, fasta)
-            }
-        }
-
-    // Only proceed with non-empty channels
-    ch_fasta_by_taxid = ch_fasta_by_taxid.filter { it.size() == 6 }
-
-    VERIFY_WITH_BLAST(ch_fasta_by_taxid)
-
-    // Group results by sample for stacking
-    ch_hits_to_stack = VERIFY_WITH_BLAST.out
-        .map { sample_id, strain_taxid, hits, classif -> 
-            tuple(sample_id, hits, classif) 
-        }
-        .groupTuple(by: 0)
-        .join(
-            GENERATE_FASTA.out.map { id, fasta, tsv, log, lineages -> 
-                tuple(id, tsv) 
-            },
-            by: 0
-        )
-
-    STACK_VERIFIED_TABLES(ch_hits_to_stack)
-
-    if (params.labkey != null) {
+    if (params.labkey) {
 
         BUNDLE_GOTTCHA2_FOR_LABKEY(
             GOTTCHA2_PROFILE_NANOPORE.out.full_tsv.mix(GOTTCHA2_PROFILE_ILLUMINA.out.full_tsv),
