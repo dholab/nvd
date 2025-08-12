@@ -6,10 +6,10 @@ process READ_COMPRESSION_PASSTHROUGH {
 	maxRetries 2
 
     input:
-    tuple val(sample_id), path(fastq)
+    tuple val(sample_id), val(platform), path(fastq)
 
     output:
-    tuple val(sample_id), path("*.fa*")
+    tuple val(sample_id), val(platform), path("*.fa*")
 
     script:
     def extension = file(fastq).getBaseName().replace(".gz", "")
