@@ -11,12 +11,6 @@ include {
     BUNDLE_GOTTCHA2_FOR_LABKEY
 } from "../subworkflows/bundle_gottcha2_for_labkey"
 include { REMOVE_MULTIMAPS } from "../modules/bbmap"
-include {
-    VERIFY_WITH_BLAST ;
-    STACK_VERIFIED_TABLES ;
-    FILTER_DOWN_TO_SPECIES_STRAIN ;
-    EXTRACT_WHITELISTED_FASTAS
-} from "../modules/blast"
 
 
 workflow GOTTCHA2_WORKFLOW {
@@ -74,7 +68,6 @@ workflow GOTTCHA2_WORKFLOW {
 
     emit:
     completion = ch_completion
-    verification_results = STACK_VERIFIED_TABLES.out
 }
 
 
