@@ -6,7 +6,7 @@ include {
 } from "../modules/gottcha2"
 include { 
     VALIDATE_LK_GOTTCHA2
- } from '../subworkflows/validate_lk_gottcha2_lists.nf'
+ } from '../subworkflows/validate_lk_gottcha2_lists'
 include {
     BUNDLE_GOTTCHA2_FOR_LABKEY
 } from "../subworkflows/bundle_gottcha2_for_labkey"
@@ -35,12 +35,12 @@ workflow GOTTCHA2_WORKFLOW {
     ch_nanopore_fastqs = READ_COMPRESSION_PASSTHROUGH.out
         .filter { _sample_id, platform, _fastq -> platform == "nanopore" || platform == "ont" }
         .map { sample_id, _platform, fastq -> tuple(sample_id, file(fastq)) }
-        .filter { _id, fastq -> file(fastq).countFastq() >= 100 }
+        .filter { _id, fastq -> file(fastq).countFastq() >= params.min_gottcha_reads }
 
     ch_illumina_fastqs = READ_COMPRESSION_PASSTHROUGH.out
         .filter { _sample_id, platform, _fastq -> platform == "illumina" }
         .map { sample_id, _platform, fastq -> tuple(sample_id, file(fastq)) }
-        .filter { _id, fastq -> file(fastq).countFastq() >= 100 }
+        .filter { _id, fastq -> file(fastq).countFastq() >= params.min_gottcha_reads }
 
     GOTTCHA2_PROFILE_NANOPORE(
         ch_nanopore_fastqs.combine(ch_gottcha2_db.collect(sort: true))

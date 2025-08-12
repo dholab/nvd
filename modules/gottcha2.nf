@@ -119,7 +119,7 @@ process GENERATE_FASTA {
     --prefix ${sample_id} \
     --sam ${sam}
 
-    if [[-f ${sample_id}.tsv ]]; then
+    if [[ -f ${sample_id}.tsv ]]; then
         echo "Renaming the lineage tsv '${sample_id}.tsv' to include the lineage suffix..."
         mv ${sample_id}.tsv ${sample_id}.lineage.tsv
     elif [[ -f ${sample_id}.lineage.tsv ]]; then
