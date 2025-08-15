@@ -12,6 +12,8 @@ workflow BUNDLE_GOTTCHA2_FOR_LABKEY {
 
     LABKEY_UPLOAD_GOTTCHA2_FASTA(gottcha2_extracted_fastas)
 
+    LABKEY_WEBDAV_UPLOAD_FILES(gottcha2_extracted_fastas)
+
     // WIP this will upload to the final LK list for the verified via blast contigs
     //LABKEY_UPLOAD_GOTTCHA2_HITS_VERIFIED()
 
@@ -85,5 +87,38 @@ process LABKEY_UPLOAD_GOTTCHA2_FASTA {
         --list ${params.labkey_gottcha_fasta_list} \
         --api_key \$nvd2 \
         --input_tsv ${sample_id}_df.tsv
+    """
+}
+
+// Process to upload Gottcha2 report and extracted fastas
+process LABKEY_WEBDAV_UPLOAD_FILES {
+
+    tag "${sample_id}"
+
+    secret 'nvd2'
+
+    input:
+    tuple val(sample_id), path(fasta), path(full_tsv)
+
+    output: 
+    tuple val(sample_id), path("${fasta}.gz"), path("${full_tsv}.gz")
+
+
+    script:
+    """
+    gzip -c ${fasta} > ${fasta}.gz
+    gzip -c ${full_tsv} > ${full_tsv}.gz
+
+    # Upload tabular Gottcha2 report
+    webdav_CLIent.py \
+        --password \$nvd2 \
+        --server ${params.labkey_webdav} \
+        upload ${full_tsv}.gz ${params.experiment_id}/${sample_id}/${full_tsv}.gz
+
+    # Upload fasta file
+    webdav_CLIent.py \
+        --password \$nvd2 \
+        --server ${params.labkey_webdav} \
+        upload ${fasta}.gz ${params.experiment_id}/${sample_id}/${fasta}.gz
     """
 }

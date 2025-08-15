@@ -54,6 +54,8 @@ workflow GOTTCHA2_WORKFLOW {
 
     REMOVE_MULTIMAPS(ch_to_remove_multimaps)
 
+    // TODO potential addition of Extracted read deduplication across taxonomic rank
+
     if (params.labkey) {
 
         BUNDLE_GOTTCHA2_FOR_LABKEY(
