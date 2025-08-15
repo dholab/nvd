@@ -113,12 +113,12 @@ process LABKEY_WEBDAV_UPLOAD_FILES {
     webdav_CLIent.py \
         --password \$nvd2 \
         --server ${params.labkey_webdav} \
-        upload ${full_tsv}.gz ${params.experiment_id}/${sample_id}/${full_tsv}.gz
+        upload ${full_tsv}.gz ${params.experiment_id}/${sample_id}/gottcha2/${full_tsv}.gz
 
     # Upload fasta file
     webdav_CLIent.py \
         --password \$nvd2 \
         --server ${params.labkey_webdav} \
-        upload ${fasta}.gz ${params.experiment_id}/${sample_id}/${fasta}.gz
+        upload ${fasta}.gz ${params.experiment_id}/${sample_id}/gottcha2/${fasta}.gz
     """
 }

@@ -28,6 +28,18 @@ workflow BUNDLE_BLAST_FOR_LABKEY {
         run_id
     )
 
+    // JOIN the channels to ensure same sample_id for WebDAV upload
+    ch_webdav_upload = blast_results
+        .join(contig_sequences)  // This ensures matching sample_ids
+        .map { meta, blast_csv, fasta ->
+            [meta, blast_csv, fasta]
+        }
+
+    // Upload BLAST CSV and fasta per sample to WebDAV
+    WEBDAV_UPLOAD_BLAST(
+        ch_webdav_upload
+    )
+
     // Prepare FASTA sequences for fasta_hits table
     ch_fasta_labkey = contig_sequences
         .map { meta, fasta ->
@@ -61,6 +73,37 @@ workflow BUNDLE_BLAST_FOR_LABKEY {
     blast_upload_log = LABKEY_UPLOAD_BLAST.out.log
     fasta_upload_log = LABKEY_UPLOAD_FASTA.out.log
     upload_log = LABKEY_UPLOAD_BLAST.out.log.mix(LABKEY_UPLOAD_FASTA.out.log)
+}
+
+process WEBDAV_UPLOAD_BLAST {
+
+    tag "${sample_id}"
+
+    secret 'nvd2'
+
+    input:
+    tuple val(sample_id), path(blast_csv), path(fasta)
+
+    output:
+    val(sample_id)
+
+    script:
+    """
+    gzip -c ${fasta} > ${fasta}.gz
+    gzip -c ${blast_csv} > ${blast_csv}.gz
+
+    # Upload tabular Gottcha2 report
+    webdav_CLIent.py \
+        --password \$nvd2 \
+        --server ${params.labkey_webdav} \
+        upload ${blast_csv}.gz ${params.experiment_id}/${sample_id}/nvd/${blast_csv}.gz
+
+    # Upload fasta file
+    webdav_CLIent.py \
+        --password \$nvd2 \
+        --server ${params.labkey_webdav} \
+        upload ${fasta}.gz ${params.experiment_id}/${sample_id}/nvd/${fasta}.gz
+    """
 }
 
 process PREPARE_BLAST_LABKEY {
