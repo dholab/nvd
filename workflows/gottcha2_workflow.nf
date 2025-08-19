@@ -26,7 +26,7 @@ workflow GOTTCHA2_WORKFLOW {
             def ref_mmi   = files.find { it.name.endsWith(".mmi") }
             def stats     = files.find { it.name.endsWith(".stats") }
             def tax_tsv   = files.find { it.name.endsWith(".tax.tsv") }
-            tuple(sample_id, ref_mmi, stats, tax_tsv)
+            tuple(ref_mmi, stats, tax_tsv)
         }
 
     if (params.labkey) {
@@ -46,11 +46,11 @@ workflow GOTTCHA2_WORKFLOW {
         .filter { _id, fastq -> file(fastq).countFastq() >= params.min_gottcha_reads }
 
     GOTTCHA2_PROFILE_NANOPORE(
-        ch_nanopore_fastqs.combine(ch_gottcha2_db.collect(sort: true))
+        ch_nanopore_fastqs.combine(ch_gottcha2_db)
     )
 
     GOTTCHA2_PROFILE_ILLUMINA(
-        ch_illumina_fastqs.combine(ch_gottcha2_db.collect(sort: true))
+        ch_illumina_fastqs.combine(ch_gottcha2_db)
     )
 
     GENERATE_FASTA(

@@ -10,12 +10,14 @@ include { CLUMPIFY_WORKFLOW } from "./workflows/clumpify"
 workflow {
 
 /*
-
 EXAMPLE COMMAND
 ----------------------------------
-
 nextflow run . \
---tools nvd \
+--tools nvd \              # Run only NVD
+--tools gottcha \          # Run only GOTTCHA2
+--tools clumpify \         # Run only CLUMPIFY
+--tools all \              # Run all tools
+--tools nvd,gottcha \      # Run multiple specific tools
 --blast_db ./db \
 --blast_db_prefix PP819512-nt \
 --stat_index ./db/tree_index.dense.dbs \
@@ -24,10 +26,13 @@ nextflow run . \
 --human_virus_taxlist ./db/human_viruses_taxlist.txt \
 --samplesheet test.csv \
 -resume
-
 */
 
     assert params.samplesheet && file(params.samplesheet).isFile()
+
+    // Parse tools parameter - handle both single tool and comma-separated list
+    def selectedTools = params.tools ? params.tools.tokenize(',') : []
+    def runAll = selectedTools.contains('all')
 
     ch_input_samplesheet = Channel.fromPath( params.samplesheet )
         .splitCsv(header: true, strip: true)
@@ -40,7 +45,8 @@ nextflow run . \
 
     GATHER_READS(ch_input_samplesheet)
 
-    if (params.all || params.nvd || params.stat || (params.tools && params.tools.contains("nvd"))) {
+    // NVD workflow
+    if (runAll || selectedTools.contains('nvd')) {
         nvd_results = NVD2_WORKFLOW(GATHER_READS.out)
         nvd_token = nvd_results.completion
 
@@ -49,19 +55,22 @@ nextflow run . \
 
         // Collect all LabKey logs as final process
         if (params.labkey) {
-            nvd_results.labkey_log.collectFile(name: 'final_labkey_upload.log',
+            nvd_results.labkey_log.collectFile(
+                name: 'final_labkey_upload.log',
                 storeDir: params.results)
         }
     }
 
-     if (params.all || params.gottcha2 || (params.tools && params.tools.contains("gottcha"))) {
+    // GOTTCHA2 workflow
+    if (runAll || selectedTools.contains('gottcha')) {
         gottcha2_token = GOTTCHA2_WORKFLOW(GATHER_READS.out).completion
 
         // update the completion tokens channel
         completion_tokens = completion_tokens.mix(gottcha2_token)
      }
 
-    if (params.all || params.clumpify || (params.tools && params.tools.contains("clump"))) {
+    // CLUMPIFY workflow  
+    if (runAll || selectedTools.contains('clumpify')) {
         CLUMPIFY_WORKFLOW(
             GATHER_READS.out,
             completion_tokens.collect()

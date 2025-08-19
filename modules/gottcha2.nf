@@ -42,9 +42,6 @@ process GOTTCHA2_PROFILE_NANOPORE {
     tuple val(sample_id), path("${sample_id}*.full.tsv"), path(ref_mmi), path(stats), path(tax_tsv), emit: full_tsv
     path "*.tsv", emit: all_stats
 
-    when:
-    (params.tools && params.tools.contains("gottcha2") || params.tools.contains("gottcha")) || params.all || params.gottcha2
-
     script:
     def ref_prefix = file(ref_mmi).getBaseName().toString().replace(".mmi", "")
     """
@@ -76,9 +73,6 @@ process GOTTCHA2_PROFILE_ILLUMINA {
     tuple val(sample_id), path("${sample_id}*.sam"), path(ref_mmi), path(stats), path(tax_tsv), emit: aligned
     tuple val(sample_id), path("${sample_id}*.full.tsv"), path(ref_mmi), path(stats), path(tax_tsv), emit: full_tsv
     path "*.tsv", emit: all_stats
-
-    when:
-    (params.tools && params.tools.contains("gottcha2") || params.tools.contains("gottcha")) || params.all || params.gottcha2
 
     script:
     def ref_prefix = file(ref_mmi).getBaseName().toString().replace(".mmi", "")
