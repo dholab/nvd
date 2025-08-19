@@ -18,7 +18,16 @@ workflow GOTTCHA2_WORKFLOW {
     ch_sample_fastqs // Queue channel of sample IDs, platforms, and (interleaved) FASTQ files: tuple val(sample_id), val(platform), path(fastq)
 
     main:
-    ch_gottcha2_db = Channel.fromPath("${params.gottcha2_db}*").collect(sort: true)
+    ch_gottcha2_db = Channel
+        .fromPath("${params.gottcha2_db}{.tax.tsv,.stats,.mmi}")
+        .collect()
+        .map { files ->
+            // Sort or pick files into the right tuple slots
+            def ref_mmi   = files.find { it.name.endsWith(".mmi") }
+            def stats     = files.find { it.name.endsWith(".stats") }
+            def tax_tsv   = files.find { it.name.endsWith(".tax.tsv") }
+            tuple(sample_id, ref_mmi, stats, tax_tsv)
+        }
 
     if (params.labkey) {
         VALIDATE_LK_GOTTCHA2()
@@ -71,5 +80,3 @@ workflow GOTTCHA2_WORKFLOW {
     emit:
     completion = ch_completion
 }
-
-

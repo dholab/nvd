@@ -35,7 +35,7 @@ process GOTTCHA2_PROFILE_NANOPORE {
     cpus 12
 
     input:
-    tuple val(sample_id), path(fastq), path(ref_fna), path(ref_mmi), path(stats), path(tax_tsv)
+    tuple val(sample_id), path(fastq), path(ref_mmi), path(stats), path(tax_tsv)
 
     output:
     tuple val(sample_id), path("${sample_id}*.sam"), path(ref_mmi), path(stats), path(tax_tsv), emit: aligned
@@ -70,7 +70,7 @@ process GOTTCHA2_PROFILE_ILLUMINA {
     cpus 12
 
     input:
-    tuple val(sample_id), path(fastq), path(ref_fna), path(ref_mmi), path(stats), path(tax_tsv)
+    tuple val(sample_id), path(fastq), path(ref_mmi), path(stats), path(tax_tsv)
 
     output:
     tuple val(sample_id), path("${sample_id}*.sam"), path(ref_mmi), path(stats), path(tax_tsv), emit: aligned
