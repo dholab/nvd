@@ -145,3 +145,32 @@ process IDENTIFY_HUMAN_VIRUS_FAMILY_CONTIGS {
     """
 }
 
+process SCRUB_HUMAN_READS {
+    tag "${sample_id}"
+    errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
+    maxRetries 2
+    cpus 10
+
+    input:
+    tuple val(sample_id), path(fastq)
+
+    output:
+    tuple val(sample_id), path("${sample_id}.scrubbed.fastq.gz")
+
+    script:
+    """
+    # Convert to FASTA
+    seqkit fq2fa --threads 1 ${fastq} -o ${sample_id}.all_reads.fasta
+    
+    # Get human-aligned reads (tabular output like the virus example)
+    aligns_to \
+        -db ${params.human_filter_db} \
+        -num_threads ${task.cpus} \
+        ${sample_id}.all_reads.fasta \
+        | cut -f1 > human_read_ids.txt
+    
+    # Remove human reads (inverse grep with -v)
+    seqkit grep -v -f human_read_ids.txt ${fastq} \
+        -o ${sample_id}.scrubbed.fastq.gz
+    """
+}
