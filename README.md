@@ -1,5 +1,9 @@
 # NVD2: Identify Human Viruses (and more) in your Metagenomic Samples
 
+[![Release](https://github.com/dhoconno/nvd/actions/workflows/release.yml/badge.svg)](https://github.com/dhoconno/nvd/actions/workflows/release.yml)
+[![Latest Release](https://img.shields.io/github/v/release/dhoconno/nvd)](https://github.com/dhoconno/nvd/releases/latest)
+[![License](https://img.shields.io/github/license/dhoconno/nvd)](LICENSE)
+
 - [Overview](#overview)
 - [Quick Start](#quick-start)
 - [Further Documentation](#further-documentation)
@@ -9,31 +13,206 @@
 
 NVD2 is a Nextflow pipeline focused primarily though not exclusively on finding
 human viruses in metagenomic samples. It leverages the battle-tested NCBI
-toolchain, including [stat]() and [BLAST](), to identify human viruses while
-minimizing false positives and negatives. And for more general purpose
-classification, NVD2 implements a [GOTTCHA2]() subworkflow as well, which uses a
-carefully curated database of taxonomically diagnostic reference sequences.
+toolchain, including
+[STAT](https://www.ncbi.nlm.nih.gov/sra/docs/sra-taxonomy-analysis-tool/) and
+[BLAST](https://blast.ncbi.nlm.nih.gov/Blast.cgi), to identify human viruses
+while minimizing false positives and negatives. And for more general purpose
+classification, NVD2 implements a [GOTTCHA2](https://github.com/poeli/GOTTCHA2)
+subworkflow, which uses a carefully curated database of taxonomically diagnostic
+reference sequences spanning well-characterized taxa across the tree of life.
 
 NVD2 was designed from the ground up to handle enormous datasets and performs
-particularly well with Illumina deep sequencing datasets from wastewater
-sewersheds, the context for which it was originally designed. To perform well in
-this context, it must:
+particularly well with complex Illumina deep sequencing datasets like those from
+wastewater sewersheds. To perform well with these kinds of datasets, it must:
 
-1. Handle highly fragmented genomes.
+1. Handle highly fragmented genome recovery.
 2. Be resilient to wild fluctuations in depth-of-coverage.
 3. Resolve ambiguities between closely related organisms with high sequence
    identity.
+
+Many pipelines for classifying mixtures of organisms exist, but none satisfied
+these criteria to a satisfactory degree for human viruses--hence, NVD2 was born!
 
 In addition to wastewater sequenced with Illumina, NVD2 also supports datasets
 sequenced on Oxford Nanopore instruments and has been tested on Nanopore
 libraries generated from air samples.
 
-## Quick Start
+## Get Started
+
+NVD2 set-up is a multi-phase process, including dependency setup, reference
+database setup, sample data setup, and run command construction.
+
+### Dependency setup
 
 A minimal NVD2 setup requires that [Nextflow](https://nextflow.io/) and
-[Docker](https://www.docker.com/) are installed.
+[Docker](https://www.docker.com/) are installed. With both set up, the remainder
+of the pipeline's dependencies will be provided by a Docker image.
+
+The pipeline also ships with a `pyproject.toml` and `pixi.lock` that can be used
+to instantiate a reproducible environment with the
+[Pixi](https://pixi.sh/latest/) environment manager, which is a fast and modern
+system for managing Conda dependencies. Users in the command line can `cd` into
+the repo project root dircetory and enter an environment with
+`pixi shell --frozen`. More information about using `pixi` environments is
+available in the [Pixi docs](https://pixi.sh/latest/getting_started/).
+
+> [!WARNING]\
+> The provided Pixi environment will _not_ include NCBI's STAT tool, as it's not
+> distributed through Conda or PyPI and must instead be built from source. As
+> such, to use the `nvd` subworkflow that implements STAT with two phases of
+> BLAST verification, users must use the pre-built Docker or Apptainer
+> containers for this project. Alternatively, the bundled
+> [Containerfile](./Containerfile) can be built with Docker or Podman to provide
+> all dependencies, including STAT as well as those managed by Pixi.
+
+### Reference database setup
+
+The hardest/slowest part of NVD2 setup is getting the necessary reference
+datasets organized, though ideally, you'll only need to do it once.
+
+Currently, NVD2 uses three datasets:
+
+1. A BLAST database built from the NCBI core_nt database. This database is used
+   to triage putative taxonomic classifications as they make their way through
+   the pipeline.
+2. An NCBI taxonomic classification database used by STAT.
+3. A GOTTCHA2 curated database.
+
+Rather than bundling all three together, we've made each available individually
+so that users can choose which subworkflows they'd like to run. If they'd like
+to run the STAT+BLAST subworkflow, named nvd after the original, smaller
+pipeline NVD2 is based on, users will need to download databases 1 and 2 above.
+To run GOTTCHA2, they will need the third.
+
+All three are publicly available via `wget` or `curl` from the O'Connor
+Laboratory's LabKey server, like so:
+
+```bash
+# download the STAT database
+wget https://dholk.primate.wisc.edu/_webdav/dho/projects/lungfish/InfinitePath/public/%40files/release-v1.0.0/blast_db.tar.gz
+
+# download the BLAST database
+wget https://dholk.primate.wisc.edu/_webdav/dho/projects/lungfish/InfinitePath/public/%40files/release-v1.0.0/gottcha2.tar.gz
+
+# download the GOTTCHA2 database
+wget https://dholk.primate.wisc.edu/_webdav/dho/projects/lungfish/InfinitePath/public/%40files/release-v1.0.0/stat_db.tar.gz
+```
+
+(`curl -fSsL` can be substituted for `wget` in the above commands if desired)
+
+> [!IMPORTANT]\
+> We strongly recommend users verify their database downloads with the md5
+> hashes available in `checksum.txt`, which can be downloaded with
+> `wget https://dholk.primate.wisc.edu/_webdav/dho/projects/lungfish/InfinitePath/public/%40files/release-v1.0.0/checksum.txt`.
+> Updates to the reference databases will also be reflected in `CHANGELOG.md`,
+> available at the same endpoint as the databases and checksum text file.
+
+Also at that endpoint, if desired, is a pre-built Apptainer image file for use
+on HPC cluster or other linux environments:
+
+```bash
+wget https://dholk.primate.wisc.edu/_webdav/dho/projects/lungfish/InfinitePath/public/%40files/release-v1.0.0/nvd2.sif
+```
+
+All TAR-archived reference databases must be extracted into directories with
+`tar xvf` before use with the NVD2 pipeline.
+
+### Sample data setup
+
+With the environment and source code set up, next you'll need to organize the
+file paths to your input FASTQ-formatted sequencing read files into a simple,
+CSV-formatted samplesheet. It must look like this:
+
+```csv
+sample_id,srr,platform,fastq1,fastq2
+nanopore_test,,ont,nanopore.fastq.gz,
+illumina_test,,illumina,illumina_R1.fastq.gz,illumina_R1.fastq.gz
+sra_test,SRR33296246,,
+```
+
+Note that this example samplesheet is provided in the repo's [assets](./assets)
+directory for convenience.
+
+### Run command setup
+
+With that, you're ready to run the pipeline!
+
+Before you construct your run command, first answer the following questions:
+
+- Are you interested only in human viruses? If so, include `--tools nvd` in your
+  `nextflow run` command (more on this below).
+- Are you interested in whatever's in your sample and not in human viruses in
+  particular? If so, use `--tools gottcha`.
+- Are you interested in both? If so, use `--tools nvd,gottcha`
+- Do you want the kitchen sink? We use `--tools all` for that.
+
+Beyond the answers to these questions, most of the default NVD run command will
+simply be devoted to configuring paths to the required reference database files.
+Note that we plan to use presets to simply normal use-case run commands, but for
+now, an example run command to use all subworkflows will look like:
+
+```bash
+nextflow run dhoconno/nvd \
+	--tools all \
+	--samplesheet $YOUR_SAMPLESHEET \
+	--gottcha2_db $YOUR_REFERENCE_PATH/gottcha2/gottcha_db.species.fna \
+	--blast_db $YOUR_REFERENCE_PATH/blast_db \
+	--blast_db_prefix core_nt \
+	--stat_index $YOUR_REFERENCE_PATH/STAT_db/tree_index.dbs \
+	--stat_dbss $YOUR_REFERENCE_PATH/STAT_db/tree_filter.dbss \
+	--stat_annotation $YOUR_REFERENCE_PATH/STAT_db/tree_filter.dbss.annotation \
+	--human_virus_taxlist $YOUR_REFERENCE_PATH/STAT_db/human_viruses_taxlist.txt \
+	--experiment_id github_readme_test
+```
+
+(This command assumes you have set `YOUR_SAMPLESHEET` and `YOUR_REFERENCE_PATH`
+to the paths to your samplesheet CSV and the parent directory of your extracted
+reference databases, respectively; you can replace them with whatever valid path
+you have used for these files.)
 
 ## Further Documentation
+
+Coming soon! For now, see
+[our example run commands docs](docs/example_commands.md) for some of the ways
+you might configure NVD2 in the command line and [our contributor guide](docs/contributor_guide.md) for
+how we recommend you work on the NVD2 codebase.
+
+## Grab bag of features
+
+- **Multi-platform sequencing support**: Seamlessly processes both Illumina and
+  Oxford Nanopore data with platform-specific optimizations
+- **Dual classification engines**: Combines NCBI STAT+BLAST for human virus
+  detection with GOTTCHA2 for comprehensive taxonomic profiling
+- **Industrial-scale data processing**: Built from the ground up to handle
+  massive wastewater datasets with complex read mixtures and variable coverage
+  depths
+- **Smart contig assembly**: Automatically assembles reads with SPAdes and
+  filters contigs for optimal classification accuracy
+- **Two-phase BLAST verification**: Uses both megablast and blastn with
+  intelligent filtering to minimize false positives
+- **Advanced taxonomic filtering**: Sophisticated lineage-based filtering with
+  adjustable stringency for precise organism identification
+- **Human read scrubbing**: Built-in capability to remove human sequences for
+  privacy-compliant public data sharing
+- **Automated data deduplication**: CLUMPIFY workflow removes PCR duplicates and
+  optical duplicates to improve analysis accuracy and reduce disk usage for big
+  datasets
+- **Enterprise data integration**: Native LabKey LIMS integration with WebDAV
+  file uploads and structured metadata management
+- **Comprehensive quality control**: Read counting, contig metrics, and BLAST
+  hit validation throughout the pipeline
+- **Flexible workflow orchestration**: Mix-and-match subworkflows (nvd, gottcha,
+  clumpify) based on research needs
+- **Production-ready deployment**: Docker/Apptainer containerization with Pixi
+  environment management for reproducible execution
+- **Intelligent error handling**: Robust retry logic and graceful failure modes
+  for reliable high-throughput processing
+- **SRA integration**: Direct processing of NCBI SRA datasets alongside local
+  FASTQ files
+- **Real-time validation**: Pre-flight checks for database integrity, API
+  connectivity, and experiment ID uniqueness
+- **Multi-format output**: Generates taxonomic reports, FASTA sequences, and
+  structured CSV files for downstream analysis
 
 ## Citation
 

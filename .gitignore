@@ -60,3 +60,22 @@
 !/assets
 !/assets/example_samplesheet.csv
 
+# docs
+!/docs
+!/docs/*.sh
+!/docs/*.md
+
+# scripts
+!/scripts
+!/scripts/*.sh
+!/scripts/*.awk
+!/scripts/*.pl
+!/scripts/*.py
+!/scripts/*.lua
+
+# github workflows
+!/.github
+!/.github/workflows
+!/.github/workflows/*.yml
+!/.github/workflows/*.yaml
+

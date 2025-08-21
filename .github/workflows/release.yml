@@ -1,0 +1,148 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+      - 'v[0-9]+.[0-9]+.[0-9]+-*'  # Allow pre-release tags like v1.0.0-alpha, v1.0.0-beta.1
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch full history for accurate release notes
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          # Extract version from tag (remove 'v' prefix)
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          
+          # Check if this is a pre-release
+          if [[ $VERSION == *"-"* ]]; then
+            echo "prerelease=true" >> $GITHUB_OUTPUT
+          else
+            echo "prerelease=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Generate release notes
+        id: release_notes
+        run: |
+          # Get the previous tag for generating release notes
+          PREVIOUS_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          
+          # Create release notes
+          if [ -n "$PREVIOUS_TAG" ]; then
+            echo "## What's Changed" > release_notes.md
+            echo "" >> release_notes.md
+            
+            # Get commits since last tag
+            git log --pretty=format:"* %s (%h)" ${PREVIOUS_TAG}..HEAD >> release_notes.md
+            echo "" >> release_notes.md
+            echo "" >> release_notes.md
+            
+            # Get contributors since last tag
+            CONTRIBUTORS=$(git log --pretty=format:"%an" ${PREVIOUS_TAG}..HEAD | sort | uniq | tr '\n' ',' | sed 's/,$//')
+            if [ -n "$CONTRIBUTORS" ]; then
+              echo "## Contributors" >> release_notes.md
+              echo "Thanks to: $CONTRIBUTORS" >> release_notes.md
+              echo "" >> release_notes.md
+            fi
+          else
+            echo "## Initial Release" > release_notes.md
+            echo "" >> release_notes.md
+            echo "This is the first release of NVD2." >> release_notes.md
+            echo "" >> release_notes.md
+          fi
+          
+          # Add version information
+          echo "## Version Information" >> release_notes.md
+          echo "- **Version**: ${{ steps.version.outputs.version }}" >> release_notes.md
+          echo "- **Tag**: ${{ steps.version.outputs.tag }}" >> release_notes.md
+          echo "- **Commit**: $(git rev-parse HEAD)" >> release_notes.md
+          echo "" >> release_notes.md
+          
+          # Add installation instructions
+          echo "## Installation" >> release_notes.md
+          echo "" >> release_notes.md
+          echo "### Using this release with Nextflow:" >> release_notes.md
+          echo "\`\`\`bash" >> release_notes.md
+          echo "nextflow run dhoconno/nvd -r ${{ steps.version.outputs.tag }} \\" >> release_notes.md
+          echo "    --tools all \\" >> release_notes.md
+          echo "    --samplesheet your_samples.csv \\" >> release_notes.md
+          echo "    --experiment_id your_experiment_id \\" >> release_notes.md
+          echo "    [other parameters...]" >> release_notes.md
+          echo "\`\`\`" >> release_notes.md
+          echo "" >> release_notes.md
+          echo "### Development setup:" >> release_notes.md
+          echo "\`\`\`bash" >> release_notes.md
+          echo "git clone --branch ${{ steps.version.outputs.tag }} https://github.com/dhoconno/nvd.git" >> release_notes.md
+          echo "cd nvd" >> release_notes.md
+          echo "pixi install --frozen" >> release_notes.md
+          echo "pixi shell" >> release_notes.md
+          echo "\`\`\`" >> release_notes.md
+          echo "" >> release_notes.md
+          
+          # Add documentation links
+          echo "## Documentation" >> release_notes.md
+          echo "- [Example Commands](https://github.com/dhoconno/nvd/blob/${{ steps.version.outputs.tag }}/docs/example_commands.md)" >> release_notes.md
+          echo "- [Contributor Guide](https://github.com/dhoconno/nvd/blob/${{ steps.version.outputs.tag }}/docs/contributor_guide.md)" >> release_notes.md
+          echo "- [Main README](https://github.com/dhoconno/nvd/blob/${{ steps.version.outputs.tag }}/README.md)" >> release_notes.md
+
+      - name: Read pyproject.toml version
+        id: pyproject_version
+        run: |
+          # Extract version from pyproject.toml for verification
+          PYPROJECT_VERSION=$(grep '^version = ' pyproject.toml | sed 's/version = "\(.*\)"/\1/')
+          echo "pyproject_version=$PYPROJECT_VERSION" >> $GITHUB_OUTPUT
+          
+          # Compare with tag version (without v prefix)
+          TAG_VERSION="${{ steps.version.outputs.version }}"
+          if [[ "$PYPROJECT_VERSION" != "$TAG_VERSION" ]]; then
+            echo "⚠️ Version mismatch detected:"
+            echo "  Tag version: $TAG_VERSION"
+            echo "  pyproject.toml version: $PYPROJECT_VERSION"
+            echo "  Consider updating pyproject.toml version to match the tag."
+          else
+            echo "✅ Version matches between tag and pyproject.toml"
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: "Release ${{ steps.version.outputs.tag }}"
+          body_path: release_notes.md
+          draft: false
+          prerelease: ${{ steps.version.outputs.prerelease }}
+          generate_release_notes: false  # We're generating our own
+          files: |
+            pixi.lock
+            uv.lock
+            pyproject.toml
+            nextflow.config
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update release with additional information
+        run: |
+          echo "✅ Release ${{ steps.version.outputs.tag }} created successfully!"
+          echo ""
+          echo "📋 Release Information:"
+          echo "  - Version: ${{ steps.version.outputs.version }}"
+          echo "  - Prerelease: ${{ steps.version.outputs.prerelease }}"
+          echo "  - Commit: $(git rev-parse HEAD)"
+          echo "  - pyproject.toml version: ${{ steps.pyproject_version.outputs.pyproject_version }}"
+          echo ""
+          echo "🔗 Release URL: https://github.com/${{ github.repository }}/releases/tag/${{ steps.version.outputs.tag }}"
