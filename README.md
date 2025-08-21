@@ -89,13 +89,13 @@ Laboratory's LabKey server, like so:
 
 ```bash
 # download the STAT database
-wget https://dholk.primate.wisc.edu/_webdav/dho/projects/lungfish/InfinitePath/public/%40files/release-v1.0.0/blast_db.tar.gz
+wget https://dholk.primate.wisc.edu/_webdav/dho/projects/lungfish/InfinitePath/public/%40files/release-v2.0.0/blast_db.tar.gz
 
 # download the BLAST database
-wget https://dholk.primate.wisc.edu/_webdav/dho/projects/lungfish/InfinitePath/public/%40files/release-v1.0.0/gottcha2.tar.gz
+wget https://dholk.primate.wisc.edu/_webdav/dho/projects/lungfish/InfinitePath/public/%40files/release-v2.0.0/gottcha2.tar.gz
 
 # download the GOTTCHA2 database
-wget https://dholk.primate.wisc.edu/_webdav/dho/projects/lungfish/InfinitePath/public/%40files/release-v1.0.0/stat_db.tar.gz
+wget https://dholk.primate.wisc.edu/_webdav/dho/projects/lungfish/InfinitePath/public/%40files/release-v2.0.0/stat_db.tar.gz
 ```
 
 (`curl -fSsL` can be substituted for `wget` in the above commands if desired)
@@ -103,7 +103,7 @@ wget https://dholk.primate.wisc.edu/_webdav/dho/projects/lungfish/InfinitePath/p
 > [!IMPORTANT]\
 > We strongly recommend users verify their database downloads with the md5
 > hashes available in `checksum.txt`, which can be downloaded with
-> `wget https://dholk.primate.wisc.edu/_webdav/dho/projects/lungfish/InfinitePath/public/%40files/release-v1.0.0/checksum.txt`.
+> `wget https://dholk.primate.wisc.edu/_webdav/dho/projects/lungfish/InfinitePath/public/%40files/release-v2.0.0/checksum.txt`.
 > Updates to the reference databases will also be reflected in `CHANGELOG.md`,
 > available at the same endpoint as the databases and checksum text file.
 
@@ -111,7 +111,7 @@ Also at that endpoint, if desired, is a pre-built Apptainer image file for use
 on HPC cluster or other linux environments:
 
 ```bash
-wget https://dholk.primate.wisc.edu/_webdav/dho/projects/lungfish/InfinitePath/public/%40files/release-v1.0.0/nvd2.sif
+wget https://dholk.primate.wisc.edu/_webdav/dho/projects/lungfish/InfinitePath/public/%40files/release-v2.0.0/nvd2.sif
 ```
 
 All TAR-archived reference databases must be extracted into directories with
@@ -173,9 +173,10 @@ you have used for these files.)
 ## Further Documentation
 
 Coming soon! For now, see
-[our example run commands docs](docs/example_commands.md) for some of the ways
-you might configure NVD2 in the command line and [our contributor guide](docs/contributor_guide.md) for
-how we recommend you work on the NVD2 codebase.
+[our example run commands docs](./docs/example_commands.md) for some of the ways
+you might configure NVD2 in the command line and
+[our contributor guide](./docs/contributor_guide.md) for how we recommend you
+work on the NVD2 codebase.
 
 ## Grab bag of features
 
