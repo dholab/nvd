@@ -11,12 +11,14 @@ workflow CLUMPIFY_WORKFLOW {
 
     // Add human read scrubbing step for public posting of clumpified data to SRA
 
-    SCRUB_HUMAN_READS(
+    CLUMP_READS(
         ch_gathered_reads.map { id, _platform, reads -> tuple(id, file(reads)) }
     )
 
-    CLUMP_READS(
-        SCRUB_HUMAN_READS.out
-    )
-
+    // Add human read scrubbing if specified
+    if (params.human_read_scrub) {
+            SCRUB_HUMAN_READS(
+                CLUMP_READS.out
+                )
+            }
 }
