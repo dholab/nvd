@@ -5,20 +5,20 @@ workflow CLUMPIFY_WORKFLOW {
 
     take:
     ch_gathered_reads
-    _completion_tokens
+    ch_start_gate
         
     main:
+    def gated_reads = ch_gathered_reads
+        .combine(ch_start_gate)   // pairs (read_tuple, token)
+        .map { read_tuple, _ -> read_tuple }
 
     // Add human read scrubbing step for public posting of clumpified data to SRA
-
     CLUMP_READS(
-        ch_gathered_reads.map { id, _platform, reads -> tuple(id, file(reads)) }
+        gated_reads.map { id, _platform, reads -> tuple(id, file(reads)) }
     )
 
     // Add human read scrubbing if specified
-    if (params.human_read_scrub) {
-            SCRUB_HUMAN_READS(
-                CLUMP_READS.out
-                )
-            }
+    SCRUB_HUMAN_READS(
+        CLUMP_READS.out
+    )
 }

@@ -13,6 +13,9 @@ process EXTRACT_HUMAN_VIRUS_READS {
     output:
     tuple val(sample_id), val(sample_type), path("*.f*q.gz")
 
+    when:
+    params.tools && (params.tools.contains("nvd") || params.tools.contains("all"))
+
     script:
     """
     seqkit fq2fa --threads 1 ${fastq} -o ${sample_id}.all_reads.fasta
@@ -156,6 +159,9 @@ process SCRUB_HUMAN_READS {
 
     output:
     tuple val(sample_id), path("${sample_id}.scrubbed.fastq.gz")
+
+    when:
+	params.tools && (params.tools.contains("clump") || params.tools.contains("all")) && params.human_read_scrub
 
     script:
     """

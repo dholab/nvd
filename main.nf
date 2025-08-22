@@ -30,51 +30,34 @@ nextflow run . \
 
     assert params.samplesheet && file(params.samplesheet).isFile()
 
-    // Parse tools parameter - handle both single tool and comma-separated list
-    def selectedTools = params.tools ? params.tools.tokenize(',') : []
-    def runAll = selectedTools.contains('all')
-
     ch_input_samplesheet = Channel.fromPath( params.samplesheet )
         .splitCsv(header: true, strip: true)
         .map { row -> tuple(row.sample_id), row.srr, row.platform, row.fastq1, row.fastq2}
         .filter { it -> !it[0].startsWith("#") }
         .unique()
 
-    // Start with an empty channel for completion tokens
-    Channel.empty().set { completion_tokens }
-
     GATHER_READS(ch_input_samplesheet)
 
     // NVD workflow
-    if (runAll || selectedTools.contains('nvd')) {
-        nvd_results = NVD2_WORKFLOW(GATHER_READS.out)
-        nvd_token = nvd_results.completion
+    def nvd_results = NVD2_WORKFLOW(GATHER_READS.out)
+    def nvd_token = nvd_results.completion
 
-        // update the completion tokens channel
-        completion_tokens = completion_tokens.mix(nvd_token)
-
-        // Collect all LabKey logs as final process
-        if (params.labkey) {
-            nvd_results.labkey_log.collectFile(
-                name: 'final_labkey_upload.log',
-                storeDir: params.results)
-        }
+    // Collect all LabKey logs as final process
+    if (params.labkey) {
+        nvd_results.labkey_log.collectFile(
+            name: 'final_labkey_upload.log',
+            storeDir: params.results)
     }
 
     // GOTTCHA2 workflow
-    if (runAll || selectedTools.contains('gottcha')) {
-        gottcha2_token = GOTTCHA2_WORKFLOW(GATHER_READS.out).completion
+    def gottcha_token = GOTTCHA2_WORKFLOW(GATHER_READS.out).completion
 
-        // update the completion tokens channel
-        completion_tokens = completion_tokens.mix(gottcha2_token)
-     }
+    def start_clumpify = nvd_token.mix(gottcha_token).collect().map { true }
 
     // CLUMPIFY workflow  
-    if (runAll || selectedTools.contains('clumpify')) {
-        CLUMPIFY_WORKFLOW(
-            GATHER_READS.out,
-            completion_tokens.collect()
-        )
-    }
+    CLUMPIFY_WORKFLOW(
+        GATHER_READS.out,
+        start_clumpify
+    )
 
 }

@@ -44,6 +44,9 @@ process INTERLEAVE_PAIRS {
 	output:
 	tuple val(sample_id), val(platform), path("${sample_id}.interleaved.fastq.gz")
 
+	when:
+	params.tools
+
 	script:
 	"""
 	reformat.sh \
@@ -127,6 +130,9 @@ process CLUMP_READS {
 
 	output:
     tuple val(sample_id), path("${sample_id}.clumped.fastq.gz")
+
+    when:
+	params.tools && (params.tools.contains("clump") || params.tools.contains("all"))
 
 	script:
 	"""

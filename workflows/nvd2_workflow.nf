@@ -15,24 +15,26 @@ workflow NVD2_WORKFLOW  {
     ch_sample_fastqs // Queue channel of sample IDs, platforms, and (interleaved) FASTQ files: tuple val(sample_id), val(platform), path(fastq)
 
     main:
-    assert (
-        params.blast_db              && file(params.blast_db).isDirectory()         &&
-        params.stat_index            && file(params.stat_index).exists()            &&
-        params.stat_dbss             && file(params.stat_dbss).exists()             &&
-        params.stat_annotation       && file(params.stat_annotation).exists()       &&
-        params.human_virus_taxlist   && file(params.human_virus_taxlist).exists()
-    ) :
-    """
-    One or more required parameters are missing or point to non-existent files:
+    if (params.tools && (params.tools.contains("nvd") || params.tools.contains("all")) ) {
+        assert (
+            params.blast_db              && file(params.blast_db).isDirectory()         &&
+            params.stat_index            && file(params.stat_index).exists()            &&
+            params.stat_dbss             && file(params.stat_dbss).exists()             &&
+            params.stat_annotation       && file(params.stat_annotation).exists()       &&
+            params.human_virus_taxlist   && file(params.human_virus_taxlist).exists()
+        ) :
+        """
+        One or more required parameters are missing or point to non-existent files:
 
-      blast_db            -> ${params.blast_db}
-      stat_index          -> ${params.stat_index}
-      stat_dbss           -> ${params.stat_dbss}
-      stat_annotation     -> ${params.stat_annotation}
-      human_virus_taxlist -> ${params.human_virus_taxlist}
+          blast_db            -> ${params.blast_db}
+          stat_index          -> ${params.stat_index}
+          stat_dbss           -> ${params.stat_dbss}
+          stat_annotation     -> ${params.stat_annotation}
+          human_virus_taxlist -> ${params.human_virus_taxlist}
 
-    Please supply all of the above in your `-c nextflow.config` or via `-params-file`, and ensure each path exists.
-    """
+        Please supply all of the above in your `-c nextflow.config` or via `-params-file`, and ensure each path exists.
+        """
+    }
 
     ch_blast_db_files = Channel.fromPath(params.blast_db)
     ch_stat_index = Channel.fromPath(params.stat_index)

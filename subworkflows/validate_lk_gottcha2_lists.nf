@@ -18,6 +18,9 @@ process VALIDATE_GOTTCHA2_FULL_LIST {
     output:
     path 'gottcha2_full_validation_report.txt'
 
+    when:
+    params.tools && (params.tools.contains("gottcha") || params.tools.contains("all"))
+
     script:
     """
     validate_labkey.py \
@@ -40,6 +43,9 @@ process VALIDATE_GOTTCHA2_BLAST_VERIFIED_LIST {
     output:
     path 'gottcha2_blast_verified_validation_report.txt'
 
+    when:
+    params.tools && (params.tools.contains("gottcha") || params.tools.contains("all"))
+
     script:
     """
     validate_labkey.py \
@@ -58,6 +64,9 @@ process VALIDATE_GOTTCHA2_FASTA_LIST {
 
     output:
     path 'gottcha2_fasta_validation_report.txt'
+
+    when:
+    params.tools && (params.tools.contains("gottcha") || params.tools.contains("all"))
 
     script:
     """

@@ -6,6 +6,9 @@ process RETRIEVE_GETTAX {
     output:
     path "gettax.sqlite"
 
+    when:
+    params.tools && (params.tools.contains("nvd") || params.tools.contains("all"))
+
     script:
     """
     retrieve_gettax.py

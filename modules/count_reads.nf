@@ -11,6 +11,9 @@ process COUNT_READS {
     output:
     tuple val(meta), env(total_reads), emit: counts
 
+    when:
+    params.tools && (params.tools.contains("nvd") || params.tools.contains("all"))
+
     script:
     """
     if [[ "${fastq}" == *.gz ]]; then

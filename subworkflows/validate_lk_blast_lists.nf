@@ -29,6 +29,9 @@ process VALIDATE_BLAST_HITS_LIST {
     output:
     path 'blast_validation_report.txt'
 
+    when:
+    params.tools && (params.tools.contains("nvd") || params.tools.contains("all"))
+
     script:
     """
     validate_labkey.py \
@@ -47,6 +50,9 @@ process VALIDATE_BLAST_FASTA_LIST {
 
     output:
     path 'fasta_validation_report.txt'
+
+    when:
+    params.tools && (params.tools.contains("nvd") || params.tools.contains("all"))
 
     script:
     """
