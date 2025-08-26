@@ -170,7 +170,7 @@ process SCRUB_HUMAN_READS {
     
     # Get human-aligned reads (tabular output like the virus example)
     aligns_to \
-        -db ${params.human_filter_db} \
+        -db ${params.human_read_scrub} \
         -num_threads ${task.cpus} \
         ${sample_id}.all_reads.fasta \
         | cut -f1 > human_read_ids.txt

@@ -18,7 +18,21 @@ workflow CLUMPIFY_WORKFLOW {
     )
 
     // Add human read scrubbing if specified
-    SCRUB_HUMAN_READS(
-        CLUMP_READS.out
-    )
+        // Add human read scrubbing if specified
+    if (params.human_read_scrub) {
+        // Check if human_read_scrub is a valid file path
+        human_db_file = file(params.human_read_scrub)
+        
+        if (!human_db_file.exists()) {
+            error "Error: Human database file does not exist: ${params.human_read_scrub}"
+        }
+        
+        if (!human_db_file.isFile()) {
+            error "Error: Human database path is not a file: ${params.human_read_scrub}"
+        }
+        
+        SCRUB_HUMAN_READS(
+            CLUMP_READS.out
+            )
+        }
 }
