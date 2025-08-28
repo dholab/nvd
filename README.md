@@ -16,10 +16,11 @@ human viruses in metagenomic samples. It leverages the battle-tested NCBI
 toolchain, including
 [STAT](https://www.ncbi.nlm.nih.gov/sra/docs/sra-taxonomy-analysis-tool/) and
 [BLAST](https://blast.ncbi.nlm.nih.gov/Blast.cgi), to identify human viruses
-while minimizing false positives and negatives. And for more general purpose
-classification, NVD2 implements a [GOTTCHA2](https://github.com/poeli/GOTTCHA2)
-subworkflow, which uses a carefully curated database of taxonomically diagnostic
-reference sequences spanning well-characterized taxa across the tree of life.
+while minimizing false positives _and_ false negatives. And for more general
+purpose classification, NVD2 implements a
+[GOTTCHA2](https://github.com/poeli/GOTTCHA2) subworkflow, which uses a
+carefully curated database of taxonomically diagnostic reference sequences
+spanning well-characterized taxa across the tree of life.
 
 NVD2 was designed from the ground up to handle enormous datasets and performs
 particularly well with complex Illumina deep sequencing datasets like those from
@@ -80,9 +81,9 @@ Currently, NVD2 uses three datasets:
 
 Rather than bundling all three together, we've made each available individually
 so that users can choose which subworkflows they'd like to run. If they'd like
-to run the STAT+BLAST subworkflow, named nvd after the original, smaller
-pipeline NVD2 is based on, users will need to download databases 1 and 2 above.
-To run GOTTCHA2, they will need the third.
+to run the STAT+BLAST subworkflow, named nvd after NVD2's predecessor, users
+will need to download databases 1 and 2 above. To run GOTTCHA2, they will need
+the third.
 
 All three are publicly available via `wget` or `curl` from the O'Connor
 Laboratory's LabKey server, like so:
@@ -232,4 +233,25 @@ Coming soon!
 
 ## License
 
-See `LICENSE` for more information.
+See `LICENSE` for more information. NVD2's predecessor used the
+[copyleft](https://en.wikipedia.org/wiki/Copyleft) GPLv3 license, which means we
+have to as well. This means you’re welcome to use it, share it, and modify it,
+**as long as any changes you distribute are also shared under the same
+license**.
+
+By contributing to this project, you are thus locked into agreeing that your
+code will be released under GPLv3. This means:
+
+- **Share alike** – if you share modified versions of this project, they _must_
+  also be under GPLv3.
+- **Freedom to use** – anyone can use the code for personal, educational, or
+  commercial purposes, as long as they respect the license.
+- **Source availability** – if you distribute the software (original or
+  modified), you must also make the source code available under GPLv3.
+- **Community contributions** – your pull requests and patches automatically
+  become part of the GPLv3-licensed project.
+- **Commercial use** - You’re free to use NVD2 code in commercial contexts, but
+  you can’t combine it with proprietary software without open-sourcing that
+  software under GPLv3 too.
+- **No Warranty and Liability** - The software is provided as-is, without any
+  warranty or liability.
