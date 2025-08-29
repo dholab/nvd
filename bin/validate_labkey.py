@@ -74,98 +74,39 @@ gottcha2_fasta_fields = [
 ]
 
 
-def check_experiment_id_uniqueness(labkey, list_name, experiment_id) -> bool:
-    """
-    Check if the experiment ID already exists in the LabKey list.
-    Uses SQL query to efficiently check for duplicates without downloading full dataset.
-
-    Args:
-        labkey: APIWrapper instance
-        list_name: Name of the LabKey list to check
-        experiment_id: Experiment ID to validate
-
-    Returns:
-        bool: True if experiment ID is unique (safe to use), False if duplicate found
-    """
-    try:
-        logger.info(f"Checking for duplicate experiment ID: {experiment_id}")
-
-        # Use SQL query to efficiently check for existing experiment IDs
-        # This only returns matching rows, not the entire dataset
-        experiment_fields = ["Experiment", "experiment", "EXPERIMENT"]
-        sql_query = " UNION ALL ".join(
-            [
-                f'SELECT DISTINCT `{field}` as Experiment FROM "lists"."{list_name}" WHERE `{field}` = {experiment_id}'
-                for field in experiment_fields
-            ],
-        )
-        result = labkey.query.execute_sql("lists", sql_query)
-
-        # If any rows are returned, the experiment ID already exists
-        if result["rows"]:
-            existing_experiments = [row["Experiment"] for row in result["rows"]]
-            logger.error(f"Duplicate experiment ID found: {existing_experiments}")
-            return False
-        logger.info(f"Experiment ID {experiment_id} is unique")
-        return True  # noqa: TRY300
-
-    except Exception as e:
-        # If the list doesn't exist or is empty, that's okay for uniqueness check
-        if "does not exist" in str(e).lower() or "table" in str(e).lower():
-            logger.info(f"List '{list_name}' appears to be empty or new - experiment ID is unique")
-            return True
-        logger.warning(f"Error checking experiment ID uniqueness: {e}")
-        logger.info("Proceeding with validation (assuming uniqueness)")
-        return True
-
-
 def main() -> None:
     # Parse command-line arguments
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--server")  # LabKey server URL
-    parser.add_argument("--container")  # LabKey container path (e.g., project folder)
-    parser.add_argument("--list")  # Name of the LabKey list to validate
-    parser.add_argument("--api_key")  # API key with insert/delete permissions
+    parser = argparse.ArgumentParser(description="Validate LabKey list schema and permissions")
+    parser.add_argument("--server", required=True, help="LabKey server URL")
+    parser.add_argument("--container", required=True, help="LabKey container path (e.g., project folder)")
+    parser.add_argument("--list", required=True, help="Name of the LabKey list to validate")
+    parser.add_argument("--api_key", required=True, help="API key with insert/delete permissions")
     parser.add_argument(
         "--type",
         choices=["blast", "blast_fasta", "gottcha2_full", "gottcha2_fasta"],
         required=True,
+        help="Type of list to validate"
     )
     parser.add_argument(
         "--experiment_id",
         type=int,
         required=True,
-    )  # Experiment ID to check for uniqueness
+        help="Experiment ID for validation testing"
+    )
     args = parser.parse_args()
 
     # Initialize LabKey API wrapper
     labkey = APIWrapper(args.server, args.container, api_key=args.api_key)
 
-    # Check for duplicate experiment ID before proceeding with validation
-    if not check_experiment_id_uniqueness(labkey, args.list, args.experiment_id):
-        print()
-        logger.info("=" * 80)
-        logger.info("❌ EXPERIMENT ID VALIDATION FAILED")
-        logger.info("=" * 80)
-        print()
-        logger.info(
-            f"Error: Experiment ID '{args.experiment_id}' already exists in list '{args.list}'",
-        )
-        print()
-        logger.info("REQUIRED ACTION:")
-        logger.info("   You must use a unique experiment_id for each pipeline run.")
-        logger.info("   Please update your pipeline configuration with a new experiment_id value.")
-        print()
-        logger.info("Suggestions:")
-        logger.info("   • Use a new LabKey experiment number")
-        logger.info("   • Check existing experiment IDs in LabKey to avoid conflicts")
-        print()
-        logger.info("Configuration:")
-        logger.info(
-            f"   Update your params.experiment_id from {args.experiment_id} to a unique value",
-        )
-        print()
-        sys.exit(1)
+    logger.info("=" * 80)
+    logger.info("🔍 LABKEY LIST VALIDATION")
+    logger.info("=" * 80)
+    logger.info(f"Server: {args.server}")
+    logger.info(f"Container: {args.container}")
+    logger.info(f"List: {args.list}")
+    logger.info(f"Type: {args.type}")
+    logger.info(f"Experiment ID: {args.experiment_id}")
+    logger.info("=" * 80)
 
     # Use a unique experiment ID that's unlikely to conflict with real data for dummy row
     unique_experiment_id = 123456789
@@ -238,7 +179,7 @@ def main() -> None:
         }
 
     try:
-        logger.info(f"Trying insert to list '{args.list}'...")
+        logger.info(f"Testing insert/delete operations on list '{args.list}'...")
 
         # Attempt to insert the dummy row into the specified LabKey list
         insert_result = labkey.query.insert_rows("lists", args.list, [dummy])
@@ -258,19 +199,20 @@ def main() -> None:
 
         print()
         logger.info("=" * 80)
-        logger.info("✅ VALIDATION SUCCESSFUL")
+        logger.info("✅ LIST VALIDATION SUCCESSFUL")
         logger.info("=" * 80)
         print()
-        logger.info(f"• Experiment ID {args.experiment_id} is unique and ready to use")
         logger.info("• LabKey connection and permissions validated")
         logger.info(f"• List '{args.list}' is accessible and writable")
+        logger.info(f"• Schema validation passed for type '{args.type}'")
+        logger.info("• Insert and delete operations working correctly")
         print()
 
     except Exception as e:
         logger.info(f"[FAIL] Insert/Delete failed: {e}")
         print()
         logger.info("=" * 80)
-        logger.info("⚠️  VALIDATION FAILED - Troubleshooting Guide:")
+        logger.info("⚠️  LIST VALIDATION FAILED - Troubleshooting Guide:")
         logger.info("=" * 80)
         print()
         logger.info("Common issues and solutions:")
@@ -293,12 +235,17 @@ def main() -> None:
         logger.info("   • Ensure you have read/write permissions to the list")
         logger.info("   • Confirm list is in the correct folder/container")
         print()
-        logger.info("4. Network/Connectivity Issues:")
+        logger.info("4. Schema Issues:")
+        logger.info(f"   • Verify list schema matches expected '{args.type}' format")
+        logger.info("   • Check column names and data types")
+        logger.info("   • Ensure required fields are not missing")
+        print()
+        logger.info("5. Network/Connectivity Issues:")
         logger.info("   • Check firewall or proxy settings")
         logger.info("   • Verify network connectivity to the LabKey server")
         logger.info("   • Try accessing the LabKey server through a web browser")
         print()
-        logger.info("5. Configuration Issues:")
+        logger.info("6. Configuration Issues:")
         logger.info("   • Double-check your nextflow.config parameters:")
         logger.info(f"     - labkey_server = '{args.server}'")
         logger.info(f"     - labkey_project_name = '{args.container}'")

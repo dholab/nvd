@@ -66,8 +66,9 @@ process ANNOTATE_MEGABLAST_RESULTS {
 Remove any contigs that do not have at least one hit corresponding to viruses.
 
 This rule handles cases where the input file is empty and filters out
-groups where none of the entries are from superkingdom: Viruses
-or where the only viral hits are phages.
+blast query read groups where none of the entries are from superkingdom: Viruses
+or where the only viral hits are phages. This will leave in any query seq that has things that are 
+non virus as long as one of the qseqid reads has a viral hit.
 */
 process FILTER_NON_VIRUS_MEGABLAST_NODES {
 
