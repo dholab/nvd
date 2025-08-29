@@ -9,7 +9,7 @@ workflow CLUMPIFY_WORKFLOW {
     main:
     def gated_reads = ch_gathered_reads
         .combine(ch_start_gate)
-        .map { read_tuple, _rest -> read_tuple }
+        .map { it[0..-2] }
 
     // Add human read scrubbing step for public posting of clumpified data to SRA
     CLUMP_READS(
