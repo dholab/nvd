@@ -13,10 +13,6 @@ workflow BUNDLE_GOTTCHA2_FOR_LABKEY {
     LABKEY_UPLOAD_GOTTCHA2_FASTA(gottcha2_extracted_fastas)
 
     LABKEY_WEBDAV_UPLOAD_FILES(gottcha2_extracted_fastas)
-
-    // WIP this will upload to the final LK list for the verified via blast contigs
-    //LABKEY_UPLOAD_GOTTCHA2_HITS_VERIFIED()
-
 }
 
 process LABKEY_UPLOAD_GOTTCHA2_FULL {
@@ -47,8 +43,6 @@ process LABKEY_UPLOAD_GOTTCHA2_FULL {
     """
 }
 
-// Take from after multimaps are removed
-
 process LABKEY_UPLOAD_GOTTCHA2_FASTA {
 
     tag "${sample_id}"
@@ -63,30 +57,18 @@ process LABKEY_UPLOAD_GOTTCHA2_FASTA {
 
     script:
     """
-    awk 'BEGIN {
-        FS = "\\n"; RS = ">";
-        OFS = "\\t";
-        print "Experiment", "Sample Id", "Header", "Sequence", "Notes", "Snakemake Run Id", "Upload Type"
-    }
-    NF > 1 {
-        header = \$1;
-        sub(/^>/, "", header);
-        sequence = "";
-        for (i = 2; i <= NF; i++) {
-            gsub(/\\n/, "", \$i);
-            sequence = sequence \$i;
-        }
-        if (length(sequence) > 0) {
-            print "${params.experiment_id}", "${sample_id}", header, sequence, "gottcha2", "GOTTCHA2_UPLOAD", "fasta";
-        }
-    }' ${fasta} > ${sample_id}_df.tsv
-
     labkey_upload_gottcha2_fasta.py \
+        --fasta ${fasta} \
+        --sample_id ${sample_id} \
+        --output_tsv ${sample_id}_df.tsv \
         --server ${params.labkey_server} \
+        --experiment_id  ${params.experiment_id} \
         --container ${params.labkey_project_name} \
         --list ${params.labkey_gottcha_fasta_list} \
         --api_key \$nvd2 \
-        --input_tsv ${sample_id}_df.tsv
+        --batch_size 10000 \
+        --notes "NVD2 upload" \
+        --run_id ${params.condor_cluster} \
     """
 }
 
