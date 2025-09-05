@@ -155,13 +155,13 @@ process SCRUB_HUMAN_READS {
     cpus 10
 
     input:
-    tuple val(sample_id), path(fastq)
+    tuple val(sample_id), path(fastq), path(human_reads)
 
     output:
     tuple val(sample_id), path("${sample_id}.scrubbed.fastq.gz")
 
     when:
-	params.tools && (params.tools.contains("clump") || params.tools.contains("all")) && params.human_read_scrub
+	params.tools && (params.tools.contains("clump") || params.tools.contains("all"))
 
     script:
     """
@@ -170,7 +170,7 @@ process SCRUB_HUMAN_READS {
     
     # Get human-aligned reads (tabular output like the virus example)
     aligns_to \
-        -db ${params.human_read_scrub} \
+        -db ${human_reads} \
         -num_threads ${task.cpus} \
         ${sample_id}.all_reads.fasta \
         | cut -f1 > human_read_ids.txt

@@ -17,17 +17,13 @@ workflow CLUMPIFY_WORKFLOW {
     )
 
     // Check if human_read_scrub is a valid file path
-    human_db_file = file(params.human_read_scrub)
-
-    if (!human_db_file.exists()) {
+    if (params.human_read_scrub != null && !file(params.human_read_scrub).isFile()) {
         error("Error: Human database file does not exist: ${params.human_read_scrub}")
     }
 
-    if (!human_db_file.isFile()) {
-        error("Error: Human database path is not a file: ${params.human_read_scrub}")
-    }
+    ch_human_reads = params.human_read_scrub ? Channel.fromPath( params.human_read_scrub ) : Channel.empty()
 
     SCRUB_HUMAN_READS(
-        CLUMP_READS.out
+        CLUMP_READS.out.combine(ch_human_reads)
     )
 }
