@@ -30,4 +30,16 @@ workflow CLUMPIFY_WORKFLOW {
     SCRUB_HUMAN_READS(
         CLUMP_READS.out
     )
+
+    SCRUB_HUMAN_READS.out
+    .map { sample_id, fastq -> 
+        tuple(sample_id, "illumina", fastq)
+    }
+    .set { scrubbed_reads_with_platform }
+
+    emit:
+    scrubbed_reads_with_platform
 }
+
+// next process takes
+// Queue channel of sample IDs, platforms, and (interleaved) FASTQ files: tuple val(sample_id), val(platform), path(fastq)
