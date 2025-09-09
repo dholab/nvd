@@ -72,6 +72,20 @@ def main():
     df['EXPERIMENT'] = args.experiment
     df['GOTTCHA2_DB_VERSION'] = args.db_version
 
+    df.rename(
+        columns={"TOTAL_SIG_LEN": "TOL_SIG_LENGTH", 
+            "MAPPED_SIG_LEN": "MAPPED_SIG_LENGTH",
+            "DEPTH":"ROLLUP_DOC",
+            "BEST_SIG_COV": "BEST_LINEAR_COV",
+            "COVERED_SIG_LEN": "LINEAR_LEN",
+            },
+        inplace=True)
+
+    df["LINEAR_COV_MAPPED_SIG"] = df["LINEAR_LEN"]/df["MAPPED_SIG_LENGTH"]
+    df["LINEAR_DOC"] = df["TOTAL_BP_MAPPED"]/df["LINEAR_LEN"]
+    df["LINEAR_COV"] = df["LINEAR_LEN"]/df["TOL_SIG_LENGTH"]
+
+
     # Perform upload or simulation
     total_uploaded = 0
     total_records = len(df)
@@ -108,3 +122,14 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+    # Target list column names
+    # ['SAMPLE', 'EXPERIMENT', 'LEVEL', 'NAME', 'TAXID', 'READ_COUNT', 'TOTAL_BP_MAPPED', 'TOTAL_BP_MISMATCH', 'LINEAR_LEN', 'LINEAR_DOC', 'ROLLUP_DOC', 
+    # 'REL_ABUNDANCE', 'LINEAR_COV', 'LINEAR_COV_MAPPED_SIG', 'BEST_LINEAR_COV', 
+    # 'MAPPED_SIG_LENGTH', 'TOL_SIG_LENGTH', 'ABUNDANCE', 'ZSCORE', 'NOTE', 'GOTTCHA2_DB_VERSION', 'Key']
+
+    # Our tsv file:
+    # ['LEVEL', 'NAME', 'TAXID', 'READ_COUNT', 'TOTAL_BP_MAPPED', 'ANI_CI95', 'COVERED_SIG_LEN', 'BEST_SIG_COV', 'DEPTH', 'REL_ABUNDANCE', 'PARENT_NAME', 
+    # 'PARENT_TAXID', 'TOTAL_READ_LEN', 'READ_IDT', 'TOTAL_BP_MISMATCH', 'TOTAL_BP_INDEL', 'ANI_NAIVE', 'ANI_CI95_LH', 'SIG_COV', 
+    # 'MAPPED_SIG_LEN', 'TOTAL_SIG_LEN', 'COVERED_SIG_DEPTH', 'COVERED_MAPPED_SIG_COV', 'ZSCORE', 'GENOMIC_CONTENT_EST', 'ABUNDANCE', 'REL_ABUNDANCE_DEPTH', 
+    # 'REL_ABUNDANCE_GC', 'SIG_LEVEL', 'GENOME_COUNT', 'GENOME_SIZE', 'NOTE', 'SAMPLE', 'EXPERIMENT', 'GOTTCHA2_DB_VERSION'] 
