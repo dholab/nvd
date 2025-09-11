@@ -4,7 +4,6 @@
 !.gitignore
 !Dockerfile
 !Containerfile
-!nvd2.def
 !LICENSE
 !README.md
 !justfile
@@ -28,20 +27,6 @@
 !/modules
 !/modules/*.nf
 
-# legacy
-!/legacy
-!/legacy/README.md
-!/legacy/data
-!/legacy/config
-!/legacy/config/config.yml
-!/legacy/config/config.yaml
-!/legacy/workflow/
-!/legacy/workflow/Snakefile
-!/legacy/workflow/scripts
-!/legacy/workflow/scripts/*.py
-!/legacy/workflow/rules
-!/legacy/workflow/rules/*.smk
-
 # bin
 !/bin
 !/bin/*.py
@@ -64,6 +49,8 @@
 !/docs
 !/docs/*.sh
 !/docs/*.md
+!/docs/*.qmd
+!/docs/_quarto.yml
 
 # scripts
 !/scripts
@@ -72,6 +59,8 @@
 !/scripts/*.pl
 !/scripts/*.py
 !/scripts/*.lua
+!/scripts/*.ts
+!/scripts/*.js
 
 # github workflows
 !/.github
