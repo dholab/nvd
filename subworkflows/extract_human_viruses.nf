@@ -23,22 +23,38 @@ workflow EXTRACT_HUMAN_VIRUSES {
 
     GENERATE_CONTIGS_TAXA_LIST(
         CLASSIFY_CONTIGS_FIRST_PASS.out
+            .filter { _id, _contigs, hits_file ->
+                hits_file.size() > 0 && hits_file.readLines().size() > 0
+            }
     )
 
     CLASSIFY_CONTIGS_SECOND_PASS(
-        GENERATE_CONTIGS_TAXA_LIST.out.combine(ch_stat_dbss).combine(ch_stat_annotation)
+        GENERATE_CONTIGS_TAXA_LIST.out
+            .combine(ch_stat_dbss)
+            .combine(ch_stat_annotation)
     )
 
     GENERATE_STAT_CONTIG_REPORT(
-        CLASSIFY_CONTIGS_SECOND_PASS.out.combine(ch_gettax)
+        CLASSIFY_CONTIGS_SECOND_PASS.out
+            .filter { _id, hits_file ->
+                hits_file.size() > 0 && hits_file.readLines().size() > 0
+            }
+            .combine(ch_gettax)
     )
 
     IDENTIFY_HUMAN_VIRUS_FAMILY_CONTIGS(
-        CLASSIFY_CONTIGS_SECOND_PASS.out.combine(ch_gettax)
+        CLASSIFY_CONTIGS_SECOND_PASS.out
+            .filter { _id, hits_file ->
+                hits_file.size() > 0 && hits_file.readLines().size() > 0
+            }
+            .combine(ch_gettax)
     )
 
     EXTRACT_HUMAN_VIRUS_CONTIGS(
         IDENTIFY_HUMAN_VIRUS_FAMILY_CONTIGS.out
+            .filter { _id, hits_file ->
+                hits_file.size() > 0 && hits_file.readLines().size() > 0
+            }
             .join(
                 ch_filtered_reads
                 .map { id, _platform, reads -> tuple(id, file(reads)) },

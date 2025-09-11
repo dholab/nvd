@@ -31,4 +31,9 @@ workflow PREPROCESS_CONTIGS {
 
     emit:
     FILTER_SHORT_CONTIGS.out
+        .filter { _id, _platform, fasta ->
+            def recordCount = fasta.countFasta()
+            recordCount > 0
+
+        }
 }

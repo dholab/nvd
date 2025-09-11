@@ -16,21 +16,28 @@ workflow CLASSIFY_WITH_MEGABLAST {
         ch_virus_contigs.combine(ch_blast_db_files)
     )
 
+    def nonEmptyMegablastResults = MEGABLAST.out.filter { _id, hits_file ->
+        hits_file.size() > 0 && hits_file.readLines().size() > 0
+    }
+
     ANNOTATE_MEGABLAST_RESULTS(
-        MEGABLAST.out.combine(ch_gettax_sqlite_path)
+        nonEmptyMegablastResults.combine(ch_gettax_sqlite_path)
     )
 
     // Capture this output for the LabKey table
     FILTER_NON_VIRUS_MEGABLAST_NODES(
         ANNOTATE_MEGABLAST_RESULTS.out.hits
+            .filter { _id, hits_file ->
+                hits_file.size() > 0 && hits_file.readLines().size() > 0
+            }
     )
 
     REMOVE_MEGABLAST_MAPPED_CONTIGS(
-        MEGABLAST.out.join(ch_virus_contigs, by: 0)
+        nonEmptyMegablastResults.join(ch_virus_contigs, by: 0)
     )
 
     emit:
     filtered_megablast = FILTER_NON_VIRUS_MEGABLAST_NODES.out
     megablast_contigs = REMOVE_MEGABLAST_MAPPED_CONTIGS.out
-    megablast = MEGABLAST.out
+    megablast = nonEmptyMegablastResults
 }
