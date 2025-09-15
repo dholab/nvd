@@ -5,7 +5,7 @@ process EXTRACT_HUMAN_VIRUS_READS {
     errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
 	maxRetries 2
 
-    cpus 2
+    cpus 20
 
     input:
     tuple val(sample_id), val(sample_type), path(fastq), path(stat_dbss), path(stat_annotation), path(human_virus_taxlist)
@@ -37,6 +37,8 @@ process CLASSIFY_CONTIGS_FIRST_PASS {
 
     errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
 	maxRetries 2
+
+    cpus 8
 
     input:
     tuple val(sample_id), val(platform), path(filtered_contigs), path(stat_index)
@@ -79,7 +81,7 @@ process CLASSIFY_CONTIGS_SECOND_PASS {
     errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
 	maxRetries 2
 
-    cpus 1
+    cpus 8
 
     input:
     tuple val(sample_id), path(filtered_contigs), path(tax_list), path(stat_dbss), path(stat_annotation)
