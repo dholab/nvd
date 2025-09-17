@@ -25,7 +25,7 @@ process EXTRACT_HUMAN_VIRUS_READS {
     -tax_list ${human_virus_taxlist} \
     ${sample_id}.all_reads.fasta \
     | cut -f1 \
-    | seqkit grep -r -f - \
+    | seqkit grep -f - \
     ${fastq} \
     -o ${sample_id}.human_virus.fastq.gz
     """
