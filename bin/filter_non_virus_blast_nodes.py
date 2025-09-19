@@ -38,7 +38,7 @@ def check_args(args: list[str]) -> None:
 
 
 def contains_non_phage_viruses(group: str) -> bool:
-    virus_hits = group[group["rank"].str.contains("superkingdom:Viruses", na=False)]
+    virus_hits = group[group["rank"].str.contains("root:Viruses", na=False)]
     non_phage_viruses = virus_hits[~virus_hits["stitle"].str.contains("phage", case=False)]
     return len(non_phage_viruses) > 0
 
