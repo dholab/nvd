@@ -137,7 +137,7 @@ process BLASTN_CLASSIFY {
 	errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
 	maxRetries 2
 
-    cpus 4
+    cpus 8
 
     input:
     tuple val(sample_id), path(classified), path(pruned_contigs), path(blast_db)
@@ -183,7 +183,7 @@ process ANNOTATE_BLASTN_RESULTS {
     --sample_name ${sample_id} \
     --sqlite_cache ${taxa_sqlite} \
     --input_file ${blastn_txt} \
-    --output_file ${sample_id}.annotated_megablast.txt \
+    --output_file ${sample_id}.annotated_blastn.txt \
     --task 'blastn'
     """
 }
