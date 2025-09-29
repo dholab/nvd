@@ -9,25 +9,6 @@ include { CLUMPIFY_WORKFLOW } from "./workflows/clumpify"
 
 workflow {
 
-/*
-EXAMPLE COMMAND
-----------------------------------
-nextflow run . \
---tools nvd \              # Run only NVD
---tools gottcha \          # Run only GOTTCHA2
---tools clumpify \         # Run only CLUMPIFY
---tools all \              # Run all tools
---tools nvd,gottcha \      # Run multiple specific tools
---blast_db ./db \
---blast_db_prefix PP819512-nt \
---stat_index ./db/tree_index.dense.dbs \
---stat_dbss ./db/tree_index.dense.dbss \
---stat_annotation ./db/tree_index.dense.dbss.annotation \
---human_virus_taxlist ./db/human_viruses_taxlist.txt \
---samplesheet test.csv \
--resume
-*/
-
     assert params.samplesheet && file(params.samplesheet).isFile()
 
     ch_input_samplesheet = Channel.fromPath( params.samplesheet )

@@ -7,6 +7,8 @@ include {
     IDENTIFY_HUMAN_VIRUS_FAMILY_CONTIGS
 } from "../modules/stat"
 include { EXTRACT_HUMAN_VIRUS_CONTIGS         } from "../modules/seqkit"
+include { MAP_READS_TO_CONTIGS                } from "../modules/minimap2"
+include { COUNT_MAPPED_READS                  } from "../modules/samtools"
 
 workflow EXTRACT_HUMAN_VIRUSES {
     take:
@@ -61,6 +63,13 @@ workflow EXTRACT_HUMAN_VIRUSES {
                 by: 0
             )
     )
+
+    MAP_READS_TO_CONTIGS(
+        ch_filtered_reads,
+        EXTRACT_HUMAN_VIRUS_CONTIGS.out
+    )
+
+    COUNT_MAPPED_READS(MAP_READS_TO_CONTIGS.out)
 
     emit:
     contigs = EXTRACT_HUMAN_VIRUS_CONTIGS.out
