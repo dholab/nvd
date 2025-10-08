@@ -13,7 +13,7 @@ process COUNT_MAPPED_READS {
 
     output:
     tuple val(sample_id), path("${sample_id}.filtered.bam"), path("${sample_id}.filtered.bam.bai"), emit: filtered_bam
-    path "${sample_id}_mapped_counts.txt", emit: mapped_counts
+    tuple val(sample_id), path("${sample_id}_mapped_counts.txt"), emit: mapped_counts
 
     script:
     """

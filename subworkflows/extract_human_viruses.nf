@@ -74,5 +74,6 @@ workflow EXTRACT_HUMAN_VIRUSES {
     emit:
     contigs = EXTRACT_HUMAN_VIRUS_CONTIGS.out
     sqlite = ch_gettax
+    contig_read_counts = COUNT_MAPPED_READS.out.mapped_counts
     
 }
