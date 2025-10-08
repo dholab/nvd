@@ -1,3 +1,4 @@
+// idxstats: The output is TAB-delimited with each line consisting of reference sequence name, sequence length, # mapped read-segments and # unmapped read-segments.
 process COUNT_MAPPED_READS {
 
     tag "${sample_id}"
@@ -18,7 +19,7 @@ process COUNT_MAPPED_READS {
     """
     samtools view -F 2304 -b ${bam} > ${sample_id}.filtered.bam
     samtools index ${sample_id}.filtered.bam
-    samtools idxstats ${sample_id}.filtered.bam | awk "{print \$1, \$3}" > ${sample_id}_mapped_counts.txt 
+    samtools idxstats ${sample_id}.filtered.bam | cut -f1,3 > ${sample_id}_mapped_counts.txt 
     """
     
 }
