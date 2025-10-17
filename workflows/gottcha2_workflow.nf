@@ -1,5 +1,4 @@
 include {
-    READ_COMPRESSION_PASSTHROUGH ;
     GOTTCHA2_PROFILE_NANOPORE ;
     GOTTCHA2_PROFILE_ILLUMINA ;
     GENERATE_FASTA
@@ -33,14 +32,12 @@ workflow GOTTCHA2_WORKFLOW {
         VALIDATE_LK_GOTTCHA2()
     }
 
-    READ_COMPRESSION_PASSTHROUGH(ch_sample_fastqs)
-
-    ch_nanopore_fastqs = READ_COMPRESSION_PASSTHROUGH.out
+    ch_nanopore_fastqs = ch_sample_fastqs
         .filter { _sample_id, platform, _fastq -> platform == "nanopore" || platform == "ont" }
         .map { sample_id, _platform, fastq -> tuple(sample_id, file(fastq)) }
         .filter { _id, fastq -> file(fastq).countFastq() >= params.min_gottcha_reads }
 
-    ch_illumina_fastqs = READ_COMPRESSION_PASSTHROUGH.out
+    ch_illumina_fastqs = ch_sample_fastqs
         .filter { _sample_id, platform, _fastq -> platform == "illumina" }
         .map { sample_id, _platform, fastq -> tuple(sample_id, file(fastq)) }
         .filter { _id, fastq -> file(fastq).countFastq() >= params.min_gottcha_reads }
