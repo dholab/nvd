@@ -85,7 +85,8 @@ workflow NVD2_WORKFLOW  {
             EXTRACT_HUMAN_VIRUSES.out.contigs,
             COUNT_READS.out.counts,
             params.experiment_id,
-            workflow.runName
+            workflow.runName,
+            EXTRACT_HUMAN_VIRUSES.out.contig_read_counts
         )
         labkey_log_ch = BUNDLE_BLAST_FOR_LABKEY.out.upload_log
     } else {

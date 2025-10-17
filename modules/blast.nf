@@ -11,7 +11,7 @@ process MEGABLAST {
 	errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
 	maxRetries 2
 
-    cpus 4
+    cpus 6
 
     input:
     tuple val(sample_id), path(human_virus_contigs), path(blast_db)
@@ -175,7 +175,7 @@ process ANNOTATE_BLASTN_RESULTS {
     tuple val(sample_id), path(blastn_txt), path(taxa_sqlite)
 
     output:
-    tuple val(sample_id), path("${sample_id}.annotated_megablast.txt")
+    tuple val(sample_id), path("${sample_id}.annotated_blastn.txt")
 
     script:
     """

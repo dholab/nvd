@@ -1,11 +1,12 @@
-
+// meta is equivalent to sample_id
 workflow BUNDLE_BLAST_FOR_LABKEY {
     take:
-    blast_results     // channel: [ meta, csv ]
-    contig_sequences  // channel: [ meta, fasta ]
-    read_counts       // channel: [ meta, total_reads ]
-    experiment_id   // value: experiment ID
-    run_id           // value: workflow run ID
+    blast_results        // channel: [ meta, csv ]
+    contig_sequences     // channel: [ meta, fasta ]
+    read_counts          // channel: [ meta, total_reads ]
+    experiment_id        // value: experiment ID
+    run_id               // value: workflow run ID
+    contig_read_counts   // channel: [ meta, mapped_counts.tsv ]
 
     main:
 
@@ -17,9 +18,10 @@ workflow BUNDLE_BLAST_FOR_LABKEY {
     // Prepare BLAST results for metagenomic_hits table
     ch_blast_labkey = blast_results
         .join(read_counts)
-        .map { meta, csv, total_reads ->
+        .join(contig_read_counts)
+        .map { meta, csv, total_reads, contig_mapped_reads  ->
             def output_file = "${meta}_blast_labkey.csv"
-            [meta, csv, total_reads, output_file]
+            [meta, csv, total_reads, contig_mapped_reads, output_file]
         }
 
     PREPARE_BLAST_LABKEY(
@@ -111,12 +113,12 @@ process PREPARE_BLAST_LABKEY {
     label 'process_low'
 
     input:
-    tuple val(meta), path(blast_csv), val(total_reads), val(output_name)
+    tuple val(meta), path(blast_csv), val(total_reads), path(contig_mapped_read_counts), val(output_name)
     val experiment_id
     val run_id
 
     output:
-    tuple val(meta), path("${output_name}.csv"), emit: csv
+    tuple val(meta), path(output_name), emit: csv
 
     script:
     """
@@ -125,6 +127,13 @@ process PREPARE_BLAST_LABKEY {
     import csv
     import os
 
+    # Read contig mapped read counts
+    contig_read_count_dict = {}
+    with open("${contig_mapped_read_counts}", "r") as contig_rc:
+        # pos 0 is sequence name and 1 is mapped read count
+        for line in contig_rc:
+            line_tuple = line.split("\\t")
+            contig_read_count_dict[line_tuple[0]] = line_tuple[1].strip()
     # Read BLAST results
     blast_data = []
     with open('${blast_csv}', 'r') as f:
@@ -132,6 +141,8 @@ process PREPARE_BLAST_LABKEY {
         for row in reader:
             if row.get('qseqid', '').lower() == 'qseqid':
                 continue  # skip accidental header row
+
+            mapped_reads_count = contig_read_count_dict.get(row.get('qseqid', ''), '0')
             # Format data for LabKey metagenomic_hits table
             labkey_row = {
                 'experiment': ${experiment_id},
@@ -149,7 +160,7 @@ process PREPARE_BLAST_LABKEY {
                 'sscinames': row.get('sscinames', ''),
                 'blast_db_version': 'unknown',
                 'snakemake_run_id': '${run_id}',
-                'mapped_reads': '0',
+                'mapped_reads': mapped_reads_count, # FIXME add contig read count
                 'total_reads': '${total_reads}',
                 'stat_db_version': 'unknown'
             }
@@ -157,13 +168,13 @@ process PREPARE_BLAST_LABKEY {
 
     # Write formatted data
     if blast_data:
-        with open('${output_name}.csv', 'w') as f:
+        with open('${output_name}', 'w') as f:
             writer = csv.DictWriter(f, fieldnames=blast_data[0].keys())
             writer.writeheader()
             writer.writerows(blast_data)
     else:
         # Create empty file if no data
-        open('${output_name}.csv', 'w').close()
+        open('${output_name}', 'w').close()
     """
 }
 

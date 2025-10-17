@@ -1,31 +1,3 @@
-process READ_COMPRESSION_PASSTHROUGH {
-
-    tag "${sample_id}"
-
-	errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
-	maxRetries 2
-
-    input:
-    tuple val(sample_id), val(platform), path(fastq)
-
-    output:
-    tuple val(sample_id), val(platform), path("*.fa*")
-
-    when:
-    params.tools && (params.tools.contains("gottcha") || params.tools.contains("all"))
-
-    script:
-    def extension = file(fastq).getBaseName().replace(".gz", "")
-    if (file(fastq).getExtension().contains("gz"))
-        """
-        cat ${fastq} | gzip -c -d > ${sample_id}.${extension}
-        """
-    else
-        """
-        cp ${fastq} ${sample_id}.uncompressed.${extension}
-        """
-}
-
 process GOTTCHA2_PROFILE_NANOPORE {
 
     tag "${sample_id}"
