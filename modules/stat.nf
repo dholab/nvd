@@ -28,6 +28,9 @@ process EXTRACT_HUMAN_VIRUS_READS {
     | seqkit grep -f - \
     ${fastq} \
     -o ${sample_id}.human_virus.fastq.gz
+
+    # Cleanup intermediate large file
+    rm ${sample_id}.all_reads.fasta
     """
 }
 
