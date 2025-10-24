@@ -1,5 +1,7 @@
 process RETRIEVE_GETTAX {
 
+    label "low"
+
     errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
 	maxRetries 2
     

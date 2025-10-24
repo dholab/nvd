@@ -1,13 +1,13 @@
 process GOTTCHA2_PROFILE_NANOPORE {
 
     tag "${sample_id}"
+    label "ludicrous"
+
     publishDir params.gottcha2_profiles, mode: 'copy', overwrite: false, pattern: "*.sam"
     publishDir params.gottcha2_profiles, mode: 'copy', overwrite: false, pattern: "*.tsv"
 
     errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
 	maxRetries 2
-
-    cpus 12
 
     input:
     tuple val(sample_id), path(fastq), path(ref_mmi), path(stats), path(tax_tsv)
@@ -36,13 +36,13 @@ process GOTTCHA2_PROFILE_NANOPORE {
 process GOTTCHA2_PROFILE_ILLUMINA {
 
     tag "${sample_id}"
+    label "ludicrous"
+
     publishDir params.gottcha2_profiles, mode: 'copy', overwrite: false, pattern: "*.sam"
     publishDir params.gottcha2_profiles, mode: 'copy', overwrite: false, pattern: "*.tsv"
 
     errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
 	maxRetries 2
-
-    cpus 12
 
     input:
     tuple val(sample_id), path(fastq), path(ref_mmi), path(stats), path(tax_tsv)
@@ -70,6 +70,8 @@ process GOTTCHA2_PROFILE_ILLUMINA {
 process GENERATE_FASTA {
 
     tag "${sample_id}"
+    label "medium"
+
     publishDir params.extracted_reads, mode: 'copy', overwrite: false, pattern: "*.fasta"
 
     errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }

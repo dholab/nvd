@@ -1,11 +1,10 @@
 process RUN_SPADES {
 
     tag "${sample_id}"
+    label "high"
 
     errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
 	maxRetries 2
-
-    cpus 4
 
     input:
     tuple val(sample_id), val(sample_type), path(reads)

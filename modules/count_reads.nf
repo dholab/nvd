@@ -1,6 +1,6 @@
 process COUNT_READS {
     tag "${meta}"
-    label 'process_low'
+    label 'low'
 
 	errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
 	maxRetries 2

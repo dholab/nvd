@@ -6,6 +6,7 @@ process VALIDATE_LK_EXP_TO_CLUSTER {
     secret 'nvd2'
 
     tag "exp_${params.experiment_id}_cluster_${params.condor_cluster}"
+    label "low"
 
     // Option 1: Use a dummy input channel if you need to trigger from workflow
     // input:

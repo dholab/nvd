@@ -1,11 +1,10 @@
 process EXTRACT_HUMAN_VIRUS_READS {
 
     tag "${sample_id}"
+    label "high"
 
     errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
 	maxRetries 2
-
-    cpus 20
 
     input:
     tuple val(sample_id), val(sample_type), path(fastq), path(stat_dbss), path(stat_annotation), path(human_virus_taxlist)
@@ -37,11 +36,10 @@ process EXTRACT_HUMAN_VIRUS_READS {
 process CLASSIFY_CONTIGS_FIRST_PASS {
 
     tag "${sample_id}"
+    label "high"
 
     errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
 	maxRetries 2
-
-    cpus 8
 
     input:
     tuple val(sample_id), val(platform), path(filtered_contigs), path(stat_index)
@@ -61,6 +59,7 @@ process CLASSIFY_CONTIGS_FIRST_PASS {
 process GENERATE_CONTIGS_TAXA_LIST {
 
     tag "${sample_id}"
+    label "low"
 
     errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
 	maxRetries 2
@@ -80,6 +79,7 @@ process GENERATE_CONTIGS_TAXA_LIST {
 process CLASSIFY_CONTIGS_SECOND_PASS {
 
     tag "${sample_id}"
+    label "high"
 
     errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
 	maxRetries 2
@@ -107,6 +107,7 @@ process CLASSIFY_CONTIGS_SECOND_PASS {
 process GENERATE_STAT_CONTIG_REPORT {
 
     tag "${sample_id}"
+    label "low"
 
     errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
 	maxRetries 2
@@ -130,6 +131,7 @@ process GENERATE_STAT_CONTIG_REPORT {
 process IDENTIFY_HUMAN_VIRUS_FAMILY_CONTIGS {
 
     tag "${sample_id}"
+    label "low"
 
     errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
 	maxRetries 2
@@ -155,9 +157,10 @@ process IDENTIFY_HUMAN_VIRUS_FAMILY_CONTIGS {
 
 process SCRUB_HUMAN_READS {
     tag "${sample_id}"
+    label "high"
+
     errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
     maxRetries 2
-    cpus 10
 
     input:
     tuple val(sample_id), path(fastq), path(human_reads)

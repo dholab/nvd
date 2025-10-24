@@ -7,6 +7,7 @@ identification of viral sequences.
 */
 process MEGABLAST {
     tag "${sample_id}"
+	label "high"
 
 	errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
 	maxRetries 2
@@ -39,11 +40,10 @@ process MEGABLAST {
 process ANNOTATE_MEGABLAST_RESULTS {
 
     tag "${sample_id}"
+	label "low"
 
 	errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
 	maxRetries 2
-
-    cpus 1
 
     input:
     tuple val(sample_id), path(blast_txt), path(sqlite_file)
@@ -73,11 +73,10 @@ non virus as long as one of the qseqid reads has a viral hit.
 process FILTER_NON_VIRUS_MEGABLAST_NODES {
 
     tag "${sample_id}"
+	label "low"
 
 	errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
 	maxRetries 2
-
-    cpus 1
 
     input:
     tuple val(sample_id), path(annotated_blast)
@@ -103,11 +102,10 @@ The pruned file is used as input for more sensitive blastn searching.
 process REMOVE_MEGABLAST_MAPPED_CONTIGS {
 
     tag "${sample_id}"
+    label "low"
 
 	errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
 	maxRetries 2
-
-    cpus 1
 
     input:
     tuple val(sample_id), path(filtered_megablast_nodes), path(human_virus_contigs)
@@ -133,6 +131,7 @@ to identify similar known sequences with BLASTN
 */
 process BLASTN_CLASSIFY {
     tag "${sample_id}"
+    label "high"
 
 	errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
 	maxRetries 2
@@ -165,6 +164,7 @@ process BLASTN_CLASSIFY {
 process ANNOTATE_BLASTN_RESULTS {
 
     tag "${sample_id}"
+    label "low"
 
 	errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
 	maxRetries 2
@@ -198,6 +198,7 @@ or where the only viral hits are phages.
 process FILTER_NON_VIRUS_BLASTN_NODES {
 
     tag "${sample_id}"
+    label "low"
 
 	errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
 	maxRetries 2
@@ -220,6 +221,7 @@ process FILTER_NON_VIRUS_BLASTN_NODES {
 process MERGE_FILTERED_BLAST_RESULTS {
 
     tag "${sample_id}"
+    label "low"
 
 	errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
 	maxRetries 2
@@ -251,6 +253,7 @@ process MERGE_FILTERED_BLAST_RESULTS {
 process EXTRACT_UNCLASSIFIED_CONTIGS {
 
     tag "${sample_id}"
+    label "low"
 
 	errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
 	maxRetries 2
@@ -278,8 +281,7 @@ process EXTRACT_UNCLASSIFIED_CONTIGS {
 process FILTER_DOWN_TO_SPECIES_STRAIN {
     
     tag "${sample_id}"
-
-    cpus 4
+    label "low"
     
     input:
     tuple val(sample_id), path(extracted_fasta), path(full_tsv)
@@ -297,6 +299,7 @@ process FILTER_DOWN_TO_SPECIES_STRAIN {
 process EXTRACT_WHITELISTED_FASTAS {
 
     tag "${sample_id} - ${taxid}"
+    label "low"
 
     input:
     tuple val(sample_id), path(extracted_fasta), path(full_tsv), val(taxid), path(blast_db)
@@ -329,11 +332,10 @@ process EXTRACT_WHITELISTED_FASTAS {
 process VERIFY_WITH_BLAST {
 
     tag "${sample_id} - ${parent_taxid} - ${strain_taxid}"
+    label "high"
 
     errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
     maxRetries 2
-
-    cpus 4
 
     input:
     tuple val(sample_id), val(parent_taxid), path(full_tsv), path(descendants_list), val(strain_taxid), path(strain_fasta)
@@ -401,11 +403,10 @@ process VERIFY_WITH_BLAST {
 process STACK_VERIFIED_TABLES {
 
     tag "${sample_id}"
+    label "low"
 
     errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
     maxRetries 2
-
-    cpus 2
 
     input:
     tuple val(sample_id), path("hits/*"), path("classification/*"), path(full_tsv)

@@ -1,6 +1,7 @@
 process MAP_READS_TO_CONTIGS {
 
     tag "${sample_id}"
+    label "medium"
 
     errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
 	maxRetries 2

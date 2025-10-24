@@ -3,6 +3,7 @@ process MERGE_PAIRS {
 	/* */
 
 	tag "${sample_id}"
+	label "medium"
 
 	errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
 	maxRetries 2
@@ -32,6 +33,7 @@ process INTERLEAVE_PAIRS {
 	/* */
 
 	tag "${sample_id}"
+	label "medium"
 
 	errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
 	maxRetries 2
@@ -63,6 +65,7 @@ process MASK_LOW_COMPLEXITY {
 	/* */
 
 	tag "${sample_id}"
+	label "medium"
 
 	errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
 	maxRetries 2
@@ -91,6 +94,7 @@ process FILTER_SHORT_CONTIGS {
 	/* */
 
 	tag "${sample_id}"
+	label "medium"
 
 	errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
 	maxRetries 2
@@ -119,6 +123,7 @@ process CLUMP_READS {
     /* */
 
 	tag "${sample_id}"
+	label "high"
 
 	errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
 	maxRetries 2
@@ -149,6 +154,7 @@ process REMOVE_MULTIMAPS {
     /* */
 
 	tag "${sample_id}"
+	label "medium"
 
 	errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
 	maxRetries 2

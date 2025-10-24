@@ -2,6 +2,7 @@
 process COUNT_MAPPED_READS {
 
     tag "${sample_id}"
+    label "low"
 
     errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
 	maxRetries 2
