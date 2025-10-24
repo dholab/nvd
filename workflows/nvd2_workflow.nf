@@ -1,7 +1,7 @@
 nextflow.enable.dsl=2
 
 include { PREPROCESS_CONTIGS } from "../subworkflows/preprocess_contigs"
-include { EXTRACT_HUMAN_VIRUSES } from "../subworkflows/classify_extracted_human_virus_contigs"
+include { EXTRACT_HUMAN_VIRUSES } from "../subworkflows/extract_human_virus_contigs"
 include { CLASSIFY_WITH_MEGABLAST } from "../subworkflows/classify_with_megablast"
 include { CLASSIFY_WITH_BLASTN } from "../subworkflows/classify_with_blastn"
 include { BUNDLE_BLAST_FOR_LABKEY } from "../subworkflows/bundle_blast_for_labkey"

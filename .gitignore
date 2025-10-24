@@ -52,7 +52,7 @@
 !/docs/_quarto.yml
 
 # scripts
-!/scripts
+!/scripts/*
 !/scripts/*.sh
 !/scripts/*.awk
 !/scripts/*.pl

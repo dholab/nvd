@@ -10,6 +10,8 @@ workflow PREPROCESS_CONTIGS {
     ch_human_virus_taxlist
 
     main:
+    
+    // Uses STAT to get on fastq records that map to specific virus infecting virueses
     EXTRACT_HUMAN_VIRUS_READS(
         ch_sample_fastqs.combine(ch_stat_dbss).combine(ch_stat_annotation).combine(ch_human_virus_taxlist)
     )
@@ -29,11 +31,14 @@ workflow PREPROCESS_CONTIGS {
         MASK_LOW_COMPLEXITY.out
     )
 
-    emit:
-    FILTER_SHORT_CONTIGS.out
+    ch_filtered_contigs = FILTER_SHORT_CONTIGS.out
         .filter { _id, _platform, fasta ->
             def recordCount = fasta.countFasta()
             recordCount > 0
 
         }
+
+    emit:
+    contigs = ch_filtered_contigs
+    viral_reads = EXTRACT_HUMAN_VIRUS_READS.out
 }
