@@ -1,7 +1,7 @@
 nextflow.enable.dsl=2
 
 include { PREPROCESS_CONTIGS } from "../subworkflows/preprocess_contigs"
-include { EXTRACT_HUMAN_VIRUSES } from "../subworkflows/extract_human_viruses"
+include { EXTRACT_HUMAN_VIRUSES } from "../subworkflows/classify_extracted_human_virus_contigs"
 include { CLASSIFY_WITH_MEGABLAST } from "../subworkflows/classify_with_megablast"
 include { CLASSIFY_WITH_BLASTN } from "../subworkflows/classify_with_blastn"
 include { BUNDLE_BLAST_FOR_LABKEY } from "../subworkflows/bundle_blast_for_labkey"
@@ -59,7 +59,8 @@ workflow NVD2_WORKFLOW  {
     )
 
     EXTRACT_HUMAN_VIRUSES(
-        PREPROCESS_CONTIGS.out,
+        PREPROCESS_CONTIGS.out.contigs,
+        PREPROCESS_CONTIGS.out.viral_reads,
         ch_stat_index,
         ch_stat_dbss,
         ch_stat_annotation,

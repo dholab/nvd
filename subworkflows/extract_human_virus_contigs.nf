@@ -1,5 +1,4 @@
 include {
-    EXTRACT_HUMAN_VIRUS_READS ;
     CLASSIFY_CONTIGS_FIRST_PASS ;
     GENERATE_CONTIGS_TAXA_LIST ;
     CLASSIFY_CONTIGS_SECOND_PASS ;
@@ -13,6 +12,7 @@ include { COUNT_MAPPED_READS                  } from "../modules/samtools"
 workflow EXTRACT_HUMAN_VIRUSES {
     take:
     ch_filtered_reads
+    ch_viral_reads
     ch_stat_dbs
     ch_stat_dbss
     ch_stat_annotation
@@ -64,8 +64,10 @@ workflow EXTRACT_HUMAN_VIRUSES {
             )
     )
 
+    // pass through the extracted_virus_reads from STAT and align them to the assembled and QC checked
+    // SPADES contigs that have been identified as human infecting virus family members
     MAP_READS_TO_CONTIGS(
-        ch_filtered_reads,
+        ch_viral_reads,
         EXTRACT_HUMAN_VIRUS_CONTIGS.out
     )
 
@@ -75,5 +77,5 @@ workflow EXTRACT_HUMAN_VIRUSES {
     contigs = EXTRACT_HUMAN_VIRUS_CONTIGS.out
     sqlite = ch_gettax
     contig_read_counts = COUNT_MAPPED_READS.out.mapped_counts
-    
+
 }
