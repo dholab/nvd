@@ -163,7 +163,6 @@ process BLASTN_CLASSIFY {
 
     script:
     def outfmt = "6 qseqid qlen sseqid stitle length pident evalue bitscore sscinames staxids"
-    def max_target_seqs = 5
     def blast_task = "blastn"
     """
     export BLASTDb=${blast_db}/
@@ -172,7 +171,7 @@ process BLASTN_CLASSIFY {
     -query ${pruned_contigs} \
     -num_threads ${task.cpus} \
     -outfmt "${outfmt}" \
-    -max_target_seqs ${max_target_seqs} \
+    -max_target_seqs ${params.max_blast_targets} \
     > ${sample_id}.blastn.txt
     """
 }
