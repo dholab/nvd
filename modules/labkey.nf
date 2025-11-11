@@ -5,23 +5,15 @@ process VALIDATE_LK_EXP_TO_CLUSTER {
 
     secret 'nvd2'
 
-    tag "exp_${params.experiment_id}_cluster_${params.condor_cluster}"
+    tag "exp_${params.experiment_id}_cluster_${params.condor_cluster}" // FIXME: params.condor_cluster needs to be renamed and have a default
     label "low"
 
-    // Option 1: Use a dummy input channel if you need to trigger from workflow
-    // input:
-    // val ready from Channel.value(true)
-
-    // Option 2: No input at all - process runs immediately when called
-    input:
-    // Leave empty for no inputs
-
     output:
-    path("lk_validation_log.txt"), emit: log
+    path "lk_validation_log.txt", emit: log
     stdout emit: validation_result
 
     when:
-    params.condor_cluster && params.labkey && params.experiment_id
+    params.condor_cluster && params.labkey && params.experiment_id // TODO: get rid of when block?
 
     script:
     """

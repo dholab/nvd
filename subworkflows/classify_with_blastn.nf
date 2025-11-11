@@ -7,7 +7,8 @@ include {
     ANNOTATE_BLASTN_RESULTS ;
     FILTER_NON_VIRUS_BLASTN_NODES ;
     EXTRACT_UNCLASSIFIED_CONTIGS ;
-    MERGE_FILTERED_BLAST_RESULTS
+    MERGE_FILTERED_BLAST_RESULTS ;
+    SELECT_TOP_BLAST_HITS
 } from "../modules/blast"
 
 workflow CLASSIFY_WITH_BLASTN {
@@ -26,8 +27,10 @@ workflow CLASSIFY_WITH_BLASTN {
         hits_file.size() > 0 && hits_file.readLines().size() > 0
     }
 
+    SELECT_TOP_BLAST_HITS(nonEmptyBLASTNResults)
+
     ANNOTATE_BLASTN_RESULTS(
-        nonEmptyBLASTNResults.combine(ch_gettax_sqlite_path)
+        SELECT_TOP_BLAST_HITS.out.combine(ch_gettax_sqlite_path)
     )
 
     FILTER_NON_VIRUS_BLASTN_NODES(
