@@ -8,10 +8,29 @@
 # ]
 # ///
 
+"""
+Annotate BLAST hits with taxonomic consensus assignments.
+
+This module resolves ambiguous BLAST results by computing either dominant taxid
+assignments (when one taxid has >80% support) or Least Common Ancestor (LCA)
+for near-tie cases. The LCA approach minimizes over-specificity when multiple
+closely-scoring hits disagree at the species level.
+
+Key features:
+- Quality filtering by alignment length, percent identity, and e-value
+- Near-tie detection using bitscore delta windows
+- Dual assignment strategy: dominant hits vs. LCA calculation
+- Automatic NCBI taxonomy database download and caching
+- Taxonomic rank refinement to avoid uninterpretable levels
+
+Usage:
+    python annotate_blast_lca.py -i blast_results.txt -o annotated.txt
+"""
 
 import argparse
 import tarfile
 import urllib.request
+from dataclasses import dataclass
 from pathlib import Path
 
 import polars as pl
@@ -24,17 +43,55 @@ from taxopy import TaxDb, Taxon
 NCBI_TAXDUMP_URL = "https://ftp.ncbi.nlm.nih.gov/pub/taxonomy/taxdump.tar.gz"
 
 # Parameters (tune as needed)
-MIN_BP = 70  # or 150 to 300 for contigs
-MIN_ID = 90.0  # for blastn; adjust for aa
-MAX_E = 1e-10
-DELTA_S = 5.0  # ΔS window for “near ties”
-MIN_SUPPORT = 0.8  # dominance threshold
+DEFAULT_MIN_BP = 70  # or 150 to 300 for contigs
+DEFAULT_MIN_ID = 90.0  # for blastn; adjust for aa
+DEFAULT_MAX_E = 1e-10
+DEFAULT_DELTA_S = 5.0  # ΔS window for “near ties”
+DEFAULT_MIN_SUPPORT = 0.8  # dominance threshold
+
+
+@dataclass
+class LcaParams:
+    """
+    Parameters for LCA-based taxonomic assignment.
+
+    Attributes:
+        min_bp: Minimum alignment length in base pairs (filters short/spurious hits)
+        min_identity: Minimum percent identity threshold (0-100)
+        max_evalue: Maximum e-value for considering hits (lower = more stringent)
+        delta_s_window: Bitscore window for near-tie detection (ΔS threshold)
+        min_support: Minimum support fraction for dominant assignment (0-1)
+
+    Note: This is a pure data class with no side effects.
+    """
+
+    min_bp: int = DEFAULT_MIN_BP
+    min_identity: float = DEFAULT_MIN_ID
+    max_evalue: float = DEFAULT_MAX_E
+    delta_s_window: float = DEFAULT_DELTA_S
+    min_support: float = DEFAULT_MIN_SUPPORT
 
 
 def ensure_taxdump(dest_dir: str | Path = "taxdump") -> Path:
     """
-    Download and extract NCBI taxdump files if they don't already exist locally.
-    Returns the Path to the directory containing nodes.dmp, names.dmp, merged.dmp.
+    Ensure NCBI taxonomy dump files are available locally.
+
+    Downloads and extracts taxdump.tar.gz from NCBI FTP if files don't exist.
+    Only downloads nodes.dmp, names.dmp, and merged.dmp (not the full archive).
+
+    Args:
+        dest_dir: Directory to store taxonomy files (created if missing)
+
+    Returns:
+        Path to directory containing taxonomy dump files
+
+    Side effects:
+        - Creates dest_dir if it doesn't exist
+        - Downloads ~50MB from NCBI FTP if files missing
+        - Writes files to disk
+        - Logs download progress via loguru
+
+    Note: Idempotent - safe to call multiple times.
     """
     dest = Path(dest_dir)
     dest.mkdir(parents=True, exist_ok=True)
@@ -57,7 +114,7 @@ def ensure_taxdump(dest_dir: str | Path = "taxdump") -> Path:
 
     with tarfile.open(tmp_tar, "r:gz") as tar:
         members = [m for m in tar.getmembers() if m.name in needed]
-        tar.extractall(dest, members=members)
+        tar.extractall(dest, members=members)  # noqa: S202
 
     tmp_tar.unlink(missing_ok=True)
     logger.info("Taxdump downloaded and extracted.")
@@ -66,40 +123,120 @@ def ensure_taxdump(dest_dir: str | Path = "taxdump") -> Path:
 
 def load_taxdb(dest_dir: str | Path = "taxdump") -> TaxDb:
     """
-    Ensures the taxonomy dump is available, then loads and returns a TaxDb instance.
+    Load NCBI taxonomy database into memory.
+
+    Ensures taxonomy files exist (downloads if needed), then constructs
+    a TaxDb instance for taxonomic operations.
+
+    Args:
+        dest_dir: Directory containing or to store taxonomy files
+
+    Returns:
+        TaxDb instance with taxonomy loaded into memory
+
+    Side effects:
+        - May trigger taxdump download (via ensure_taxdump)
+        - Loads ~100MB of taxonomy data into memory
+        - Logs loading progress
+
+    Note: This operation is expensive; cache the result when possible.
     """
     dest = ensure_taxdump(dest_dir)
     return TaxDb(
-        nodes_dmp=dest / "nodes.dmp",
-        names_dmp=dest / "names.dmp",
-        merged_dmp=dest / "merged.dmp",
+        nodes_dmp=str(dest / "nodes.dmp"),
+        names_dmp=str(dest / "names.dmp"),
+        merged_dmp=str(dest / "merged.dmp"),
     )
 
 
-def filter_blast_hits(unfiltered_hits: pl.LazyFrame) -> pl.LazyFrame:
+def filter_blast_hits(unfiltered_hits: pl.LazyFrame, params: LcaParams) -> pl.LazyFrame:
+    """
+    Filter BLAST hits by quality thresholds and identify near-tie cases.
+
+    Applies quality filters (length, identity, e-value), computes the maximum
+    bitscore (Smax) per query, and flags hits within delta_s_window of Smax
+    as "near ties" for potential LCA calculation.
+
+    Args:
+        unfiltered_hits: LazyFrame of raw BLAST results
+        params: Quality and near-tie detection parameters
+
+    Returns:
+        Filtered LazyFrame with added columns:
+            - Smax: Maximum bitscore for each query
+            - near_tie: Boolean flag for hits within ΔS window
+
+    Side effects: None (pure function, returns lazy computation graph)
+
+    Expected input columns: length, pident, evalue, bitscore, task, sample, qseqid
+    """
     return (
         unfiltered_hits.filter(
-            pl.col("length") >= MIN_BP,
-            pl.col("pident") >= MIN_ID,
-            pl.col("evalue") <= MAX_E,
+            pl.col("length") >= params.min_bp,
+            pl.col("pident") >= params.min_identity,
+            pl.col("evalue") <= params.max_evalue,
         )
         # Compute Smax per query
-        .with_columns(pl.max("bitscore").over(["task", "sample", "qseqid"]).alias("Smax"))
-        # Near-tie mask: ΔS <= DELTA_S
-        .with_columns((pl.col("bitscore") >= (pl.col("Smax") - DELTA_S)).alias("near_tie"))
+        .with_columns(
+            pl.max("bitscore").over(["task", "sample", "qseqid"]).alias("Smax"),
+        )
+        # Near-tie mask: ΔS <= delta_s_window
+        .with_columns(
+            (pl.col("bitscore") >= (pl.col("Smax") - params.delta_s_window)).alias("near_tie"),
+        )
     )
 
 
 def _find_lca_list(tids: list[int], tx: TaxDb) -> int | None:
+    """
+    Compute the Least Common Ancestor (LCA) for a list of taxids.
+
+    Finds the most recent common ancestor in the NCBI taxonomy tree.
+    Handles edge cases: single taxid returns itself, empty list returns None.
+
+    Args:
+        tids: List of NCBI taxonomy IDs
+        tx: TaxDb instance with loaded taxonomy
+
+    Returns:
+        Taxid of LCA, or None if list is empty
+
+    Side effects: None (pure function)
+
+    Note: Private helper function, intended for use within map_elements.
+    """
     if len(tids) == 1:
         return tids[0]
     if len(tids) == 0:
         return None
-    tids = [Taxon(tid, tx) for tid in tids]
-    return taxutils.find_lca(tids, tx).taxid
+    taxons: list[Taxon] = [Taxon(tid, tx) for tid in tids]
+    return taxutils.find_lca(taxons, tx).taxid
 
 
 def _nearest_ranked(tid: int | None, tx: TaxDb) -> tuple[int, str] | tuple[None, None]:
+    """
+    Find the nearest ancestor with a proper taxonomic rank.
+
+    Climbs the taxonomic lineage to find the first ancestor with a standard
+    rank (strain to family), avoiding unhelpful ranks like "clade" or "no rank".
+    Stops climbing above family level to prevent over-generalization.
+
+    Args:
+        tid: NCBI taxonomy ID to refine, or None
+        tx: TaxDb instance with loaded taxonomy
+
+    Returns:
+        Tuple of (taxid, rank) for nearest ranked ancestor, or (None, None) if:
+            - Input tid is None/invalid
+            - Taxid not found in database
+            - No lineage information available
+
+    Side effects: None (pure function)
+
+    Acceptable ranks: strain, species, subspecies, subgenus, genus, subfamily, family
+
+    Note: Private helper function for rank refinement.
+    """
     # Bail early on obviously invalid input
     if tid is None or not isinstance(tid, int):
         return None, None
@@ -135,7 +272,27 @@ def _nearest_ranked(tid: int | None, tx: TaxDb) -> tuple[int, str] | tuple[None,
     return t.taxid, t.rank
 
 
-def refine_assignments(assignments: pl.LazyFrame, tx: TaxDb) -> pl.LazyFrame:
+def _refine_assignments(assignments: pl.LazyFrame, tx: TaxDb) -> pl.LazyFrame:
+    """
+    Refine taxonomic assignments by adding names, ranks, and fixing rank issues.
+
+    Enriches assignments with taxonomic names and ranks. For taxids with
+    unhelpful ranks ("clade", "no rank"), climbs to nearest properly ranked
+    ancestor using _nearest_ranked.
+
+    Args:
+        assignments: LazyFrame with adjusted_taxid column
+        tx: TaxDb instance with loaded taxonomy
+
+    Returns:
+        LazyFrame with added columns:
+            - adjusted_taxid_name: Scientific name for taxid
+            - adjusted_taxid_rank: Taxonomic rank (refined to standard levels)
+
+    Side effects: None (pure function, returns lazy computation graph)
+
+    Note: Private helper function for taxonomic enrichment.
+    """
     id2name = {int(t): name for t, name in tx.taxid2name.items()}
     id2rank = {int(t): rank for t, rank in tx.taxid2rank.items()}
 
@@ -179,7 +336,38 @@ def refine_assignments(assignments: pl.LazyFrame, tx: TaxDb) -> pl.LazyFrame:
     )
 
 
-def adjust_taxids(filtered_lf: pl.LazyFrame, tx: TaxDb) -> pl.LazyFrame:
+def call_least_common_ancestors(
+    filtered_lf: pl.LazyFrame,
+    tx: TaxDb,
+    params: LcaParams,
+) -> pl.LazyFrame:
+    """
+    Assign consensus taxonomic IDs using dominant hits or LCA.
+
+    Implements a two-path assignment strategy:
+    1. Dominant path: If one taxid has ≥min_support fraction of total bitscore
+       weight, assign it directly (no LCA needed)
+    2. LCA path: For queries without dominant taxid, compute LCA of all
+       near-tie hits (within delta_s_window of Smax)
+
+    After assignment, refines ranks and adds taxonomic names.
+
+    Args:
+        filtered_lf: Filtered BLAST hits with near_tie and Smax columns
+        tx: TaxDb instance with loaded taxonomy
+        params: Parameters including min_support threshold
+
+    Returns:
+        LazyFrame joined with assignment results, including:
+            - adjusted_taxid: Consensus taxid (dominant or LCA)
+            - adjusted_taxid_name: Scientific name
+            - adjusted_taxid_rank: Refined taxonomic rank
+            - adjustment_method: "dominant" or "lca"
+
+    Side effects: None (pure function, returns lazy computation graph)
+
+    Note: This is the core taxonomic consensus algorithm.
+    """
     no_lca_needed = (
         filtered_lf.group_by(["task", "sample", "qseqid", "staxids"])
         .agg(total_w=pl.col("bitscore").sum())
@@ -187,7 +375,7 @@ def adjust_taxids(filtered_lf: pl.LazyFrame, tx: TaxDb) -> pl.LazyFrame:
         .with_columns(
             (pl.col("total_w") / pl.col("Wsum")).alias("support"),
         )
-        .filter(pl.col("support") >= MIN_SUPPORT)
+        .filter(pl.col("support") >= params.min_support)
         .sort(
             ["task", "sample", "qseqid", "support"],
             descending=[False, False, False, True],
@@ -210,14 +398,14 @@ def adjust_taxids(filtered_lf: pl.LazyFrame, tx: TaxDb) -> pl.LazyFrame:
         )
         .with_columns(
             pl.col("staxids")
-            .map_elements(_find_lca_list, return_dtype=pl.Int64)
+            .map_elements(lambda tids: _find_lca_list(tids, tx), return_dtype=pl.Int64)
             .alias("adjusted_taxid"),
             pl.lit("lca").alias("adjustment_method"),
         )
         .select(["task", "sample", "qseqid", "adjusted_taxid", "adjustment_method"])
     )
 
-    assignments = refine_assignments(pl.concat([no_lca_needed, lca_assigned]), tx)
+    assignments = _refine_assignments(pl.concat([no_lca_needed, lca_assigned]), tx)
 
     return filtered_lf.join(assignments, how="left", on=["task", "sample", "qseqid"]).drop(
         "near_tie",
@@ -226,11 +414,22 @@ def adjust_taxids(filtered_lf: pl.LazyFrame, tx: TaxDb) -> pl.LazyFrame:
 
 
 def parse_args() -> argparse.Namespace:
+    """
+    Parse command-line arguments for LCA annotation.
+
+    Returns:
+        Namespace with parsed arguments including I/O paths and LCA parameters
+
+    Side effects:
+        - Reads sys.argv
+        - May exit program if arguments invalid or --help requested
+    """
     parser = argparse.ArgumentParser(
-        description="Annotate contigs with conflicting BLAST hits with a 'consensus' taxid, \
-        either by taking the best it or by computing the Least Common Ancestor for near ties.",
+        description="Annotate contigs with conflicting BLAST hits with a 'consensus' taxid, "
+        "either by taking the best hit or by computing the Least Common Ancestor for near ties.",
     )
 
+    # Input/Output arguments
     parser.add_argument(
         "-i",
         "--input-file",
@@ -241,21 +440,85 @@ def parse_args() -> argparse.Namespace:
         "-o",
         "--output-file",
         required=True,
-        help="Path to write the annotated BLAST results (top hits).",
+        help="Path to write the annotated BLAST results.",
+    )
+
+    # LCA parameter arguments
+    parser.add_argument(
+        "--min-bp",
+        type=int,
+        default=DEFAULT_MIN_BP,
+        help=f"Minimum alignment length in base pairs (default: {DEFAULT_MIN_BP})",
+    )
+    parser.add_argument(
+        "--min-identity",
+        type=float,
+        default=DEFAULT_MIN_ID,
+        help=f"Minimum percent identity for BLAST hits (default: {DEFAULT_MIN_ID})",
+    )
+    parser.add_argument(
+        "--max-evalue",
+        type=float,
+        default=DEFAULT_MAX_E,
+        help=f"Maximum e-value threshold (default: {DEFAULT_MAX_E})",
+    )
+    parser.add_argument(
+        "--delta-s",
+        type=float,
+        default=DEFAULT_DELTA_S,
+        help=f"Bitscore window for defining near-ties (default: {DEFAULT_DELTA_S})",
+    )
+    parser.add_argument(
+        "--min-support",
+        type=float,
+        default=DEFAULT_MIN_SUPPORT,
+        help=f"Minimum support fraction for dominant taxid assignment (default: {DEFAULT_MIN_SUPPORT})",
     )
 
     return parser.parse_args()
 
 
 def main() -> None:
+    """
+    Main entry point for BLAST LCA annotation.
+
+    Orchestrates the full pipeline:
+    1. Parse command-line arguments
+    2. Load NCBI taxonomy database
+    3. Filter BLAST hits by quality thresholds
+    4. Assign consensus taxonomic IDs (dominant or LCA)
+    5. Write annotated results to output file
+
+    Side effects:
+        - Reads input BLAST file
+        - May download NCBI taxonomy database (~50MB)
+        - Writes output file
+        - Logs progress to stderr via loguru
+
+    Raises:
+        SystemExit: On invalid arguments or I/O errors
+    """
     args = parse_args()
+
+    # Construct LcaParams from command-line arguments
+    params = LcaParams(
+        min_bp=args.min_bp,
+        min_identity=args.min_identity,
+        max_evalue=args.max_evalue,
+        delta_s_window=args.delta_s,
+        min_support=args.min_support,
+    )
+
+    logger.info("Loading NCBI taxonomy database...")
     tx = load_taxdb()
 
+    logger.info("Processing BLAST results with parameters: {}", params)
     unfiltered_hits = pl.scan_csv(args.input_file, separator="\t")
-    filtered_lf = filter_blast_hits(unfiltered_hits)
-    assignment_lf = adjust_taxids(filtered_lf, tx)
+    filtered_lf = filter_blast_hits(unfiltered_hits, params)
+    assignment_lf = call_least_common_ancestors(filtered_lf, tx, params)
 
-    assignment_lf.sink_csv(args.out_file, separator="\t")
+    logger.info("Writing annotated results to {}", args.output_file)
+    assignment_lf.sink_csv(args.output_file, separator="\t")
 
 
 if __name__ == "__main__":

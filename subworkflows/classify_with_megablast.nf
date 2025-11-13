@@ -41,5 +41,5 @@ workflow CLASSIFY_WITH_MEGABLAST {
     emit:
     filtered_megablast = FILTER_NON_VIRUS_MEGABLAST_NODES.out
     megablast_contigs  = REMOVE_MEGABLAST_MAPPED_CONTIGS.out
-    megablast          = nonEmptyMegablastResults
+    megablast          = SELECT_TOP_BLAST_HITS.out
 }

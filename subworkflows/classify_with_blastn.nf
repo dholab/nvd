@@ -10,6 +10,7 @@ include {
     MERGE_FILTERED_BLAST_RESULTS ;
     SELECT_TOP_BLAST_HITS
 } from "../modules/blast"
+include { ANNOTATE_LEAST_COMMON_ANCESTORS  } from "../modules/utils"
 
 workflow CLASSIFY_WITH_BLASTN {
     take:
@@ -23,9 +24,10 @@ workflow CLASSIFY_WITH_BLASTN {
         ch_megablast_contigs.combine(ch_blast_db_files)
     )
 
-    def nonEmptyBLASTNResults = BLASTN_CLASSIFY.out.filter { _id, hits_file ->
-        hits_file.size() > 0 && hits_file.readLines().size() > 0
-    }
+    def nonEmptyBLASTNResults = BLASTN_CLASSIFY.out
+        .filter { _id, hits_file ->
+            hits_file.size() > 0 && hits_file.readLines().size() > 0
+        }
 
     SELECT_TOP_BLAST_HITS(nonEmptyBLASTNResults)
 
@@ -41,20 +43,11 @@ workflow CLASSIFY_WITH_BLASTN {
         ch_filtered_megablast,
         FILTER_NON_VIRUS_BLASTN_NODES.out.filter { _id, hits_file ->
             hits_file.size() > 0 && hits_file.readLines().size() > 0
-        }
+        },
     )
 
-    // TODO: Eventually, does the pipeline need to support the scenario where either megablast
-    // or blastn (though really just blastn) comes up with no hits
-
-    // UPDATE 20250911: With the changes in the megablast subworkflow and the above, where
-    // values in Nextflow queue channels are removed if the hits text files are empty, the
-    // TODO above should be handled.
-
-    // FIXME
-    ch_merged_blast_results = MERGE_FILTERED_BLAST_RESULTS.out
+    ANNOTATE_LEAST_COMMON_ANCESTORS(MERGE_FILTERED_BLAST_RESULTS.out)
 
     emit:
-    merged_results = ch_merged_blast_results
-
+    merged_results = ANNOTATE_LEAST_COMMON_ANCESTORS.out
 }

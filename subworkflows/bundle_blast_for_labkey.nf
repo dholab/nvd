@@ -57,14 +57,14 @@ workflow BUNDLE_BLAST_FOR_LABKEY {
 
     // Upload BLAST results
     LABKEY_UPLOAD_BLAST(
-        PREPARE_BLAST_LABKEY.out.csv.map { meta, path -> path }.collect(),
+        PREPARE_BLAST_LABKEY.out.csv.map { _meta, path -> path }.collect(),
         experiment_id,
         run_id
     )
 
     // Upload FASTA results
     LABKEY_UPLOAD_FASTA(
-        PREPARE_FASTA_LABKEY.out.csv.map { meta, path -> path }.collect(),
+        PREPARE_FASTA_LABKEY.out.csv.map { _meta, path -> path }.collect(),
         experiment_id,
         run_id
     )
