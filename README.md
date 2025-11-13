@@ -16,10 +16,10 @@ human viruses in metagenomic samples. It leverages the battle-tested NCBI
 toolchain, including
 [STAT](https://www.ncbi.nlm.nih.gov/sra/docs/sra-taxonomy-analysis-tool/) and
 [BLAST](https://blast.ncbi.nlm.nih.gov/Blast.cgi), to identify human viruses
-while minimizing false positives _and_ false negatives. And for more general
-purpose classification, NVD2 implements a
-[GOTTCHA2](https://github.com/poeli/GOTTCHA2) subworkflow, which uses a
-carefully curated database of taxonomically diagnostic reference sequences
+while minimizing false positives _and_ false negatives (the STAT+BLAST workflow,
+historically called "NVD"). For more general purpose classification, NVD2 
+implements a [GOTTCHA2](https://github.com/poeli/GOTTCHA2) subworkflow, which 
+uses a carefully curated database of taxonomically diagnostic reference sequences
 spanning well-characterized taxa across the tree of life.
 
 NVD2 was designed from the ground up to handle enormous datasets and performs
@@ -140,14 +140,16 @@ With that, you're ready to run the pipeline!
 
 Before you construct your run command, first answer the following questions:
 
-- Are you interested only in human viruses? If so, include `--tools nvd` in your
-  `nextflow run` command (more on this below).
+- Are you interested only in human viruses? If so, include `--tools stat_blast` 
+  (or `nvd`, `stat`, `blast`, `stast` - all equivalent) in your `nextflow run` 
+  command (more on this below).
 - Are you interested in whatever's in your sample and not in human viruses in
   particular? If so, use `--tools gottcha`.
-- Are you interested in both? If so, use `--tools nvd,gottcha`
+- Are you interested in both? If so, use `--tools stat_blast,gottcha` 
+  (or `nvd,gottcha` for backward compatibility)
 - Do you want the kitchen sink? We use `--tools all` for that.
 
-Beyond the answers to these questions, most of the default NVD run command will
+Beyond the answers to these questions, most of the default run command will
 simply be devoted to configuring paths to the required reference database files.
 Note that we plan to use presets to simply normal use-case run commands, but for
 now, an example run command to use all subworkflows will look like:

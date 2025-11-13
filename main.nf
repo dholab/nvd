@@ -2,10 +2,10 @@
 
 nextflow.enable.dsl = 2
 
-include { GATHER_READS      } from "./workflows/gather_reads"
-include { NVD2_WORKFLOW     } from "./workflows/nvd2_workflow"
-include { GOTTCHA2_WORKFLOW } from "./workflows/gottcha2_workflow"
-include { CLUMPIFY_WORKFLOW } from "./workflows/clumpify"
+include { GATHER_READS         } from "./workflows/gather_reads"
+include { STAT_BLAST_WORKFLOW  } from "./workflows/stat_blast_workflow"
+include { GOTTCHA2_WORKFLOW    } from "./workflows/gottcha2_workflow"
+include { CLUMPIFY_WORKFLOW    } from "./workflows/clumpify"
 
 workflow {
 
@@ -19,13 +19,14 @@ workflow {
 
     GATHER_READS(ch_input_samplesheet)
 
-    // NVD workflow
-    def nvd_results = NVD2_WORKFLOW(GATHER_READS.out)
-    def nvd_token = nvd_results.completion
+    // STAT+BLAST workflow (human virus detection via STAT + two-phase BLAST)
+    // Aliases: nvd, stat, blast, stat_blast, stast (for backward compatibility)
+    def stat_blast_results = STAT_BLAST_WORKFLOW(GATHER_READS.out)
+    def stat_blast_token = stat_blast_results.completion
 
     // Collect all LabKey logs as final process
     if (params.labkey) {
-        nvd_results.labkey_log.collectFile(
+        stat_blast_results.labkey_log.collectFile(
             name: 'final_labkey_upload.log',
             storeDir: params.results,
         )
@@ -33,7 +34,7 @@ workflow {
 
     // GOTTCHA2 workflow
     def gottcha_token = GOTTCHA2_WORKFLOW(GATHER_READS.out).completion
-    def start_clumpify = nvd_token.mix(gottcha_token).collect().map { true }
+    def start_clumpify = stat_blast_token.mix(gottcha_token).collect().map { true }
 
     // CLUMPIFY workflow  
     CLUMPIFY_WORKFLOW(

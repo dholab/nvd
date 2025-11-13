@@ -13,7 +13,7 @@ process EXTRACT_HUMAN_VIRUS_READS {
     tuple val(sample_id), val(sample_type), path("*.f*q.gz")
 
     when:
-    params.tools && (params.tools.contains("nvd") || params.tools.contains("all"))
+    params.tools && (params.tools.contains("nvd") || params.tools.contains("stat") || params.tools.contains("blast") || params.tools.contains("stat_blast") || params.tools.contains("stast") || params.tools.contains("all"))
 
     script:
     """

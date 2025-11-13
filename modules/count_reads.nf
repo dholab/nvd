@@ -12,7 +12,7 @@ process COUNT_READS {
     tuple val(meta), env(total_reads), emit: counts
 
     when:
-    params.tools && (params.tools.contains("nvd") || params.tools.contains("all"))
+    params.tools && (params.tools.contains("nvd") || params.tools.contains("stat") || params.tools.contains("blast") || params.tools.contains("stat_blast") || params.tools.contains("stast") || params.tools.contains("all"))
 
     script:
     """

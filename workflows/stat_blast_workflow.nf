@@ -1,3 +1,13 @@
+/*
+ * STAT+BLAST Workflow
+ * 
+ * Human virus detection using NCBI STAT for initial classification
+ * followed by two-phase BLAST verification (megablast + blastn).
+ * 
+ * Historical note: Previously called "NVD" (Novel Virus Detection) workflow.
+ * Tool aliases: nvd, stat, blast, stat_blast, stast
+ */
+
 nextflow.enable.dsl=2
 
 include { PREPROCESS_CONTIGS } from "../subworkflows/preprocess_contigs"
@@ -10,12 +20,19 @@ include { RETRIEVE_GETTAX } from "../modules/utils"
 include { VALIDATE_LK_BLAST } from "../subworkflows/validate_lk_blast_lists.nf"
 
 
-workflow NVD2_WORKFLOW  {
+workflow STAT_BLAST_WORKFLOW {
     take:
     ch_sample_fastqs // Queue channel of sample IDs, platforms, and (interleaved) FASTQ files: tuple val(sample_id), val(platform), path(fastq)
 
     main:
-    if (params.tools && (params.tools.contains("nvd") || params.tools.contains("all")) ) {
+    // Check if STAT+BLAST workflow should run
+    // Supports: nvd, stat, blast, stat_blast, stast (all equivalent for backward compatibility)
+    if (params.tools && (params.tools.contains("nvd") || 
+                         params.tools.contains("stat") || 
+                         params.tools.contains("blast") || 
+                         params.tools.contains("stat_blast") || 
+                         params.tools.contains("stast") || 
+                         params.tools.contains("all"))) {
         assert (
             params.blast_db              && file(params.blast_db).isDirectory()         &&
             params.stat_index            && file(params.stat_index).exists()            &&
@@ -95,7 +112,7 @@ workflow NVD2_WORKFLOW  {
         labkey_log_ch = Channel.empty()
     }
 
-    ch_completion = CLASSIFY_WITH_BLASTN.out.merged_results.map { _results -> "NVD complete!" }
+    ch_completion = CLASSIFY_WITH_BLASTN.out.merged_results.map { _results -> "STAT+BLAST workflow complete!" }
 
     emit:
     completion = ch_completion

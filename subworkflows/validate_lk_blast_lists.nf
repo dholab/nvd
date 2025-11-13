@@ -30,7 +30,7 @@ process VALIDATE_BLAST_HITS_LIST {
     path 'blast_validation_report.txt'
 
     when:
-    params.tools && (params.tools.contains("nvd") || params.tools.contains("all"))
+    params.tools && (params.tools.contains("nvd") || params.tools.contains("stat") || params.tools.contains("blast") || params.tools.contains("stat_blast") || params.tools.contains("stast") || params.tools.contains("all"))
 
     script:
     """
@@ -52,7 +52,7 @@ process VALIDATE_BLAST_FASTA_LIST {
     path 'fasta_validation_report.txt'
 
     when:
-    params.tools && (params.tools.contains("nvd") || params.tools.contains("all"))
+    params.tools && (params.tools.contains("nvd") || params.tools.contains("stat") || params.tools.contains("blast") || params.tools.contains("stat_blast") || params.tools.contains("stast") || params.tools.contains("all"))
 
     script:
     """
