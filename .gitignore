@@ -6,6 +6,7 @@
 !Containerfile
 !LICENSE
 !README.md
+!install.sh
 !justfile
 !main.nf
 !nextflow.config
@@ -46,10 +47,9 @@
 
 # docs
 !/docs
-!/docs/*.sh
-!/docs/*.md
-!/docs/*.qmd
-!/docs/_quarto.yml
+!/docs/INSTALLATION.md
+!/docs/contributor_guide.md
+!/docs/example_commands.md
 
 # scripts
 !/scripts/*
