@@ -6,6 +6,14 @@ encounter, with explanations of when and why you'd use each configuration.
 
 For basic setup instructions, see the main [README.md](../README.md) file.
 
+## Tool Selection Note
+
+**STAT+BLAST Workflow Aliases**: The human virus detection workflow (STAT + two-phase BLAST) 
+can be invoked using any of these tool names: `stat_blast`, `nvd`, `stat`, `blast`, or `stast`. 
+They all trigger the same workflow. The legacy name `nvd` is maintained for backward compatibility.
+
+Examples in this guide use various aliases to demonstrate flexibility, but they're all equivalent.
+
 ## Table of Contents
 
 - [Quick Start Examples](#quick-start-examples)
@@ -23,14 +31,17 @@ For basic setup instructions, see the main [README.md](../README.md) file.
 
 ## Quick Start Examples
 
-### Minimal NVD run (human viruses only)
+### Minimal STAT+BLAST run (human viruses only)
 
 Use this when you're specifically interested in detecting human viruses and want
 the fastest, most focused analysis:
 
+**Note**: Tool aliases `stat_blast`, `nvd`, `stat`, `blast`, and `stast` all invoke 
+the same workflow. Use whichever name is most intuitive for your team.
+
 ```bash
 nextflow run dhoconno/nvd \
-    --tools nvd \
+    --tools stat_blast \
     --samplesheet assets/example_samplesheet.csv \
     --gottcha2_db db/PP819512_gottcha2.fasta \
     --blast_db db \
