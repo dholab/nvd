@@ -37,6 +37,7 @@
             pkgs.libxslt
             pkgs.libffi
             pkgs.pixi
+            pkgs.graphviz
           ];
 
           shellHook = ''
@@ -53,4 +54,3 @@
       }
     );
 }
-

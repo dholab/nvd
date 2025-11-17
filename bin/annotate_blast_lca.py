@@ -38,6 +38,7 @@ import polars.selectors as cs
 import taxopy.utilities as taxutils
 from loguru import logger
 from taxopy import TaxDb, Taxon
+from taxopy.exceptions import TaxidError
 
 # URL for NCBI taxdump files
 NCBI_TAXDUMP_URL = "https://ftp.ncbi.nlm.nih.gov/pub/taxonomy/taxdump.tar.gz"
@@ -183,13 +184,13 @@ def filter_blast_hits(unfiltered_hits: pl.LazyFrame, params: LcaParams) -> pl.La
         # Near-tie mask: ΔS <= delta_s_window
         .with_columns(
             (pl.col("bitscore") >= (pl.col("Smax") - params.delta_s_window)).alias(
-                "near_tie"
+                "near_tie",
             ),
         )
     )
 
 
-def _find_lca_list(tids: list[int], tx: TaxDb) -> int | None:
+def _find_lca_list(tids: list[int | None] | None, tx: TaxDb) -> int | None:
     """
     Compute the Least Common Ancestor (LCA) for a list of taxids.
 
@@ -207,12 +208,33 @@ def _find_lca_list(tids: list[int], tx: TaxDb) -> int | None:
 
     Note: Private helper function, intended for use within map_elements.
     """
-    if len(tids) == 1:
-        return tids[0]
+    if tids is None:
+        return None
     if len(tids) == 0:
         return None
-    taxons: list[Taxon] = [Taxon(tid, tx) for tid in tids]
-    return taxutils.find_lca(taxons, tx).taxid
+    if len(tids) == 1:
+        return tids[0]
+
+    # Filter out invalid taxids
+    valid_taxons = []
+    for tid in tids:
+        if tid is None:
+            continue
+        try:
+            valid_taxons.append(Taxon(tid, tx))
+        except (KeyError, ValueError, TaxidError):
+            # Skip invalid taxids - could be merged/obsolete/corrupted
+            logger.warning(f"Skipping invalid taxid: {tid}")
+            continue
+
+    # Edge cases after filtering
+    if len(valid_taxons) == 0:
+        logger.warning(f"No valid taxids found in list: {tids}")
+        return None
+    if len(valid_taxons) == 1:
+        return valid_taxons[0].taxid
+
+    return taxutils.find_lca(valid_taxons, tx).taxid
 
 
 def _nearest_ranked(tid: int | None, tx: TaxDb) -> tuple[int, str] | tuple[None, None]:
@@ -245,7 +267,7 @@ def _nearest_ranked(tid: int | None, tx: TaxDb) -> tuple[int, str] | tuple[None,
 
     try:
         t = Taxon(tid, tx)
-    except (KeyError, ValueError):
+    except (KeyError, ValueError, TaxidError):
         # e.g., taxid not found in nodes.dmp or merged.dmp
         return None, None
 
@@ -299,7 +321,7 @@ def _refine_assignments(assignments: pl.LazyFrame, tx: TaxDb) -> pl.LazyFrame:
     id2rank = {int(t): rank for t, rank in tx.taxid2rank.items()}
 
     needs_nearest = pl.col("adjusted_taxid_rank").is_null() | pl.col(
-        "adjusted_taxid_rank"
+        "adjusted_taxid_rank",
     ).is_in(
         ["clade", "no rank"],
     )
@@ -376,7 +398,7 @@ def call_least_common_ancestors(
         filtered_lf.group_by(["task", "sample", "qseqid", "staxids"])
         .agg(total_w=pl.col("bitscore").sum())
         .with_columns(
-            pl.sum("total_w").over(["task", "sample", "qseqid"]).alias("Wsum")
+            pl.sum("total_w").over(["task", "sample", "qseqid"]).alias("Wsum"),
         )
         .with_columns(
             (pl.col("total_w") / pl.col("Wsum")).alias("support"),
@@ -414,7 +436,9 @@ def call_least_common_ancestors(
     assignments = _refine_assignments(pl.concat([no_lca_needed, lca_assigned]), tx)
 
     return filtered_lf.join(
-        assignments, how="left", on=["task", "sample", "qseqid"]
+        assignments,
+        how="left",
+        on=["task", "sample", "qseqid"],
     ).drop(
         "near_tie",
         "Smax",
