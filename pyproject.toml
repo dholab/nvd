@@ -18,6 +18,7 @@ dependencies = [
   "polars>=1.27.1",
   "pysam>=0.23.0",
   "pyyaml>=6.0.2",
+  "rich>=14.0.0",
   "snakemake>=9.3.1",
   "taxopy>=0.14.0",
   "typer>=0.15.2",
@@ -87,8 +88,9 @@ py-modules = ["bin"]
 compile-bytecode = true
 
 [tool.ruff.lint]
-select = []
-ignore = ["G004", "PTH"]
+select = ["ALL"]
+ignore = ["D", "S101", "E501", "PTH123", "TD003"]
+
 # extend-ignore = ["ALL"]
 
 [tool.basedpyright]

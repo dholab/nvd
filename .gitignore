@@ -6,7 +6,7 @@
 !Containerfile
 !LICENSE
 !README.md
-!install.sh
+!INSTALL.sh
 !justfile
 !main.nf
 !nextflow.config
