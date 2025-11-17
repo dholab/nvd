@@ -88,9 +88,8 @@ py-modules = ["bin"]
 compile-bytecode = true
 
 [tool.ruff.lint]
-select = ["ALL"]
-ignore = ["D", "S101", "E501", "PTH123", "TD003"]
-
+select = []
+ignore = ["G004", "PTH"]
 # extend-ignore = ["ALL"]
 
 [tool.basedpyright]

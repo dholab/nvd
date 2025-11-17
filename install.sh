@@ -30,7 +30,7 @@ readonly VERSION="0.1.0"
 handle_error() {
 	local exit_code=$?
 	local line_number=$1
-	
+
 	echo >&2
 	echo -e "\033[0;31m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m" >&2
 	echo -e "\033[0;31m  ERROR: Installation script failed\033[0m" >&2
@@ -44,12 +44,12 @@ handle_error() {
 	echo "  • Missing system dependencies" >&2
 	echo "  • Disk space issues" >&2
 	echo >&2
-	
+
 	# Save error log
 	local log_dir="${HOME}/.nvd2"
 	local log_file="${log_dir}/install-error.log"
 	mkdir -p "$log_dir" 2>/dev/null || true
-	
+
 	{
 		echo "NVD2 Installation Error Log"
 		echo "Timestamp: $(date)"
@@ -59,18 +59,18 @@ handle_error() {
 		echo "OS: $OSTYPE"
 		echo ""
 		echo "Error occurred during NVD2 installation"
-	} > "$log_file" 2>/dev/null || true
-	
+	} >"$log_file" 2>/dev/null || true
+
 	if [[ -f "$log_file" ]]; then
 		echo "Error details saved to: $log_file" >&2
 	fi
-	
+
 	echo >&2
 	echo "To get help:" >&2
 	echo "  • Check the documentation: https://github.com/dhoconno/nvd" >&2
 	echo "  • Report issues: https://github.com/dhoconno/nvd/issues" >&2
 	echo >&2
-	
+
 	exit $exit_code
 }
 
@@ -126,7 +126,7 @@ if [[ "${LANG}" =~ UTF-8 ]]; then
 	readonly DOWNLOAD="⬇️ "
 	readonly WRENCH="🔧"
 	readonly DNA="🧬"
-	
+
 	# Box drawing characters for headers
 	readonly BOX_TL="┏"
 	readonly BOX_TR="┓"
@@ -145,7 +145,7 @@ else
 	readonly DOWNLOAD="[DOWN]"
 	readonly WRENCH="[TOOL]"
 	readonly DNA="[DNA]"
-	
+
 	# ASCII box drawing
 	readonly BOX_TL="+"
 	readonly BOX_TR="+"
@@ -162,10 +162,10 @@ fi
 print_header() {
 	local message="$1"
 	local width=70
-	
+
 	# Calculate padding: width - message length - 1 (for leading space)
 	local padding=$((width - ${#message} - 1))
-	
+
 	echo
 	echo -e "${COLOR_HEADER}${BOX_TL}$(printf "${BOX_H}%.0s" $(seq 1 $width))${BOX_TR}${RESET}"
 	echo -e "${COLOR_HEADER}${BOX_V} ${message}$(printf ' %.0s' $(seq 1 $padding))${BOX_V}${RESET}"
@@ -248,10 +248,10 @@ validate_path_writeable() {
 
 handle_docker_not_running() {
 	print_header "Docker Not Running"
-	
+
 	echo "Docker is installed but the Docker daemon is not currently running."
 	echo
-	
+
 	# OS-specific instructions
 	if [[ "$OSTYPE" == "darwin"* ]]; then
 		echo "To start Docker on macOS:"
@@ -266,17 +266,17 @@ handle_docker_not_running() {
 		echo "To enable Docker on boot:"
 		echo "  sudo systemctl enable docker"
 	fi
-	
+
 	echo
 	echo -e "${DIM}After starting Docker, you can:"
 	echo "  • Press ENTER to retry the check"
 	echo "  • Press Ctrl+C to exit and re-run this installer later${RESET}"
 	echo
-	
+
 	# Retry loop
 	while true; do
 		prompt_continue "Press ENTER to retry Docker check..."
-		
+
 		echo "Checking Docker status..."
 		if docker info &>/dev/null; then
 			echo
@@ -287,7 +287,7 @@ handle_docker_not_running() {
 			echo
 			print_warning "Docker is still not running"
 			echo
-			
+
 			if ! prompt_yes_no "Try again?" "y"; then
 				return 1
 			fi
@@ -300,9 +300,9 @@ handle_insufficient_disk_space() {
 	local required_gb="$2"
 	local available_gb="$3"
 	local shortage_gb=$((required_gb - available_gb))
-	
+
 	print_header "Insufficient Disk Space"
-	
+
 	echo "The selected location does not have enough free space."
 	echo
 	echo -e "  ${BOLD}Location:${RESET}    $path"
@@ -310,60 +310,60 @@ handle_insufficient_disk_space() {
 	echo -e "  ${BOLD}Available:${RESET}   ${available_gb}GB"
 	echo -e "  ${BOLD}Shortage:${RESET}    ${RED}${shortage_gb}GB${RESET}"
 	echo
-	
+
 	echo "What would you like to do?"
 	echo
-	
+
 	local options=(
 		"Choose a different location with more space"
 		"Configure fewer databases (reduce space requirement)"
 		"Skip database setup (configure manually later)"
 		"Cancel installation"
 	)
-	
+
 	local choice
 	choice=$(prompt_choice "Select an option:" "${options[@]}")
-	
-	return $((choice - 1))  # Return 0-3 for the selected option
+
+	return $((choice - 1)) # Return 0-3 for the selected option
 }
 
 handle_network_failure() {
 	local db_name="$1"
 	local partial_size="$2"
-	
+
 	print_header "Download Interrupted"
-	
+
 	echo "Network connection was lost while downloading ${db_name} database."
 	echo
-	
+
 	if [[ -n "$partial_size" ]]; then
 		echo -e "  ${BOLD}Downloaded so far:${RESET} $partial_size"
 		echo
 	fi
-	
+
 	echo "The partial download has been preserved and can be resumed."
 	echo
 	echo "What would you like to do?"
 	echo
-	
+
 	local options=(
 		"Retry download now"
 		"Skip this database (continue with installation)"
 		"Exit (resume installation later)"
 	)
-	
+
 	local choice
 	choice=$(prompt_choice "Select an option:" "${options[@]}")
-	
-	return $((choice - 1))  # Return 0-2 for the selected option
+
+	return $((choice - 1)) # Return 0-2 for the selected option
 }
 
 handle_old_java_version() {
 	local found_version="$1"
 	local required_version="11"
-	
+
 	print_header "Java Version Too Old"
-	
+
 	echo "Your Java version is too old for Nextflow."
 	echo
 	echo -e "  ${BOLD}Found:${RESET}     Java $found_version"
@@ -371,10 +371,10 @@ handle_old_java_version() {
 	echo
 	echo "Nextflow requires Java 11 or newer to run."
 	echo
-	
+
 	echo "Installation options:"
 	echo
-	
+
 	# OS-specific instructions
 	if [[ "$OSTYPE" == "darwin"* ]]; then
 		echo "  ${BOLD}macOS:${RESET}"
@@ -390,15 +390,15 @@ handle_old_java_version() {
 		echo "    sudo yum install java-17-openjdk"
 		echo
 	fi
-	
+
 	echo "  ${BOLD}SDKMAN (any OS):${RESET}"
 	echo "    curl -s https://get.sdkman.io | bash"
 	echo "    sdk install java 17.0.9-tem"
 	echo
-	
+
 	echo -e "${DIM}After installing Java, re-run this installer.${RESET}"
 	echo
-	
+
 	return 1
 }
 
@@ -904,18 +904,18 @@ configure_database_path() {
 				# Insufficient space - use handler
 				local available_gb
 				available_gb=$(get_available_space_gb "$path")
-				
+
 				# Calculate required with buffer
 				local buffer_gb=$((db_size_gb * 20 / 100))
 				if [[ "$buffer_gb" -lt 50 ]]; then
 					buffer_gb=50
 				fi
 				local required_with_buffer=$((db_size_gb + buffer_gb))
-				
+
 				echo >&2
 				handle_insufficient_disk_space "$path" "$required_with_buffer" "$available_gb"
 				local handler_choice=$?
-				
+
 				case $handler_choice in
 				0)
 					# Choose different location - continue loop
@@ -925,7 +925,7 @@ configure_database_path() {
 					# Configure fewer databases - return to let caller handle
 					print_info "Returning to database selection..." >&2
 					echo >&2
-					return 2  # Special return code
+					return 2 # Special return code
 					;;
 				2)
 					# Skip database setup
@@ -1151,17 +1151,17 @@ download_database() {
 			print_success "Download complete" >&2
 		else
 			echo >&2
-			
+
 			# Get partial download size if it exists
 			local partial_size=""
 			if [[ -f "$archive_file" ]]; then
 				partial_size=$(du -h "$archive_file" | cut -f1)
 			fi
-			
+
 			# Use error handler
 			handle_network_failure "$db_name" "$partial_size"
 			local handler_choice=$?
-			
+
 			case $handler_choice in
 			0)
 				# Retry - recursive call
@@ -1205,17 +1205,17 @@ download_database() {
 			print_success "Download complete" >&2
 		else
 			echo >&2
-			
+
 			# Get partial download size if it exists
 			local partial_size=""
 			if [[ -f "$archive_file" ]]; then
 				partial_size=$(du -h "$archive_file" | cut -f1)
 			fi
-			
+
 			# Use error handler
 			handle_network_failure "$db_name" "$partial_size"
 			local handler_choice=$?
-			
+
 			case $handler_choice in
 			0)
 				# Retry - recursive call
@@ -2017,7 +2017,7 @@ interactive_mode() {
 	local java_check_result
 	check_java
 	java_check_result=$?
-	
+
 	if [[ $java_check_result -eq 2 ]]; then
 		# Java version too old
 		echo
@@ -2039,7 +2039,7 @@ interactive_mode() {
 			exit 1
 		fi
 	fi
-	
+
 	# Ask if user wants to proceed
 	if prompt_yes_no "Would you like to proceed with the installation wizard?" "y"; then
 		print_success "Great! Let's continue..."
@@ -2057,7 +2057,7 @@ interactive_mode() {
 
 	echo "NVD2 needs an execution environment to provide the bioinformatics tools."
 	echo
-	
+
 	echo "Based on what we detected on your system, please choose which to use:"
 	echo
 
@@ -2333,16 +2333,16 @@ interactive_mode() {
 
 verify_mode() {
 	print_header "Verify NVD2 Installation"
-	
+
 	echo "Verifying NVD2 installation and configuration..."
 	echo
-	
+
 	local issues_found=0
-	
+
 	# Check dependencies
 	echo -e "${BOLD}Checking Dependencies:${RESET}"
 	echo
-	
+
 	check_java
 	local java_status=$?
 	if [[ $java_status -eq 0 ]]; then
@@ -2354,7 +2354,7 @@ verify_mode() {
 		print_error "Java not found"
 		((issues_found++))
 	fi
-	
+
 	check_nextflow
 	if [[ $? -eq 0 ]]; then
 		print_success "Nextflow $NEXTFLOW_VERSION"
@@ -2362,7 +2362,7 @@ verify_mode() {
 		print_error "Nextflow not found"
 		((issues_found++))
 	fi
-	
+
 	# Check execution environment
 	check_docker
 	local docker_status=$?
@@ -2372,7 +2372,7 @@ verify_mode() {
 	local apptainer_status=$?
 	check_pixi
 	local pixi_status=$?
-	
+
 	local has_runtime=false
 	if [[ $docker_status -eq 0 ]]; then
 		print_success "Docker $DOCKER_VERSION"
@@ -2380,37 +2380,37 @@ verify_mode() {
 	elif [[ $docker_status -eq 2 ]]; then
 		print_warning "Docker installed but not running"
 	fi
-	
+
 	if [[ $podman_status -eq 0 ]]; then
 		print_success "Podman $PODMAN_VERSION"
 		has_runtime=true
 	fi
-	
+
 	if [[ $apptainer_status -eq 0 ]]; then
 		print_success "Apptainer $APPTAINER_VERSION"
 		has_runtime=true
 	fi
-	
+
 	if [[ $pixi_status -eq 0 ]]; then
 		print_success "Pixi $PIXI_VERSION"
 		has_runtime=true
 	fi
-	
+
 	if [[ "$has_runtime" == "false" ]]; then
 		print_error "No execution environment available"
 		((issues_found++))
 	fi
-	
+
 	echo
-	
+
 	# Check configuration
 	echo -e "${BOLD}Checking Configuration:${RESET}"
 	echo
-	
+
 	local config_file="${HOME}/.nvd2/config/user.config"
 	if [[ -f "$config_file" ]]; then
 		print_success "Config file exists: $config_file"
-		
+
 		# Try to validate it's readable
 		if grep -q "params" "$config_file" 2>/dev/null; then
 			print_success "Config file format looks valid"
@@ -2422,19 +2422,19 @@ verify_mode() {
 		print_warning "Config file not found: $config_file"
 		echo -e "  ${DIM}Run installer to generate configuration${RESET}"
 	fi
-	
+
 	echo
-	
+
 	# Check databases (if config exists)
 	if [[ -f "$config_file" ]]; then
 		echo -e "${BOLD}Checking Databases:${RESET}"
 		echo
-		
+
 		# Extract database paths from config
 		local stat_index=$(grep "stat_index" "$config_file" 2>/dev/null | sed 's/.*= *"\([^"]*\)".*/\1/')
 		local blast_db=$(grep "blast_db[^_]" "$config_file" 2>/dev/null | sed 's/.*= *"\([^"]*\)".*/\1/')
 		local gottcha_db=$(grep "gottcha2_db" "$config_file" 2>/dev/null | sed 's/.*= *"\([^"]*\)".*/\1/')
-		
+
 		if [[ -n "$stat_index" ]]; then
 			if [[ -f "$stat_index" ]]; then
 				print_success "STAT database found: $(dirname "$stat_index")"
@@ -2443,7 +2443,7 @@ verify_mode() {
 				((issues_found++))
 			fi
 		fi
-		
+
 		if [[ -n "$blast_db" ]]; then
 			if [[ -d "$blast_db" ]]; then
 				print_success "BLAST database found: $blast_db"
@@ -2452,7 +2452,7 @@ verify_mode() {
 				((issues_found++))
 			fi
 		fi
-		
+
 		if [[ -n "$gottcha_db" ]]; then
 			if [[ -f "$gottcha_db" ]]; then
 				print_success "GOTTCHA2 database found: $gottcha_db"
@@ -2461,17 +2461,17 @@ verify_mode() {
 				((issues_found++))
 			fi
 		fi
-		
+
 		if [[ -z "$stat_index" ]] && [[ -z "$blast_db" ]] && [[ -z "$gottcha_db" ]]; then
 			print_warning "No database paths configured"
 		fi
-		
+
 		echo
 	fi
-	
+
 	# Summary
 	print_header "Verification Summary"
-	
+
 	if [[ $issues_found -eq 0 ]]; then
 		print_success "No issues found - NVD2 is properly configured"
 		echo
@@ -2502,22 +2502,22 @@ verify_mode() {
 
 uninstall_mode() {
 	print_header "Uninstall NVD2"
-	
+
 	echo "This will remove NVD2 configuration and optionally databases."
 	echo
 	echo -e "${YELLOW}${BOLD}Warning:${RESET}${YELLOW} This action cannot be undone.${RESET}"
 	echo
-	
+
 	# Show what will be removed
 	echo "The following will be checked for removal:"
 	echo
-	
+
 	local config_dir="${HOME}/.nvd2"
 	local nextflow_assets="${HOME}/.nextflow/assets/dhoconno/nvd"
-	
+
 	local items_to_remove=()
 	local items_found=false
-	
+
 	# Check config directory
 	if [[ -d "$config_dir" ]]; then
 		echo -e "  ${CHECKMARK} Config directory: ${CYAN}${config_dir}${RESET}"
@@ -2526,7 +2526,7 @@ uninstall_mode() {
 	else
 		echo -e "  ${DIM}• Config directory: $config_dir (not found)${RESET}"
 	fi
-	
+
 	# Check cached pipeline
 	if [[ -d "$nextflow_assets" ]]; then
 		echo -e "  ${CHECKMARK} Cached pipeline: ${CYAN}${nextflow_assets}${RESET}"
@@ -2535,33 +2535,33 @@ uninstall_mode() {
 	else
 		echo -e "  ${DIM}• Cached pipeline: $nextflow_assets (not found)${RESET}"
 	fi
-	
+
 	# Check for database paths in config
 	local config_file="${config_dir}/config/user.config"
 	local db_paths=()
-	
+
 	if [[ -f "$config_file" ]]; then
 		echo
 		echo "Database locations found in config:"
-		
+
 		# Extract database parent directories
 		local stat_db=$(grep "stat_index" "$config_file" 2>/dev/null | sed 's/.*= *"\([^"]*\)".*/\1/' | xargs dirname 2>/dev/null)
 		local blast_db=$(grep "blast_db[^_]" "$config_file" 2>/dev/null | sed 's/.*= *"\([^"]*\)".*/\1/')
 		local gottcha_db=$(grep "gottcha2_db" "$config_file" 2>/dev/null | sed 's/.*= *"\([^"]*\)".*/\1/' | xargs dirname 2>/dev/null)
-		
+
 		[[ -n "$stat_db" ]] && [[ -d "$stat_db" ]] && echo -e "  • STAT: ${CYAN}${stat_db}${RESET}" && db_paths+=("$stat_db")
 		[[ -n "$blast_db" ]] && [[ -d "$blast_db" ]] && echo -e "  • BLAST: ${CYAN}${blast_db}${RESET}" && db_paths+=("$blast_db")
 		[[ -n "$gottcha_db" ]] && [[ -d "$gottcha_db" ]] && echo -e "  • GOTTCHA2: ${CYAN}${gottcha_db}${RESET}" && db_paths+=("$gottcha_db")
 	fi
-	
+
 	echo
-	
+
 	if [[ "$items_found" == "false" ]] && [[ ${#db_paths[@]} -eq 0 ]]; then
 		print_info "No NVD2 files found on this system"
 		echo
 		exit 0
 	fi
-	
+
 	# Confirm removal of config and cached pipeline
 	if [[ ${#items_to_remove[@]} -gt 0 ]]; then
 		echo -e "${BOLD}Remove config and cached pipeline?${RESET}"
@@ -2569,7 +2569,7 @@ uninstall_mode() {
 			print_info "Uninstall cancelled"
 			exit 0
 		fi
-		
+
 		# Remove items
 		for item in "${items_to_remove[@]}"; do
 			echo "Removing: $item"
@@ -2580,10 +2580,10 @@ uninstall_mode() {
 				echo -e "  ${DIM}You may need to remove it manually with: sudo rm -rf $item${RESET}"
 			fi
 		done
-		
+
 		echo
 	fi
-	
+
 	# Ask about databases
 	if [[ ${#db_paths[@]} -gt 0 ]]; then
 		echo -e "${BOLD}Database Removal:${RESET}"
@@ -2591,13 +2591,13 @@ uninstall_mode() {
 		echo "Found ${#db_paths[@]} database location(s)."
 		echo -e "${YELLOW}Databases are large (100s of GB) and may be shared with other tools.${RESET}"
 		echo
-		
+
 		if prompt_yes_no "Remove databases?" "n"; then
 			for db_path in "${db_paths[@]}"; do
 				echo
 				echo -e "Remove: ${CYAN}${db_path}${RESET}"
 				echo -e "${DIM}Size: $(du -sh "$db_path" 2>/dev/null | cut -f1)${RESET}"
-				
+
 				if prompt_yes_no "Confirm removal of this database?" "n"; then
 					echo "Removing: $db_path"
 					if rm -rf "$db_path" 2>/dev/null; then
@@ -2618,16 +2618,16 @@ uninstall_mode() {
 				echo "  rm -rf $db_path"
 			done
 		fi
-		
+
 		echo
 	fi
-	
+
 	# Show commands for removing dependencies
 	print_header "Removing Dependencies (Optional)"
-	
+
 	echo "NVD2 dependencies can be removed if not needed for other projects:"
 	echo
-	
+
 	echo -e "${BOLD}Nextflow:${RESET}"
 	if command -v nextflow &>/dev/null; then
 		local nf_location=$(which nextflow)
@@ -2636,7 +2636,7 @@ uninstall_mode() {
 	else
 		echo "  (not installed)"
 	fi
-	
+
 	echo
 	echo -e "${BOLD}Java:${RESET}"
 	if command -v java &>/dev/null; then
@@ -2649,7 +2649,7 @@ uninstall_mode() {
 	else
 		echo "  (not installed)"
 	fi
-	
+
 	echo
 	echo -e "${BOLD}Docker:${RESET}"
 	if command -v docker &>/dev/null; then
@@ -2662,7 +2662,7 @@ uninstall_mode() {
 	else
 		echo "  (not installed)"
 	fi
-	
+
 	echo
 	print_success "Uninstall complete"
 }
@@ -2723,7 +2723,7 @@ non_interactive_mode() {
 parse_arguments() {
 	# Track which mode to run
 	local mode="interactive"
-	
+
 	while [[ $# -gt 0 ]]; do
 		case $1 in
 		--dry-run | --test | -d)
@@ -2767,7 +2767,7 @@ parse_arguments() {
 			;;
 		esac
 	done
-	
+
 	# Store mode for main function
 	echo "$mode"
 }
