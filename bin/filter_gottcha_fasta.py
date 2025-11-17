@@ -4,6 +4,7 @@ import argparse
 import re
 from collections import defaultdict
 
+
 def filter_fasta_strain_or_species(input_fasta: str) -> str:
     lines = input_fasta.strip().splitlines()
     record_map = defaultdict(dict)  # {read_id: {level: [(header, seq_lines)]}}
@@ -18,7 +19,9 @@ def filter_fasta_strain_or_species(input_fasta: str) -> str:
                 level_match = re.search(r"LEVEL=(\w+)", current_header)
                 if level_match:
                     level = level_match.group(1).lower()
-                    record_map[read_id].setdefault(level, []).append((current_header, current_seq))
+                    record_map[read_id].setdefault(level, []).append(
+                        (current_header, current_seq)
+                    )
             current_header = line.strip()
             current_seq = []
         else:
@@ -29,14 +32,16 @@ def filter_fasta_strain_or_species(input_fasta: str) -> str:
         level_match = re.search(r"LEVEL=(\w+)", current_header)
         if level_match:
             level = level_match.group(1).lower()
-            record_map[read_id].setdefault(level, []).append((current_header, current_seq))
+            record_map[read_id].setdefault(level, []).append(
+                (current_header, current_seq)
+            )
 
     output_lines = []
     for levels in record_map.values():
-        if 'strain' in levels:
-            selected = levels['strain']
-        elif 'species' in levels:
-            selected = levels['species']
+        if "strain" in levels:
+            selected = levels["strain"]
+        elif "species" in levels:
+            selected = levels["species"]
         else:
             continue
         for header, seq_lines in selected:
@@ -45,10 +50,15 @@ def filter_fasta_strain_or_species(input_fasta: str) -> str:
 
     return "\n".join(output_lines)
 
+
 def main():
-    parser = argparse.ArgumentParser(description="Filter a GOTTCHA2-style FASTA to strain/species only.")
+    parser = argparse.ArgumentParser(
+        description="Filter a GOTTCHA2-style FASTA to strain/species only."
+    )
     parser.add_argument("-i", "--input", required=True, help="Input FASTA file")
-    parser.add_argument("-o", "--output", required=True, help="Output FASTA file (filtered)")
+    parser.add_argument(
+        "-o", "--output", required=True, help="Output FASTA file (filtered)"
+    )
 
     args = parser.parse_args()
 
@@ -59,6 +69,7 @@ def main():
 
     with open(args.output, "w") as outfile:
         outfile.write(filtered)
+
 
 if __name__ == "__main__":
     main()

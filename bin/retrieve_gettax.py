@@ -7,9 +7,7 @@
 import logging
 import urllib.request
 
-TAXONOMY_URL = (
-    "https://sra-download.ncbi.nlm.nih.gov/traces/sra_references/tax_analysis/gettax.sqlite"
-)
+TAXONOMY_URL = "https://sra-download.ncbi.nlm.nih.gov/traces/sra_references/tax_analysis/gettax.sqlite"
 PROGRESS_GRANULARITY = 100000
 
 # Set up logging

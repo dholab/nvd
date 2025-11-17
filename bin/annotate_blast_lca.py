@@ -182,7 +182,9 @@ def filter_blast_hits(unfiltered_hits: pl.LazyFrame, params: LcaParams) -> pl.La
         )
         # Near-tie mask: ΔS <= delta_s_window
         .with_columns(
-            (pl.col("bitscore") >= (pl.col("Smax") - params.delta_s_window)).alias("near_tie"),
+            (pl.col("bitscore") >= (pl.col("Smax") - params.delta_s_window)).alias(
+                "near_tie"
+            ),
         )
     )
 
@@ -296,7 +298,9 @@ def _refine_assignments(assignments: pl.LazyFrame, tx: TaxDb) -> pl.LazyFrame:
     id2name = {int(t): name for t, name in tx.taxid2name.items()}
     id2rank = {int(t): rank for t, rank in tx.taxid2rank.items()}
 
-    needs_nearest = pl.col("adjusted_taxid_rank").is_null() | pl.col("adjusted_taxid_rank").is_in(
+    needs_nearest = pl.col("adjusted_taxid_rank").is_null() | pl.col(
+        "adjusted_taxid_rank"
+    ).is_in(
         ["clade", "no rank"],
     )
 
@@ -371,7 +375,9 @@ def call_least_common_ancestors(
     no_lca_needed = (
         filtered_lf.group_by(["task", "sample", "qseqid", "staxids"])
         .agg(total_w=pl.col("bitscore").sum())
-        .with_columns(pl.sum("total_w").over(["task", "sample", "qseqid"]).alias("Wsum"))
+        .with_columns(
+            pl.sum("total_w").over(["task", "sample", "qseqid"]).alias("Wsum")
+        )
         .with_columns(
             (pl.col("total_w") / pl.col("Wsum")).alias("support"),
         )
@@ -407,7 +413,9 @@ def call_least_common_ancestors(
 
     assignments = _refine_assignments(pl.concat([no_lca_needed, lca_assigned]), tx)
 
-    return filtered_lf.join(assignments, how="left", on=["task", "sample", "qseqid"]).drop(
+    return filtered_lf.join(
+        assignments, how="left", on=["task", "sample", "qseqid"]
+    ).drop(
         "near_tie",
         "Smax",
     )

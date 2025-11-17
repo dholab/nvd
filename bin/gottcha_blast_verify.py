@@ -104,7 +104,10 @@ def run_blast(query, db, threads, word_size, max_seqs, out_file):
     if max_seqs is not None:
         cmd.extend(["-max_target_seqs", str(max_seqs)])
     cmd.extend(
-        ["-outfmt", "6 qseqid sseqid stitle pident qcovhsp evalue bitscore staxids sscinames"],
+        [
+            "-outfmt",
+            "6 qseqid sseqid stitle pident qcovhsp evalue bitscore staxids sscinames",
+        ],
     )
     done = threading.Event()
     spinner_thread = threading.Thread(target=spin, args=(done, "BLASTing…"))
@@ -153,7 +156,9 @@ def main():
         description="Megablast + taxonomic unambiguous/ambiguous classification",
     )
     p.add_argument("--query", required=True, help="FASTA input for BLAST")
-    p.add_argument("--db", default="ref/core_nt", help="BLAST DB prefix (e.g. ref/core_nt)")
+    p.add_argument(
+        "--db", default="ref/core_nt", help="BLAST DB prefix (e.g. ref/core_nt)"
+    )
     p.add_argument("--threads", type=int, default=8, help="BLAST threads")
     p.add_argument("--word_size", type=int, default=64, help="BLAST word size")
     p.add_argument(

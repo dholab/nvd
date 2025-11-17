@@ -58,7 +58,9 @@ def is_in_target_lineage(tax_id, target_taxa, lineage_cache, tax_db, include_chi
     return tax_id in target_taxa
 
 
-def process_input(input_file, output_file, target_taxa, tax_db, include_children, stringency):
+def process_input(
+    input_file, output_file, target_taxa, tax_db, include_children, stringency
+):
     """Process the input file, apply filtering, and write results to the output file."""
     lineage_cache = {}
     total_spots = 0
@@ -116,7 +118,7 @@ def process_input(input_file, output_file, target_taxa, tax_db, include_children
     logger.info(f"Total spots processed: {total_spots}")
     logger.info(f"Spots after filtering: {filtered_spots}")
     logger.info(
-        f"Filtering rate: {filtered_spots/total_spots:.2%}"
+        f"Filtering rate: {filtered_spots / total_spots:.2%}"
         if total_spots > 0
         else "No spots processed.",
     )
@@ -124,11 +126,19 @@ def process_input(input_file, output_file, target_taxa, tax_db, include_children
 
 def parse_command_line_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Taxa filtering pipeline")
-    parser.add_argument("--gettax_sqlite_path", required=True, help="Path to SQLite taxonomy DB")
+    parser.add_argument(
+        "--gettax_sqlite_path", required=True, help="Path to SQLite taxonomy DB"
+    )
     parser.add_argument("--hits_file", required=True, help="Path to hits file")
-    parser.add_argument("--output_file", required=True, help="Where to write filtered results")
-    parser.add_argument("--taxa", required=True, nargs="+", help="List of taxa to include")
-    parser.add_argument("--stringency", type=float, default=0.9, help="Stringency threshold")
+    parser.add_argument(
+        "--output_file", required=True, help="Where to write filtered results"
+    )
+    parser.add_argument(
+        "--taxa", required=True, nargs="+", help="List of taxa to include"
+    )
+    parser.add_argument(
+        "--stringency", type=float, default=0.9, help="Stringency threshold"
+    )
     parser.add_argument(
         "--include_children",
         action="store_true",

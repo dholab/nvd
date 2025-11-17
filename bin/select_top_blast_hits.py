@@ -51,7 +51,9 @@ def parse_args() -> argparse.Namespace:
         - Reads sys.argv
         - May exit program if arguments invalid or --help requested
     """
-    parser = argparse.ArgumentParser(description="Select top BLAST hits per query sequence.")
+    parser = argparse.ArgumentParser(
+        description="Select top BLAST hits per query sequence."
+    )
 
     parser.add_argument(
         "-i",
@@ -125,7 +127,9 @@ def select_top_hits(blast_txt: str | Path, top_k: int = 5) -> pl.LazyFrame:
         )
         # cast staxids into a column of strings and cast bitscores as floats. Bitscores should always
         # be floats, but they often get truncated because CSV is an untyped data encoding.
-        .with_columns(pl.col("staxids").cast(pl.Utf8), pl.col("bitscore").cast(pl.Float64))
+        .with_columns(
+            pl.col("staxids").cast(pl.Utf8), pl.col("bitscore").cast(pl.Float64)
+        )
         # split on any instances of a semicolon in staxids, which will replace the semicolon-delimited strings
         # with lists/arrays of taxid strings. Then, explode each item in those arrays into their own rows
         # and the convert the staxids column back into integers now that the semicolons have been handled

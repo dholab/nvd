@@ -76,22 +76,32 @@ gottcha2_fasta_fields = [
 
 def main() -> None:
     # Parse command-line arguments
-    parser = argparse.ArgumentParser(description="Validate LabKey list schema and permissions")
+    parser = argparse.ArgumentParser(
+        description="Validate LabKey list schema and permissions"
+    )
     parser.add_argument("--server", required=True, help="LabKey server URL")
-    parser.add_argument("--container", required=True, help="LabKey container path (e.g., project folder)")
-    parser.add_argument("--list", required=True, help="Name of the LabKey list to validate")
-    parser.add_argument("--api_key", required=True, help="API key with insert/delete permissions")
+    parser.add_argument(
+        "--container",
+        required=True,
+        help="LabKey container path (e.g., project folder)",
+    )
+    parser.add_argument(
+        "--list", required=True, help="Name of the LabKey list to validate"
+    )
+    parser.add_argument(
+        "--api_key", required=True, help="API key with insert/delete permissions"
+    )
     parser.add_argument(
         "--type",
         choices=["blast", "blast_fasta", "gottcha2_full", "gottcha2_fasta"],
         required=True,
-        help="Type of list to validate"
+        help="Type of list to validate",
     )
     parser.add_argument(
         "--experiment_id",
         type=int,
         required=True,
-        help="Experiment ID for validation testing"
+        help="Experiment ID for validation testing",
     )
     args = parser.parse_args()
 
@@ -218,7 +228,9 @@ def main() -> None:
         logger.info("Common issues and solutions:")
         print()
         logger.info("1. API Key Issues:")
-        logger.info("   • Check that your nvd2 secret is correctly configured in Nextflow")
+        logger.info(
+            "   • Check that your nvd2 secret is correctly configured in Nextflow"
+        )
         logger.info("   • Verify the API key has INSERT and DELETE permissions")
         logger.info("   • Ensure the API key hasn't expired")
         logger.info("   • Test the API key directly in LabKey's web interface")

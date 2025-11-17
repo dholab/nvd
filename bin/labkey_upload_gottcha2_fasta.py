@@ -37,6 +37,7 @@ except Exception:
 
 # ----------------------------- FASTA parsing -----------------------------
 
+
 def iterate_fasta(handle: TextIO) -> Generator[Tuple[str, List[str]], None, None]:
     """
     Yield (header_line_including_>, [sequence_lines]) for each FASTA record.
@@ -60,6 +61,7 @@ def iterate_fasta(handle: TextIO) -> Generator[Tuple[str, List[str]], None, None
 
 LEVEL_RE = re.compile(r"LEVEL=(\w+)", re.IGNORECASE)
 
+
 def extract_level(header: str) -> Optional[str]:
     """
     Return 'species' or 'strain' if present as LEVEL=..., else None.
@@ -78,6 +80,7 @@ def read_key_from_header(header: str) -> str:
 
 
 # ------------------------ Selection (per-read) ---------------------------
+
 
 def select_records_for_upload(fasta_path: str) -> List[Tuple[str, str]]:
     """
@@ -121,6 +124,7 @@ def select_records_for_upload(fasta_path: str) -> List[Tuple[str, str]]:
 
 
 # --------------------------- LabKey batching -----------------------------
+
 
 def upload_in_batches(
     lk: "APIWrapper",
@@ -169,14 +173,19 @@ TSV_COLUMNS = [
     "Upload Type",
 ]
 
+
 def main(argv: Optional[Sequence[str]] = None) -> int:
     p = argparse.ArgumentParser(
         description="Upload GOTTCHA2 FASTA hits at lowest relevant level per read (strain if present, else species)."
     )
-    p.add_argument("--fasta", required=True, help="Path to input FASTA (plain text; no stdin).")
+    p.add_argument(
+        "--fasta", required=True, help="Path to input FASTA (plain text; no stdin)."
+    )
     p.add_argument("--sample_id", required=True, help="Value for 'Sample Id'.")
     p.add_argument("--experiment_id", required=True, help="Value for 'Experiment'.")
-    p.add_argument("--output_tsv", required=True, help="Path to write TSV (file path only).")
+    p.add_argument(
+        "--output_tsv", required=True, help="Path to write TSV (file path only)."
+    )
 
     # LabKey settings (omit with --no_upload)
     p.add_argument("--server", help="LabKey server URL")
@@ -184,24 +193,32 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     p.add_argument("--list", dest="list_name", help="LabKey list name")
     p.add_argument("--api_key", help="LabKey API key")
     p.add_argument("--batch_size", type=int, default=1000, help="Upload batch size")
-    p.add_argument("--no_upload", action="store_true", help="Only write TSV; skip upload")
+    p.add_argument(
+        "--no_upload", action="store_true", help="Only write TSV; skip upload"
+    )
 
     # Fixed column defaults
     p.add_argument("--notes", default="gottcha2", help="Value for 'Notes'")
-    p.add_argument("--run_id", default="GOTTCHA2_UPLOAD", help="Value for 'Snakemake Run Id'")
+    p.add_argument(
+        "--run_id", default="GOTTCHA2_UPLOAD", help="Value for 'Snakemake Run Id'"
+    )
     p.add_argument("--upload_type", default="fasta", help="Value for 'Upload Type'")
 
     args = p.parse_args(argv)
 
     # Validate file paths
     if args.fasta.strip() in {"-", ""}:
-        print("[❌ ERROR] --fasta must be a real file path (no stdin).", file=sys.stderr)
+        print(
+            "[❌ ERROR] --fasta must be a real file path (no stdin).", file=sys.stderr
+        )
         return 1
     if not os.path.isfile(args.fasta):
         print(f"[❌ ERROR] FASTA not found: {args.fasta}", file=sys.stderr)
         return 1
     if args.output_tsv.strip() in {"-", ""}:
-        print("[❌ ERROR] --output_tsv must be a file path (no stdout).", file=sys.stderr)
+        print(
+            "[❌ ERROR] --output_tsv must be a file path (no stdout).", file=sys.stderr
+        )
         return 1
 
     try:
@@ -218,13 +235,19 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             lk = None
             if not args.no_upload:
                 if APIWrapper is None:
-                    raise RuntimeError("labkey.api_wrapper not available. Install it or pass --no_upload.")
-                missing = [flag for flag, val in {
-                    "--server": args.server,
-                    "--container": args.container,
-                    "--list": args.list_name,
-                    "--api_key": args.api_key,
-                }.items() if not val]
+                    raise RuntimeError(
+                        "labkey.api_wrapper not available. Install it or pass --no_upload."
+                    )
+                missing = [
+                    flag
+                    for flag, val in {
+                        "--server": args.server,
+                        "--container": args.container,
+                        "--list": args.list_name,
+                        "--api_key": args.api_key,
+                    }.items()
+                    if not val
+                ]
                 if missing:
                     raise ValueError(f"Missing LabKey parameters: {', '.join(missing)}")
                 lk = APIWrapper(args.server, args.container, api_key=args.api_key)  # type: ignore
@@ -248,14 +271,24 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 if lk is not None:
                     rows_for_upload.append(row)
                     if len(rows_for_upload) >= args.batch_size:
-                        inserted, batches = upload_in_batches(lk, args.list_name, rows_for_upload, args.batch_size)
-                        print(f"[INFO] Uploaded {inserted} rows in {batches} batch(es) so far.", file=sys.stderr)
+                        inserted, batches = upload_in_batches(
+                            lk, args.list_name, rows_for_upload, args.batch_size
+                        )
+                        print(
+                            f"[INFO] Uploaded {inserted} rows in {batches} batch(es) so far.",
+                            file=sys.stderr,
+                        )
                         rows_for_upload.clear()
 
             # Flush any remaining rows to LabKey
             if lk is not None and rows_for_upload:
-                inserted, batches = upload_in_batches(lk, args.list_name, rows_for_upload, args.batch_size)
-                print(f"[INFO] Uploaded remaining {inserted} rows in {batches} batch(es).", file=sys.stderr)
+                inserted, batches = upload_in_batches(
+                    lk, args.list_name, rows_for_upload, args.batch_size
+                )
+                print(
+                    f"[INFO] Uploaded remaining {inserted} rows in {batches} batch(es).",
+                    file=sys.stderr,
+                )
 
         print(f"[INFO] TSV rows written: {total_rows}", file=sys.stderr)
         if args.no_upload:

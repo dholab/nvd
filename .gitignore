@@ -50,6 +50,7 @@
 !/docs/INSTALLATION.md
 !/docs/contributor_guide.md
 !/docs/example_commands.md
+!/docs/cli_wrapper_guide.md
 
 # scripts
 !/scripts/*

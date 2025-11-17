@@ -31,16 +31,16 @@ else:
     MODE = "commandline"
 
 # Configuration
-TAXONOMY_URL = (
-    "https://sra-download.ncbi.nlm.nih.gov/traces/sra_references/tax_analysis/gettax.sqlite"
-)
+TAXONOMY_URL = "https://sra-download.ncbi.nlm.nih.gov/traces/sra_references/tax_analysis/gettax.sqlite"
 PROGRESS_GRANULARITY = 100000
 
 # Set up logging
 logger = logging.getLogger("tax_analysis")
 
 # Data structures
-Taxon = collections.namedtuple("Taxon", ["tax_id", "parent_tax_id", "rank", "scientific_name"])  # noqa: PYI024
+Taxon = collections.namedtuple(
+    "Taxon", ["tax_id", "parent_tax_id", "rank", "scientific_name"]
+)  # noqa: PYI024
 
 
 class TaxonomyDatabase:
@@ -120,7 +120,9 @@ def parse_input(file, tax_db, args):
     if args.wgs_mode:
         parse_wgs_mode(file, counter)
     else:
-        parse_standard_mode(file, counter, tax_db, lineage_cache, args.compact, args.collated)
+        parse_standard_mode(
+            file, counter, tax_db, lineage_cache, args.compact, args.collated
+        )
 
     return counter
 
@@ -306,7 +308,9 @@ def calculate_total_counts(node):
     for child in node:
         calculate_total_counts(child)
         total_count += int(child.attrib["total_count"])
-    node[:] = sorted(node, key=lambda child: int(child.attrib["total_count"]), reverse=True)
+    node[:] = sorted(
+        node, key=lambda child: int(child.attrib["total_count"]), reverse=True
+    )
     node.attrib["total_count"] = str(total_count)
 
 
@@ -318,13 +322,17 @@ def format_tax_tree(tree, args):
 
     res = [
         format_node(node, total_count, "", args)
-        for node in sorted(root, key=lambda x: int(x.attrib["total_count"]), reverse=True)
+        for node in sorted(
+            root, key=lambda x: int(x.attrib["total_count"]), reverse=True
+        )
     ]
     res = list(flatten(res))
     if args.no_padding:
         res = [
             f"{name}{args.separator}{stats}"
-            for name, stats in (line.split("\t", 1) for line in res if isinstance(line, str))
+            for name, stats in (
+                line.split("\t", 1) for line in res if isinstance(line, str)
+            )
         ]
     else:
         res = list(pad_tree(res, args.separator))
@@ -343,7 +351,9 @@ def format_node(node, grand_total, offset, args):
         else:
             assert False
         if skip:
-            for subnode in sorted(node, key=lambda x: int(x.attrib["total_count"]), reverse=True):
+            for subnode in sorted(
+                node, key=lambda x: int(x.attrib["total_count"]), reverse=True
+            ):
                 yield from format_node(subnode, grand_total, offset, args)
             return
 
@@ -366,7 +376,9 @@ def format_node(node, grand_total, offset, args):
     pattern = f"%s%s\t%{percent_precision}f%%  (%{hits_precision}d hits)"
     yield pattern % (offset, name, percent, total_count)
 
-    for subnode in sorted(node, key=lambda x: int(x.attrib["total_count"]), reverse=True):
+    for subnode in sorted(
+        node, key=lambda x: int(x.attrib["total_count"]), reverse=True
+    ):
         yield from format_node(subnode, grand_total, offset + args.indent, args)
 
 
@@ -400,8 +412,12 @@ def pad_tree(lines: list[str], separator: str):
 
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Taxonomic analysis tool")
-    parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose mode")
-    parser.add_argument("-c", "--sqlite-cache", default=None, help="Path to the SQLite cache file")
+    parser.add_argument(
+        "-v", "--verbose", action="store_true", help="Enable verbose mode"
+    )
+    parser.add_argument(
+        "-c", "--sqlite-cache", default=None, help="Path to the SQLite cache file"
+    )
     parser.add_argument(
         "-i",
         "--include-tax-id",
@@ -410,16 +426,24 @@ def parse_arguments() -> argparse.Namespace:
         default=[],
         help="Include taxon into tax tree even if it has no hits",
     )
-    parser.add_argument("--compact", action="store_true", help="Use compact input format")
-    parser.add_argument("--wgs-mode", action="store_true", help="Use WGS mode for parsing")
+    parser.add_argument(
+        "--compact", action="store_true", help="Use compact input format"
+    )
+    parser.add_argument(
+        "--wgs-mode", action="store_true", help="Use WGS mode for parsing"
+    )
     parser.add_argument("--collated", action="store_true", help="The input is collated")
-    parser.add_argument("--indent", default="  ", help="Indentation string, default is two spaces")
+    parser.add_argument(
+        "--indent", default="  ", help="Indentation string, default is two spaces"
+    )
     parser.add_argument(
         "--separator",
         default="    ",
         help="Name/stats separator string, default is four spaces",
     )
-    parser.add_argument("--no-padding", action="store_true", help="Disable tree padding")
+    parser.add_argument(
+        "--no-padding", action="store_true", help="Disable tree padding"
+    )
     parser.add_argument(
         "--precision",
         type=int,

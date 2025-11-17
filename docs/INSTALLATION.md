@@ -2,19 +2,24 @@
 
 ## Quick Start
 
-The easiest way to install NVD2 is using the interactive installer:
+NVD2 includes an interactive setup script to help configure database paths:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/dhoconno/nvd/main/install.sh | bash
 ```
 
-Or download and run locally:
+Or download and inspect first:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/dhoconno/nvd/main/install.sh -o install.sh
 chmod +x install.sh
 ./install.sh
 ```
+
+**Prerequisites** (must be installed separately):
+- Java 11 or newer
+- Nextflow
+- Docker, Apptainer/Singularity, or Pixi
 
 ## Installation Modes
 
@@ -27,11 +32,11 @@ Guides you through the complete setup process:
 ```
 
 **What it does:**
-- Checks system dependencies (Java, Nextflow, Docker/Pixi)
-- Helps you select an execution environment
-- Configures reference database paths
+- Checks that prerequisites are installed
+- Detects available execution environments (Docker, Apptainer)
+- Helps configure reference database paths
 - Optionally downloads databases (100s of GB)
-- Generates configuration file
+- Creates configuration file at `~/.nvd2/config/user.config`
 
 **Time:** 5-10 minutes + database downloads (if selected)
 
@@ -119,50 +124,21 @@ Remove NVD2 from your system:
 
 You can configure databases on separate volumes or skip download entirely.
 
-## Manual Installation
+## Manual Configuration
 
-If you prefer to install dependencies yourself:
+If you prefer to configure NVD2 manually without using `install.sh`:
 
-### 1. Install Java
+### 1. Ensure Prerequisites are Installed
 
-**macOS:**
-```bash
-brew install openjdk@17
-```
+You must have these installed:
+- **Java 11+**: OpenJDK or Oracle JDK (required by Nextflow)
+- **Nextflow**: https://www.nextflow.io/docs/latest/getstarted.html
+- **Container runtime** (choose one):
+  - Docker: https://docs.docker.com/get-docker/
+  - Apptainer/Singularity: https://apptainer.org/docs/admin/main/installation.html
+  - Pixi: https://pixi.sh (for local Conda-based execution)
 
-**Ubuntu/Debian:**
-```bash
-sudo apt update
-sudo apt install openjdk-17-jdk
-```
-
-**RHEL/CentOS:**
-```bash
-sudo yum install java-17-openjdk
-```
-
-### 2. Install Nextflow
-
-```bash
-curl -s https://get.nextflow.io | bash
-sudo mv nextflow /usr/local/bin/
-```
-
-### 3. Install Docker (or alternative)
-
-**macOS:**
-Download Docker Desktop from https://www.docker.com/products/docker-desktop/
-
-**Ubuntu/Debian:**
-```bash
-sudo apt update
-sudo apt install docker.io
-sudo systemctl start docker
-sudo systemctl enable docker
-sudo usermod -aG docker $USER
-```
-
-### 4. Configure Databases
+### 2. Configure Databases
 
 Create a configuration file at `~/.nvd2/config/user.config`:
 
@@ -210,7 +186,43 @@ Extract to your desired location and update the configuration file.
 
 ## Running NVD2
 
-After installation, run NVD2 with:
+After installation, you can run NVD2 using either the CLI wrapper or direct Nextflow execution.
+
+### Option 1: CLI Wrapper
+
+The `nvd` CLI wrapper provides a simplified interface:
+
+```bash
+# Clone repository and install dependencies
+git clone https://github.com/dhoconno/nvd.git
+cd nvd
+uv sync                 # Python dependencies only
+# or
+pixi shell --frozen     # All Conda dependencies
+
+# Run with auto-configuration
+nvd run --samplesheet samples.csv --experiment-id exp001
+
+# Specify tools and profile
+nvd run -s samples.csv -e exp002 --tools gottcha -p docker
+
+# Get help
+nvd --help
+```
+
+**Note**: When not in an active shell, prepend commands with `pixi run` (for full toolchain) 
+or `uv run` (Python-only scripts).
+
+The CLI wrapper automatically:
+- Loads configuration from `~/.nvd2/config/user.config`
+- Auto-detects your execution profile (Docker/Apptainer/local)
+- Validates inputs before running
+
+See the **[CLI Wrapper Guide](./cli_wrapper_guide.md)** for comprehensive examples.
+
+### Option 2: Direct Nextflow Execution
+
+You can also run NVD2 with direct Nextflow commands:
 
 ```bash
 nextflow run dhoconno/nvd \
@@ -221,10 +233,17 @@ nextflow run dhoconno/nvd \
   --tools all
 ```
 
+**Execution profiles:**
+- `-profile docker` - Use Docker containers (local workstations)
+- `-profile apptainer` - Use Apptainer/Singularity (HPC clusters)
+- `-profile local` - Local execution without containers
+
 **Tool options:**
 - `--tools stat_blast` - STAT + BLAST workflow (human virus detection)
 - `--tools gottcha` - GOTTCHA2 workflow (general classification)
 - `--tools all` - Run both workflows
+
+See **[Direct Nextflow Examples](./example_commands.md)** for more traditional usage patterns.
 
 ## Troubleshooting
 
@@ -249,7 +268,7 @@ nextflow run dhoconno/nvd \
 
 **Error:** "Java version too old"
 
-**Solution:** Install Java 11 or newer (see Manual Installation above)
+**Solution:** Install Java 11 or newer. See https://adoptium.net/ or your system's package manager.
 
 ### Network Issues During Download
 
@@ -339,11 +358,18 @@ nextflow run dhoconno/nvd -r v1.0.0 ...
 
 ## Getting Help
 
+**CLI Wrapper Guide:** [cli_wrapper_guide.md](./cli_wrapper_guide.md) - Modern CLI interface
+
 **Documentation:** https://github.com/dhoconno/nvd
 
 **Issues:** https://github.com/dhoconno/nvd/issues
 
-**Verification:** `./install.sh --verify`
+**Validation Commands:**
+```bash
+./install.sh --verify        # Verify installation
+nvd validate all             # Validate complete setup with CLI
+nvd --help                   # CLI help
+```
 
 ## Platform-Specific Notes
 

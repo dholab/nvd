@@ -81,8 +81,12 @@ class TaxonomyDatabase:
 
 
 def parse_command_line_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Annotate BLAST results with taxonomy info")
-    parser.add_argument("--sqlite_cache", required=True, help="Path to SQLite taxonomy DB")
+    parser = argparse.ArgumentParser(
+        description="Annotate BLAST results with taxonomy info"
+    )
+    parser.add_argument(
+        "--sqlite_cache", required=True, help="Path to SQLite taxonomy DB"
+    )
     parser.add_argument("--input_file", required=True, help="Path to BLAST hits file")
     parser.add_argument("--output_file", required=True, help="Output TSV file")
     parser.add_argument("--sample_name", required=True, help="Sample name")
@@ -124,7 +128,10 @@ def main() -> None:
         with TaxonomyDatabase(sqlite_cache) as tax_db:
             tax_db.check_database_structure()
 
-            with open(input_file) as infile, open(output_file, "w", newline="") as outfile:
+            with (
+                open(input_file) as infile,
+                open(output_file, "w", newline="") as outfile,
+            ):
                 reader = csv.reader(infile, delimiter="\t")
                 writer = csv.writer(outfile, delimiter="\t")
 

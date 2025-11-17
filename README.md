@@ -4,10 +4,10 @@
 [![Latest Release](https://img.shields.io/github/v/release/dhoconno/nvd)](https://github.com/dhoconno/nvd/releases/latest)
 [![License](https://img.shields.io/github/license/dhoconno/nvd)](LICENSE)
 
-- [Overview](#overview)
-- [Quick Start](#quick-start)
-- [Further Documentation](#further-documentation)
-- [Citation](#citation)
+- [Overview](README#Overview)
+- [Get Started](README#Get Started)
+- [Further Documentation](README#Further Documentation)
+- [Citation](README#Citation)
 
 ## Overview
 
@@ -17,10 +17,10 @@ toolchain, including
 [STAT](https://www.ncbi.nlm.nih.gov/sra/docs/sra-taxonomy-analysis-tool/) and
 [BLAST](https://blast.ncbi.nlm.nih.gov/Blast.cgi), to identify human viruses
 while minimizing false positives _and_ false negatives (the STAT+BLAST workflow,
-historically called "NVD"). For more general purpose classification, NVD2 
-implements a [GOTTCHA2](https://github.com/poeli/GOTTCHA2) subworkflow, which 
-uses a carefully curated database of taxonomically diagnostic reference sequences
-spanning well-characterized taxa across the tree of life.
+historically called "NVD"). For more general purpose classification, NVD2
+implements a [GOTTCHA2](https://github.com/poeli/GOTTCHA2) subworkflow, which
+uses a carefully curated database of taxonomically diagnostic reference
+sequences spanning well-characterized taxa across the tree of life.
 
 NVD2 was designed from the ground up to handle enormous datasets and performs
 particularly well with complex Illumina deep sequencing datasets like those from
@@ -45,17 +45,62 @@ database setup, sample data setup, and run command construction.
 
 ### Dependency setup
 
-A minimal NVD2 setup requires that [Nextflow](https://nextflow.io/) and
-[Docker](https://www.docker.com/) are installed. With both set up, the remainder
-of the pipeline's dependencies will be provided by a Docker image.
+#### Option 1: Interactive Setup Script
 
-The pipeline also ships with a `pyproject.toml` and `pixi.lock` that can be used
-to instantiate a reproducible environment with the
-[Pixi](https://pixi.sh/latest/) environment manager, which is a fast and modern
-system for managing Conda dependencies. Users in the command line can `cd` into
-the repo project root dircetory and enter an environment with
-`pixi shell --frozen`. More information about using `pixi` environments is
-available in the [Pixi docs](https://pixi.sh/latest/getting_started/).
+NVD2 includes an interactive setup script to help configure database paths and
+create a configuration file:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/dhoconno/nvd/main/install.sh | bash
+```
+
+Or download and inspect first:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/dhoconno/nvd/main/install.sh -o install.sh
+chmod +x install.sh
+./install.sh
+```
+
+**Prerequisites** (must be installed separately):
+
+- Java 11 or newer
+- Nextflow
+- Docker, Apptainer/Singularity, or Pixi (for containerized execution)
+
+The script will help you:
+
+- Check that prerequisites are installed
+- Detect available execution environments (Docker, Apptainer)
+- Configure database paths
+- Optionally download reference databases
+- Create a configuration file at `~/.nvd2/config/user.config`
+
+See the [Installation Guide](./docs/INSTALLATION.md) for more details.
+
+#### Option 2: Manual Setup
+
+**Required dependencies:**
+
+- Java 11 or newer (required by Nextflow)
+- [Nextflow](https://nextflow.io/)
+- Container runtime: [Docker](https://www.docker.com/),
+  [Apptainer/Singularity](https://apptainer.org/), or [Pixi](https://pixi.sh)
+  (for local execution)
+
+With Nextflow and a container runtime installed, the pipeline can run using
+containerized dependencies. No additional software installation needed.
+
+**For Conda-based dependencies** (optional): The pipeline includes a
+`pyproject.toml` and `pixi.lock` for reproducible Conda environments via
+[Pixi](https://pixi.sh/latest/). Note that Pixi is only needed for managing
+Conda dependencies - containerized execution (Docker/Apptainer) is generally
+preferred and doesn't require Pixi.
+
+```bash
+# If using Pixi for local execution
+pixi shell --frozen
+```
 
 > [!WARNING]\
 > The provided Pixi environment will _not_ include NCBI's STAT tool, as it's not
@@ -138,15 +183,57 @@ directory for convenience.
 
 With that, you're ready to run the pipeline!
 
+#### Option 1: Using the NVD2 CLI Wrapper
+
+If you have set up `~/.nvd2/config/user.config`, you can use the streamlined CLI
+wrapper:
+
+```bash
+# Clone the repository
+git clone https://github.com/dhoconno/nvd.git
+cd nvd
+
+# Install Python dependencies
+uv sync
+# or for all Conda dependencies
+pixi shell --frozen
+
+# Run with minimal flags (prepend with pixi run or uv run)
+nvd run --samplesheet samples.csv --experiment-id exp001
+
+# Specify tools and profile
+nvd run -s samples.csv -e exp002 --tools gottcha -p docker
+
+# Override database paths if needed
+nvd run -s samples.csv -e exp003 \
+    --blast-db /custom/blast_db \
+    --gottcha2-db /custom/gottcha2.fna
+
+# Dry-run to preview the command
+nvd run -s samples.csv -e exp004 --dry-run
+```
+
+The CLI wrapper automatically loads configuration from
+`~/.nvd2/config/user.config`, auto-detects your execution profile
+(Docker/Apptainer/local), and provides a simplified interface.
+
+**Note**: Prepend commands with `pixi run` (for full toolchain access) or
+`uv run` (Python-only scripts) when not in an active environment shell.
+
+See the [CLI Wrapper Guide](./docs/cli_wrapper_guide.md) for complete examples
+and usage.
+
+#### Option 2: Direct Nextflow Execution
+
 Before you construct your run command, first answer the following questions:
 
-- Are you interested only in human viruses? If so, include `--tools stat_blast` 
-  (or `nvd`, `stat`, `blast`, `stast` - all equivalent) in your `nextflow run` 
+- Are you interested only in human viruses? If so, include `--tools stat_blast`
+  (or `nvd`, `stat`, `blast`, `stast` - all equivalent) in your `nextflow run`
   command (more on this below).
 - Are you interested in whatever's in your sample and not in human viruses in
   particular? If so, use `--tools gottcha`.
-- Are you interested in both? If so, use `--tools stat_blast,gottcha` 
-  (or `nvd,gottcha` for backward compatibility)
+- Are you interested in both? If so, use `--tools stat_blast,gottcha` (or
+  `nvd,gottcha` for backward compatibility)
 - Do you want the kitchen sink? We use `--tools all` for that.
 
 Beyond the answers to these questions, most of the default run command will
@@ -175,11 +262,14 @@ you have used for these files.)
 
 ## Further Documentation
 
-Coming soon! For now, see
-[our example run commands docs](./docs/example_commands.md) for some of the ways
-you might configure NVD2 in the command line and
-[our contributor guide](./docs/contributor_guide.md) for how we recommend you
-work on the NVD2 codebase.
+- **[CLI Wrapper Guide](./docs/cli_wrapper_guide.md)** - Comprehensive guide to
+  the `nvd` command-line tool (recommended)
+- **[Installation Guide](./docs/INSTALLATION.md)** - Detailed installation
+  instructions using `install.sh`
+- **[Direct Nextflow Examples](./docs/example_commands.md)** - Traditional
+  Nextflow command examples
+- **[Contributor Guide](./docs/contributor_guide.md)** - Development guidelines
+  and best practices
 
 ## Grab bag of features
 
@@ -194,6 +284,11 @@ work on the NVD2 codebase.
   filters contigs for optimal classification accuracy
 - **Two-phase BLAST verification**: Uses both megablast and blastn with
   intelligent filtering to minimize false positives
+- **Least Common Ancestor (LCA) resolution**: Resolves ambiguous BLAST hits by
+  computing taxonomic consensus—either using dominant taxid assignment when one
+  organism has strong support (>80% bitscore weight), or calculating the LCA for
+  near-tie cases to avoid over-specificity when multiple closely-scoring hits
+  disagree at the species level
 - **Advanced taxonomic filtering**: Sophisticated lineage-based filtering with
   adjustable stringency for precise organism identification
 - **Human read scrubbing**: Built-in capability to remove human sequences for
