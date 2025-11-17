@@ -4,11 +4,6 @@
 [![Latest Release](https://img.shields.io/github/v/release/dhoconno/nvd)](https://github.com/dhoconno/nvd/releases/latest)
 [![License](https://img.shields.io/github/license/dhoconno/nvd)](LICENSE)
 
-- [Overview](README#Overview)
-- [Get Started](README#Get Started)
-- [Further Documentation](README#Further Documentation)
-- [Citation](README#Citation)
-
 ## Overview
 
 NVD2 is a Nextflow pipeline focused primarily though not exclusively on finding
