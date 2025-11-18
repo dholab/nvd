@@ -27,6 +27,11 @@ blast_fields = [
     "Stat Db Version",
     "Total Reads",
     "Exclude",
+    "Adjusted Taxid",
+    "Adjustment Method",
+    "Adjusted Taxid Name",
+    "Adjusted Taxid Rank",
+    "Staxids",
 ]
 
 # Define the expected schema for the FASTA output lists
@@ -143,6 +148,11 @@ def main() -> None:
             "Stat Db Version": "unknown",
             "Total Reads": 0.0,
             "Exclude": False,
+            "Adjusted Taxid": 11775,
+            "Adjustment Method": "lca",
+            "Adjusted Taxid Name": "Feline sarcoma virus (STRAIN GARDNER-RASHEED)",
+            "Adjusted Taxid Rank": "no rank",
+            "Staxids": 128951,
         }
     elif args.type == "gottcha2_full":
         dummy = {
