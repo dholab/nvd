@@ -133,6 +133,8 @@ def main() -> None:
                 open(output_file, "w", newline="") as outfile,
             ):
                 reader = csv.reader(infile, delimiter="\t")
+                # Skip header line
+                next(reader)
                 writer = csv.writer(outfile, delimiter="\t")
 
                 # Write header

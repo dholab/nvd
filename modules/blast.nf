@@ -75,8 +75,15 @@ process SELECT_TOP_BLAST_HITS {
 
     script:
     """
+    # Write proper tab-separated header
+    printf "qseqid\tqlen\tsseqid\tstitle\tlength\tpident\tevalue\tbitscore\tsscinames\tstaxids\n" \
+      > blast_with_colnames.tsv
+
+    # Append BLAST results
+    cat ${blast_txt} >> blast_with_colnames.tsv
+
     select_top_blast_hits.py \\
-    --input-file ${blast_txt} \\
+    --input-file blast_with_colnames.tsv \\
     --output-file ${sample_id}.annotated_megablast.top${params.blast_retention_count}_hits.txt \\
     --blast-retention-count ${params.blast_retention_count}
     """

@@ -143,7 +143,7 @@ def select_top_hits(blast_txt: str | Path, top_k: int = 5) -> pl.LazyFrame:
         .with_columns(
             pl.col("bitscore")
             .rank(method="ordinal", descending=True)  # highest score -> rank 1
-            .over(["task", "sample", "qseqid"])
+            .over(["qseqid"])
             .alias("_rank"),
         )
         .filter(pl.col("_rank") <= top_k)
@@ -151,7 +151,7 @@ def select_top_hits(blast_txt: str | Path, top_k: int = 5) -> pl.LazyFrame:
         .drop(cs.starts_with("_"))
         # sort by the aforementioned grouping for readability; these files are written
         # in plain human-readable text
-        .sort(["task", "sample", "qseqid"])
+        .sort(["qseqid"])
     )
 
 
