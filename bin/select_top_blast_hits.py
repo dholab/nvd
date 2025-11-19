@@ -124,6 +124,7 @@ def select_top_hits(blast_txt: str | Path, top_k: int = 5) -> pl.LazyFrame:
             blast_txt,
             separator="\t",
             infer_schema_length=10000,
+            new_columns=["qseqid", "qlen", "sseqid", "stitle", "length", "pident", "evalue", "bitscore", "sscinames", "staxids"]
         )
         # cast staxids into a column of strings and cast bitscores as floats. Bitscores should always
         # be floats, but they often get truncated because CSV is an untyped data encoding.
