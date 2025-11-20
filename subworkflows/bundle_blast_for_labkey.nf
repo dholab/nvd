@@ -158,11 +158,16 @@ process PREPARE_BLAST_LABKEY {
                 'evalue': row.get('evalue', ''),
                 'bitscore': row.get('bitscore', ''),
                 'sscinames': row.get('sscinames', ''),
-                'blast_db_version': 'unknown',
+                'staxids': row.get('staxids', ''),
+                'blast_db_version': '${params.blast_db_version}',
                 'snakemake_run_id': '${run_id}',
-                'mapped_reads': mapped_reads_count, # FIXME add contig read count
+                'mapped_reads': mapped_reads_count,
                 'total_reads': '${total_reads}',
-                'stat_db_version': 'unknown'
+                'stat_db_version': '${params.stat_db_version}',
+                'adjusted_taxid': row.get('adjusted_taxid', ''),
+                'adjustment_method': row.get('adjustment_method', ''),
+                'adjusted_taxid_name': row.get('adjusted_taxid_name', ''),
+                'adjusted_taxid_rank': row.get('adjusted_taxid_rank', '')
             }
             blast_data.append(labkey_row)
 
@@ -172,6 +177,8 @@ process PREPARE_BLAST_LABKEY {
             writer = csv.DictWriter(f, fieldnames=blast_data[0].keys())
             writer.writeheader()
             writer.writerows(blast_data)
+
+        
     else:
         # Create empty file if no data
         open('${output_name}', 'w').close()
