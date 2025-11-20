@@ -122,66 +122,16 @@ process PREPARE_BLAST_LABKEY {
 
     script:
     """
-    #!/usr/bin/env python3
-
-    import csv
-    import os
-
-    # Read contig mapped read counts
-    contig_read_count_dict = {}
-    with open("${contig_mapped_read_counts}", "r") as contig_rc:
-        # pos 0 is sequence name and 1 is mapped read count
-        for line in contig_rc:
-            line_tuple = line.split("\\t")
-            contig_read_count_dict[line_tuple[0]] = line_tuple[1].strip()
-    # Read BLAST results
-    blast_data = []
-    with open('${blast_csv}', 'r') as f:
-        reader = csv.DictReader(f, delimiter='\t')
-        for row in reader:
-            if row.get('qseqid', '').lower() == 'qseqid':
-                continue  # skip accidental header row
-
-            mapped_reads_count = contig_read_count_dict.get(row.get('qseqid', ''), '0')
-            # Format data for LabKey metagenomic_hits table
-            labkey_row = {
-                'experiment': ${experiment_id},
-                'blast_task': row.get('task', 'megablast'),
-                'sample_id': row.get('sample', '${meta}'),
-                'qseqid': row.get('qseqid', ''),
-                'qlen': row.get('qlen', ''),
-                'sseqid': row.get('sseqid', ''),
-                'stitle': row.get('stitle', ''),
-                'tax_rank': row.get('rank', ''),
-                'length': row.get('length', ''),
-                'pident': row.get('pident', ''),
-                'evalue': row.get('evalue', ''),
-                'bitscore': row.get('bitscore', ''),
-                'sscinames': row.get('sscinames', ''),
-                'staxids': row.get('staxids', ''),
-                'blast_db_version': '${params.blast_db_version}',
-                'snakemake_run_id': '${run_id}',
-                'mapped_reads': mapped_reads_count,
-                'total_reads': '${total_reads}',
-                'stat_db_version': '${params.stat_db_version}',
-                'adjusted_taxid': row.get('adjusted_taxid', ''),
-                'adjustment_method': row.get('adjustment_method', ''),
-                'adjusted_taxid_name': row.get('adjusted_taxid_name', ''),
-                'adjusted_taxid_rank': row.get('adjusted_taxid_rank', '')
-            }
-            blast_data.append(labkey_row)
-
-    # Write formatted data
-    if blast_data:
-        with open('${output_name}', 'w') as f:
-            writer = csv.DictWriter(f, fieldnames=blast_data[0].keys())
-            writer.writeheader()
-            writer.writerows(blast_data)
-
-        
-    else:
-        # Create empty file if no data
-        open('${output_name}', 'w').close()
+        prepare_blast_labkey.py \\
+        --blast-csv ${blast_csv} \\
+        --contig-counts ${contig_mapped_read_counts} \\
+        --output ${output_name} \\
+        --meta '${meta}' \\
+        --experiment-id ${experiment_id} \\
+        --run-id '${run_id}' \\
+        --total-reads ${total_reads} \\
+        --blast-db-version '${params.blast_db_version}' \\
+        --stat-db-version '${params.stat_db_version}'
     """
 }
 
