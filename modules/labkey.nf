@@ -5,7 +5,7 @@ process VALIDATE_LK_EXP_TO_CLUSTER {
 
     secret 'nvd2'
 
-    tag "exp_${params.experiment_id}_cluster_${params.condor_cluster}" // FIXME: params.condor_cluster needs to be renamed and have a default
+    tag "exp_${params.experiment_id}" // FIXME: params.condor_cluster needs to be renamed and have a default
     label "low"
 
     output:
@@ -13,12 +13,14 @@ process VALIDATE_LK_EXP_TO_CLUSTER {
     stdout emit: validation_result
 
     when:
-    params.condor_cluster && params.labkey && params.experiment_id // TODO: get rid of when block?
+    params.labkey && params.experiment_id
 
     script:
+
+    def uuid_to_use = params.uuid ?: workflow.sessionId
     """
     echo "Starting guard list validation for experiment ${params.experiment_id}"
-    echo "Cluster ID: ${params.condor_cluster}"
+    echo "UUID: ${uuid_to_use}"
     echo "Guard List: ${params.labkey_exp_id_guard_list}"
     echo "Server: ${params.labkey_server}"
     echo "Container: ${params.labkey_project_name}"
@@ -30,7 +32,7 @@ process VALIDATE_LK_EXP_TO_CLUSTER {
         --container ${params.labkey_project_name} \\
         --guard_list ${params.labkey_exp_id_guard_list} \\
         --api_key \$nvd2 \\
-        --cluster_id ${params.condor_cluster} \\
+        --unique_id ${uuid_to_use} \\
         --experiment_id ${params.experiment_id} \\
         2>&1 | tee lk_validation_log.txt
 
@@ -41,6 +43,8 @@ process VALIDATE_LK_EXP_TO_CLUSTER {
     else
         echo "❌ Guard list validation FAILED"
         echo "VALIDATION_FAILED"
+        echo "Does your experiment ID appear in the guard list?"
+        echo "If so, either delete the experiment_id row from the guard list or set the uuid parameter to match the previous workflow.sessionId or uuid used for that experiment."
         exit 1
     fi
     """
