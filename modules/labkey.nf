@@ -17,7 +17,7 @@ process VALIDATE_LK_EXP_TO_CLUSTER {
 
     script:
 
-    def uuid_to_use = params.uuid ?: workflow.sessionId
+    def uuid_to_use = params.workflow_uuid ?: workflow.sessionId
     """
     echo "Starting guard list validation for experiment ${params.experiment_id}"
     echo "UUID: ${uuid_to_use}"
