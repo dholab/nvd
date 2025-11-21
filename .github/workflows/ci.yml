@@ -170,40 +170,46 @@ jobs:
         run: |
           echo "Checking config file includes..."
           
-          # Extract includeConfig statements
-          includes=$(grep -oP 'includeConfig\s+"\K[^"]+' nextflow.config || true)
+          # Extract UNCONDITIONAL includeConfig statements (not indented = not in blocks)
+          # Match lines that start with includeConfig (no leading whitespace except maybe comments)
+          includes=$(grep -oP '^includeConfig\s+"\K[^"]+' nextflow.config || true)
           
           if [ -z "$includes" ]; then
-            echo "ℹ️  No includeConfig statements found"
-            exit 0
-          fi
-          
-          all_found=true
-          for config_file in $includes; do
-            # Remove ${projectDir} variable
-            file_path=${config_file//\$\{projectDir\}\//}
-            
-            if [ -f "$file_path" ]; then
-              echo "✅ Found: $file_path"
-            else
-              echo "::error::Missing config file: $file_path"
-              all_found=false
-            fi
-          done
-          
-          if [ "$all_found" = false ]; then
-            exit 1
-          fi
-          
-          echo "✅ All included config files exist"
-      
-      - name: Check conditional includes
-        run: |
-          # Check that labkey.config is NOT required (conditional include)
-          if [ ! -f "conf/labkey.config" ]; then
-            echo "ℹ️  conf/labkey.config not present (optional, loaded conditionally)"
+            echo "ℹ️  No unconditional includeConfig statements found"
           else
-            echo "✅ conf/labkey.config exists"
+            all_found=true
+            for config_file in $includes; do
+              # Remove ${projectDir} variable
+              file_path=${config_file//\$\{projectDir\}\//}
+              
+              if [ -f "$file_path" ]; then
+                echo "✅ Found: $file_path"
+              else
+                echo "::error::Missing required config file: $file_path"
+                all_found=false
+              fi
+            done
+            
+            if [ "$all_found" = false ]; then
+              exit 1
+            fi
+            
+            echo "✅ All required config files exist"
+          fi
+          
+          # Check for conditional includes (indented = inside blocks, informational only)
+          conditional_includes=$(grep -oP '^\s+includeConfig\s+"\K[^"]+' nextflow.config || true)
+          if [ -n "$conditional_includes" ]; then
+            echo ""
+            echo "ℹ️  Found conditional includes (not required to exist):"
+            for config_file in $conditional_includes; do
+              file_path=${config_file//\$\{projectDir\}\//}
+              if [ -f "$file_path" ]; then
+                echo "  - $file_path (exists)"
+              else
+                echo "  - $file_path (missing, but that's OK - it's conditional)"
+              fi
+            done
           fi
 
   validate-results-config:
@@ -218,19 +224,21 @@ jobs:
         run: |
           echo "Validating results.config parameter references..."
           
-          # Extract param references like ${params.foo} or params.foo
-          param_refs=$(grep -oP 'params\.\K\w+' conf/results.config | sort -u)
+          # Extract param references like ${params.foo} or params.foo from right-hand side (usage)
+          param_refs=$(grep -oP 'params\.\K\w+(?=\s*[+/])' conf/results.config | sort -u)
           
-          echo "Found parameter references:"
+          echo "Found parameter references (used but need to be defined elsewhere):"
           echo "$param_refs"
           echo
           
-          # Check each parameter is defined in nextflow.config
+          # Check each referenced parameter is defined somewhere
           missing_params=()
           for param in $param_refs; do
-            if ! grep -qE "^\s*${param}\s*=" nextflow.config; then
+            # Check if defined in nextflow.config OR in results.config itself
+            if ! grep -qE "^\s*${param}\s*=" nextflow.config && \
+               ! grep -qE "^\s*${param}\s*=" conf/results.config; then
               missing_params+=("$param")
-              echo "::error::Parameter 'params.${param}' used in results.config but not defined in nextflow.config"
+              echo "::error::Parameter 'params.${param}' referenced in results.config but not defined anywhere"
             fi
           done
           

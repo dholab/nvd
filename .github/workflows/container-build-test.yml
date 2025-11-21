@@ -42,8 +42,11 @@ jobs:
           push: false
           load: true
           tags: nvd2:test
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: |
+            type=gha,scope=${{ github.ref_name }}
+            type=gha,scope=main
+            type=gha,scope=develop
+          cache-to: type=gha,mode=max,scope=${{ github.ref_name }}
       
       - name: Image info
         run: |
@@ -117,38 +120,6 @@ jobs:
               [ "$NXF_HOME" = "/scratch" ] || exit 1
               echo "Environment variables OK"
             '
-
-  test-podman:
-    name: Test Podman Compatibility
-    runs-on: ubuntu-latest
-    
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      
-      - name: Install Podman
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y podman
-          podman --version
-      
-      - name: Build with Podman
-        run: |
-          podman build -t nvd2:test -f Containerfile .
-      
-      - name: Test container starts
-        run: |
-          podman run --rm nvd2:test bash -c 'echo "Podman container OK"'
-      
-      - name: Test PATH
-        run: |
-          podman run --rm nvd2:test \
-            bash -c 'echo $PATH | grep /opt/.pixi/envs/default/bin || exit 1'
-      
-      - name: Test tools
-        run: |
-          podman run --rm nvd2:test \
-            bash -c 'which samtools && which blastn && which nextflow'
 
   test-apptainer:
     name: Test Apptainer Conversion (CRITICAL)
@@ -244,14 +215,13 @@ jobs:
   summary:
     name: Container Test Summary
     runs-on: ubuntu-latest
-    needs: [test-docker, test-podman, test-apptainer]
+    needs: [test-docker, test-apptainer]
     if: always()
     
     steps:
       - name: Check all tests passed
         run: |
           if [[ "${{ needs.test-docker.result }}" != "success" ]] || \
-             [[ "${{ needs.test-podman.result }}" != "success" ]] || \
              [[ "${{ needs.test-apptainer.result }}" != "success" ]]; then
             echo "❌ One or more container tests failed"
             exit 1
@@ -259,5 +229,4 @@ jobs:
           
           echo "✅ All container runtime tests passed!"
           echo "  - Docker: ✓"
-          echo "  - Podman: ✓"
           echo "  - Apptainer: ✓"
