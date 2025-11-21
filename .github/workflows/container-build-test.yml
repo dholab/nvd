@@ -171,40 +171,4 @@ jobs:
             echo "Environment variables OK"
           '
       
-      - name: Compress SIF
-        run: |
-          gzip -9 nvd2.sif
-          ls -lh nvd2.sif.gz
-      
-      - name: Generate checksums
-        run: |
-          sha256sum nvd2.sif.gz > nvd2.sif.gz.sha256
-          cat nvd2.sif.gz.sha256
-      
-      - name: Upload SIF artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: apptainer-sif
-          path: |
-            nvd2.sif.gz
-            nvd2.sif.gz.sha256
-          retention-days: 7
 
-  summary:
-    name: Container Test Summary
-    runs-on: ubuntu-latest
-    needs: [test-docker, test-apptainer]
-    if: always()
-    
-    steps:
-      - name: Check all tests passed
-        run: |
-          if [[ "${{ needs.test-docker.result }}" != "success" ]] || \
-             [[ "${{ needs.test-apptainer.result }}" != "success" ]]; then
-            echo "❌ One or more container tests failed"
-            exit 1
-          fi
-          
-          echo "✅ All container runtime tests passed!"
-          echo "  - Docker: ✓"
-          echo "  - Apptainer: ✓"

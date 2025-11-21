@@ -374,33 +374,3 @@ jobs:
           else
             echo "::warning::No example samplesheet found at assets/example_samplesheet.csv"
           fi
-
-  config-validation-summary:
-    name: Config Validation Summary
-    runs-on: ubuntu-latest
-    needs:
-      - validate-cli-coverage
-      - lint
-      - validate-nextflow-syntax
-      - validate-config-includes
-      - validate-results-config
-      - validate-version-consistency
-      - validate-samplesheet-example
-    if: always()
-    
-    steps:
-      - name: Check all validations passed
-        run: |
-          # Check if any required job failed
-          if [[ "${{ needs.validate-cli-coverage.result }}" != "success" ]] || \
-             [[ "${{ needs.lint.result }}" != "success" ]] || \
-             [[ "${{ needs.validate-nextflow-syntax.result }}" != "success" ]] || \
-             [[ "${{ needs.validate-config-includes.result }}" != "success" ]] || \
-             [[ "${{ needs.validate-results-config.result }}" != "success" ]] || \
-             [[ "${{ needs.validate-version-consistency.result }}" != "success" ]] || \
-             [[ "${{ needs.validate-samplesheet-example.result }}" != "success" ]]; then
-            echo "::error::One or more validation checks failed"
-            exit 1
-          fi
-          
-          echo "✅ All configuration validation checks passed!"
