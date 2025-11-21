@@ -111,7 +111,7 @@ jobs:
       
       - name: Build SIF directly from Containerfile
         run: |
-          apptainer build nvd2.sif Containerfile
+          sudo apptainer build nvd2.sif Containerfile
           ls -lh nvd2.sif
       
       - name: Test SIF container starts
