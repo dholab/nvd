@@ -100,6 +100,23 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
       
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Containerfile
+          push: false
+          load: true
+          tags: nvd2:test
+          cache-from: |
+            type=gha,scope=${{ github.ref_name }}-apptainer
+            type=gha,scope=main-apptainer
+            type=gha,scope=develop-apptainer
+          cache-to: type=gha,mode=max,scope=${{ github.ref_name }}-apptainer
+      
       - name: Install Apptainer
         run: |
           sudo apt-get update
@@ -109,9 +126,9 @@ jobs:
           sudo apt-get install -y ./apptainer_1.3.0_amd64.deb
           apptainer --version
       
-      - name: Build SIF directly from Containerfile
+      - name: Convert Docker image to SIF
         run: |
-          sudo apptainer build nvd2.sif Containerfile
+          sudo apptainer build nvd2.sif docker-daemon://nvd2:test
           ls -lh nvd2.sif
       
       - name: Test SIF container starts
