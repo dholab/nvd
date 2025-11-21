@@ -3,8 +3,28 @@ name: CI
 on:
   push:
     branches: [ main, develop ]
+    paths:
+      - 'nextflow.config'
+      - 'conf/**'
+      - 'bin/**'
+      - 'pyproject.toml'
+      - 'assets/example_samplesheet.csv'
+      - 'modules/**/*.nf'
+      - 'subworkflows/**/*.nf'
+      - 'workflows/**/*.nf'
+      - '.github/workflows/ci.yml'
   pull_request:
     branches: [ main, develop ]
+    paths:
+      - 'nextflow.config'
+      - 'conf/**'
+      - 'bin/**'
+      - 'pyproject.toml'
+      - 'assets/example_samplesheet.csv'
+      - 'modules/**/*.nf'
+      - 'subworkflows/**/*.nf'
+      - 'workflows/**/*.nf'
+      - '.github/workflows/ci.yml'
 
 permissions:
   contents: read
