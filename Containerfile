@@ -41,12 +41,12 @@ RUN cd $HOME && \
     script -q -c "pixi clean cache --assume-yes" && \
     script -q -c "pixi add cxx-compiler cmake make"
 
-# 5) modify the shell config so that each container launches within the pixi env
-RUN echo "export PATH=$PATH:$HOME/.pixi/envs/default/bin" >> $HOME/.bashrc
+# 5) Add pixi environment to PATH (works in Docker, Podman, AND Apptainer)
+ENV PATH=$PATH:/opt/.pixi/envs/default/bin
 
-# 6) modify some nextflow environment variables
-RUN echo "export NXF_CACHE_DIR=/scratch" >> $HOME/.bashrc
-RUN echo "export NXF_HOME=/scratch" >> $HOME/.bashrc
+# 6) Set Nextflow environment variables (works in all container runtimes)
+ENV NXF_CACHE_DIR=/scratch
+ENV NXF_HOME=/scratch
 
 # ----------------------------------------------------------------------------------- #
 

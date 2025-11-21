@@ -76,6 +76,22 @@ jobs:
           # Add installation instructions
           echo "## Installation" >> release_notes.md
           echo "" >> release_notes.md
+          echo "### Using Apptainer SIF (HPC clusters):" >> release_notes.md
+          echo "\`\`\`bash" >> release_notes.md
+          echo "# Download the pre-built Apptainer SIF file" >> release_notes.md
+          echo "wget https://github.com/dhoconno/nvd/releases/download/${{ steps.version.outputs.tag }}/nvd2-${{ steps.version.outputs.tag }}.sif.gz" >> release_notes.md
+          echo "wget https://github.com/dhoconno/nvd/releases/download/${{ steps.version.outputs.tag }}/nvd2-${{ steps.version.outputs.tag }}.sif.gz.sha256" >> release_notes.md
+          echo "" >> release_notes.md
+          echo "# Verify checksum" >> release_notes.md
+          echo "sha256sum -c nvd2-${{ steps.version.outputs.tag }}.sif.gz.sha256" >> release_notes.md
+          echo "" >> release_notes.md
+          echo "# Decompress" >> release_notes.md
+          echo "gunzip nvd2-${{ steps.version.outputs.tag }}.sif.gz" >> release_notes.md
+          echo "" >> release_notes.md
+          echo "# Use with Nextflow (configured in nextflow.config)" >> release_notes.md
+          echo "nextflow run dhoconno/nvd -r ${{ steps.version.outputs.tag }} -profile apptainer" >> release_notes.md
+          echo "\`\`\`" >> release_notes.md
+          echo "" >> release_notes.md
           echo "### Using this release with Nextflow:" >> release_notes.md
           echo "\`\`\`bash" >> release_notes.md
           echo "nextflow run dhoconno/nvd -r ${{ steps.version.outputs.tag }} \\" >> release_notes.md
@@ -118,6 +134,30 @@ jobs:
             echo "✅ Version matches between tag and pyproject.toml"
           fi
 
+      - name: Download Apptainer SIF artifact
+        uses: dawidd6/action-download-artifact@v2
+        with:
+          workflow: container-build-test.yml
+          name: apptainer-sif
+          path: ./artifacts/
+          commit: ${{ github.sha }}
+          check_artifacts: true
+          search_artifacts: true
+        continue-on-error: true
+
+      - name: Rename SIF files with version
+        run: |
+          if [ -f "./artifacts/nvd2.sif.gz" ]; then
+            mv ./artifacts/nvd2.sif.gz ./artifacts/nvd2-${{ steps.version.outputs.tag }}.sif.gz
+            mv ./artifacts/nvd2.sif.gz.sha256 ./artifacts/nvd2-${{ steps.version.outputs.tag }}.sif.gz.sha256
+            echo "✅ SIF files renamed for release"
+            ls -lh ./artifacts/
+          else
+            echo "⚠️ SIF artifact not found - release will not include SIF file"
+            echo "This may happen if container-build-test workflow hasn't run on this branch"
+            mkdir -p ./artifacts/
+          fi
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
@@ -132,6 +172,8 @@ jobs:
             uv.lock
             pyproject.toml
             nextflow.config
+            artifacts/nvd2-${{ steps.version.outputs.tag }}.sif.gz
+            artifacts/nvd2-${{ steps.version.outputs.tag }}.sif.gz.sha256
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

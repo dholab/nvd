@@ -111,3 +111,268 @@ jobs:
       
       - name: Run ruff format check
         run: uv run ruff format --check bin/
+
+  validate-nextflow-syntax:
+    name: Validate Nextflow Config Syntax
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        profile: [standard, docker, apptainer, chtc_hpc, local]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+      
+      - name: Install Nextflow
+        run: |
+          curl -s https://get.nextflow.io | bash
+          sudo mv nextflow /usr/local/bin/
+          nextflow -version
+      
+      - name: Validate config syntax - ${{ matrix.profile }}
+        run: |
+          echo "::group::Validating ${{ matrix.profile }} profile"
+          if ! nextflow config -profile ${{ matrix.profile }} > config_output.txt 2>&1; then
+            echo "::error::Config validation failed for profile: ${{ matrix.profile }}"
+            cat config_output.txt
+            exit 1
+          fi
+          echo "::endgroup::"
+          
+          echo "✅ Config syntax valid for ${{ matrix.profile }} profile"
+      
+      - name: Verify required parameters exist
+        run: |
+          # Check that critical parameters are defined
+          for param in samplesheet experiment_id tools results; do
+            if ! grep -q "^\s*${param}\s*=" config_output.txt; then
+              echo "::error::Required parameter '${param}' not found in config"
+              exit 1
+            fi
+          done
+          echo "✅ All required parameters present"
+
+  validate-config-includes:
+    name: Validate Config File Includes
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Check included config files exist
+        run: |
+          echo "Checking config file includes..."
+          
+          # Extract includeConfig statements
+          includes=$(grep -oP 'includeConfig\s+"\K[^"]+' nextflow.config || true)
+          
+          if [ -z "$includes" ]; then
+            echo "ℹ️  No includeConfig statements found"
+            exit 0
+          fi
+          
+          all_found=true
+          for config_file in $includes; do
+            # Remove ${projectDir} variable
+            file_path=${config_file//\$\{projectDir\}\//}
+            
+            if [ -f "$file_path" ]; then
+              echo "✅ Found: $file_path"
+            else
+              echo "::error::Missing config file: $file_path"
+              all_found=false
+            fi
+          done
+          
+          if [ "$all_found" = false ]; then
+            exit 1
+          fi
+          
+          echo "✅ All included config files exist"
+      
+      - name: Check conditional includes
+        run: |
+          # Check that labkey.config is NOT required (conditional include)
+          if [ ! -f "conf/labkey.config" ]; then
+            echo "ℹ️  conf/labkey.config not present (optional, loaded conditionally)"
+          else
+            echo "✅ conf/labkey.config exists"
+          fi
+
+  validate-results-config:
+    name: Validate Results Config Consistency
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Check results.config parameter references
+        run: |
+          echo "Validating results.config parameter references..."
+          
+          # Extract param references like ${params.foo} or params.foo
+          param_refs=$(grep -oP 'params\.\K\w+' conf/results.config | sort -u)
+          
+          echo "Found parameter references:"
+          echo "$param_refs"
+          echo
+          
+          # Check each parameter is defined in nextflow.config
+          missing_params=()
+          for param in $param_refs; do
+            if ! grep -qE "^\s*${param}\s*=" nextflow.config; then
+              missing_params+=("$param")
+              echo "::error::Parameter 'params.${param}' used in results.config but not defined in nextflow.config"
+            fi
+          done
+          
+          if [ ${#missing_params[@]} -gt 0 ]; then
+            echo "::error::Found ${#missing_params[@]} undefined parameters in results.config"
+            exit 1
+          fi
+          
+          echo "✅ All parameters referenced in results.config are defined"
+      
+      - name: Verify process names in results.config (STRICT)
+        run: |
+          echo "Extracting process names from results.config..."
+          
+          # Extract withName: process names
+          config_processes=$(grep -oP "withName:\s*['\"]?\K[\w_]+" conf/results.config | sort -u)
+          
+          echo "Process names in results.config:"
+          echo "$config_processes"
+          echo
+          
+          # Extract process definitions from .nf files
+          workflow_processes=$(grep -hE "^process\s+\w+" modules/*.nf subworkflows/*.nf workflows/*.nf 2>/dev/null | \
+                               awk '{print $2}' | sort -u)
+          
+          echo "Process names in workflow files:"
+          echo "$workflow_processes"
+          echo
+          
+          # STRICT CHECK: All processes in config must exist in workflows
+          missing=()
+          for proc in $config_processes; do
+            if ! echo "$workflow_processes" | grep -qw "$proc"; then
+              missing+=("$proc")
+              echo "::error::Process '$proc' configured in results.config but not found in workflow files"
+            fi
+          done
+          
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::Found ${#missing[@]} process(es) in results.config with no matching workflow definition"
+            echo "Processes must be defined in modules/, subworkflows/, or workflows/ files"
+            exit 1
+          fi
+          
+          echo "✅ All configured processes have matching workflow definitions"
+
+  validate-version-consistency:
+    name: Validate Version Consistency
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Extract versions from files
+        id: versions
+        run: |
+          # Extract version from pyproject.toml
+          PYPROJECT_VERSION=$(grep '^version = ' pyproject.toml | sed 's/version = "\(.*\)"/\1/')
+          echo "pyproject_version=$PYPROJECT_VERSION" >> $GITHUB_OUTPUT
+          echo "pyproject.toml version: $PYPROJECT_VERSION"
+          
+          # Extract version from bin/__main__.py
+          CLI_VERSION=$(grep '^VERSION = ' bin/__main__.py | sed 's/VERSION = "\(.*\)"/\1/')
+          echo "cli_version=$CLI_VERSION" >> $GITHUB_OUTPUT
+          echo "bin/__main__.py version: $CLI_VERSION"
+          
+          # Extract monoimage version from nextflow.config
+          MONOIMAGE=$(grep 'monoimage.*=' nextflow.config | grep -oP 'nrminor/nvd2:\K[^"]+')
+          echo "monoimage_version=$MONOIMAGE" >> $GITHUB_OUTPUT
+          echo "nextflow.config monoimage: $MONOIMAGE"
+      
+      - name: Compare versions (STRICT)
+        run: |
+          PYPROJECT_VERSION="${{ steps.versions.outputs.pyproject_version }}"
+          CLI_VERSION="${{ steps.versions.outputs.cli_version }}"
+          
+          if [ "$PYPROJECT_VERSION" != "$CLI_VERSION" ]; then
+            echo "::error::Version mismatch between pyproject.toml ($PYPROJECT_VERSION) and bin/__main__.py ($CLI_VERSION)"
+            echo "These versions must be kept in sync. Update both files when bumping version."
+            exit 1
+          fi
+          
+          echo "✅ Version consistency check passed"
+          echo "   - pyproject.toml: $PYPROJECT_VERSION"
+          echo "   - bin/__main__.py: $CLI_VERSION"
+          echo "   - Container image: ${{ steps.versions.outputs.monoimage_version }}"
+          echo ""
+          echo "Note: Container image version (${{ steps.versions.outputs.monoimage_version }}) may differ from package version"
+
+  validate-samplesheet-example:
+    name: Validate Example Samplesheet
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Install uv
+        uses: astral-sh/setup-uv@v2
+      
+      - name: Set up Python
+        run: uv python install 3.10
+      
+      - name: Install dependencies
+        run: uv sync
+      
+      - name: Validate example samplesheet
+        run: |
+          if [ -f "assets/example_samplesheet.csv" ]; then
+            echo "Validating assets/example_samplesheet.csv..."
+            uv run nvd validate samplesheet assets/example_samplesheet.csv
+          else
+            echo "::warning::No example samplesheet found at assets/example_samplesheet.csv"
+          fi
+
+  config-validation-summary:
+    name: Config Validation Summary
+    runs-on: ubuntu-latest
+    needs:
+      - validate-cli-coverage
+      - lint
+      - validate-nextflow-syntax
+      - validate-config-includes
+      - validate-results-config
+      - validate-version-consistency
+      - validate-samplesheet-example
+    if: always()
+    
+    steps:
+      - name: Check all validations passed
+        run: |
+          # Check if any required job failed
+          if [[ "${{ needs.validate-cli-coverage.result }}" != "success" ]] || \
+             [[ "${{ needs.lint.result }}" != "success" ]] || \
+             [[ "${{ needs.validate-nextflow-syntax.result }}" != "success" ]] || \
+             [[ "${{ needs.validate-config-includes.result }}" != "success" ]] || \
+             [[ "${{ needs.validate-results-config.result }}" != "success" ]] || \
+             [[ "${{ needs.validate-version-consistency.result }}" != "success" ]] || \
+             [[ "${{ needs.validate-samplesheet-example.result }}" != "success" ]]; then
+            echo "::error::One or more validation checks failed"
+            exit 1
+          fi
+          
+          echo "✅ All configuration validation checks passed!"
