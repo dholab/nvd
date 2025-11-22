@@ -13,9 +13,6 @@ ENV TZ=America/New_York
 ENV HOME=/opt
 ENV ~=/opt
 
-# Set default command to be the bash shell
-ENTRYPOINT ["bash"]
-
 # run a few apt installs
 RUN apt-get update && \
     apt-get install -y curl wget git gcc g++ cmake util-linux && \
