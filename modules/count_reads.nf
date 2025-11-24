@@ -17,9 +17,10 @@ process COUNT_READS {
     script:
     """
     if [[ "${fastq}" == *.gz ]]; then
-        total_reads=\$(zcat ${fastq} | wc -l | awk '{print \$1/4}')
+        total_reads=\$(zcat ${fastq} | wc -l | awk -v OFMT="%.0f" '{print \$1/4}')
     else
-        total_reads=\$(cat ${fastq} | wc -l | awk '{print \$1/4}')
+        total_reads=\$(cat ${fastq} | wc -l | awk -v OFMT="%.0f" '{print \$1/4}')
     fi
+
     """
 }
