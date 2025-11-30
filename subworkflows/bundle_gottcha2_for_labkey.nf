@@ -16,7 +16,7 @@ workflow BUNDLE_GOTTCHA2_FOR_LABKEY {
 }
 
 process LABKEY_UPLOAD_GOTTCHA2_FULL {
-    label 'process_low'
+    label 'low'
 
     tag "${sample_id}"
 
@@ -45,6 +45,7 @@ process LABKEY_UPLOAD_GOTTCHA2_FULL {
 
 process LABKEY_UPLOAD_GOTTCHA2_FASTA {
 
+    label 'low'
     tag "${sample_id}"
 
     secret 'nvd2'

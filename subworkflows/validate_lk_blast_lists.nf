@@ -23,7 +23,7 @@ Requirements:
 */
 
 process VALIDATE_BLAST_HITS_LIST {
-    label 'process_low'
+    label 'low'
     secret 'nvd2'
 
     output:
@@ -45,7 +45,7 @@ process VALIDATE_BLAST_HITS_LIST {
 }
 
 process VALIDATE_BLAST_FASTA_LIST {
-    label 'process_low'
+    label 'low'
     secret 'nvd2'
 
     output:

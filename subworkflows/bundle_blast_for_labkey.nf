@@ -110,7 +110,7 @@ process WEBDAV_UPLOAD_BLAST {
 
 process PREPARE_BLAST_LABKEY {
     tag "$meta"
-    label 'process_low'
+    label 'low'
 
     input:
     tuple val(meta), path(blast_csv), val(total_reads), path(contig_mapped_read_counts), val(output_name)
@@ -137,7 +137,7 @@ process PREPARE_BLAST_LABKEY {
 
 process PREPARE_FASTA_LABKEY {
     tag "$meta"
-    label 'process_low'
+    label 'low'
 
     input:
     tuple val(meta), path(fasta), val(output_name)
@@ -183,7 +183,7 @@ process PREPARE_FASTA_LABKEY {
 }
 
 process LABKEY_UPLOAD_BLAST {
-    label 'process_low'
+    label 'low'
 
     secret 'nvd2'
 
@@ -210,7 +210,7 @@ process LABKEY_UPLOAD_BLAST {
 
 // Uploading BLAST FASTA
 process LABKEY_UPLOAD_FASTA {
-    label 'process_low'
+    label 'low'
 
     secret 'nvd2'
 

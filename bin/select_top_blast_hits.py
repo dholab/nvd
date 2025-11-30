@@ -51,7 +51,9 @@ def parse_args() -> argparse.Namespace:
         - Reads sys.argv
         - May exit program if arguments invalid or --help requested
     """
-    parser = argparse.ArgumentParser(description="Select top BLAST hits per query sequence.")
+    parser = argparse.ArgumentParser(
+        description="Select top BLAST hits per query sequence.",
+    )
 
     parser.add_argument(
         "-i",

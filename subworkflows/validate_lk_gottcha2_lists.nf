@@ -12,7 +12,7 @@ Refer to that workflow for more notes.
 */
 
 process VALIDATE_GOTTCHA2_FULL_LIST {
-    label 'process_low'
+    label 'low'
     secret 'nvd2'
 
     output:
@@ -37,7 +37,7 @@ process VALIDATE_GOTTCHA2_FULL_LIST {
 // is just a duplicate of the full list with less hits uploaded after filtering. We just need to ensure
 // that the correct different list is passed through.
 process VALIDATE_GOTTCHA2_BLAST_VERIFIED_LIST {
-    label 'process_low'
+    label 'low'
     secret 'nvd2'
 
     output:
@@ -59,7 +59,7 @@ process VALIDATE_GOTTCHA2_BLAST_VERIFIED_LIST {
 }
 
 process VALIDATE_GOTTCHA2_FASTA_LIST {
-    label 'process_low'
+    label 'low'
     secret 'nvd2'
 
     output:
