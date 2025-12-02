@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 class BlastTask(Enum):
     """Valid BLAST task types."""
 
-    BLAST = "blast"
+    BLAST = "blastn"
     MEGABLAST = "megablast"
 
 
