@@ -37,7 +37,9 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def concat_blast_tables(megablast_hits: str | Path, blastn_hits: str | Path) -> pl.LazyFrame:
+def concat_blast_tables(
+    megablast_hits: str | Path, blastn_hits: str | Path
+) -> pl.LazyFrame:
     mb_hits = (
         # open a lazy file scanner than uses tab as its separator and refrains from inferring
         # the schema. This is a concession to the fact that BLAST taxids are sometimes semicolon
