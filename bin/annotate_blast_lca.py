@@ -172,11 +172,7 @@ def filter_blast_hits(unfiltered_hits: pl.LazyFrame, params: LcaParams) -> pl.La
     Expected input columns: length, pident, evalue, bitscore, task, sample, qseqid
     """
     return (
-        unfiltered_hits.filter(
-            pl.col("length") >= params.min_bp,
-            pl.col("pident") >= params.min_identity,
-            pl.col("evalue") <= params.max_evalue,
-        )
+        unfiltered_hits
         # Compute Smax per query
         .with_columns(
             pl.max("bitscore").over(["task", "sample", "qseqid"]).alias("Smax"),
