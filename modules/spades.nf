@@ -10,7 +10,7 @@ process RUN_SPADES {
     tuple val(sample_id), val(sample_type), path(reads)
 
     output:
-    tuple val(sample_id), val(sample_type), path("output/contigs.fasta")
+    tuple val(sample_id), val(sample_type), path("output/contigs.fasta"), optional: true
 
     script:
     def spades_cmd = sample_type == 'ont' || sample_type == 'sra'
