@@ -57,6 +57,7 @@ def run_filterbyname(input_fasta, output_fasta, names_file, logger):
     command = [
         "seqkit",
         "grep",
+        "-v",
         "-n",
         "-f",
         f"{names_file}",
@@ -71,7 +72,7 @@ def run_filterbyname(input_fasta, output_fasta, names_file, logger):
         if result.stderr:
             logger.warning(result.stderr)
     except subprocess.CalledProcessError:
-        logger.exception("Error running filterbyname.sh")
+        logger.exception(f"Error running {command}")
         raise
 
 

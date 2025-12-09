@@ -113,7 +113,7 @@ class DataValidator:
             return task.value
         except ValueError:
             raise ValueError(
-                f"blast_task must be 'blast' or 'megablast', got '{value}'"
+                f"blast_task must be 'blastn' or 'megablast', got '{value}'"
             )
 
     @staticmethod

@@ -103,7 +103,7 @@ def check_guard_list(labkey, guard_list_name, experiment_id, unique_id) -> bool:
             )
             inserted_row = insert_result["rows"][0]
             logger.info(
-                f"Successfully registered experiment ID {experiment_id} in guard list with Key={inserted_row.get('Key', 'N/A')}"
+                f"Successfully registered experiment ID {experiment_id} in guard list with Key={unique_id}"
             )
             return True
 
