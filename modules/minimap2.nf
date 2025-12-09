@@ -21,7 +21,7 @@ process MAP_READS_TO_CONTIGS {
         : "sr"
     """
     minimap2 -ax ${preset} -t ${task.cpus} ${contigs} ${reads} \
-    | samtools view -b -F ${task.cpus} \
+    | samtools view -b -F 4 \
     | samtools sort -@ ${task.cpus} -o ${sample_id}.bam && \
     samtools index ${sample_id}.bam
     """
