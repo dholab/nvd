@@ -194,6 +194,7 @@ process LABKEY_UPLOAD_BLAST {
 
     output:
     path "blast_labkey_upload.log", emit: log
+    path csv_files
 
     script:
     """

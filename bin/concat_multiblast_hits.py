@@ -15,7 +15,7 @@ import polars.selectors as cs
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Concatenated two potentially large BLAST results tables, one from MEGABLAST and one from BLASTN",
+        description="Concatenate two potentially large BLAST results tables, one from MEGABLAST and one from BLASTN",
     )
 
     parser.add_argument(
@@ -37,34 +37,20 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def concat_blast_tables(
-    megablast_hits: str | Path, blastn_hits: str | Path
-) -> pl.LazyFrame:
-    mb_hits = (
-        # open a lazy file scanner than uses tab as its separator and refrains from inferring
-        # the schema. This is a concession to the fact that BLAST taxids are sometimes semicolon
-        # delimited and therefore not always numbers.
+def has_data(filepath: str | Path) -> bool:
+    """Check if file exists and has more than just a header."""
+    path = Path(filepath)
+    if not path.exists() or path.stat().st_size == 0:
+        return False
+    with open(path) as f:
+        return sum(1 for _ in f) > 1
+
+
+def process_blast_file(filepath: str | Path) -> pl.LazyFrame:
+    """Load and process a BLAST results file."""
+    return (
         pl.scan_csv(
-            megablast_hits,
-            separator="\t",
-            infer_schema_length=10000,
-            schema_overrides={"staxids": pl.Utf8, "bitscore": pl.Float64},
-        )
-        # split on any instances of a semicolon in staxids, which will replace the semicolon-delimited strings
-        # with lists/arrays of taxid strings. Then, explode each item in those arrays into their own rows
-        # and the convert the staxids column back into integers now that the semicolons have been handled
-        .with_columns(pl.col("staxids").str.split(by=";").alias("_tmp1"))
-        .explode("_tmp1")
-        .with_columns(pl.col("_tmp1").str.to_integer().alias("staxids"))
-        # get rid of duplicate entries just in case
-        .unique()
-        # get rid of temporary columns, which by convention I prefix with "_"
-        .drop(cs.starts_with("_"))
-    )
-    bn_hits = (
-        # do all the same things but for the blastn hits
-        pl.scan_csv(
-            blastn_hits,
+            filepath,
             separator="\t",
             infer_schema_length=10000,
             schema_overrides={"staxids": pl.Utf8, "bitscore": pl.Float64},
@@ -76,14 +62,42 @@ def concat_blast_tables(
         .drop(cs.starts_with("_"))
     )
 
-    # return the concatenated lazyframes, sorted usefully by sample, query seq id, and blast task type
-    return pl.concat([mb_hits, bn_hits]).sort(["sample", "qseqid", "task"])
+
+def concat_blast_tables(
+    megablast_hits: str | Path, blastn_hits: str | Path
+) -> pl.LazyFrame | None:
+    """Concatenate BLAST tables, handling empty files gracefully."""
+    mb_has_data = has_data(megablast_hits)
+    bn_has_data = has_data(blastn_hits)
+
+    if mb_has_data and bn_has_data:
+        # Both have data - concat them
+        return pl.concat([
+            process_blast_file(megablast_hits),
+            process_blast_file(blastn_hits),
+        ]).sort(["sample", "qseqid", "task"])
+    elif mb_has_data:
+        # Only megablast has data
+        return process_blast_file(megablast_hits).sort(["sample", "qseqid", "task"])
+    elif bn_has_data:
+        # Only blastn has data
+        return process_blast_file(blastn_hits).sort(["sample", "qseqid", "task"])
+    else:
+        # Neither has data
+        return None
 
 
 def main() -> None:
     args = parse_args()
     concat_lf = concat_blast_tables(args.megablast_hits, args.blastn_hits)
-    concat_lf.sink_csv(args.output_file, separator="\t")
+    
+    if concat_lf is not None:
+        concat_lf.sink_csv(args.output_file, separator="\t")
+    else:
+        # Create empty file with header
+        Path(args.output_file).write_text(
+            "task\tsample\tqseqid\tqlen\tsseqid\tstitle\tlength\tpident\tevalue\tbitscore\tsscinames\tstaxids\trank\n"
+        )
 
 
 if __name__ == "__main__":

@@ -39,12 +39,26 @@ workflow CLASSIFY_WITH_BLASTN {
         ANNOTATE_BLASTN_RESULTS.out
     )
 
-    MERGE_FILTERED_BLAST_RESULTS(
-        ch_filtered_megablast,
-        FILTER_NON_VIRUS_BLASTN_NODES.out.filter { _id, hits_file ->
+    // Get blastn results (may not have all samples)
+    ch_blastn_virus_hits = FILTER_NON_VIRUS_BLASTN_NODES.out
+        .filter { _id, hits_file ->
             hits_file.size() > 0 && hits_file.readLines().size() > 0
-        },
-    )
+        }
+
+    // JOIN by sample_id with remainder:true to keep samples that only have megablast hits
+ch_merged_input = ch_filtered_megablast
+    .join(ch_blastn_virus_hits, by: 0, remainder: true)
+    .map { sample_id, megablast_file, blastn_file ->
+        if (blastn_file) {
+            tuple(sample_id, megablast_file, blastn_file)
+        } else {
+            def emptyFile = file("${workflow.workDir}/empty_blastn_${sample_id}.tsv")
+            emptyFile.text = "task\tsample\tqseqid\tqlen\tsseqid\tstitle\tlength\tpident\tevalue\tbitscore\tsscinames\tstaxids\trank\n"
+            tuple(sample_id, megablast_file, emptyFile)
+        }
+    }
+
+    MERGE_FILTERED_BLAST_RESULTS(ch_merged_input)
 
     ANNOTATE_LEAST_COMMON_ANCESTORS(MERGE_FILTERED_BLAST_RESULTS.out)
 

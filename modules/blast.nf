@@ -235,30 +235,22 @@ process MERGE_FILTERED_BLAST_RESULTS {
     tag "${sample_id}"
     label "low"
 
-	errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
-	maxRetries 2
+    errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
+    maxRetries 2
 
     input:
-    tuple val(sample_id), path(megablast_viruses)
-    tuple val(_sample_id), path(blastn_viruses)
+    tuple val(sample_id), path(megablast_viruses), path(blastn_input)
 
     output:
     tuple val(sample_id), path("${sample_id}_blast.merged.tsv")
 
     script:
     """
-    if [ -s ${megablast_viruses} ] || [ -s ${blastn_viruses} ]; then
-        cat ${megablast_viruses} ${blastn_viruses} > ${sample_id}_blast.merged.tsv
-        concat_multiblast_hits.py \\
+    concat_multiblast_hits.py \\
         --megablast-hits ${megablast_viruses} \\
-        --blastn-hits ${blastn_viruses} \\
+        --blastn-hits ${blastn_input} \\
         --output-file ${sample_id}_blast.merged.tsv
-    else
-        touch ${sample_id}_blast.merged.tsv
-        echo "Both input files are empty. Created an empty output file."
-    fi
     """
-
 }
 
 // Extract unclassified contigs that do not have BLAST hits.
