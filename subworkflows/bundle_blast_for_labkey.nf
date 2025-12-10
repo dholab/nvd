@@ -7,13 +7,9 @@ workflow BUNDLE_BLAST_FOR_LABKEY {
     experiment_id        // value: experiment ID
     run_id               // value: workflow run ID
     contig_read_counts   // channel: [ meta, mapped_counts.tsv ]
+    validation_complete  // value: ensures validation passed before uploading
 
     main:
-
-    // DEBUG: Add comprehensive channel debugging
-    // blast_results.view { "DEBUG BLAST_RESULTS: $it" }
-    // read_counts.view { "DEBUG READ_COUNTS: $it" }
-    // contig_sequences.view { "DEBUG CONTIG_SEQUENCES: $it" }
 
     // Prepare BLAST results for metagenomic_hits table
     ch_blast_labkey = blast_results
@@ -27,7 +23,8 @@ workflow BUNDLE_BLAST_FOR_LABKEY {
     PREPARE_BLAST_LABKEY(
         ch_blast_labkey,
         experiment_id,
-        run_id
+        run_id,
+        validation_complete
     )
 
     // JOIN the channels to ensure same sample_id for WebDAV upload
@@ -39,7 +36,8 @@ workflow BUNDLE_BLAST_FOR_LABKEY {
 
     // Upload BLAST CSV and fasta per sample to WebDAV
     WEBDAV_UPLOAD_BLAST(
-        ch_webdav_upload
+        ch_webdav_upload,
+        validation_complete
     )
 
     // Prepare FASTA sequences for fasta_hits table
@@ -52,7 +50,8 @@ workflow BUNDLE_BLAST_FOR_LABKEY {
     PREPARE_FASTA_LABKEY(
         ch_fasta_labkey,
         experiment_id,
-        run_id
+        run_id,
+        validation_complete
     )
 
     // Upload BLAST results
@@ -85,6 +84,7 @@ process WEBDAV_UPLOAD_BLAST {
 
     input:
     tuple val(sample_id), path(blast_csv), path(fasta)
+    val validation_complete  // Ensures validation passed before uploading
 
     output:
     val(sample_id)
@@ -116,6 +116,7 @@ process PREPARE_BLAST_LABKEY {
     tuple val(meta), path(blast_csv), val(total_reads), path(contig_mapped_read_counts), val(output_name)
     val experiment_id
     val run_id
+    val validation_complete  // Ensures validation passed before preparing
 
     output:
     tuple val(meta), path(output_name), emit: csv
@@ -143,6 +144,7 @@ process PREPARE_FASTA_LABKEY {
     tuple val(meta), path(fasta), val(output_name)
     val experiment_id
     val run_id
+    val validation_complete  // Ensures validation passed before preparing
 
     output:
     tuple val(meta), path("${output_name}"), emit: csv

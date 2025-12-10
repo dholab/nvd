@@ -1,6 +1,5 @@
 include { FETCH_FASTQ } from "../modules/sratools"
 include { INTERLEAVE_PAIRS } from "../modules/bbmap"
-include { VALIDATE_LK_EXP_TO_CLUSTER } from "../modules/labkey"
 
 workflow GATHER_READS {
 
@@ -8,9 +7,6 @@ workflow GATHER_READS {
     ch_samplesheet_row
 
     main:
-
-        // Ensure that the experiment ID is correct for the given HTC cluster
-        VALIDATE_LK_EXP_TO_CLUSTER()
 
         // DOWNLOAD AND HANDLE SRA ACCESSIONS
         // ***************************************************************************/

@@ -18,6 +18,8 @@ include { BUNDLE_BLAST_FOR_LABKEY } from "../subworkflows/bundle_blast_for_labke
 include { COUNT_READS } from "../modules/count_reads"
 include { RETRIEVE_GETTAX } from "../modules/utils"
 include { VALIDATE_LK_BLAST } from "../subworkflows/validate_lk_blast_lists.nf"
+include { VALIDATE_LK_EXP_FRESH } from "../modules/validate_blast_labkey.nf"
+include { REGISTER_LK_EXPERIMENT } from "../modules/validate_blast_labkey.nf"
 
 
 workflow STAT_BLAST_WORKFLOW {
@@ -98,14 +100,28 @@ workflow STAT_BLAST_WORKFLOW {
     )
 
     if (params.labkey) {
+        // First: Check experiment ID is fresh (not already uploaded)
+        // Use .first() to get a value channel trigger without consuming the queue channel
+        VALIDATE_LK_EXP_FRESH(
+            CLASSIFY_WITH_BLASTN.out.merged_results.first()
+        )
+
+        // Bundle and upload - depends on validation passing
         BUNDLE_BLAST_FOR_LABKEY(
             CLASSIFY_WITH_BLASTN.out.merged_results,
             EXTRACT_HUMAN_VIRUSES.out.contigs,
             COUNT_READS.out.counts,
             params.experiment_id,
             workflow.runName,
-            EXTRACT_HUMAN_VIRUSES.out.contig_read_counts
+            EXTRACT_HUMAN_VIRUSES.out.contig_read_counts,
+            VALIDATE_LK_EXP_FRESH.out.validated
         )
+
+        // Register experiment ID in guard list after successful upload
+        REGISTER_LK_EXPERIMENT(
+            BUNDLE_BLAST_FOR_LABKEY.out.upload_log.collect()
+        )
+
         labkey_log_ch = BUNDLE_BLAST_FOR_LABKEY.out.upload_log
     } else {
         // If no labkey upload then just pass an empty channel
