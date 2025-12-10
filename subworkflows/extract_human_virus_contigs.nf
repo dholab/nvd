@@ -66,10 +66,16 @@ workflow EXTRACT_HUMAN_VIRUSES {
 
     // pass through the extracted_virus_reads from STAT and align them to the assembled and QC checked
     // SPADES contigs that have been identified as human infecting virus family members
-    MAP_READS_TO_CONTIGS(
-        ch_viral_reads,
-        EXTRACT_HUMAN_VIRUS_CONTIGS.out
-    )
+    // Join viral reads with extracted contigs by sample_id
+    ch_reads_with_contigs = ch_viral_reads
+        .map { sample_id, platform, reads -> tuple(sample_id, platform, reads) }
+        .join(
+            EXTRACT_HUMAN_VIRUS_CONTIGS.out.map { sample_id, contigs -> tuple(sample_id, contigs) },
+            by: 0
+        )
+        // Result: [sample_id, platform, reads, contigs]
+
+    MAP_READS_TO_CONTIGS(ch_reads_with_contigs)
 
     COUNT_MAPPED_READS(MAP_READS_TO_CONTIGS.out)
 

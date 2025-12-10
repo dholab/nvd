@@ -9,8 +9,7 @@ process MAP_READS_TO_CONTIGS {
     cpus 4
 
     input:
-    tuple val(sample_id), val(platform), path(reads)
-    tuple val(_sample_id), path(contigs)
+    tuple val(sample_id), val(platform), path(reads), path(contigs)
 
     output:
     tuple val(sample_id), path("${sample_id}.bam"), path("${sample_id}.bam.bai")
