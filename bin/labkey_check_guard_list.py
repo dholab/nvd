@@ -18,6 +18,7 @@ def experiment_exists(labkey, guard_list_name, experiment_id) -> bool:
     # Method 1: Try with QueryFilter import
     try:
         from labkey.query import QueryFilter
+
         result = labkey.query.select_rows(
             schema_name="lists",
             query_name=guard_list_name,
@@ -81,14 +82,15 @@ def check_experiment(labkey, guard_list_name, experiment_id) -> bool:
             )
             return False
         else:
-            logger.info(
-                f"Experiment ID {experiment_id} is available - safe to proceed"
-            )
+            logger.info(f"Experiment ID {experiment_id} is available - safe to proceed")
             return True
 
     except Exception as e:
         error_msg = str(e).lower()
-        if any(x in error_msg for x in ["does not exist", "table", "querynotfound", "not found"]):
+        if any(
+            x in error_msg
+            for x in ["does not exist", "table", "querynotfound", "not found"]
+        ):
             logger.warning(
                 f"Guard list '{guard_list_name}' doesn't exist - assuming safe to proceed"
             )
@@ -122,9 +124,7 @@ def register_experiment(labkey, guard_list_name, experiment_id) -> bool:
 
         # Insert new entry
         guard_row = {"experiment_id": experiment_id}
-        insert_result = labkey.query.insert_rows(
-            "lists", guard_list_name, [guard_row]
-        )
+        insert_result = labkey.query.insert_rows("lists", guard_list_name, [guard_row])
         inserted_row = insert_result["rows"][0]
         logger.info(
             f"Successfully registered experiment ID {experiment_id} (Key={inserted_row.get('Key', 'N/A')})"
@@ -133,7 +133,10 @@ def register_experiment(labkey, guard_list_name, experiment_id) -> bool:
 
     except Exception as e:
         error_msg = str(e).lower()
-        if any(x in error_msg for x in ["does not exist", "table", "querynotfound", "not found"]):
+        if any(
+            x in error_msg
+            for x in ["does not exist", "table", "querynotfound", "not found"]
+        ):
             logger.warning(f"Guard list '{guard_list_name}' doesn't exist")
             logger.info("Attempting to create entry anyway...")
             try:
@@ -141,11 +144,15 @@ def register_experiment(labkey, guard_list_name, experiment_id) -> bool:
                 insert_result = labkey.query.insert_rows(
                     "lists", guard_list_name, [guard_row]
                 )
-                logger.info(f"Successfully created guard list entry for experiment ID {experiment_id}")
+                logger.info(
+                    f"Successfully created guard list entry for experiment ID {experiment_id}"
+                )
                 return True
             except Exception as create_error:
                 logger.error(f"Failed to create guard list entry: {create_error}")
-                logger.error("Please create the guard list manually with column: experiment_id (integer)")
+                logger.error(
+                    "Please create the guard list manually with column: experiment_id (integer)"
+                )
                 return False
         else:
             logger.error(f"Error registering in guard list: {e}")
@@ -160,7 +167,7 @@ def main() -> None:
         "--mode",
         choices=["check", "register"],
         required=True,
-        help="'check' to verify experiment ID is available, 'register' to add to guard list"
+        help="'check' to verify experiment ID is available, 'register' to add to guard list",
     )
     parser.add_argument("--server", required=True, help="LabKey server URL")
     parser.add_argument(
@@ -206,10 +213,14 @@ def main() -> None:
         logger.info(f"{mode_label} FAILED")
         logger.info("=" * 80)
         if args.mode == "check":
-            logger.error(f"Experiment ID {args.experiment_id} has already been uploaded to LabKey")
+            logger.error(
+                f"Experiment ID {args.experiment_id} has already been uploaded to LabKey"
+            )
             logger.info("Options:")
             logger.info(f"   - Use a different experiment_id")
-            logger.info(f"   - Remove the entry from guard list '{args.guard_list}' if re-upload is intended")
+            logger.info(
+                f"   - Remove the entry from guard list '{args.guard_list}' if re-upload is intended"
+            )
         sys.exit(1)
     else:
         logger.info("=" * 80)

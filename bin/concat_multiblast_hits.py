@@ -72,10 +72,12 @@ def concat_blast_tables(
 
     if mb_has_data and bn_has_data:
         # Both have data - concat them
-        return pl.concat([
-            process_blast_file(megablast_hits),
-            process_blast_file(blastn_hits),
-        ]).sort(["sample", "qseqid", "task"])
+        return pl.concat(
+            [
+                process_blast_file(megablast_hits),
+                process_blast_file(blastn_hits),
+            ]
+        ).sort(["sample", "qseqid", "task"])
     elif mb_has_data:
         # Only megablast has data
         return process_blast_file(megablast_hits).sort(["sample", "qseqid", "task"])
@@ -90,7 +92,7 @@ def concat_blast_tables(
 def main() -> None:
     args = parse_args()
     concat_lf = concat_blast_tables(args.megablast_hits, args.blastn_hits)
-    
+
     if concat_lf is not None:
         concat_lf.sink_csv(args.output_file, separator="\t")
     else:
