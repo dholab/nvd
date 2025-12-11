@@ -84,9 +84,6 @@ py-modules = ["bin"]
 [project.scripts]
 "nvd" = "bin.__main__:main"
 
-[tool.uv]
-compile-bytecode = true
-
 [tool.ruff.lint]
 select = []
 ignore = ["G004", "PTH"]
