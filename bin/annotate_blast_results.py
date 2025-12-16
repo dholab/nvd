@@ -36,6 +36,7 @@ class TaxonomyDatabase:
     def __init__(self, sqlite_cache):
         self.sqlite_cache = sqlite_cache
         self.conn = None
+        self._lineage_cache = {}  # Cache for taxid -> lineage lookups
 
     def connect(self):
         self.conn = sqlite3.connect(self.sqlite_cache)
@@ -52,12 +53,18 @@ class TaxonomyDatabase:
         self.close()
 
     def get_lineage(self, tax_id):
+        # Check cache first
+        tax_id_key = int(tax_id)
+        if tax_id_key in self._lineage_cache:
+            return self._lineage_cache[tax_id_key]
+
         cur = self.conn.cursor()
         lineage = []
-        while tax_id != 1:
+        current_id = tax_id_key
+        while current_id != 1:
             cur.execute(
                 "SELECT parent_tax_id, rank, scientific_name FROM taxons WHERE tax_id = ?",
-                [int(tax_id)],
+                [current_id],
             )
             row = cur.fetchone()
             if row is None:
@@ -65,9 +72,12 @@ class TaxonomyDatabase:
             parent_tax_id, rank, scientific_name = row
             if rank:
                 lineage.append(f"{rank}:{scientific_name}")
-            tax_id = parent_tax_id
+            current_id = parent_tax_id
         cur.close()
-        return "; ".join(reversed(lineage))
+
+        result = "; ".join(reversed(lineage))
+        self._lineage_cache[tax_id_key] = result
+        return result
 
     def check_database_structure(self):
         cur = self.conn.cursor()
