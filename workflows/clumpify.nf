@@ -16,12 +16,19 @@ workflow CLUMPIFY_WORKFLOW {
         gated_reads.map { id, _platform, reads -> tuple(id, file(reads)) }
     )
 
-    // Check if sra_human_db is a valid file path
-    if (params.sra_human_db != null && !file(params.sra_human_db).isFile()) {
-        error("Error: Human database file does not exist: ${params.sra_human_db}")
+    // Resolve human database path, supporting deprecated human_read_scrub param
+    def human_db_path = params.sra_human_db ?: params.human_read_scrub
+
+    if (params.human_read_scrub != null && params.sra_human_db == null) {
+        log.warn "DEPRECATION WARNING: --human_read_scrub is deprecated. Please use --sra_human_db instead."
     }
 
-    ch_human_reads = params.sra_human_db ? Channel.fromPath( params.sra_human_db ) : Channel.empty()
+    // Check if human database path is a valid file
+    if (human_db_path != null && !file(human_db_path).isFile()) {
+        error("Error: Human database file does not exist: ${human_db_path}")
+    }
+
+    ch_human_reads = human_db_path ? Channel.fromPath( human_db_path ) : Channel.empty()
 
     SCRUB_HUMAN_READS(
         CLUMP_READS.out.combine(ch_human_reads)

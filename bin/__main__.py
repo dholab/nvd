@@ -50,6 +50,14 @@ VALID_TOOLS = [
 VALID_PROFILES = ["docker", "apptainer", "local", "chtc_hpc"]
 MAX_PREVIEW_ITEMS = 5  # Max items to show before "... and N more"
 
+# Help panel names for organizing --help output
+PANEL_CORE = "Core Options"
+PANEL_PREPROCESSING = "Read Preprocessing"
+PANEL_DATABASES = "Database Paths"
+PANEL_ANALYSIS = "Analysis Parameters"
+PANEL_SRA = "SRA Submission"
+PANEL_LABKEY = "LabKey Integration"
+
 # ============================================================================
 # UTILITIES
 # ============================================================================
@@ -253,6 +261,9 @@ app = typer.Typer(
 @app.command("r", hidden=True)  # Alias
 def run(  # noqa: PLR0913, PLR0912, PLR0915, C901
     # Complexity/boolean/B008 warnings are acceptable for CLI with many options
+    # -------------------------------------------------------------------------
+    # Core Options
+    # -------------------------------------------------------------------------
     samplesheet: Path = typer.Option(
         ...,
         "--samplesheet",
@@ -261,30 +272,35 @@ def run(  # noqa: PLR0913, PLR0912, PLR0915, C901
         exists=True,
         file_okay=True,
         dir_okay=False,
+        rich_help_panel=PANEL_CORE,
     ),
     experiment_id: str = typer.Option(
         ...,
         "--experiment-id",
         "-e",
         help="Unique experiment identifier",
+        rich_help_panel=PANEL_CORE,
     ),
     tools: str = typer.Option(
         "all",
         "--tools",
         "-t",
         help="Tools to run: stat_blast, gottcha, or all",
+        rich_help_panel=PANEL_CORE,
     ),
     results: Path | None = typer.Option(
         None,
         "--results",
         "-r",
         help="Results directory (default: ./results)",
+        rich_help_panel=PANEL_CORE,
     ),
     profile: str | None = typer.Option(
         None,
         "--profile",
         "-p",
         help="Execution profile: docker, apptainer, local (auto-detect if not set)",
+        rich_help_panel=PANEL_CORE,
     ),
     config: Path | None = typer.Option(
         None,
@@ -292,126 +308,243 @@ def run(  # noqa: PLR0913, PLR0912, PLR0915, C901
         "-c",
         help="Custom config file (default: ~/.nvd2/config/user.config)",
         exists=True,
+        rich_help_panel=PANEL_CORE,
     ),
     resume: bool = typer.Option(
         False,
         "--resume",
         help="Resume from checkpoint",
+        rich_help_panel=PANEL_CORE,
     ),
     cleanup: bool = typer.Option(
         False,
         "--cleanup",
         help="Clean work directory after success",
+        rich_help_panel=PANEL_CORE,
     ),
     work_dir: Path | None = typer.Option(
         None,
         "--work-dir",
         "-w",
         help="Nextflow work directory",
+        rich_help_panel=PANEL_CORE,
     ),
-    # Database overrides
+    # -------------------------------------------------------------------------
+    # Database Paths
+    # -------------------------------------------------------------------------
     gottcha2_db: Path | None = typer.Option(
         None,
         "--gottcha2-db",
         help="Override GOTTCHA2 database path",
+        rich_help_panel=PANEL_DATABASES,
     ),
     blast_db: Path | None = typer.Option(
         None,
         "--blast-db",
         help="Override BLAST database directory",
+        rich_help_panel=PANEL_DATABASES,
     ),
     blast_db_prefix: str | None = typer.Option(
         None,
         "--blast-db-prefix",
         help="Override BLAST database prefix",
+        rich_help_panel=PANEL_DATABASES,
     ),
     stat_index: Path | None = typer.Option(
         None,
         "--stat-index",
         help="Override STAT index file",
+        rich_help_panel=PANEL_DATABASES,
     ),
     stat_dbss: Path | None = typer.Option(
         None,
         "--stat-dbss",
         help="Override STAT dbss file",
+        rich_help_panel=PANEL_DATABASES,
     ),
     stat_annotation: Path | None = typer.Option(
         None,
         "--stat-annotation",
         help="Override STAT annotation file",
+        rich_help_panel=PANEL_DATABASES,
     ),
     human_virus_taxlist: Path | None = typer.Option(
         None,
         "--human-virus-taxlist",
         help="Override human virus taxlist file",
+        rich_help_panel=PANEL_DATABASES,
     ),
-    # Analysis parameters
+    # -------------------------------------------------------------------------
+    # Analysis Parameters
+    # -------------------------------------------------------------------------
     cutoff_percent: float | None = typer.Option(
         None,
         "--cutoff-percent",
         help="Cutoff percentage (default: 0.001)",
+        rich_help_panel=PANEL_ANALYSIS,
     ),
     tax_stringency: float | None = typer.Option(
         None,
         "--tax-stringency",
         help="Taxonomy stringency (default: 0.7)",
+        rich_help_panel=PANEL_ANALYSIS,
     ),
     entropy: float | None = typer.Option(
         None,
         "--entropy",
         help="Entropy threshold (default: 0.9)",
+        rich_help_panel=PANEL_ANALYSIS,
     ),
     min_gottcha_reads: int | None = typer.Option(
         None,
         "--min-gottcha-reads",
         help="Minimum reads for GOTTCHA2 (default: 250)",
+        rich_help_panel=PANEL_ANALYSIS,
     ),
     max_blast_targets: int | None = typer.Option(
         None,
         "--max-blast-targets",
         help="Maximum BLAST targets (default: 100)",
+        rich_help_panel=PANEL_ANALYSIS,
     ),
     blast_retention_count: int | None = typer.Option(
         None,
         "--blast-retention-count",
         help="Retain top X BLAST hits (default: 5)",
+        rich_help_panel=PANEL_ANALYSIS,
     ),
     min_consecutive_bases: int | None = typer.Option(
         None,
         "--min-consecutive-bases",
         help="Minimum consecutive bases (default: 200)",
+        rich_help_panel=PANEL_ANALYSIS,
     ),
     qtrim: str | None = typer.Option(
         None,
         "--qtrim",
         help="Quality trimming mode (default: 't')",
+        rich_help_panel=PANEL_ANALYSIS,
     ),
     include_children: bool | None = typer.Option(
         None,
         "--include-children/--no-include-children",
         help="Include children in taxonomy (default: true)",
+        rich_help_panel=PANEL_ANALYSIS,
     ),
     max_concurrent_downloads: int | None = typer.Option(
         None,
         "--max-concurrent-downloads",
         help="Maximum concurrent SRA downloads (default: 3)",
+        rich_help_panel=PANEL_ANALYSIS,
     ),
+    # -------------------------------------------------------------------------
+    # Read Preprocessing
+    # -------------------------------------------------------------------------
+    preprocess: bool = typer.Option(
+        False,
+        "--preprocess",
+        help="Enable all preprocessing steps (dedup, trim, scrub, filter)",
+        rich_help_panel=PANEL_PREPROCESSING,
+    ),
+    merge_pairs: bool | None = typer.Option(
+        None,
+        "--merge-pairs/--no-merge-pairs",
+        help="Merge paired read mates based on overlaps",
+        rich_help_panel=PANEL_PREPROCESSING,
+    ),
+    dedup: bool | None = typer.Option(
+        None,
+        "--dedup/--no-dedup",
+        help="Deduplicate reads (default: follows --preprocess)",
+        rich_help_panel=PANEL_PREPROCESSING,
+    ),
+    trim_adapters: bool | None = typer.Option(
+        None,
+        "--trim-adapters/--no-trim-adapters",
+        help="Trim Illumina adapters (default: follows --preprocess)",
+        rich_help_panel=PANEL_PREPROCESSING,
+    ),
+    scrub_host_reads: bool | None = typer.Option(
+        None,
+        "--scrub-host-reads/--no-scrub-host-reads",
+        help="Remove host reads with hostile (default: follows --preprocess)",
+        rich_help_panel=PANEL_PREPROCESSING,
+    ),
+    hostile_index: Path | None = typer.Option(
+        None,
+        "--hostile-index",
+        help="Path to local hostile index (for offline use)",
+        rich_help_panel=PANEL_PREPROCESSING,
+    ),
+    hostile_index_name: str | None = typer.Option(
+        None,
+        "--hostile-index-name",
+        help="Standard hostile index name (default: human-t2t-hla.rs-viral-202401_ml-phage-202401)",
+        rich_help_panel=PANEL_PREPROCESSING,
+    ),
+    filter_reads: bool | None = typer.Option(
+        None,
+        "--filter-reads/--no-filter-reads",
+        help="Filter reads by quality/length (default: follows --preprocess)",
+        rich_help_panel=PANEL_PREPROCESSING,
+    ),
+    min_read_quality_illumina: int | None = typer.Option(
+        None,
+        "--min-read-quality-illumina",
+        help="Minimum average quality for Illumina reads (default: 20)",
+        rich_help_panel=PANEL_PREPROCESSING,
+    ),
+    min_read_quality_nanopore: int | None = typer.Option(
+        None,
+        "--min-read-quality-nanopore",
+        help="Minimum average quality for Nanopore reads (default: 12)",
+        rich_help_panel=PANEL_PREPROCESSING,
+    ),
+    min_read_length: int | None = typer.Option(
+        None,
+        "--min-read-length",
+        help="Minimum read length (default: 50)",
+        rich_help_panel=PANEL_PREPROCESSING,
+    ),
+    max_read_length: int | None = typer.Option(
+        None,
+        "--max-read-length",
+        help="Maximum read length (default: no limit)",
+        rich_help_panel=PANEL_PREPROCESSING,
+    ),
+    # -------------------------------------------------------------------------
+    # SRA Submission
+    # -------------------------------------------------------------------------
+    sra_human_db: Path | None = typer.Option(
+        None,
+        "--sra-human-db",
+        help="Path to human reads database for SRA submission scrubbing",
+        rich_help_panel=PANEL_SRA,
+    ),
+    # DEPRECATED: Use --sra-human-db instead
     human_read_scrub: Path | None = typer.Option(
         None,
         "--human-read-scrub",
-        help="Human read scrubbing file path",
+        help="[DEPRECATED] Use --sra-human-db instead",
+        hidden=True,
     ),
-    # LabKey
+    # -------------------------------------------------------------------------
+    # LabKey Integration
+    # -------------------------------------------------------------------------
     labkey: bool = typer.Option(
         False,
         "--labkey",
         help="Enable LabKey integration",
+        rich_help_panel=PANEL_LABKEY,
     ),
-    # Dry run
+    # -------------------------------------------------------------------------
+    # Execution Control
+    # -------------------------------------------------------------------------
     dry_run: bool = typer.Option(
         False,
         "--dry-run",
         help="Show command without executing",
+        rich_help_panel=PANEL_CORE,
     ),
 ) -> None:
     """
@@ -502,8 +635,41 @@ def run(  # noqa: PLR0913, PLR0912, PLR0915, C901
         extra_params["include_children"] = "true" if include_children else "false"
     if max_concurrent_downloads is not None:
         extra_params["max_concurrent_downloads"] = max_concurrent_downloads
-    if human_read_scrub:
-        extra_params["human_read_scrub"] = human_read_scrub
+    # Preprocessing options
+    if preprocess:
+        extra_params["preprocess"] = "true"
+    if merge_pairs is not None:
+        extra_params["merge_pairs"] = "true" if merge_pairs else "false"
+    if dedup is not None:
+        extra_params["dedup"] = "true" if dedup else "false"
+    if trim_adapters is not None:
+        extra_params["trim_adapters"] = "true" if trim_adapters else "false"
+    if scrub_host_reads is not None:
+        extra_params["scrub_host_reads"] = "true" if scrub_host_reads else "false"
+    if hostile_index:
+        extra_params["hostile_index"] = hostile_index
+    if hostile_index_name:
+        extra_params["hostile_index_name"] = hostile_index_name
+    if filter_reads is not None:
+        extra_params["filter_reads"] = "true" if filter_reads else "false"
+    if min_read_quality_illumina is not None:
+        extra_params["min_read_quality_illumina"] = min_read_quality_illumina
+    if min_read_quality_nanopore is not None:
+        extra_params["min_read_quality_nanopore"] = min_read_quality_nanopore
+    if min_read_length is not None:
+        extra_params["min_read_length"] = min_read_length
+    if max_read_length is not None:
+        extra_params["max_read_length"] = max_read_length
+    # SRA submission options
+    # Handle deprecated --human-read-scrub option
+    if human_read_scrub and not sra_human_db:
+        warning(
+            "DEPRECATION: --human-read-scrub is deprecated. "
+            "Please use --sra-human-db instead.",
+        )
+        extra_params["sra_human_db"] = human_read_scrub
+    elif sra_human_db:
+        extra_params["sra_human_db"] = sra_human_db
     if labkey:
         extra_params["labkey"] = "true"
 

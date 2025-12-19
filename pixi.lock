@@ -5452,7 +5452,7 @@ packages:
 - pypi: ./
   name: nvd2
   version: 0.1.0
-  sha256: a11db3dbbd6fe038de9f15c956244537fa4d5d278ce93af074cd89bed7348b35
+  sha256: 9427bdf3f5bf246ef538ea9097bd71ca49b37fe74d4ca947fca376d39c9a4011
   requires_dist:
   - biopython>=1.85
   - labkey>=3.4.0
