@@ -1,5 +1,5 @@
 include { FETCH_FASTQ } from "../modules/sratools"
-include { INTERLEAVE_PAIRS } from "../modules/bbmap"
+include { INTERLEAVE_PAIRS ; MERGE_PAIRS } from "../modules/bbmap"
 
 workflow GATHER_READS {
 
@@ -60,30 +60,32 @@ workflow GATHER_READS {
                 // Other cases are as-yet unsupported
                 other: true
             }
-        // ***************************************************************************/
 
 
-        // INTERLEAVE ANY PAIRED READS
+        // SEPARATE OUT SETS OF FASTQS THAT WILL NEED TO BE MERGED OR INTERLEAVED
         // ***************************************************************************/
-        INTERLEAVE_PAIRS(
-            ch_known_pairs
-            .mix(
+        ch_to_be_paired = ch_known_pairs.mix(
                 ch_sorted_fastqs.paired,
                 ch_sorted_fastqs.triple1,
                 ch_sorted_fastqs.triple2
             )
-        )
+
+
+        // MERGE OR INTERLEAVE ANY PAIRED READS
         // ***************************************************************************/
+        ch_combined_fastqs = params.merge_pairs
+            ? MERGE_PAIRS(ch_to_be_paired)
+            : INTERLEAVE_PAIRS(ch_to_be_paired)
 
 
         // MIX READS FROM DIFFERENT PLATFORMS AND EMIT
         // ***************************************************************************/
         ch_gathered_reads = ch_known_single.mix(
-            INTERLEAVE_PAIRS.out,
+            ch_combined_fastqs,
             ch_sorted_fastqs.single
         )
 
         emit:
         ch_gathered_reads
-    
+
 }

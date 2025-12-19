@@ -24,7 +24,7 @@ dependencies = [
   "typer>=0.15.2",
 ]
 
-[tool.pixi.project]
+[tool.pixi.workspace]
 channels = ["conda-forge", "bioconda", "anaconda"]
 platforms = ["osx-64", "linux-64", "linux-aarch64"]
 
@@ -50,6 +50,8 @@ gottcha2 = ">=2.1.8.11,<3"
 openssl = ">=3.5.0,<4"
 pkg-config = ">=0.29.2,<0.30"
 compilers = ">=1.9.0,<2"
+fastp = ">=1.0.1,<2"
+hostile = ">=2.0.2,<3"
 
 # ----------------------------------------------------------------------------------- #
 

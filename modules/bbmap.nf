@@ -60,6 +60,102 @@ process INTERLEAVE_PAIRS {
 	"""
 }
 
+process DEDUP_WITH_CLUMPIFY {
+
+    /* */
+
+	tag "${sample_id}"
+	label "ludicrous"
+
+	errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
+	maxRetries 2
+
+	cpus 4
+
+	input:
+	tuple val(sample_id), val(platform), path(reads)
+
+	output:
+	tuple val(sample_id), val(platform), path("${sample_id}.dedup.fastq.gz")
+
+	script:
+	"""
+	clumpify.sh \\
+	in=${reads} \\
+	out="${sample_id}.dedup.fastq.gz" \\
+	dedupe=2 \\
+	reorder=p \\
+	threads=${task.cpus} -eoom
+	"""
+
+}
+
+process TRIM_ADAPTERS {
+
+	/* Trim Illumina adapters using bbduk */
+
+	tag "${sample_id}"
+	label "medium"
+
+	errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
+	maxRetries 2
+
+	cpus 4
+
+	input:
+	tuple val(sample_id), val(platform), path(reads)
+
+	output:
+	tuple val(sample_id), val(platform), path("${sample_id}.trimmed.fastq.gz")
+
+	script:
+	"""
+	bbduk.sh \\
+		in=${reads} \\
+		out=${sample_id}.trimmed.fastq.gz \\
+		ref=adapters \\
+		ktrim=r \\
+		k=23 \\
+		mink=11 \\
+		hdist=1 \\
+		tpe tbo \\
+		threads=${task.cpus} \\
+		-eoom
+	"""
+}
+
+process FILTER_READS {
+
+	/* Filter reads by quality and length */
+
+	tag "${sample_id}"
+	label "medium"
+
+	errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
+	maxRetries 2
+
+	cpus 4
+
+	input:
+	tuple val(sample_id), val(platform), path(reads), val(min_quality)
+
+	output:
+	tuple val(sample_id), val(platform), path("${sample_id}.filtered.fastq.gz")
+
+	script:
+	def max_len_arg = params.max_read_length ? "maxlength=${params.max_read_length}" : ""
+	"""
+	reformat.sh \\
+		in=${reads} \\
+		out=${sample_id}.filtered.fastq.gz \\
+		minavgquality=${min_quality} \\
+		minlength=${params.min_read_length} \\
+		${max_len_arg} \\
+		threads=${task.cpus} \\
+		-eoom
+	"""
+}
+
 process MASK_LOW_COMPLEXITY {
 
 	/* */
