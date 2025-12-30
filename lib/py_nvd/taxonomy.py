@@ -15,7 +15,7 @@ Features:
 State directory resolution follows the same hierarchy as db.py:
     1. Explicit path argument
     2. NVD_STATE_DIR environment variable
-    3. Default: ~/.cache/nvd/
+    3. Default: ~/.nvd/
 """
 
 from __future__ import annotations
@@ -444,7 +444,7 @@ def open(  # noqa: A001
 
     Args:
         state_dir: Optional explicit state directory. If None, resolves
-                   via NVD_STATE_DIR env var, then ~/.cache/nvd/
+                   via NVD_STATE_DIR env var, then ~/.nvd/
         offline: If True, never attempt to download taxonomy data.
                  If None (default), checks NVD_TAXONOMY_OFFLINE env var.
                  Set to True for air-gapped environments with pre-cached data.

@@ -491,7 +491,7 @@ def validate_databases(
         None,
         "--config",
         "-c",
-        help="Config file to validate (default: ~/.nvd2/config/user.config)",
+        help="Config file to validate (default: ~/.nvd/user.config or NVD_CONFIG)",
     ),
 ) -> None:
     """Validate database paths from config file."""

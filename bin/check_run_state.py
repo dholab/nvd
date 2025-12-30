@@ -131,7 +131,9 @@ class RunRegistration:
         logger.debug(f"Run registered successfully: {run}")
 
         # Register each sample with provenance
-        logger.info(f"Registering {len(self.sample_ids)} samples with provenance metadata...")
+        logger.info(
+            f"Registering {len(self.sample_ids)} samples with provenance metadata..."
+        )
         for i, sid in enumerate(self.sample_ids, 1):
             logger.debug(f"  [{i}/{len(self.sample_ids)}] Registering sample: {sid}")
             register_processed_sample(
@@ -220,7 +222,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--state-dir",
-        help="State directory for SQLite database (default: ~/.cache/nvd or NVD_STATE_DIR)",
+        help="State directory for SQLite database (default: ~/.nvd/ or NVD_STATE_DIR)",
     )
     parser.add_argument(
         "--experiment-id",

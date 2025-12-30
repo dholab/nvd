@@ -15,11 +15,15 @@ from pathlib import Path
 
 from rich.console import Console
 
+from py_nvd.db import DEFAULT_CONFIG_PATH, get_config_path
+
 # ============================================================================
 # CONSTANTS
 # ============================================================================
 
-DEFAULT_CONFIG = Path.home() / ".nvd2" / "config" / "user.config"
+# Re-export for backward compatibility (prefer get_config_path() for new code)
+DEFAULT_CONFIG = DEFAULT_CONFIG_PATH
+
 VALID_TOOLS = [
     "stat_blast",
     "nvd",
@@ -75,14 +79,24 @@ def warning(message: str) -> None:
 
 
 def find_config_file(custom_path: Path | None = None) -> Path | None:
-    """Locate configuration file with fallback logic."""
-    if custom_path:
-        if custom_path.exists():
-            return custom_path
+    """
+    Locate configuration file with fallback logic.
+
+    Priority:
+        1. Explicit custom_path argument
+        2. NVD_CONFIG environment variable
+        3. Default: ~/.nvd/user.config
+
+    Returns None if no config file exists at the resolved path.
+    """
+    resolved = get_config_path(custom_path)
+
+    if custom_path is not None and not resolved.exists():
+        # Explicit path was given but doesn't exist - that's an error
         error(f"Config file not found: {custom_path}")
 
-    if DEFAULT_CONFIG.exists():
-        return DEFAULT_CONFIG
+    if resolved.exists():
+        return resolved
 
     return None
 

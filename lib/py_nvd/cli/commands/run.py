@@ -142,7 +142,7 @@ def run(  # noqa: PLR0913, PLR0912, PLR0915, C901
         None,
         "--config",
         "-c",
-        help="Custom config file (default: ~/.nvd2/config/user.config)",
+        help="Custom config file (default: ~/.nvd/user.config or NVD_CONFIG)",
         exists=True,
         rich_help_panel=PANEL_CORE,
     ),
@@ -168,7 +168,7 @@ def run(  # noqa: PLR0913, PLR0912, PLR0915, C901
     state_dir: Path | None = typer.Option(
         None,
         "--state-dir",
-        help="State directory for run tracking and upload deduplication (default: ~/.cache/nvd or NVD_STATE_DIR)",
+        help="State directory for run tracking and upload deduplication (default: ~/.nvd/ or NVD_STATE_DIR)",
         rich_help_panel=PANEL_CORE,
     ),
     preset: str | None = typer.Option(
@@ -400,8 +400,8 @@ def run(  # noqa: PLR0913, PLR0912, PLR0915, C901
     Run the NVD2 pipeline.
 
     This command wraps 'nextflow run dhoconno/nvd' with a simpler interface.
-    Database paths and settings are loaded from ~/.nvd2/config/user.config
-    unless overridden with command-line options.
+    Database paths and settings are loaded from ~/.nvd/user.config
+    unless overridden with command-line options or NVD_CONFIG env var.
 
     Examples:
 

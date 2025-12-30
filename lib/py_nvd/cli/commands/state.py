@@ -80,7 +80,7 @@ def state_path(
         resolved_path = Path(env_value)
     else:
         source = "default"
-        source_detail = f"~/.cache/nvd/ (no {ENV_VAR} set)"
+        source_detail = f"~/.nvd/ (no {ENV_VAR} set)"
         resolved_path = DEFAULT_STATE_DIR
 
     db_path = get_state_db_path()

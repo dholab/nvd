@@ -4,10 +4,17 @@ Database connection and initialization.
 Provides context managers for state database connections with automatic
 schema initialization and version checking.
 
-State directory resolution follows a hierarchical fallback:
-    1. Explicit path argument (from CLI or Nextflow param)
-    2. NVD_STATE_DIR environment variable
-    3. Default: ~/.cache/nvd/
+NVD Home Directory:
+    All NVD data is stored under ~/.nvd/ by default:
+        ~/.nvd/
+        ├── user.config         # Nextflow configuration
+        ├── state.sqlite        # Run/sample/upload tracking
+        └── taxdump/            # NCBI taxonomy data
+
+Path Resolution (hierarchical fallback):
+    Config:   NVD_CONFIG env var > ~/.nvd/user.config
+    State:    NVD_STATE_DIR env var > ~/.nvd/
+    Taxonomy: NVD_TAXONOMY_DB env var > ~/.nvd/taxdump/
 
 Schema Migration Safety:
     When the database schema version doesn't match the expected version,
@@ -39,10 +46,27 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from collections.abc import Generator
 
-EXPECTED_VERSION = 2
-ENV_VAR = "NVD_STATE_DIR"
+# =============================================================================
+# NVD HOME DIRECTORY AND PATH DEFAULTS
+# =============================================================================
+
+# The NVD home directory - all NVD data lives here by default
+DEFAULT_NVD_HOME = Path.home() / ".nvd"
+
+# Environment variables for overriding default paths
+ENV_VAR_CONFIG = "NVD_CONFIG"
+ENV_VAR = "NVD_STATE_DIR"  # Keep short name for backward compatibility
 ENV_VAR_TAXONOMY = "NVD_TAXONOMY_DB"
-DEFAULT_STATE_DIR = Path.home() / ".cache" / "nvd"
+
+# Default paths (all relative to NVD home)
+DEFAULT_CONFIG_PATH = DEFAULT_NVD_HOME / "user.config"
+DEFAULT_STATE_DIR = DEFAULT_NVD_HOME
+
+# =============================================================================
+# SCHEMA AND TIMEOUT CONSTANTS
+# =============================================================================
+
+EXPECTED_VERSION = 2
 
 # Timeout for interactive confirmation prompt (seconds)
 CONFIRMATION_TIMEOUT_SECONDS = 300  # 5 minutes
@@ -81,7 +105,32 @@ class SchemaMismatchError(Exception):
         )
 
 
-# --- State Directory Resolution ---
+# --- Path Resolution Functions ---
+
+
+def get_config_path(explicit_path: Path | str | None = None) -> Path:
+    """
+    Resolve the NVD config file path using hierarchical fallback.
+
+    Priority:
+        1. Explicit path argument (from CLI)
+        2. NVD_CONFIG environment variable
+        3. Default: ~/.nvd/user.config
+
+    Unlike state/taxonomy directories, this does NOT create the file
+    if it doesn't exist - config files should be created explicitly.
+
+    Args:
+        explicit_path: Optional explicit path from CLI
+
+    Returns:
+        Resolved Path to config file
+    """
+    if explicit_path is not None:
+        return Path(explicit_path)
+    if ENV_VAR_CONFIG in os.environ:
+        return Path(os.environ[ENV_VAR_CONFIG])
+    return DEFAULT_CONFIG_PATH
 
 
 def get_state_dir(explicit_path: Path | str | None = None) -> Path:
@@ -91,7 +140,7 @@ def get_state_dir(explicit_path: Path | str | None = None) -> Path:
     Priority:
         1. Explicit path argument (from CLI or Nextflow param)
         2. NVD_STATE_DIR environment variable
-        3. Default: ~/.cache/nvd/
+        3. Default: ~/.nvd/
 
     The directory is created if it doesn't exist.
 
@@ -355,7 +404,7 @@ def connect(
 
     Args:
         state_dir: Optional explicit state directory. If None, resolves
-                   via NVD_STATE_DIR env var, then ~/.cache/nvd/
+                   via NVD_STATE_DIR env var, then ~/.nvd/
         allow_destructive_update: If True, allow schema mismatch to trigger
                                   automatic backup and recreation without
                                   prompting. Use this when the CLI flag

@@ -39,7 +39,7 @@ def config_show(
         None,
         "--config",
         "-c",
-        help="Config file to display (default: ~/.nvd2/config/user.config)",
+        help="Config file to display (default: ~/.nvd/user.config or NVD_CONFIG)",
     ),
 ) -> None:
     """Display current configuration."""
