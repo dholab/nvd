@@ -10,11 +10,14 @@
  * (database versions) for tracking.
  *
  * Input: 
- *   - samplesheet: path to samplesheet CSV
- *   - state_dir: path to state directory (for SQLite database)
+ *   - tuple of (samplesheet, state_dir) - combined to ensure they travel together
  * Output: 
- *   - ready: val true (gates downstream processes, backward compatible)
- *   - sample_set_id: the computed sample set ID (for upload tracking)
+ *   - ready: val true (gates downstream processes, for combine() with other validation gates)
+ *   - run_context: tuple of (sample_set_id, state_dir) - bundled for downstream upload processes
+ *
+ * Design note: We emit run_context as a tuple so that sample_set_id and state_dir
+ * travel together to downstream processes. This prevents the Nextflow footgun where
+ * separate queue channels get consumed by the first process, leaving nothing for others.
  */
 process CHECK_RUN_STATE {
 
@@ -22,12 +25,11 @@ process CHECK_RUN_STATE {
     cache false  // Always run this check
 
     input:
-    path samplesheet
-    path state_dir
+    tuple path(samplesheet), path(state_dir)
 
     output:
     val true, emit: ready
-    stdout emit: sample_set_id
+    tuple stdout, path(state_dir), emit: run_context
 
     script:
     def exp_arg = params.experiment_id ? "--experiment-id ${params.experiment_id}" : ""

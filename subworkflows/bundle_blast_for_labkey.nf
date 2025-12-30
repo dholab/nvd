@@ -8,13 +8,18 @@ workflow BUNDLE_BLAST_FOR_LABKEY {
     run_id               // value channel: workflow run ID (single, broadcast)
     contig_read_counts   // queue channel: [ meta, mapped_counts.tsv ] - one per sample
     validation_complete  // value channel: gate ensuring validation passed (single)
-    sample_set_id        // value channel: sample set ID for upload tracking (single, from CHECK_RUN_STATE stdout)
-    state_dir            // path channel: state directory for upload deduplication
+    run_context          // value channel: [ sample_set_id, state_dir ] - bundled tuple from CHECK_RUN_STATE, converted via .first()
 
     main:
 
+    // Fork channels that are consumed multiple times.
+    // Queue channels can only be consumed once, so we use .tap() to create
+    // independent copies for each consumer.
+    blast_results_for_labkey = blast_results.tap { blast_results_for_webdav }
+    contig_sequences_for_fasta = contig_sequences.tap { contig_sequences_for_webdav }
+
     // Prepare BLAST results for metagenomic_hits table
-    ch_blast_labkey = blast_results
+    ch_blast_labkey = blast_results_for_labkey
         .join(read_counts)
         .join(contig_read_counts)
         .map { meta, csv, total_reads, contig_mapped_reads  ->
@@ -30,8 +35,8 @@ workflow BUNDLE_BLAST_FOR_LABKEY {
     )
 
     // JOIN the channels to ensure same sample_id for WebDAV upload
-    ch_webdav_upload = blast_results
-        .join(contig_sequences)  // This ensures matching sample_ids
+    ch_webdav_upload = blast_results_for_webdav
+        .join(contig_sequences_for_webdav)  // This ensures matching sample_ids
         .map { meta, blast_csv, fasta ->
             [meta, blast_csv, fasta]
         }
@@ -43,7 +48,7 @@ workflow BUNDLE_BLAST_FOR_LABKEY {
     )
 
     // Prepare FASTA sequences for fasta_hits table
-    ch_fasta_labkey = contig_sequences
+    ch_fasta_labkey = contig_sequences_for_fasta
         .map { meta, fasta ->
             def output_file = "${meta}_fasta_labkey.csv"
             [meta, fasta, output_file]
@@ -57,21 +62,21 @@ workflow BUNDLE_BLAST_FOR_LABKEY {
     )
 
     // Upload BLAST results
+    // run_context tuple [sample_set_id, state_dir] is passed intact and destructured in the process
     LABKEY_UPLOAD_BLAST(
         PREPARE_BLAST_LABKEY.out.csv.map { _meta, path -> path }.collect(),
         experiment_id,
         run_id,
-        sample_set_id,
-        state_dir
+        run_context
     )
 
     // Upload FASTA results
+    // run_context tuple [sample_set_id, state_dir] is passed intact and destructured in the process
     LABKEY_UPLOAD_FASTA(
         PREPARE_FASTA_LABKEY.out.csv.map { _meta, path -> path }.collect(),
         experiment_id,
         run_id,
-        sample_set_id,
-        state_dir
+        run_context
     )
 
     emit:
@@ -199,8 +204,7 @@ process LABKEY_UPLOAD_BLAST {
     path csv_files        // collected list of all sample CSVs (value channel from .collect())
     val experiment_id
     val run_id
-    val sample_set_id     // from CHECK_RUN_STATE stdout, enables cross-run deduplication
-    path state_dir        // state directory for upload tracking
+    tuple val(sample_set_id), path(state_dir)  // run_context: bundled from CHECK_RUN_STATE
 
     output:
     path "blast_labkey_upload.log", emit: log
@@ -233,8 +237,7 @@ process LABKEY_UPLOAD_FASTA {
     path csv_files        // collected list of all sample CSVs (value channel from .collect())
     val experiment_id
     val run_id
-    val sample_set_id     // from CHECK_RUN_STATE stdout, enables cross-run deduplication
-    path state_dir        // state directory for upload tracking
+    tuple val(sample_set_id), path(state_dir)  // run_context: bundled from CHECK_RUN_STATE
 
     output:
     path "fasta_labkey_upload.log", emit: log

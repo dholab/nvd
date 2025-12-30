@@ -69,11 +69,17 @@ workflow STAT_BLAST_WORKFLOW {
     if (!state_dir_path.exists()) {
         state_dir_path.mkdirs()
     }
-    ch_state_dir = Channel.fromPath(params.state_dir, type: 'dir', checkIfExists: true)
+
+    // Combine samplesheet and state_dir into a tuple for CHECK_RUN_STATE.
+    // This ensures they travel together and we get visible cross-product failures
+    // if either channel unexpectedly emits multiple values.
+    ch_run_state_input = Channel.fromPath(params.samplesheet)
+        .combine(Channel.fromPath(params.state_dir, type: 'dir', checkIfExists: true))
 
     // Check run state upfront (prevents duplicate processing of same sample set)
     // Reads sample IDs directly from samplesheet for immediate validation
-    CHECK_RUN_STATE(file(params.samplesheet), ch_state_dir)
+    // Emits run_context tuple: [sample_set_id, state_dir] for downstream upload processes
+    CHECK_RUN_STATE(ch_run_state_input)
 
     if (params.labkey) {
         VALIDATE_LK_BLAST()
@@ -108,11 +114,18 @@ workflow STAT_BLAST_WORKFLOW {
         ch_blast_db_files
     )
 
+    // Fork merged_results for multiple consumers.
+    // Without this, .first() for the trigger would consume the first sample,
+    // leaving only remaining samples for BUNDLE_BLAST_FOR_LABKEY.
+    merged_results_for_labkey = CLASSIFY_WITH_BLASTN.out.merged_results
+        .tap { merged_results_for_trigger }
+        .tap { merged_results_for_completion }
+
     if (params.labkey) {
         // Check LabKey guard list - ensures experiment_id hasn't been uploaded before
-        // Uses .first() to get a value channel trigger without consuming the queue channel
+        // Uses .first() on a forked channel to get a value channel trigger
         VALIDATE_LK_EXP_FRESH(
-            CLASSIFY_WITH_BLASTN.out.merged_results.first()
+            merged_results_for_trigger.first()
         )
 
         // Bundle and upload - gates ensure both checks passed:
@@ -123,16 +136,20 @@ workflow STAT_BLAST_WORKFLOW {
             .combine(VALIDATE_LK_EXP_FRESH.out.validated)
             .map { _ready, _validated -> true }
 
+        // Convert run_context from queue channel to value channel so it can be
+        // consumed by multiple processes (LABKEY_UPLOAD_BLAST and LABKEY_UPLOAD_FASTA).
+        // This is safe because CHECK_RUN_STATE emits exactly once per pipeline run.
+        ch_run_context = CHECK_RUN_STATE.out.run_context.first()
+
         BUNDLE_BLAST_FOR_LABKEY(
-            CLASSIFY_WITH_BLASTN.out.merged_results,
+            merged_results_for_labkey,
             EXTRACT_HUMAN_VIRUSES.out.contigs,
             COUNT_READS.out.counts,
             params.experiment_id,
             workflow.runName,
             EXTRACT_HUMAN_VIRUSES.out.contig_read_counts,
             ch_validation_gate,
-            CHECK_RUN_STATE.out.sample_set_id,
-            ch_state_dir
+            ch_run_context  // value channel: [sample_set_id, state_dir]
         )
 
         // Register experiment ID in guard list after successful upload
@@ -146,7 +163,7 @@ workflow STAT_BLAST_WORKFLOW {
         labkey_log_ch = Channel.empty()
     }
 
-    ch_completion = CLASSIFY_WITH_BLASTN.out.merged_results.map { _results -> "STAT+BLAST workflow complete!" }
+    ch_completion = merged_results_for_completion.map { _results -> "STAT+BLAST workflow complete!" }
 
     emit:
     completion = ch_completion
