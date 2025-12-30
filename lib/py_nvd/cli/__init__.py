@@ -10,8 +10,8 @@ Usage:
     nvd --help
 """
 
-# Import app and main from the legacy orchestration module
-from py_nvd.cli_legacy import app, main
+# Import app and main from the app module
+from py_nvd.cli.app import app, main
 
 # Import utilities from the utils module
 from py_nvd.cli.utils import (

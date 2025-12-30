@@ -3,7 +3,7 @@
 import pytest
 from typer.testing import CliRunner
 
-from py_nvd.cli_legacy import app
+from py_nvd.cli.app import app
 
 runner = CliRunner()
 
