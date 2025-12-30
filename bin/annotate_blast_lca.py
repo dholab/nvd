@@ -40,8 +40,6 @@ from py_nvd import taxonomy
 from taxopy import TaxDb, Taxon
 from taxopy.exceptions import TaxidError
 
-__version__ = "1.1"
-
 # Parameters (tune as needed)
 DEFAULT_MIN_BP = 70  # or 150 to 300 for contigs
 DEFAULT_MIN_ID = 90.0  # for blastn; adjust for aa

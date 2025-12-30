@@ -24,7 +24,6 @@ from typing import Literal
 
 from py_nvd import taxonomy
 
-__version__ = "1.8"
 logger = logging.getLogger("taxonomic_read_filter")
 
 # snakemake setup, if applicable

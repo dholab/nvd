@@ -16,8 +16,6 @@ from typing import Literal
 from py_nvd import taxonomy
 from snakemake.logging import logger as snakemake_logger
 
-__version__ = "1.8"
-
 # Set up logging
 logger = logging.getLogger(__name__)
 
@@ -32,7 +30,9 @@ else:
 
 
 def parse_command_line_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Annotate BLAST results with taxonomy info")
+    parser = argparse.ArgumentParser(
+        description="Annotate BLAST results with taxonomy info"
+    )
     # Keep --sqlite_cache for backward compatibility with Nextflow,
     # but it's no longer used (taxonomy.open() handles DB location)
     parser.add_argument(

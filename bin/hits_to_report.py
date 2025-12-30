@@ -14,9 +14,7 @@ import sys
 from typing import Literal
 
 from lxml.builder import E
-from py_nvd import taxonomy
-
-__version__ = "1.2"
+from py_nvd import __version__, taxonomy
 
 # snakemake setup
 MODE: Literal["snakemake", "commandline"]
