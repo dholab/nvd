@@ -43,7 +43,7 @@ process ANNOTATE_MEGABLAST_RESULTS {
 	maxRetries 2
 
     input:
-    tuple val(sample_id), path(blast_txt), path(sqlite_file)
+    tuple val(sample_id), path(blast_txt)
 
     output:
     tuple val(sample_id), path("${sample_id}.annotated_megablast.txt"), emit: hits
@@ -51,7 +51,6 @@ process ANNOTATE_MEGABLAST_RESULTS {
     script:
     """
     annotate_blast_results.py \
-    --sqlite_cache ${sqlite_file} \
     --input_file ${blast_txt} \
     --output_file ${sample_id}.annotated_megablast.txt \
     --sample_name ${sample_id} \
@@ -186,7 +185,7 @@ process ANNOTATE_BLASTN_RESULTS {
 	maxRetries 2
 
     input:
-    tuple val(sample_id), path(blastn_txt), path(taxa_sqlite)
+    tuple val(sample_id), path(blastn_txt)
 
     output:
     tuple val(sample_id), path("${sample_id}.annotated_blastn.txt")
@@ -195,7 +194,6 @@ process ANNOTATE_BLASTN_RESULTS {
     """
     annotate_blast_results.py \
     --sample_name ${sample_id} \
-    --sqlite_cache ${taxa_sqlite} \
     --input_file ${blastn_txt} \
     --output_file ${sample_id}.annotated_blastn.txt \
     --task 'blastn'

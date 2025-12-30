@@ -1,0 +1,123 @@
+name: Docker Publish
+
+on:
+  push:
+    branches: [main]
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+      - 'v[0-9]+.[0-9]+.[0-9]+-*'
+    paths:
+      - 'Containerfile'
+      - 'pyproject.toml'
+      - 'pixi.lock'
+      - 'uv.lock'
+      - 'lib/**'
+      - 'conf/**'
+      - '.github/workflows/docker-publish.yml'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag to use (without v prefix, e.g. 2.3.0)'
+        required: true
+      push:
+        description: 'Push to Docker Hub (false for build-only test)'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  docker:
+    name: Build and Push Docker Image
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ inputs.version }}"
+          elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            VERSION=${GITHUB_REF#refs/tags/v}
+          else
+            # For main branch pushes, use 'latest'
+            VERSION="latest"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Building version: $VERSION"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        if: github.event_name != 'workflow_dispatch' || inputs.push
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Containerfile
+          push: false
+          load: true
+          tags: nrminor/nvd2:${{ steps.version.outputs.version }}
+          cache-from: |
+            type=gha,scope=${{ github.ref_name }}
+            type=gha,scope=main
+          cache-to: type=gha,mode=max,scope=${{ github.ref_name }}
+
+      - name: Test py_nvd imports in container
+        run: |
+          docker run --rm nrminor/nvd2:${{ steps.version.outputs.version }} \
+            bash -c '
+              echo "Testing py_nvd imports..."
+              python -c "from py_nvd import __version__; print(f\"py_nvd version: {__version__}\")" &&
+              python -c "from py_nvd.cli import app; print(\"CLI app imported successfully\")" &&
+              echo "✅ All py_nvd imports successful"
+            '
+
+      - name: Test nvd CLI in container
+        run: |
+          docker run --rm nrminor/nvd2:${{ steps.version.outputs.version }} \
+            bash -c '
+              echo "Testing nvd CLI..."
+              nvd --help &&
+              nvd version &&
+              echo "✅ nvd CLI works"
+            '
+
+      - name: Push Docker image
+        if: github.event_name != 'workflow_dispatch' || inputs.push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Containerfile
+          push: true
+          tags: nrminor/nvd2:${{ steps.version.outputs.version }}
+          cache-from: type=gha,scope=${{ github.ref_name }}
+
+      - name: Push latest tag (for version tags only)
+        if: startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, '-')
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Containerfile
+          push: true
+          tags: nrminor/nvd2:latest
+          cache-from: type=gha,scope=${{ github.ref_name }}
+
+      - name: Summary
+        run: |
+          echo "## Docker Image Published" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Image**: nrminor/nvd2:${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Trigger**: ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY

@@ -2,6 +2,9 @@ workflow BUNDLE_GOTTCHA2_FOR_LABKEY {
     take:
     gottcha2_results     // channel: [ meta, csv ]
     gottcha2_extracted_fastas  // channel: [ meta, fasta ]
+    // Note: sample_set_id is not currently passed from gottcha2_workflow.nf
+    // The upload processes support it but it won't be used until CHECK_RUN_STATE
+    // is added to the GOTTCHA2 workflow
 
     main:
 

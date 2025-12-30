@@ -1,0 +1,191 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/dhoconno/nvd/main/schemas/nvd-params.v2.3.0.schema.json",
+  "title": "NVD Pipeline Parameters",
+  "description": "Parameters for the Novel Virus Detection (NVD) metagenomics pipeline. Use with Nextflow's -params-file option or register as a preset with nvd preset register.",
+  "type": "object",
+  "properties": {
+    "labkey": {
+      "type": "boolean",
+      "default": false,
+      "description": "Enable LabKey integration for result uploads"
+    },
+    "samplesheet": {
+      "type": "string",
+      "description": "Path to samplesheet CSV with columns: sample_id, srr, platform, fastq1, fastq2"
+    },
+    "results": {
+      "type": "string",
+      "description": "Directory for pipeline output files"
+    },
+    "tools": {
+      "type": "string",
+      "enum": ["stat_blast", "nvd", "stat", "blast", "stast", "gottcha", "all", "clumpify"],
+      "description": "Which analysis tool(s) to run"
+    },
+    "experiment_id": {
+      "type": "integer",
+      "description": "Experiment number for tracking and LabKey integration"
+    },
+    "max_concurrent_downloads": {
+      "type": "integer",
+      "default": 3,
+      "minimum": 1,
+      "description": "Maximum number of concurrent SRA downloads"
+    },
+    "cleanup": {
+      "type": "boolean",
+      "description": "Whether to empty the work directory after successful completion"
+    },
+    "gottcha2_db": {
+      "type": "string",
+      "description": "Path to GOTTCHA2 database directory"
+    },
+    "blast_db": {
+      "type": "string",
+      "description": "Path to BLAST database directory"
+    },
+    "blast_db_prefix": {
+      "type": "string",
+      "description": "BLAST database name prefix"
+    },
+    "stat_index": {
+      "type": "string",
+      "description": "Path to STAT index file"
+    },
+    "stat_dbss": {
+      "type": "string",
+      "description": "Path to STAT DBSS file"
+    },
+    "stat_annotation": {
+      "type": "string",
+      "description": "Path to STAT annotation file"
+    },
+    "human_virus_taxlist": {
+      "type": "string",
+      "description": "Path to human virus taxonomy list file"
+    },
+    "preprocess": {
+      "type": "boolean",
+      "default": false,
+      "description": "Run all preprocessing steps on reads before classification (enables dedup, trim_adapters, scrub_host_reads, filter_reads)"
+    },
+    "merge_pairs": {
+      "type": "boolean",
+      "description": "Merge paired read mates based on overlaps between them"
+    },
+    "dedup": {
+      "type": "boolean",
+      "description": "Deduplicate sequencing reads"
+    },
+    "trim_adapters": {
+      "type": "boolean",
+      "description": "Trim Illumina adapters from reads"
+    },
+    "scrub_host_reads": {
+      "type": "boolean",
+      "description": "Remove host (human) reads using hostile"
+    },
+    "hostile_index": {
+      "type": "string",
+      "description": "Path to local hostile index for offline use; if null, hostile will auto-download"
+    },
+    "hostile_index_name": {
+      "type": "string",
+      "default": "human-t2t-hla.rs-viral-202401_ml-phage-202401",
+      "description": "Standard hostile index name to use when hostile_index is null. Masked against viral + phage genomes to maximize viral read retention"
+    },
+    "sra_human_db": {
+      "type": "string",
+      "description": "Path to human reads database for SRA submission scrubbing (clumpify workflow)"
+    },
+    "human_read_scrub": {
+      "type": "string",
+      "deprecated": true,
+      "description": "DEPRECATED: Use sra_human_db instead. Path to human reads database for SRA submission scrubbing"
+    },
+    "filter_reads": {
+      "type": "boolean",
+      "description": "Apply quality and length filtering to reads"
+    },
+    "min_read_quality_illumina": {
+      "type": "integer",
+      "default": 20,
+      "minimum": 0,
+      "description": "Minimum average quality score for Illumina reads"
+    },
+    "min_read_quality_nanopore": {
+      "type": "integer",
+      "default": 12,
+      "minimum": 0,
+      "description": "Minimum average quality score for Nanopore reads"
+    },
+    "min_read_length": {
+      "type": "integer",
+      "default": 50,
+      "minimum": 1,
+      "description": "Minimum read length to retain"
+    },
+    "max_read_length": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Maximum read length to retain (no limit if not specified)"
+    },
+    "cutoff_percent": {
+      "type": "number",
+      "default": 0.001,
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Minimum abundance threshold for reporting taxa (0-1)"
+    },
+    "entropy": {
+      "type": "number",
+      "default": 0.9,
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Entropy threshold for sequence complexity filtering (0-1)"
+    },
+    "min_consecutive_bases": {
+      "type": "integer",
+      "default": 200,
+      "minimum": 1,
+      "description": "Minimum number of consecutive bases required"
+    },
+    "qtrim": {
+      "type": "string",
+      "default": "t",
+      "description": "Quality trimming mode"
+    },
+    "tax_stringency": {
+      "type": "number",
+      "default": 0.7,
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Stringency for taxonomic classification (0-1)"
+    },
+    "include_children": {
+      "type": "boolean",
+      "default": true,
+      "description": "Include child taxa in taxonomic analysis"
+    },
+    "min_gottcha_reads": {
+      "type": "integer",
+      "default": 250,
+      "minimum": 1,
+      "description": "Minimum number of reads required for GOTTCHA2 analysis"
+    },
+    "max_blast_targets": {
+      "type": "integer",
+      "default": 100,
+      "minimum": 1,
+      "description": "Maximum number of BLAST hits to consider before calling hits"
+    },
+    "blast_retention_count": {
+      "type": "integer",
+      "default": 5,
+      "minimum": 1,
+      "description": "Number of top BLAST hits to retain"
+    }
+  },
+  "additionalProperties": false
+}

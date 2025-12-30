@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 
+import argparse
 import os
 import sys
-import argparse
 from datetime import datetime
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import Any
 
 try:
     import polars as pl
@@ -15,7 +15,9 @@ except ImportError:
 
 
 def validate_dataframe(
-    df: pl.DataFrame, csv_file: str, log_entries: List[str]
+    df: pl.DataFrame,
+    csv_file: str,
+    log_entries: list[str],
 ) -> pl.DataFrame:
     """
     Validate and clean the DataFrame.
@@ -40,7 +42,7 @@ def validate_dataframe(
 
     # Log column info
     log_entries.append(
-        f"  Columns: {', '.join(df.columns[:10])}{'...' if len(df.columns) > 10 else ''}"
+        f"  Columns: {', '.join(df.columns[:10])}{'...' if len(df.columns) > 10 else ''}",
     )
 
     # Check for critical columns and log missing ones
@@ -70,7 +72,7 @@ def validate_dataframe(
                 log_entries.append(f"  Converted '{col}' to {dtype}")
             except Exception as e:
                 log_entries.append(
-                    f"  WARNING: Could not convert '{col}' to {dtype}: {str(e)}"
+                    f"  WARNING: Could not convert '{col}' to {dtype}: {e!s}",
                 )
 
     # Fill null values with appropriate defaults
@@ -85,7 +87,7 @@ def validate_dataframe(
     return df
 
 
-def get_sample_stats(df: pl.DataFrame) -> Dict[str, Any]:
+def get_sample_stats(df: pl.DataFrame) -> dict[str, Any]:
     """
     Get statistical summary of the DataFrame.
 
@@ -118,7 +120,7 @@ def get_sample_stats(df: pl.DataFrame) -> Dict[str, Any]:
     return stats
 
 
-def dataframe_to_records(df: pl.DataFrame) -> List[Dict[str, Any]]:
+def dataframe_to_records(df: pl.DataFrame) -> list[dict[str, Any]]:
     """
     Convert Polars DataFrame to list of dictionaries for LabKey upload.
 
@@ -136,9 +138,7 @@ def dataframe_to_records(df: pl.DataFrame) -> List[Dict[str, Any]]:
     for record in records:
         cleaned_record = {}
         for key, value in record.items():
-            if value is None:
-                cleaned_record[key] = ""
-            elif isinstance(value, float) and value != value:  # Check for NaN
+            if value is None or (isinstance(value, float) and value != value):
                 cleaned_record[key] = ""
             else:
                 cleaned_record[key] = value
@@ -147,7 +147,7 @@ def dataframe_to_records(df: pl.DataFrame) -> List[Dict[str, Any]]:
     return cleaned_records
 
 
-def process_csv_batch(df: pl.DataFrame, batch_size: int = 1000) -> List[pl.DataFrame]:
+def process_csv_batch(df: pl.DataFrame, batch_size: int = 1000) -> list[pl.DataFrame]:
     """
     Split DataFrame into batches for upload.
 
@@ -172,10 +172,20 @@ def process_csv_batch(df: pl.DataFrame, batch_size: int = 1000) -> List[pl.DataF
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Upload BLAST CSVs to LabKey using Polars."
+        description="Upload BLAST CSVs to LabKey using Polars.",
     )
     parser.add_argument("--experiment-id", required=True)
     parser.add_argument("--run-id", required=True)
+    parser.add_argument(
+        "--sample-set-id",
+        required=False,
+        help="Sample set ID for upload tracking",
+    )
+    parser.add_argument(
+        "--state-dir",
+        required=False,
+        help="State directory for upload tracking database",
+    )
     parser.add_argument("--labkey-server", required=True)
     parser.add_argument("--labkey-project-name", required=True)
     parser.add_argument("--labkey-api-key", required=True)
@@ -221,14 +231,14 @@ def main():
                 api_key=args.labkey_api_key,
             )
         except ImportError as e:
-            log_entries.append(f"ERROR: LabKey API wrapper not available - {str(e)}")
+            log_entries.append(f"ERROR: LabKey API wrapper not available - {e!s}")
             log_entries.append("Falling back to simulation mode")
             upload_enabled = False
     elif args.validate_only:
         log_entries.append("Running in validation-only mode")
     else:
         log_entries.append(
-            "No LabKey credentials provided - running in simulation mode"
+            "No LabKey credentials provided - running in simulation mode",
         )
 
     # Find all BLAST CSV files
@@ -263,6 +273,37 @@ def main():
             # Validate and clean the DataFrame
             df = validate_dataframe(df, csv_file, log_entries)
 
+            # Filter out samples that were already uploaded (cross-run deduplication)
+            # Justification for local import: script must work standalone without py_nvd
+            samples_to_skip: set = set()
+            if args.sample_set_id and "sample_id" in df.columns:
+                try:
+                    import py_nvd.state as nvd_state
+
+                    unique_samples = df["sample_id"].unique().to_list()
+                    for sample_id in unique_samples:
+                        if nvd_state.was_sample_ever_uploaded(
+                            str(sample_id),
+                            upload_type="blast",
+                            upload_target="labkey",
+                            state_dir=args.state_dir,
+                        ):
+                            samples_to_skip.add(sample_id)
+                            log_entries.append(
+                                f"  SKIP: Sample '{sample_id}' was already uploaded in a previous run",
+                            )
+                    if samples_to_skip:
+                        df = df.filter(
+                            ~pl.col("sample_id").is_in(list(samples_to_skip)),
+                        )
+                        log_entries.append(
+                            f"  Filtered out {len(samples_to_skip)} already-uploaded samples",
+                        )
+                except ImportError:
+                    log_entries.append(
+                        "  WARNING: py_nvd not available, skipping cross-run check",
+                    )
+
             record_count = len(df)
             total_records_processed += record_count
 
@@ -272,7 +313,7 @@ def main():
                 all_stats[csv_file] = stats
 
                 log_entries.append(f"  Records: {record_count}")
-                log_entries.append(f"  Statistics:")
+                log_entries.append("  Statistics:")
                 for key, value in stats.items():
                     if isinstance(value, float):
                         log_entries.append(f"    {key}: {value:.4f}")
@@ -284,7 +325,7 @@ def main():
                     first_record = df.head(1).to_dicts()[0]
                     sample_fields = list(first_record.keys())[:5]
                     log_entries.append(f"  Sample fields: {', '.join(sample_fields)}")
-                    log_entries.append(f"  First record sample:")
+                    log_entries.append("  First record sample:")
                     for field in sample_fields:
                         value = first_record.get(field, "")
                         if isinstance(value, float):
@@ -309,36 +350,91 @@ def main():
                                 rows=batch_records,
                             )
                             log_entries.append(
-                                f"    Batch {i}/{len(batches)}: SUCCESS ({len(batch_records)} records)"
+                                f"    Batch {i}/{len(batches)}: SUCCESS ({len(batch_records)} records)",
                             )
                             success_count += len(batch_records)
                         except Exception as e:
                             log_entries.append(
-                                f"    Batch {i}/{len(batches)}: ERROR - {str(e)}"
+                                f"    Batch {i}/{len(batches)}: ERROR - {e!s}",
                             )
                             # Log first record of failed batch for debugging
                             if len(batch_df) > 0:
                                 log_entries.append(
-                                    f"      Failed batch first record: {batch_df.head(1).to_dicts()[0]}"
+                                    f"      Failed batch first record: {batch_df.head(1).to_dicts()[0]}",
                                 )
 
                     total_records_uploaded += success_count
+
+                    # Record successful uploads in state database (per-sample)
+                    # Justification for local import: script must work standalone without py_nvd
+                    if (
+                        args.sample_set_id
+                        and success_count > 0
+                        and "sample_id" in df.columns
+                    ):
+                        try:
+                            import py_nvd.state as nvd_state
+
+                            uploaded_samples = df["sample_id"].unique().to_list()
+                            for sample_id in uploaded_samples:
+                                sample_records = df.filter(
+                                    pl.col("sample_id") == sample_id,
+                                ).to_dicts()
+                                content_hash = nvd_state.hash_upload_content(
+                                    sample_records
+                                )
+                                nvd_state.record_upload(
+                                    sample_id=str(sample_id),
+                                    sample_set_id=args.sample_set_id,
+                                    upload_type="blast",
+                                    upload_target="labkey",
+                                    content_hash=content_hash,
+                                    target_metadata={
+                                        "experiment_id": args.experiment_id,
+                                        "table_name": args.table_name,
+                                        "records_uploaded": len(sample_records),
+                                        "source_file": csv_file,
+                                    },
+                                    state_dir=args.state_dir,
+                                )
+                            log_entries.append(
+                                f"  Recorded uploads for {len(uploaded_samples)} samples in state database",
+                            )
+                        except ImportError:
+                            log_entries.append(
+                                "  WARNING: py_nvd not available, uploads not recorded",
+                            )
+                        except Exception as e:
+                            log_entries.append(
+                                f"  WARNING: Failed to record uploads: {e!s}",
+                            )
+                            log_entries.append(
+                                f"  Recorded uploads for {len(uploaded_samples)} samples in state database",
+                            )
+                        except ImportError:
+                            log_entries.append(
+                                "  WARNING: py_nvd.state not available, uploads not recorded",
+                            )
+                        except Exception as e:
+                            log_entries.append(
+                                f"  WARNING: Failed to record uploads: {e!s}",
+                            )
                 else:
                     # Simulation mode - just count batches
                     num_batches = (
                         record_count + args.batch_size - 1
                     ) // args.batch_size
                     log_entries.append(
-                        f"  Would upload in {num_batches} batch(es) (SIMULATION)"
+                        f"  Would upload in {num_batches} batch(es) (SIMULATION)",
                     )
                     total_records_uploaded += record_count
             else:
                 log_entries.append("  No valid records found in file after cleaning")
 
         except pl.exceptions.ComputeError as e:
-            log_entries.append(f"  ERROR: Polars compute error - {str(e)}")
+            log_entries.append(f"  ERROR: Polars compute error - {e!s}")
         except Exception as e:
-            log_entries.append(f"  ERROR: Failed to process file - {str(e)}")
+            log_entries.append(f"  ERROR: Failed to process file - {e!s}")
             import traceback
 
             log_entries.append(f"  Traceback: {traceback.format_exc()}")
@@ -358,14 +454,14 @@ def main():
     if all_stats:
         log_entries.append("\nAGGREGATE STATISTICS:")
         total_unique_samples = len(
-            set(
+            {
                 sample
                 for stats in all_stats.values()
                 for sample in [stats.get("unique_samples", 0)]
-            )
+            },
         )
         log_entries.append(
-            f"  Total unique samples across all files: {total_unique_samples}"
+            f"  Total unique samples across all files: {total_unique_samples}",
         )
 
         # Calculate overall averages
@@ -378,13 +474,13 @@ def main():
             if avg_pidents:
                 overall_avg_pident = sum(avg_pidents) / len(avg_pidents)
                 log_entries.append(
-                    f"  Overall average percent identity: {overall_avg_pident:.2f}%"
+                    f"  Overall average percent identity: {overall_avg_pident:.2f}%",
                 )
 
     log_entries.append(
         "\nBLAST UPLOAD COMPLETE"
         if upload_enabled
-        else "\nBLAST SIMULATION COMPLETE - No actual upload performed"
+        else "\nBLAST SIMULATION COMPLETE - No actual upload performed",
     )
 
     # Write log file

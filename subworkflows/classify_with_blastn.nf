@@ -17,7 +17,6 @@ workflow CLASSIFY_WITH_BLASTN {
     ch_filtered_megablast
     ch_megablast_contigs
     ch_blast_db_files
-    ch_gettax_sqlite_path
 
     main:
     BLASTN_CLASSIFY(
@@ -32,7 +31,7 @@ workflow CLASSIFY_WITH_BLASTN {
     SELECT_TOP_BLAST_HITS(nonEmptyBLASTNResults)
 
     ANNOTATE_BLASTN_RESULTS(
-        SELECT_TOP_BLAST_HITS.out.combine(ch_gettax_sqlite_path)
+        SELECT_TOP_BLAST_HITS.out
     )
 
     FILTER_NON_VIRUS_BLASTN_NODES(
@@ -46,17 +45,17 @@ workflow CLASSIFY_WITH_BLASTN {
         }
 
     // JOIN by sample_id with remainder:true to keep samples that only have megablast hits
-ch_merged_input = ch_filtered_megablast
-    .join(ch_blastn_virus_hits, by: 0, remainder: true)
-    .map { sample_id, megablast_file, blastn_file ->
-        if (blastn_file) {
-            tuple(sample_id, megablast_file, blastn_file)
-        } else {
-            def emptyFile = file("${workflow.workDir}/empty_blastn_${sample_id}.tsv")
-            emptyFile.text = "task\tsample\tqseqid\tqlen\tsseqid\tstitle\tlength\tpident\tevalue\tbitscore\tsscinames\tstaxids\trank\n"
-            tuple(sample_id, megablast_file, emptyFile)
+    ch_merged_input = ch_filtered_megablast
+        .join(ch_blastn_virus_hits, by: 0, remainder: true)
+        .map { sample_id, megablast_file, blastn_file ->
+            if (blastn_file) {
+                tuple(sample_id, megablast_file, blastn_file)
+            } else {
+                def emptyFile = file("${workflow.workDir}/empty_blastn_${sample_id}.tsv")
+                emptyFile.text = "task\tsample\tqseqid\tqlen\tsseqid\tstitle\tlength\tpident\tevalue\tbitscore\tsscinames\tstaxids\trank\n"
+                tuple(sample_id, megablast_file, emptyFile)
+            }
         }
-    }
 
     MERGE_FILTERED_BLAST_RESULTS(ch_merged_input)
 

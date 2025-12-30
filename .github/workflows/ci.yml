@@ -7,6 +7,9 @@ on:
       - 'nextflow.config'
       - 'conf/**'
       - 'bin/**'
+      - 'lib/**'
+      - 'schemas/**'
+      - '.github/scripts/**'
       - 'pyproject.toml'
       - 'assets/example_samplesheet.csv'
       - 'modules/**/*.nf'
@@ -19,6 +22,9 @@ on:
       - 'nextflow.config'
       - 'conf/**'
       - 'bin/**'
+      - 'lib/**'
+      - 'schemas/**'
+      - '.github/scripts/**'
       - 'pyproject.toml'
       - 'assets/example_samplesheet.csv'
       - 'modules/**/*.nf'
@@ -108,6 +114,24 @@ jobs:
         if: steps.coverage_check.outputs.status == 'passed'
         run: |
           echo "✅ All configurable Nextflow parameters are covered by CLI options!"
+
+  validate-schema-completeness:
+    name: Validate Schema Completeness
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Install uv
+        uses: astral-sh/setup-uv@v2
+      
+      - name: Set up Python
+        run: uv python install 3.10
+      
+      - name: Validate schema covers all params
+        run: |
+          uv run python .github/scripts/validate_schema_completeness.py
 
   lint:
     name: Lint Check

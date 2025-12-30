@@ -16,7 +16,7 @@ include { CLASSIFY_WITH_MEGABLAST } from "../subworkflows/classify_with_megablas
 include { CLASSIFY_WITH_BLASTN } from "../subworkflows/classify_with_blastn"
 include { BUNDLE_BLAST_FOR_LABKEY } from "../subworkflows/bundle_blast_for_labkey"
 include { COUNT_READS } from "../modules/count_reads"
-include { RETRIEVE_GETTAX } from "../modules/utils"
+include { CHECK_RUN_STATE } from "../modules/utils"
 include { VALIDATE_LK_BLAST } from "../subworkflows/validate_lk_blast_lists.nf"
 include { VALIDATE_LK_EXP_FRESH } from "../modules/validate_blast_labkey.nf"
 include { REGISTER_LK_EXPERIMENT } from "../modules/validate_blast_labkey.nf"
@@ -60,8 +60,20 @@ workflow STAT_BLAST_WORKFLOW {
     ch_stat_dbss = Channel.fromPath(params.stat_dbss)
     ch_stat_annotation = Channel.fromPath(params.stat_annotation)
     ch_human_virus_taxlist = Channel.fromPath(params.human_virus_taxlist)
-    ch_gettax = RETRIEVE_GETTAX()
 
+    // State directory for run tracking and upload deduplication.
+    // Using Channel.fromPath with type:'dir' ensures Nextflow stages/mounts
+    // this directory automatically in containerized environments.
+    // The directory is created if it doesn't exist (matching db.py behavior).
+    def state_dir_path = file(params.state_dir)
+    if (!state_dir_path.exists()) {
+        state_dir_path.mkdirs()
+    }
+    ch_state_dir = Channel.fromPath(params.state_dir, type: 'dir', checkIfExists: true)
+
+    // Check run state upfront (prevents duplicate processing of same sample set)
+    // Reads sample IDs directly from samplesheet for immediate validation
+    CHECK_RUN_STATE(file(params.samplesheet), ch_state_dir)
 
     if (params.labkey) {
         VALIDATE_LK_BLAST()
@@ -82,31 +94,35 @@ workflow STAT_BLAST_WORKFLOW {
         PREPROCESS_CONTIGS.out.viral_reads,
         ch_stat_index,
         ch_stat_dbss,
-        ch_stat_annotation,
-        ch_gettax
+        ch_stat_annotation
     )
 
     CLASSIFY_WITH_MEGABLAST(
         EXTRACT_HUMAN_VIRUSES.out.contigs,
-        ch_blast_db_files,
-        EXTRACT_HUMAN_VIRUSES.out.sqlite
+        ch_blast_db_files
     )
 
     CLASSIFY_WITH_BLASTN(
         CLASSIFY_WITH_MEGABLAST.out.filtered_megablast,
         CLASSIFY_WITH_MEGABLAST.out.megablast_contigs,
-        ch_blast_db_files,
-        EXTRACT_HUMAN_VIRUSES.out.sqlite
+        ch_blast_db_files
     )
 
     if (params.labkey) {
-        // First: Check experiment ID is fresh (not already uploaded)
-        // Use .first() to get a value channel trigger without consuming the queue channel
+        // Check LabKey guard list - ensures experiment_id hasn't been uploaded before
+        // Uses .first() to get a value channel trigger without consuming the queue channel
         VALIDATE_LK_EXP_FRESH(
             CLASSIFY_WITH_BLASTN.out.merged_results.first()
         )
 
-        // Bundle and upload - depends on validation passing
+        // Bundle and upload - gates ensure both checks passed:
+        // 1. CHECK_RUN_STATE.out.ready: local sample_set_id check passed
+        // 2. VALIDATE_LK_EXP_FRESH.out.validated: LabKey guard list check passed
+        // We combine both gates to ensure both validations complete before uploading
+        ch_validation_gate = CHECK_RUN_STATE.out.ready
+            .combine(VALIDATE_LK_EXP_FRESH.out.validated)
+            .map { _ready, _validated -> true }
+
         BUNDLE_BLAST_FOR_LABKEY(
             CLASSIFY_WITH_BLASTN.out.merged_results,
             EXTRACT_HUMAN_VIRUSES.out.contigs,
@@ -114,7 +130,9 @@ workflow STAT_BLAST_WORKFLOW {
             params.experiment_id,
             workflow.runName,
             EXTRACT_HUMAN_VIRUSES.out.contig_read_counts,
-            VALIDATE_LK_EXP_FRESH.out.validated
+            ch_validation_gate,
+            CHECK_RUN_STATE.out.sample_set_id,
+            ch_state_dir
         )
 
         // Register experiment ID in guard list after successful upload

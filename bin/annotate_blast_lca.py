@@ -20,7 +20,7 @@ Key features:
 - Quality filtering by alignment length, percent identity, and e-value
 - Near-tie detection using bitscore delta windows
 - Dual assignment strategy: dominant hits vs. LCA calculation
-- Automatic NCBI taxonomy database download and caching
+- Automatic NCBI taxonomy database management via py_nvd.taxonomy
 - Taxonomic rank refinement to avoid uninterpretable levels
 
 Usage:
@@ -28,8 +28,7 @@ Usage:
 """
 
 import argparse
-import tarfile
-import urllib.request
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -37,17 +36,17 @@ import polars as pl
 import polars.selectors as cs
 import taxopy.utilities as taxutils
 from loguru import logger
+from py_nvd import taxonomy
 from taxopy import TaxDb, Taxon
 from taxopy.exceptions import TaxidError
 
-# URL for NCBI taxdump files
-NCBI_TAXDUMP_URL = "https://ftp.ncbi.nlm.nih.gov/pub/taxonomy/taxdump.tar.gz"
+__version__ = "1.1"
 
 # Parameters (tune as needed)
 DEFAULT_MIN_BP = 70  # or 150 to 300 for contigs
 DEFAULT_MIN_ID = 90.0  # for blastn; adjust for aa
 DEFAULT_MAX_E = 1e-10
-DEFAULT_DELTA_S = 5.0  # ΔS window for “near ties”
+DEFAULT_DELTA_S = 5.0  # ΔS window for "near ties"
 DEFAULT_MIN_SUPPORT = 0.8  # dominance threshold
 
 
@@ -71,83 +70,6 @@ class LcaParams:
     max_evalue: float = DEFAULT_MAX_E
     delta_s_window: float = DEFAULT_DELTA_S
     min_support: float = DEFAULT_MIN_SUPPORT
-
-
-def ensure_taxdump(dest_dir: str | Path = "taxdump") -> Path:
-    """
-    Ensure NCBI taxonomy dump files are available locally.
-
-    Downloads and extracts taxdump.tar.gz from NCBI FTP if files don't exist.
-    Only downloads nodes.dmp, names.dmp, and merged.dmp (not the full archive).
-
-    Args:
-        dest_dir: Directory to store taxonomy files (created if missing)
-
-    Returns:
-        Path to directory containing taxonomy dump files
-
-    Side effects:
-        - Creates dest_dir if it doesn't exist
-        - Downloads ~50MB from NCBI FTP if files missing
-        - Writes files to disk
-        - Logs download progress via loguru
-
-    Note: Idempotent - safe to call multiple times.
-    """
-    dest = Path(dest_dir)
-    dest.mkdir(parents=True, exist_ok=True)
-
-    needed = {"nodes.dmp", "names.dmp", "merged.dmp"}
-    existing = {p.name for p in dest.iterdir() if p.is_file()}
-
-    if needed.issubset(existing):
-        logger.info("Taxdump files already present in %s", dest)
-        return dest
-
-    logger.info("Downloading NCBI taxdump to %s ...", dest)
-    tmp_tar = dest / "taxdump.tar.gz"
-
-    with (
-        urllib.request.urlopen(NCBI_TAXDUMP_URL) as resp,  # noqa: S310
-        open(tmp_tar, "wb") as f,
-    ):
-        f.write(resp.read())
-
-    with tarfile.open(tmp_tar, "r:gz") as tar:
-        members = [m for m in tar.getmembers() if m.name in needed]
-        tar.extractall(dest, members=members)  # noqa: S202
-
-    tmp_tar.unlink(missing_ok=True)
-    logger.info("Taxdump downloaded and extracted.")
-    return dest
-
-
-def load_taxdb(dest_dir: str | Path = "taxdump") -> TaxDb:
-    """
-    Load NCBI taxonomy database into memory.
-
-    Ensures taxonomy files exist (downloads if needed), then constructs
-    a TaxDb instance for taxonomic operations.
-
-    Args:
-        dest_dir: Directory containing or to store taxonomy files
-
-    Returns:
-        TaxDb instance with taxonomy loaded into memory
-
-    Side effects:
-        - May trigger taxdump download (via ensure_taxdump)
-        - Loads ~100MB of taxonomy data into memory
-        - Logs loading progress
-
-    Note: This operation is expensive; cache the result when possible.
-    """
-    dest = ensure_taxdump(dest_dir)
-    return TaxDb(
-        nodes_dmp=str(dest / "nodes.dmp"),
-        names_dmp=str(dest / "names.dmp"),
-        merged_dmp=str(dest / "merged.dmp"),
-    )
 
 
 def filter_blast_hits(unfiltered_hits: pl.LazyFrame, params: LcaParams) -> pl.LazyFrame:
@@ -512,14 +434,14 @@ def main() -> None:
 
     Orchestrates the full pipeline:
     1. Parse command-line arguments
-    2. Load NCBI taxonomy database
+    2. Load NCBI taxonomy database via py_nvd.taxonomy
     3. Filter BLAST hits by quality thresholds
     4. Assign consensus taxonomic IDs (dominant or LCA)
     5. Write annotated results to output file
 
     Side effects:
         - Reads input BLAST file
-        - May download NCBI taxonomy database (~50MB)
+        - May download NCBI taxonomy database (~50MB) on first run
         - Writes output file
         - Logs progress to stderr via loguru
 
@@ -538,15 +460,22 @@ def main() -> None:
     )
 
     logger.info("Loading NCBI taxonomy database...")
-    tx = load_taxdb()
+    # Handle empty input file
+    if os.path.getsize(args.input_file) == 0:
+        logger.warning("Input file is empty. Creating empty output file.")
+        Path(args.output_file).touch()
+        return
 
-    logger.info("Processing BLAST results with parameters: {}", params)
-    unfiltered_hits = pl.scan_csv(args.input_file, separator="\t")
-    filtered_lf = filter_blast_hits(unfiltered_hits, params)
-    assignment_lf = call_least_common_ancestors(filtered_lf, tx, params)
+    with taxonomy.open() as tax:
+        tx = tax.taxopy_db
 
-    logger.info("Writing annotated results to {}", args.output_file)
-    assignment_lf.sink_csv(args.output_file, separator="\t")
+        logger.info("Processing BLAST results with parameters: {}", params)
+        unfiltered_hits = pl.scan_csv(args.input_file, separator="\t")
+        filtered_lf = filter_blast_hits(unfiltered_hits, params)
+        assignment_lf = call_least_common_ancestors(filtered_lf, tx, params)
+
+        logger.info("Writing annotated results to {}", args.output_file)
+        assignment_lf.sink_csv(args.output_file, separator="\t")
 
 
 if __name__ == "__main__":

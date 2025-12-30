@@ -7,6 +7,8 @@ on:
       - 'Containerfile'
       - 'pyproject.toml'
       - 'pixi.lock'
+      - 'uv.lock'
+      - 'lib/**'
       - 'conf/**'
       - '.github/workflows/container-build-test.yml'
   pull_request:
@@ -15,6 +17,8 @@ on:
       - 'Containerfile'
       - 'pyproject.toml'
       - 'pixi.lock'
+      - 'uv.lock'
+      - 'lib/**'
       - 'conf/**'
   workflow_dispatch:
 
@@ -81,6 +85,26 @@ jobs:
               python -c "import Bio; print(\"Bio OK\")" &&
               python -c "import pandas; print(\"pandas OK\")" &&
               python -c "import polars; print(\"polars OK\")"
+            '
+      
+      - name: Test py_nvd package imports
+        run: |
+          docker run --rm nvd2:test \
+            bash -c '
+              echo "Testing py_nvd imports..." &&
+              python -c "from py_nvd import __version__; print(f\"py_nvd version: {__version__}\")" &&
+              python -c "from py_nvd.cli import app; print(\"CLI app imported successfully\")" &&
+              echo "✅ All py_nvd imports successful"
+            '
+      
+      - name: Test nvd CLI
+        run: |
+          docker run --rm nvd2:test \
+            bash -c '
+              echo "Testing nvd CLI..." &&
+              nvd --help &&
+              nvd version &&
+              echo "✅ nvd CLI works"
             '
       
       - name: Test environment variables

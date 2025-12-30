@@ -3,19 +3,27 @@
 import argparse
 import os
 import sys
-import pandas as pd
 from datetime import datetime
+
+import pandas as pd
 
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Upload GOTTCHA2 full TSV data to LabKey"
+        description="Upload GOTTCHA2 full TSV data to LabKey",
     )
     parser.add_argument(
-        "--input-tsv", required=True, help="Path to GOTTCHA2 full TSV file"
+        "--input-tsv",
+        required=True,
+        help="Path to GOTTCHA2 full TSV file",
     )
     parser.add_argument("--sample", required=True, help="Sample name")
     parser.add_argument("--experiment", required=True, help="Experiment name")
+    parser.add_argument(
+        "--sample-set-id",
+        required=False,
+        help="Sample set ID for upload tracking",
+    )
     parser.add_argument(
         "--labkey-server",
         required=True,
@@ -23,12 +31,16 @@ def parse_args():
     )
     parser.add_argument("--labkey-schema", required=True)
     parser.add_argument(
-        "--labkey-project-name", required=True, help="LabKey project name"
+        "--labkey-project-name",
+        required=True,
+        help="LabKey project name",
     )
     parser.add_argument("--labkey-api-key", required=True, help="LabKey API key")
     parser.add_argument("--db-version", required=True, help="GOTTCHA2 DB version")
     parser.add_argument(
-        "--table-name", required=True, help="LabKey table to insert data into"
+        "--table-name",
+        required=True,
+        help="LabKey table to insert data into",
     )
     return parser.parse_args()
 
@@ -40,6 +52,7 @@ def main():
         f"GOTTCHA2 Upload Log - {datetime.now()}",
         f"Sample: {args.sample}",
         f"Experiment: {args.experiment}",
+        f"Sample Set ID: {args.sample_set_id or 'not provided'}",
         f"Server: {args.labkey_server}",
         f"Project: {args.labkey_project_name}",
         f"Schema: {args.labkey_schema}",
@@ -47,16 +60,41 @@ def main():
         "=" * 80,
     ]
 
+    # Check for cross-run duplicate uploads if sample_set_id is provided
+    # Justification for local import: script must work standalone without py_nvd
+    if args.sample_set_id:
+        try:
+            import py_nvd.state as nvd_state
+
+            if nvd_state.was_sample_ever_uploaded(
+                args.sample,
+                upload_type="gottcha2",
+                upload_target="labkey",
+            ):
+                log_entries.append(
+                    f"SKIP: Sample '{args.sample}' was already uploaded to LabKey in a previous run.",
+                )
+                log_entries.append("=" * 80)
+                log_entries.append("GOTTCHA2 UPLOAD SKIPPED (already uploaded)")
+                with open("fasta_labkey_upload.log", "w") as f:
+                    f.write("\n".join(log_entries))
+                print("\n".join(log_entries))
+                return
+        except ImportError:
+            log_entries.append(
+                "WARNING: py_nvd not available, skipping cross-run check",
+            )
+
     # Check if upload should proceed
     upload_enabled = bool(
-        args.labkey_server and args.labkey_project_name and args.labkey_api_key
+        args.labkey_server and args.labkey_project_name and args.labkey_api_key,
     )
     api = None
 
     if upload_enabled:
         try:
-            from labkey.api_wrapper import APIWrapper
             import more_itertools
+            from labkey.api_wrapper import APIWrapper
 
             api = APIWrapper(
                 args.labkey_server,
@@ -66,7 +104,7 @@ def main():
             log_entries.append("LabKey API wrapper found - proceeding with upload.")
         except ImportError as e:
             log_entries.append(
-                f"ERROR: LabKey API wrapper or dependencies not available - {str(e)}"
+                f"ERROR: LabKey API wrapper or dependencies not available - {e!s}",
             )
             log_entries.append("Falling back to simulation mode.")
             upload_enabled = False
@@ -111,9 +149,22 @@ def main():
     total_records = len(df)
     log_entries.append(f"Total records to process: {total_records}")
 
+    # Compute content hash for idempotency tracking
+    # Justification for local import: script must work standalone without py_nvd
+    records_for_upload = df.to_dict("records")
+    content_hash = None
+    if args.sample_set_id:
+        try:
+            import py_nvd.state as nvd_state
+
+            content_hash = nvd_state.hash_upload_content(records_for_upload)
+            log_entries.append(f"Content hash: {content_hash[:16]}...")
+        except ImportError:
+            pass
+
     if upload_enabled:
         batch_size = 1000
-        record_chunks = list(more_itertools.chunked(df.to_dict("records"), batch_size))
+        record_chunks = list(more_itertools.chunked(records_for_upload, batch_size))
         for i, chunk in enumerate(record_chunks, 1):
             try:
                 api.query.insert_rows(
@@ -122,23 +173,49 @@ def main():
                     rows=chunk,
                 )
                 log_entries.append(
-                    f"Batch {i}/{len(record_chunks)}: SUCCESS ({len(chunk)} records)"
+                    f"Batch {i}/{len(record_chunks)}: SUCCESS ({len(chunk)} records)",
                 )
                 total_uploaded += len(chunk)
             except Exception as e:
-                log_entries.append(f"Batch {i}/{len(record_chunks)}: ERROR - {str(e)}")
+                log_entries.append(f"Batch {i}/{len(record_chunks)}: ERROR - {e!s}")
         log_entries.append(
-            f"Total successfully uploaded: {total_uploaded} / {total_records}"
+            f"Total successfully uploaded: {total_uploaded} / {total_records}",
         )
+
+        # Record successful upload in state database
+        # Justification for local import: script must work standalone without py_nvd
+        if args.sample_set_id and content_hash and total_uploaded > 0:
+            try:
+                import py_nvd.state as nvd_state
+
+                nvd_state.record_upload(
+                    sample_id=args.sample,
+                    sample_set_id=args.sample_set_id,
+                    upload_type="gottcha2",
+                    upload_target="labkey",
+                    content_hash=content_hash,
+                    target_metadata={
+                        "experiment_id": args.experiment,
+                        "table_name": args.table_name,
+                        "records_uploaded": total_uploaded,
+                    },
+                )
+                log_entries.append(
+                    f"Recorded upload in state database for sample '{args.sample}'",
+                )
+            except ImportError:
+                log_entries.append("WARNING: py_nvd not available, upload not recorded")
+            except Exception as e:
+                log_entries.append(f"WARNING: Failed to record upload: {e!s}")
     else:
         batch_count = (total_records + 999) // 1000
         log_entries.append(
-            f"SIMULATION MODE: Would upload {total_records} records in {batch_count} batches."
+            f"SIMULATION MODE: Would upload {total_records} records in {batch_count} batches.",
         )
 
     log_entries.append("=" * 80)
     log_entries.append(
-        "GOTTCHA2 UPLOAD COMPLETE" if upload_enabled else "GOTTCHA2 SIMULATION COMPLETE"
+        "GOTTCHA2 UPLOAD COMPLETE" if upload_enabled else "GOTTCHA2 SIMULATION COMPLETE",
     )
 
     # Save log

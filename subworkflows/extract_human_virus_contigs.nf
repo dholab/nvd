@@ -16,7 +16,6 @@ workflow EXTRACT_HUMAN_VIRUSES {
     ch_stat_dbs
     ch_stat_dbss
     ch_stat_annotation
-    ch_gettax
 
     main:
     CLASSIFY_CONTIGS_FIRST_PASS(
@@ -41,7 +40,6 @@ workflow EXTRACT_HUMAN_VIRUSES {
             .filter { _id, hits_file ->
                 hits_file.size() > 0 && hits_file.readLines().size() > 0
             }
-            .combine(ch_gettax)
     )
 
     IDENTIFY_HUMAN_VIRUS_FAMILY_CONTIGS(
@@ -49,7 +47,6 @@ workflow EXTRACT_HUMAN_VIRUSES {
             .filter { _id, hits_file ->
                 hits_file.size() > 0 && hits_file.readLines().size() > 0
             }
-            .combine(ch_gettax)
     )
 
     EXTRACT_HUMAN_VIRUS_CONTIGS(
@@ -81,7 +78,6 @@ workflow EXTRACT_HUMAN_VIRUSES {
 
     emit:
     contigs = EXTRACT_HUMAN_VIRUS_CONTIGS.out
-    sqlite = ch_gettax
     contig_read_counts = COUNT_MAPPED_READS.out.mapped_counts
 
 }

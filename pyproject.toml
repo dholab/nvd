@@ -1,21 +1,23 @@
 [project]
-name = "nvd2"
-description = ""
+name = "nvd"
+description = "Novel Virus Detection metagenomics pipeline"
 authors = [
   { name = "David O'Connor", email = "dhoconno@wisc.edu" },
   { name = "Nicholas Minor", email = "nrminor@wisc.edu" },
   { name = "William Gardner", email = "wkgardner@wisc.edu" },
 ]
 requires-python = ">= 3.11"
-version = "0.1.0"
+version = "2.3.0"
 dependencies = [
   "biopython>=1.85",
+  "jsonschema>=4.23.0",
   "labkey>=3.4.0",
   "loguru>=0.7.3",
   "lxml>=5.4.0",
   "more-itertools>=10.7.0",
   "pandas>=2.2.3",
   "polars>=1.27.1",
+  "pydantic>=2.12.5",
   "pysam>=0.23.0",
   "pyyaml>=6.0.2",
   "rich>=14.0.0",
@@ -31,27 +33,27 @@ platforms = ["osx-64", "linux-64", "linux-aarch64"]
 [tool.pixi.dependencies]
 # Bioinformatics ToolKits
 # ----------------------------------------------------------------------------------- #
-samtools = ">=1.5,<2"
-minimap2 = ">=2.22,<3"
-seqkit = ">=2.10.0,<3"
 bbmap = ">=39.19,<40"
-vsearch = ">=2.30.0,<3"
-nextflow = ">=24.10.5,<25"
-zstd = ">=1.5.7,<2"
-unzip = ">=6.0,<7"
-yaml = ">=0.2.5,<0.3"
-spades = ">=4.1.0,<5"
-sqlite = ">=3.49.1,<4"
 blast = ">=2.16.0,<3"
+fastp = ">=1.0.1,<2"
 gottcha2 = ">=2.1.8.11,<3"
+hostile = ">=2.0.2,<3"
+minimap2 = ">=2.22,<3"
+nextflow = ">=24.10.5,<25"
+samtools = ">=1.5,<2"
+seqkit = ">=2.10.0,<3"
+spades = ">=4.1.0,<5"
+vsearch = ">=2.30.0,<3"
 
 # System Dependencies
 # ----------------------------------------------------------------------------------- #
+compilers = ">=1.9.0,<2"
 openssl = ">=3.5.0,<4"
 pkg-config = ">=0.29.2,<0.30"
-compilers = ">=1.9.0,<2"
-fastp = ">=1.0.1,<2"
-hostile = ">=2.0.2,<3"
+sqlite = ">=3.49.1,<4"
+unzip = ">=6.0,<7"
+yaml = ">=0.2.5,<0.3"
+zstd = ">=1.5.7,<2"
 
 # ----------------------------------------------------------------------------------- #
 
@@ -62,7 +64,7 @@ apptainer = ">=1.3.6,<2"
 apptainer = ">=1.3.6,<2"
 
 [tool.pixi.pypi-dependencies]
-nvd2 = { path = ".", editable = true }
+nvd = { path = ".", editable = true }
 
 [dependency-groups]
 dev = [
@@ -77,19 +79,28 @@ dev = [
 ]
 
 [build-system]
-requires = ["setuptools >= 40.8.0", "cffi >=1.15.0,!=1.17.0"]
-build-backend = "setuptools.build_meta:__legacy__"
+requires = ["uv_build>=0.9.18,<0.10.0"]
+build-backend = "uv_build"
 
-[tool.setuptools]
-py-modules = ["bin"]
+[tool.uv.build-backend]
+module-root = "lib"
+module-name = ["py_nvd"]
 
 [project.scripts]
-"nvd" = "bin.__main__:main"
+"nvd" = "py_nvd.cli:main"
 
 [tool.ruff.lint]
 select = []
 ignore = ["G004", "PTH"]
 # extend-ignore = ["ALL"]
+
+[tool.pytest.ini_options]
+pythonpath = ["bin", "lib"]
+testpaths = ["lib/py_nvd", "bin"]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "network: marks tests as requiring network access (deselect with '-m \"not network\"')",
+]
 
 [tool.basedpyright]
 venvPath = "."

@@ -1,13 +1,15 @@
 // meta is equivalent to sample_id
 workflow BUNDLE_BLAST_FOR_LABKEY {
     take:
-    blast_results        // channel: [ meta, csv ]
-    contig_sequences     // channel: [ meta, fasta ]
-    read_counts          // channel: [ meta, total_reads ]
-    experiment_id        // value: experiment ID
-    run_id               // value: workflow run ID
-    contig_read_counts   // channel: [ meta, mapped_counts.tsv ]
-    validation_complete  // value: ensures validation passed before uploading
+    blast_results        // queue channel: [ meta, csv ] - one per sample
+    contig_sequences     // queue channel: [ meta, fasta ] - one per sample
+    read_counts          // queue channel: [ meta, total_reads ] - one per sample
+    experiment_id        // value channel: experiment ID (single, broadcast)
+    run_id               // value channel: workflow run ID (single, broadcast)
+    contig_read_counts   // queue channel: [ meta, mapped_counts.tsv ] - one per sample
+    validation_complete  // value channel: gate ensuring validation passed (single)
+    sample_set_id        // value channel: sample set ID for upload tracking (single, from CHECK_RUN_STATE stdout)
+    state_dir            // path channel: state directory for upload deduplication
 
     main:
 
@@ -58,14 +60,18 @@ workflow BUNDLE_BLAST_FOR_LABKEY {
     LABKEY_UPLOAD_BLAST(
         PREPARE_BLAST_LABKEY.out.csv.map { _meta, path -> path }.collect(),
         experiment_id,
-        run_id
+        run_id,
+        sample_set_id,
+        state_dir
     )
 
     // Upload FASTA results
     LABKEY_UPLOAD_FASTA(
         PREPARE_FASTA_LABKEY.out.csv.map { _meta, path -> path }.collect(),
         experiment_id,
-        run_id
+        run_id,
+        sample_set_id,
+        state_dir
     )
 
     emit:
@@ -190,19 +196,25 @@ process LABKEY_UPLOAD_BLAST {
     secret 'nvd2'
 
     input:
-    path csv_files
+    path csv_files        // collected list of all sample CSVs (value channel from .collect())
     val experiment_id
     val run_id
+    val sample_set_id     // from CHECK_RUN_STATE stdout, enables cross-run deduplication
+    path state_dir        // state directory for upload tracking
 
     output:
     path "blast_labkey_upload.log", emit: log
-    path csv_files
+    path csv_files        // preserve input files in work dir (no emit label - intentional)
 
     script:
+    def sample_set_arg = sample_set_id ? "--sample-set-id '${sample_set_id}'" : ""
+    def state_dir_arg = state_dir ? "--state-dir '${state_dir}'" : ""
     """
     labkey_upload_blast_results.py \
     --experiment-id '${experiment_id}' \
     --run-id '${run_id}' \
+    ${sample_set_arg} \
+    ${state_dir_arg} \
     --labkey-server '${params.labkey_server}' \
     --labkey-project-name '${params.labkey_project_name}' \
     --labkey-api-key \$nvd2 \
@@ -218,18 +230,24 @@ process LABKEY_UPLOAD_FASTA {
     secret 'nvd2'
 
     input:
-    path csv_files
+    path csv_files        // collected list of all sample CSVs (value channel from .collect())
     val experiment_id
     val run_id
+    val sample_set_id     // from CHECK_RUN_STATE stdout, enables cross-run deduplication
+    path state_dir        // state directory for upload tracking
 
     output:
     path "fasta_labkey_upload.log", emit: log
 
     script:
+    def sample_set_arg = sample_set_id ? "--sample-set-id '${sample_set_id}'" : ""
+    def state_dir_arg = state_dir ? "--state-dir '${state_dir}'" : ""
     """
     labkey_upload_blast_fasta.py \
     --experiment-id '${experiment_id}' \
     --run-id '${run_id}' \
+    ${sample_set_arg} \
+    ${state_dir_arg} \
     --labkey-server '${params.labkey_server}' \
     --labkey-project-name '${params.labkey_project_name}' \
     --labkey-api-key \$nvd2 \

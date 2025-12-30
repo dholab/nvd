@@ -32,14 +32,25 @@
 !/bin
 !/bin/*.py
 
-# build files
-!/build/user-settings.mkfg
-!/build/nvd2.sif
+# lib (py_nvd package)
+!/lib
+!/lib/py_nvd
+!/lib/py_nvd/*.py
+!/lib/py_nvd/*.sql
+!/lib/py_nvd/cli/
+!/lib/py_nvd/cli/*.py
+!/lib/py_nvd/cli/commands/
+!/lib/py_nvd/cli/commands/*.py
 
 # configuration
 !/conf
 !/conf/results.config
 !/conf/user-settings.mkfg
+
+# schemas
+!/schemas
+!/schemas/README.md
+!/schemas/*.json
 
 # assets
 !/assets

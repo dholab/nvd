@@ -4,22 +4,19 @@
 # dependencies = [
 #     "lxml",
 #     "snakemake",
-#     "sqlite3",
 # ]
 # ///
 
 import argparse
 import collections
 import logging
-import os
-import sqlite3
 import sys
-import urllib.request
-from typing import Literal, Self
+from typing import Literal
 
 from lxml.builder import E
+from py_nvd import taxonomy
 
-__version__ = "1.1"
+__version__ = "1.2"
 
 # snakemake setup
 MODE: Literal["snakemake", "commandline"]
@@ -31,103 +28,29 @@ else:
     MODE = "commandline"
 
 # Configuration
-TAXONOMY_URL = "https://sra-download.ncbi.nlm.nih.gov/traces/sra_references/tax_analysis/gettax.sqlite"
 PROGRESS_GRANULARITY = 100000
 
 # Set up logging
 logger = logging.getLogger("tax_analysis")
 
-# Data structures
-Taxon = collections.namedtuple(
-    "Taxon", ["tax_id", "parent_tax_id", "rank", "scientific_name"]
-)  # noqa: PYI024
 
-
-class TaxonomyDatabase:
-    def __init__(self, sqlite_cache: str) -> None:
-        self.sqlite_cache = sqlite_cache
-        self.conn = None
-
-    def connect(self) -> Self | None:
-        try:
-            if not os.path.exists(self.sqlite_cache):
-                logger.error(f"SQLite file does not exist: {self.sqlite_cache}")
-                return None
-            if not os.access(self.sqlite_cache, os.R_OK):
-                logger.error(f"SQLite file is not readable: {self.sqlite_cache}")
-                return None
-            self.conn = sqlite3.connect(self.sqlite_cache)
-        except sqlite3.Error:
-            logger.exception("Error connecting to SQLite database")
-            return None
-        else:
-            return self
-
-    def close(self) -> None:
-        if self.conn:
-            self.conn.close()
-
-    def __enter__(self) -> Self | None:
-        return self.connect()
-
-    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
-        self.close()
-
-    def get_taxon(self, tax_id) -> Taxon | None:
-        if not self.conn:
-            logger.error("Database connection is not established")
-            return None
-        cur = self.conn.cursor()
-        cur.execute("SELECT * FROM taxons WHERE tax_id = ?", [int(tax_id)])
-        row = cur.fetchone()
-        cur.close()
-        return Taxon(*row) if row else None
-
-
-def ensure_taxonomy_file(sqlite_cache: str | None) -> str | None:
-    try:
-        sqlite_cache = sqlite_cache if sqlite_cache else "gettax.sqlite"
-        if not os.path.exists(sqlite_cache):
-            logger.info(f"Downloading taxonomy file from {TAXONOMY_URL}")
-            urllib.request.urlretrieve(TAXONOMY_URL, sqlite_cache)  # noqa: S310
-            logger.info(f"Downloaded taxonomy file to {sqlite_cache}")
-
-        if not os.access(sqlite_cache, os.R_OK | os.W_OK):
-            logger.error(f"SQLite file is not readable/writable: {sqlite_cache}")
-            return None
-
-        # Ensure the directory exists
-        dir_path = os.path.dirname(sqlite_cache)
-        if dir_path and not os.path.exists(dir_path):
-            os.makedirs(dir_path, exist_ok=True)
-            logger.info(f"Created directory: {dir_path}")
-
-    except Exception:
-        logger.exception("Error ensuring taxonomy file")
-        return None
-    else:
-        return sqlite_cache
-
-
-def parse_input(file, tax_db, args):
+def parse_input(file, tax, args):
+    """Parse input file and count taxids."""
     counter = collections.Counter()
     counter[1] = 0  # explicitly add root
     for tax_id in args.include_tax_id:
         counter[tax_id] = 0
 
-    lineage_cache = {}
-
     if args.wgs_mode:
         parse_wgs_mode(file, counter)
     else:
-        parse_standard_mode(
-            file, counter, tax_db, lineage_cache, args.compact, args.collated
-        )
+        parse_standard_mode(file, counter, tax, args.compact, args.collated)
 
     return counter
 
 
 def parse_wgs_mode(file, counter):
+    """Parse WGS mode input format."""
     for line in file:
         parts = line.strip().split("\t")
         if len(parts) < 2:
@@ -145,13 +68,14 @@ def parse_wgs_mode(file, counter):
             counter[tax_id] += count
 
 
-def parse_standard_mode(file, counter, tax_db, lineage_cache, compact, collated):
+def parse_standard_mode(file, counter, tax, compact, collated):
+    """Parse standard mode input format."""
     iterator = iterate_merged_spots_compact if compact else iterate_merged_spots
     for hits, copies in iterator(file, collated):
         if not hits:
             logger.warning("Empty hits set encountered")
             continue
-        tax_id = deduce_tax_id(hits, lineage_cache, tax_db)
+        tax_id = deduce_tax_id(hits, tax)
         if tax_id is None:
             logger.warning(f"Could not deduce tax_id for hits: {hits}")
             continue
@@ -159,6 +83,7 @@ def parse_standard_mode(file, counter, tax_db, lineage_cache, compact, collated)
 
 
 def iterate_merged_spots(file, collated):
+    """Iterate over merged spots in standard format."""
     last_spot = None
     last_hits = None
     for line in file:
@@ -189,6 +114,7 @@ def iterate_merged_spots(file, collated):
 
 
 def iterate_merged_spots_compact(file, collated):
+    """Iterate over merged spots in compact format."""
     last_spot = None
     last_hits = None
     for line in file:
@@ -237,41 +163,31 @@ def iterate_merged_spots_compact(file, collated):
         yield last_hits, 1
 
 
-def deduce_tax_id(hits, lineage_cache, tax_db):
+def deduce_tax_id(hits, tax):
+    """
+    Deduce the consensus taxid for a set of hits using LCA.
+
+    Args:
+        hits: Set of taxids from BLAST hits
+        tax: TaxonomyDB instance
+
+    Returns:
+        The LCA taxid, or None if no valid taxids
+    """
     if len(hits) == 1:
         return next(iter(hits))
 
-    lineages = [get_lineage(hit, lineage_cache, tax_db) for hit in hits]
-    last_matching_tax_id = None
-    for nodes in zip(*lineages, strict=False):
-        if len(set(nodes)) > 1:
-            return last_matching_tax_id
-        last_matching_tax_id = nodes[0]
-    return last_matching_tax_id
+    # Use taxonomy module's find_lca for consistency with annotate_blast_lca.py
+    return tax.find_lca(list(hits))
 
 
-def get_lineage(tax_id, cache, tax_db):
-    if tax_id in cache:
-        return cache[tax_id]
-
-    if tax_id in (0, 1):
-        lineage = [1]
-    else:
-        tax_info = tax_db.get_taxon(tax_id)
-        parent_tax_id = tax_info.parent_tax_id if tax_info else 0
-        parent_lineage = get_lineage(parent_tax_id, cache, tax_db)
-        lineage = parent_lineage + [tax_id]
-
-    cache[tax_id] = lineage
-    return lineage
-
-
-def build_tree(counter, tax_db):
+def build_tree(counter, tax):
+    """Build XML tree from taxid counts."""
     logger.info("Building XML tree")
     nodes = {}
     while counter:
         tax_id = next(iter(counter))
-        get_or_add_node(nodes, counter, tax_db, tax_id)
+        get_or_add_node(nodes, counter, tax, tax_id)
 
     root = nodes[1]
     logger.info("Calculating totals")
@@ -279,14 +195,15 @@ def build_tree(counter, tax_db):
     return root
 
 
-def get_or_add_node(nodes, counter, tax_db, tax_id):
+def get_or_add_node(nodes, counter, tax, tax_id):
+    """Get or create a node in the tree."""
     if tax_id in nodes:
         return nodes[tax_id]
 
     count = counter.pop(tax_id, 0)
     node = E.taxon(tax_id=str(tax_id), self_count=str(count))
 
-    tax_info = tax_db.get_taxon(tax_id)
+    tax_info = tax.get_taxon(tax_id)
     if tax_info:
         if tax_info.rank:
             node.attrib["rank"] = tax_info.rank
@@ -298,23 +215,27 @@ def get_or_add_node(nodes, counter, tax_db, tax_id):
 
     nodes[tax_id] = node
     if tax_id != 1:
-        parent_node = get_or_add_node(nodes, counter, tax_db, parent_tax_id)
+        parent_node = get_or_add_node(nodes, counter, tax, parent_tax_id)
         parent_node.append(node)
     return node
 
 
 def calculate_total_counts(node):
+    """Calculate total counts for each node in the tree."""
     total_count = int(node.attrib["self_count"])
     for child in node:
         calculate_total_counts(child)
         total_count += int(child.attrib["total_count"])
     node[:] = sorted(
-        node, key=lambda child: int(child.attrib["total_count"]), reverse=True
+        node,
+        key=lambda child: int(child.attrib["total_count"]),
+        reverse=True,
     )
     node.attrib["total_count"] = str(total_count)
 
 
 def format_tax_tree(tree, args):
+    """Format the taxonomy tree for output."""
     if len(tree) == 0:
         return "Tree is empty"
     root = tree[0]
@@ -323,7 +244,9 @@ def format_tax_tree(tree, args):
     res = [
         format_node(node, total_count, "", args)
         for node in sorted(
-            root, key=lambda x: int(x.attrib["total_count"]), reverse=True
+            root,
+            key=lambda x: int(x.attrib["total_count"]),
+            reverse=True,
         )
     ]
     res = list(flatten(res))
@@ -340,6 +263,7 @@ def format_tax_tree(tree, args):
 
 
 def format_node(node, grand_total, offset, args):
+    """Format a single node for output."""
     self_count = int(node.attrib["self_count"])
     if len(node) == 1 and check_cutoff(self_count, grand_total, args):
         if args.skip == "none":
@@ -352,7 +276,9 @@ def format_node(node, grand_total, offset, args):
             assert False
         if skip:
             for subnode in sorted(
-                node, key=lambda x: int(x.attrib["total_count"]), reverse=True
+                node,
+                key=lambda x: int(x.attrib["total_count"]),
+                reverse=True,
             ):
                 yield from format_node(subnode, grand_total, offset, args)
             return
@@ -377,12 +303,15 @@ def format_node(node, grand_total, offset, args):
     yield pattern % (offset, name, percent, total_count)
 
     for subnode in sorted(
-        node, key=lambda x: int(x.attrib["total_count"]), reverse=True
+        node,
+        key=lambda x: int(x.attrib["total_count"]),
+        reverse=True,
     ):
         yield from format_node(subnode, grand_total, offset + args.indent, args)
 
 
 def check_cutoff(value, total, args):
+    """Check if a value is below the cutoff threshold."""
     if value < args.cutoff_hit_count:
         return True
     rate = float(value) / total
@@ -391,6 +320,7 @@ def check_cutoff(value, total, args):
 
 
 def flatten(iterable):
+    """Flatten nested iterables."""
     for item in iterable:
         if isinstance(item, (list, tuple)) or (
             hasattr(item, "__iter__") and not isinstance(item, str)
@@ -401,6 +331,7 @@ def flatten(iterable):
 
 
 def pad_tree(lines: list[str], separator: str):
+    """Pad tree lines for aligned output."""
     lines = list(lines)
     split_lines = [line.split("\t", 1) for line in lines if isinstance(line, str)]
     if not split_lines:
@@ -411,12 +342,21 @@ def pad_tree(lines: list[str], separator: str):
 
 
 def parse_arguments() -> argparse.Namespace:
+    """Parse command-line arguments."""
     parser = argparse.ArgumentParser(description="Taxonomic analysis tool")
     parser.add_argument(
-        "-v", "--verbose", action="store_true", help="Enable verbose mode"
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Enable verbose mode",
     )
+    # Keep --sqlite-cache for backward compatibility with Nextflow,
+    # but it's no longer used (taxonomy.open() handles DB location)
     parser.add_argument(
-        "-c", "--sqlite-cache", default=None, help="Path to the SQLite cache file"
+        "-c",
+        "--sqlite-cache",
+        default=None,
+        help="(Deprecated) Path to SQLite cache file - now handled automatically",
     )
     parser.add_argument(
         "-i",
@@ -427,14 +367,20 @@ def parse_arguments() -> argparse.Namespace:
         help="Include taxon into tax tree even if it has no hits",
     )
     parser.add_argument(
-        "--compact", action="store_true", help="Use compact input format"
+        "--compact",
+        action="store_true",
+        help="Use compact input format",
     )
     parser.add_argument(
-        "--wgs-mode", action="store_true", help="Use WGS mode for parsing"
+        "--wgs-mode",
+        action="store_true",
+        help="Use WGS mode for parsing",
     )
     parser.add_argument("--collated", action="store_true", help="The input is collated")
     parser.add_argument(
-        "--indent", default="  ", help="Indentation string, default is two spaces"
+        "--indent",
+        default="  ",
+        help="Indentation string, default is two spaces",
     )
     parser.add_argument(
         "--separator",
@@ -442,7 +388,9 @@ def parse_arguments() -> argparse.Namespace:
         help="Name/stats separator string, default is four spaces",
     )
     parser.add_argument(
-        "--no-padding", action="store_true", help="Disable tree padding"
+        "--no-padding",
+        action="store_true",
+        help="Disable tree padding",
     )
     parser.add_argument(
         "--precision",
@@ -474,12 +422,13 @@ def parse_arguments() -> argparse.Namespace:
 
 
 def main() -> None:
+    """Main entry point."""
     args = parse_arguments()
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO)
 
     if "snakemake" in globals() and MODE == "snakemake":
         # Running within Snakemake
-        args.sqlite_cache = snakemake.params.gettax_sqlite_path
+        # args.sqlite_cache from snakemake is ignored - taxonomy.open() handles it
         input_file = snakemake.input[0]
         output_file = snakemake.output[0]
     else:
@@ -493,32 +442,23 @@ def main() -> None:
         output_file = args.output_file
 
     try:
-        # Ensure gettax SQLite cache is set up
-        args.sqlite_cache = ensure_taxonomy_file(args.sqlite_cache)
-        if args.sqlite_cache is None:
-            logger.error("Failed to ensure taxonomy file. Exiting.")
-            sys.exit(1)
-
-        logger.info(f"Working with SQLite file: {args.sqlite_cache}")
-        logger.info(f"Current working directory: {os.getcwd()}")
-
-        with TaxonomyDatabase(args.sqlite_cache) as tax_db:
-            if tax_db is None:
-                logger.error("Failed to connect to the taxonomy database. Exiting.")
-                sys.exit(1)
-
+        with taxonomy.open() as tax:
             logger.info(f"Reading {input_file}")
             with open(input_file) as f:
-                counter = parse_input(f, tax_db, args)
+                counter = parse_input(f, tax, args)
 
             if not counter:
-                logger.error("No valid data found in input")
-                sys.exit(1)
+                logger.warning("No valid data found in input. Creating empty output.")
+                with open(output_file, "w") as f:
+                    f.write("")
+                return
 
-            xml_tree = build_tree(counter, tax_db)
+            xml_tree = build_tree(counter, tax)
             if xml_tree is None:
-                logger.error("Failed to generate XML tree. No data processed.")
-                sys.exit(1)
+                logger.warning("No data to build tree. Creating empty output.")
+                with open(output_file, "w") as f:
+                    f.write("")
+                return
 
             xml_root = E.taxon_tree(xml_tree, parser_version=__version__)
             formatted_tree = format_tax_tree(xml_root, args)

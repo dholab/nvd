@@ -26,7 +26,8 @@ import csv
 import os
 import re
 import sys
-from typing import Dict, Generator, Iterable, List, Optional, Sequence, Tuple, TextIO
+from collections.abc import Generator, Iterable, Sequence
+from typing import TextIO
 
 # Lazy import so --no_upload works without LabKey client installed
 try:
@@ -38,12 +39,12 @@ except Exception:
 # ----------------------------- FASTA parsing -----------------------------
 
 
-def iterate_fasta(handle: TextIO) -> Generator[Tuple[str, List[str]], None, None]:
+def iterate_fasta(handle: TextIO) -> Generator[tuple[str, list[str]], None, None]:
     """
     Yield (header_line_including_>, [sequence_lines]) for each FASTA record.
     """
-    current_header: Optional[str] = None
-    current_seq: List[str] = []
+    current_header: str | None = None
+    current_seq: list[str] = []
     for raw in handle:
         line = raw.rstrip("\r\n")
         if line.startswith(">"):
@@ -62,7 +63,7 @@ def iterate_fasta(handle: TextIO) -> Generator[Tuple[str, List[str]], None, None
 LEVEL_RE = re.compile(r"LEVEL=(\w+)", re.IGNORECASE)
 
 
-def extract_level(header: str) -> Optional[str]:
+def extract_level(header: str) -> str | None:
     """
     Return 'species' or 'strain' if present as LEVEL=..., else None.
     """
@@ -82,7 +83,7 @@ def read_key_from_header(header: str) -> str:
 # ------------------------ Selection (per-read) ---------------------------
 
 
-def select_records_for_upload(fasta_path: str) -> List[Tuple[str, str]]:
+def select_records_for_upload(fasta_path: str) -> list[tuple[str, str]]:
     """
     Parse the FASTA and return a list of (header_without_gt, concatenated_sequence)
     keeping ONLY species/strain entries and preferring strain per read.
@@ -94,10 +95,10 @@ def select_records_for_upload(fasta_path: str) -> List[Tuple[str, str]]:
             elif any 'species' -> take ALL 'species' entries
             else -> take nothing
     """
-    per_read: Dict[str, Dict[str, List[Tuple[str, str]]]] = {}
+    per_read: dict[str, dict[str, list[tuple[str, str]]]] = {}
 
     # 1) Build the map
-    with open(fasta_path, "rt", encoding="utf-8") as fh:
+    with open(fasta_path, encoding="utf-8") as fh:
         for header, seq_lines in iterate_fasta(fh):
             level = extract_level(header)
             if level not in {"species", "strain"}:
@@ -112,7 +113,7 @@ def select_records_for_upload(fasta_path: str) -> List[Tuple[str, str]]:
             bucket[level].append((header.lstrip(">"), seq))
 
     # 2) For each read, keep only the desired level
-    selected: List[Tuple[str, str]] = []
+    selected: list[tuple[str, str]] = []
     for bucket in per_read.values():
         if bucket["strain"]:
             selected.extend(bucket["strain"])
@@ -127,15 +128,15 @@ def select_records_for_upload(fasta_path: str) -> List[Tuple[str, str]]:
 
 
 def upload_in_batches(
-    lk: "APIWrapper",
+    lk: APIWrapper,
     list_name: str,
     rows_iterable: Iterable[dict],
     batch_size: int,
-) -> Tuple[int, int]:
+) -> tuple[int, int]:
     """
     Upload rows to LabKey in batches. Returns (total_inserted, num_batches).
     """
-    batch: List[dict] = []
+    batch: list[dict] = []
     total = 0
     batches = 0
 
@@ -174,17 +175,26 @@ TSV_COLUMNS = [
 ]
 
 
-def main(argv: Optional[Sequence[str]] = None) -> int:
+def main(argv: Sequence[str] | None = None) -> int:
     p = argparse.ArgumentParser(
-        description="Upload GOTTCHA2 FASTA hits at lowest relevant level per read (strain if present, else species)."
+        description="Upload GOTTCHA2 FASTA hits at lowest relevant level per read (strain if present, else species).",
     )
     p.add_argument(
-        "--fasta", required=True, help="Path to input FASTA (plain text; no stdin)."
+        "--fasta",
+        required=True,
+        help="Path to input FASTA (plain text; no stdin).",
     )
     p.add_argument("--sample_id", required=True, help="Value for 'Sample Id'.")
     p.add_argument("--experiment_id", required=True, help="Value for 'Experiment'.")
     p.add_argument(
-        "--output_tsv", required=True, help="Path to write TSV (file path only)."
+        "--sample_set_id",
+        required=False,
+        help="Sample set ID for upload tracking",
+    )
+    p.add_argument(
+        "--output_tsv",
+        required=True,
+        help="Path to write TSV (file path only).",
     )
 
     # LabKey settings (omit with --no_upload)
@@ -194,13 +204,17 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     p.add_argument("--api_key", help="LabKey API key")
     p.add_argument("--batch_size", type=int, default=1000, help="Upload batch size")
     p.add_argument(
-        "--no_upload", action="store_true", help="Only write TSV; skip upload"
+        "--no_upload",
+        action="store_true",
+        help="Only write TSV; skip upload",
     )
 
     # Fixed column defaults
     p.add_argument("--notes", default="gottcha2", help="Value for 'Notes'")
     p.add_argument(
-        "--run_id", default="GOTTCHA2_UPLOAD", help="Value for 'Snakemake Run Id'"
+        "--run_id",
+        default="GOTTCHA2_UPLOAD",
+        help="Value for 'Snakemake Run Id'",
     )
     p.add_argument("--upload_type", default="fasta", help="Value for 'Upload Type'")
 
@@ -209,7 +223,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     # Validate file paths
     if args.fasta.strip() in {"-", ""}:
         print(
-            "[❌ ERROR] --fasta must be a real file path (no stdin).", file=sys.stderr
+            "[❌ ERROR] --fasta must be a real file path (no stdin).",
+            file=sys.stderr,
         )
         return 1
     if not os.path.isfile(args.fasta):
@@ -217,9 +232,32 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return 1
     if args.output_tsv.strip() in {"-", ""}:
         print(
-            "[❌ ERROR] --output_tsv must be a file path (no stdout).", file=sys.stderr
+            "[❌ ERROR] --output_tsv must be a file path (no stdout).",
+            file=sys.stderr,
         )
         return 1
+
+    # Check for cross-run duplicate uploads if sample_set_id is provided
+    # Justification for local import: script must work standalone without py_nvd
+    if args.sample_set_id and not args.no_upload:
+        try:
+            import py_nvd.state as nvd_state
+
+            if nvd_state.was_sample_ever_uploaded(
+                args.sample_id,
+                upload_type="gottcha2_fasta",
+                upload_target="labkey",
+            ):
+                print(
+                    f"[INFO] SKIP: Sample '{args.sample_id}' was already uploaded to LabKey in a previous run.",
+                    file=sys.stderr,
+                )
+                return 0
+        except ImportError:
+            print(
+                "[WARN] py_nvd not available, skipping cross-run check",
+                file=sys.stderr,
+            )
 
     try:
         # Select records exactly once
@@ -227,7 +265,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print(f"[INFO] Selected records: {len(selected_records)}", file=sys.stderr)
 
         # Write TSV
-        with open(args.output_tsv, "wt", encoding="utf-8", newline="") as out_fh:
+        with open(args.output_tsv, "w", encoding="utf-8", newline="") as out_fh:
             writer = csv.writer(out_fh, delimiter="\t", lineterminator="\n")
             writer.writerow(TSV_COLUMNS)
 
@@ -236,7 +274,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             if not args.no_upload:
                 if APIWrapper is None:
                     raise RuntimeError(
-                        "labkey.api_wrapper not available. Install it or pass --no_upload."
+                        "labkey.api_wrapper not available. Install it or pass --no_upload.",
                     )
                 missing = [
                     flag
@@ -252,9 +290,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     raise ValueError(f"Missing LabKey parameters: {', '.join(missing)}")
                 lk = APIWrapper(args.server, args.container, api_key=args.api_key)  # type: ignore
 
-            rows_for_upload: List[dict] = []
-            total_rows = 0
-
+            # Build all rows for TSV and upload
+            all_rows: list[dict] = []
             for header_no_gt, seq in selected_records:
                 row = {
                     "Experiment": args.experiment_id,
@@ -266,29 +303,69 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     "Upload Type": args.upload_type,
                 }
                 writer.writerow([row[c] for c in TSV_COLUMNS])
-                total_rows += 1
+                all_rows.append(row)
 
-                if lk is not None:
-                    rows_for_upload.append(row)
-                    if len(rows_for_upload) >= args.batch_size:
-                        inserted, batches = upload_in_batches(
-                            lk, args.list_name, rows_for_upload, args.batch_size
-                        )
-                        print(
-                            f"[INFO] Uploaded {inserted} rows in {batches} batch(es) so far.",
-                            file=sys.stderr,
-                        )
-                        rows_for_upload.clear()
+            total_rows = len(all_rows)
 
-            # Flush any remaining rows to LabKey
-            if lk is not None and rows_for_upload:
-                inserted, batches = upload_in_batches(
-                    lk, args.list_name, rows_for_upload, args.batch_size
+            # Compute content hash for idempotency tracking
+            # Justification for local import: script must work standalone without py_nvd
+            content_hash = None
+            if args.sample_set_id:
+                try:
+                    import py_nvd.state as nvd_state
+
+                    content_hash = nvd_state.hash_upload_content(all_rows)
+                    print(
+                        f"[INFO] Content hash: {content_hash[:16]}...",
+                        file=sys.stderr,
+                    )
+                except ImportError:
+                    pass
+
+            # Upload to LabKey
+            total_uploaded = 0
+            if lk is not None:
+                uploaded, batches = upload_in_batches(
+                    lk,
+                    args.list_name,
+                    all_rows,
+                    args.batch_size,
                 )
+                total_uploaded = uploaded
                 print(
-                    f"[INFO] Uploaded remaining {inserted} rows in {batches} batch(es).",
+                    f"[INFO] Uploaded {uploaded} rows in {batches} batch(es).",
                     file=sys.stderr,
                 )
+
+                # Record successful upload in state database
+                # Justification for local import: script must work standalone without py_nvd
+                if args.sample_set_id and content_hash and total_uploaded > 0:
+                    try:
+                        import py_nvd.state as nvd_state
+
+                        nvd_state.record_upload(
+                            sample_id=args.sample_id,
+                            sample_set_id=args.sample_set_id,
+                            upload_type="gottcha2_fasta",
+                            upload_target="labkey",
+                            content_hash=content_hash,
+                            target_metadata={
+                                "experiment_id": args.experiment_id,
+                                "list_name": args.list_name,
+                                "records_uploaded": total_uploaded,
+                            },
+                        )
+                        print(
+                            f"[INFO] Recorded upload in state database for sample '{args.sample_id}'",
+                            file=sys.stderr,
+                        )
+                    except ImportError:
+                        print(
+                            "[WARN] py_nvd.state not available, upload not recorded",
+                            file=sys.stderr,
+                        )
+                    except Exception as e:
+                        print(f"[WARN] Failed to record upload: {e}", file=sys.stderr)
 
         print(f"[INFO] TSV rows written: {total_rows}", file=sys.stderr)
         if args.no_upload:

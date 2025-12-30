@@ -22,9 +22,11 @@ RUN apt-get update && \
 
 # Install all the dependencies locked with pyproject.toml:
 # ----------------------------------------------------------------------------------- #
-# 1) copy the required dependency and configuration file into the image
+# 1) copy the required dependency and configuration files into the image
 COPY pyproject.toml $HOME/pyproject.toml
 COPY pixi.lock $HOME/pixi.lock
+COPY uv.lock $HOME/uv.lock
+COPY lib/ $HOME/lib/
 
 # 2) install pixi
 RUN cd $HOME && PIXI_ARCH=x86_64 curl -fsSL https://pixi.sh/install.sh | bash

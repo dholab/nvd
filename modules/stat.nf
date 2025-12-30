@@ -113,7 +113,7 @@ process GENERATE_STAT_CONTIG_REPORT {
 	maxRetries 2
 
     input:
-    tuple val(sample_id), path(secondpass_file), path(gettax)
+    tuple val(sample_id), path(secondpass_file)
 
     output:
     tuple val(sample_id), path("${sample_id}.report"), emit: report
@@ -122,7 +122,6 @@ process GENERATE_STAT_CONTIG_REPORT {
     """
     hits_to_report.py \
     --cutoff-percent ${params.cutoff_percent} \
-    --sqlite-cache ${gettax} \
     ${secondpass_file} \
     ${sample_id}.report
     """
@@ -137,7 +136,7 @@ process IDENTIFY_HUMAN_VIRUS_FAMILY_CONTIGS {
 	maxRetries 2
 
     input:
-    tuple val(sample_id), path(secondpass_file), path(tax_sqlite)
+    tuple val(sample_id), path(secondpass_file)
 
     output:
     tuple val(sample_id), path("${sample_id}.report")
@@ -146,7 +145,6 @@ process IDENTIFY_HUMAN_VIRUS_FAMILY_CONTIGS {
     def virus_families = params.human_virus_families.join(" ")
     """
     extract_taxa_spots.py \
-    --gettax_sqlite_path ${tax_sqlite} \
     --hits_file ${secondpass_file} \
     --output_file ${sample_id}.report \
     --taxa ${virus_families} \

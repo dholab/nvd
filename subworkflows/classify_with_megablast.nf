@@ -10,7 +10,6 @@ workflow CLASSIFY_WITH_MEGABLAST {
     take:
     ch_virus_contigs
     ch_blast_db_files
-    ch_gettax_sqlite_path
 
     main:
     MEGABLAST(
@@ -24,7 +23,7 @@ workflow CLASSIFY_WITH_MEGABLAST {
     SELECT_TOP_BLAST_HITS(nonEmptyMegablastResults)
 
     ANNOTATE_MEGABLAST_RESULTS(
-        SELECT_TOP_BLAST_HITS.out.combine(ch_gettax_sqlite_path)
+        SELECT_TOP_BLAST_HITS.out
     )
 
     // Capture this output for the LabKey table

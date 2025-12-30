@@ -255,6 +255,73 @@ to the paths to your samplesheet CSV and the parent directory of your extracted
 reference databases, respectively; you can replace them with whatever valid path
 you have used for these files.)
 
+## Important Notes
+
+### Network Requirements
+
+The first pipeline run downloads NCBI taxonomy data (~60MB compressed, ~500MB
+extracted) from NCBI's FTP server. This is used for taxonomic annotation and LCA
+calculations. Subsequent runs use cached data, which is automatically refreshed
+every 30 days.
+
+### State Database
+
+NVD2 tracks run history, processed samples, and uploads in a local SQLite
+database at `~/.cache/nvd/state.sqlite`. This enables:
+
+- **Cross-run sample deduplication**: Avoid re-uploading the same samples to
+  LabKey
+- **Reproducibility tracking**: Record which taxonomy version produced each
+  result
+- **Run history**: View past runs and their status
+
+To use a different location:
+
+```bash
+export NVD_STATE_DIR=/path/to/nvd/state
+```
+
+**Backup recommendation**: Back up `~/.cache/nvd/` to preserve deduplication
+state across system migrations.
+
+### Taxonomy Cache
+
+NCBI taxonomy data is cached in `~/.cache/nvd/taxdump/` and includes:
+
+- `nodes.dmp`, `names.dmp`, `merged.dmp` - Raw NCBI taxonomy files
+- `taxonomy.sqlite` - Indexed database for fast lookups
+
+The cache is refreshed automatically when older than 30 days. To force a
+refresh, delete the `taxdump` directory before running.
+
+For cluster environments with shared taxonomy data, you can point to a central
+location:
+
+```bash
+export NVD_TAXONOMY_DB=/shared/data/ncbi/taxdump
+```
+
+This overrides the default location and is useful when taxonomy data is
+pre-downloaded to a shared filesystem.
+
+### Offline Mode
+
+For air-gapped environments without internet access, you can pre-populate the
+taxonomy cache and run in offline mode:
+
+1. On a machine with internet access, run the pipeline once to download taxonomy
+   data
+2. Copy `~/.cache/nvd/taxdump/` to the air-gapped machine
+3. Set the environment variable to enable offline mode:
+
+```bash
+export NVD_TAXONOMY_OFFLINE=1
+```
+
+In offline mode, NVD2 will use cached taxonomy data without attempting to
+download or refresh from NCBI. If no cached data exists, a clear error message
+will indicate what's missing.
+
 ## Further Documentation
 
 - **[CLI Wrapper Guide](./docs/cli_wrapper_guide.md)** - Comprehensive guide to

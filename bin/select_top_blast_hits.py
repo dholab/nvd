@@ -34,6 +34,7 @@ Algorithm:
 """
 
 import argparse
+import os
 from pathlib import Path
 
 import polars as pl
@@ -187,6 +188,12 @@ def main() -> None:
           without loading them entirely into memory.
     """
     args = parse_args()
+
+    # Handle empty input file
+    if os.path.getsize(args.input_file) == 0:
+        Path(args.output_file).touch()
+        return
+
     top_k_lf = select_top_hits(args.input_file, args.blast_retention_count)
     top_k_lf.sink_csv(args.output_file, separator="\t")
 
