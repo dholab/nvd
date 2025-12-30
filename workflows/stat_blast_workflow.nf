@@ -53,13 +53,29 @@ workflow STAT_BLAST_WORKFLOW {
 
         Please supply all of the above in your `-c nextflow.config` or via `-params-file`, and ensure each path exists.
         """
+
+        // Validate LabKey params required for STAT+BLAST if LabKey is enabled
+        NvdUtils.validateLabkeyBlast(params)
     }
 
-    ch_blast_db_files = Channel.fromPath(params.blast_db)
-    ch_stat_index = Channel.fromPath(params.stat_index)
-    ch_stat_dbss = Channel.fromPath(params.stat_dbss)
-    ch_stat_annotation = Channel.fromPath(params.stat_annotation)
-    ch_human_virus_taxlist = Channel.fromPath(params.human_virus_taxlist)
+    // Guard channel declarations with ternary fallback to Channel.empty().
+    // When --tools doesn't include a BLAST alias, these params are null.
+    // Empty channels maintain the DAG but result in no-op downstream processes.
+    ch_blast_db_files = params.blast_db 
+        ? Channel.fromPath(params.blast_db) 
+        : Channel.empty()
+    ch_stat_index = params.stat_index 
+        ? Channel.fromPath(params.stat_index) 
+        : Channel.empty()
+    ch_stat_dbss = params.stat_dbss 
+        ? Channel.fromPath(params.stat_dbss) 
+        : Channel.empty()
+    ch_stat_annotation = params.stat_annotation 
+        ? Channel.fromPath(params.stat_annotation) 
+        : Channel.empty()
+    ch_human_virus_taxlist = params.human_virus_taxlist 
+        ? Channel.fromPath(params.human_virus_taxlist) 
+        : Channel.empty()
 
     // State directory for run tracking and upload deduplication.
     // Using Channel.fromPath with type:'dir' ensures Nextflow stages/mounts

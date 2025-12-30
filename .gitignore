@@ -32,8 +32,9 @@
 !/bin
 !/bin/*.py
 
-# lib (py_nvd package)
+# lib (py_nvd package and Groovy utilities)
 !/lib
+!/lib/*.groovy
 !/lib/py_nvd
 !/lib/py_nvd/*.py
 !/lib/py_nvd/*.sql

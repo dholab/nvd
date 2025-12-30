@@ -385,7 +385,67 @@ def run(  # noqa: PLR0913, PLR0912, PLR0915, C901
     labkey: bool = typer.Option(
         False,
         "--labkey",
-        help="Enable LabKey integration",
+        help="Enable LabKey integration (requires all labkey-* params to be set)",
+        rich_help_panel=PANEL_LABKEY,
+    ),
+    labkey_server: str | None = typer.Option(
+        None,
+        "--labkey-server",
+        help="LabKey server URL (e.g., 'dholk.primate.wisc.edu')",
+        rich_help_panel=PANEL_LABKEY,
+    ),
+    labkey_project_name: str | None = typer.Option(
+        None,
+        "--labkey-project-name",
+        help="LabKey project name/path (e.g., 'dho/projects/lungfish/InfinitePath')",
+        rich_help_panel=PANEL_LABKEY,
+    ),
+    labkey_webdav: str | None = typer.Option(
+        None,
+        "--labkey-webdav",
+        help="LabKey WebDAV URL for file uploads",
+        rich_help_panel=PANEL_LABKEY,
+    ),
+    labkey_schema: str | None = typer.Option(
+        None,
+        "--labkey-schema",
+        help="LabKey database schema name (e.g., 'lists')",
+        rich_help_panel=PANEL_LABKEY,
+    ),
+    labkey_gottcha_fasta_list: str | None = typer.Option(
+        None,
+        "--labkey-gottcha-fasta-list",
+        help="LabKey list name for GOTTCHA2 FASTA results",
+        rich_help_panel=PANEL_LABKEY,
+    ),
+    labkey_gottcha_full_list: str | None = typer.Option(
+        None,
+        "--labkey-gottcha-full-list",
+        help="LabKey list name for full GOTTCHA2 results",
+        rich_help_panel=PANEL_LABKEY,
+    ),
+    labkey_gottcha_blast_verified_full_list: str | None = typer.Option(
+        None,
+        "--labkey-gottcha-blast-verified-full-list",
+        help="LabKey list name for BLAST-verified GOTTCHA2 results",
+        rich_help_panel=PANEL_LABKEY,
+    ),
+    labkey_blast_meta_hits_list: str | None = typer.Option(
+        None,
+        "--labkey-blast-meta-hits-list",
+        help="LabKey list name for BLAST metagenomic hits",
+        rich_help_panel=PANEL_LABKEY,
+    ),
+    labkey_blast_fasta_list: str | None = typer.Option(
+        None,
+        "--labkey-blast-fasta-list",
+        help="LabKey list name for BLAST FASTA results",
+        rich_help_panel=PANEL_LABKEY,
+    ),
+    labkey_exp_id_guard_list: str | None = typer.Option(
+        None,
+        "--labkey-exp-id-guard-list",
+        help="LabKey list name for experiment ID guard (prevents duplicate uploads)",
         rich_help_panel=PANEL_LABKEY,
     ),
     # -------------------------------------------------------------------------
@@ -563,8 +623,31 @@ def run(  # noqa: PLR0913, PLR0912, PLR0915, C901
         extra_params["sra_human_db"] = human_read_scrub
     elif sra_human_db:
         extra_params["sra_human_db"] = sra_human_db
+    # LabKey integration options
     if labkey:
         extra_params["labkey"] = "true"
+    if labkey_server:
+        extra_params["labkey_server"] = labkey_server
+    if labkey_project_name:
+        extra_params["labkey_project_name"] = labkey_project_name
+    if labkey_webdav:
+        extra_params["labkey_webdav"] = labkey_webdav
+    if labkey_schema:
+        extra_params["labkey_schema"] = labkey_schema
+    if labkey_gottcha_fasta_list:
+        extra_params["labkey_gottcha_fasta_list"] = labkey_gottcha_fasta_list
+    if labkey_gottcha_full_list:
+        extra_params["labkey_gottcha_full_list"] = labkey_gottcha_full_list
+    if labkey_gottcha_blast_verified_full_list:
+        extra_params["labkey_gottcha_blast_verified_full_list"] = (
+            labkey_gottcha_blast_verified_full_list
+        )
+    if labkey_blast_meta_hits_list:
+        extra_params["labkey_blast_meta_hits_list"] = labkey_blast_meta_hits_list
+    if labkey_blast_fasta_list:
+        extra_params["labkey_blast_fasta_list"] = labkey_blast_fasta_list
+    if labkey_exp_id_guard_list:
+        extra_params["labkey_exp_id_guard_list"] = labkey_exp_id_guard_list
     # State directory for run tracking and upload deduplication
     if state_dir:
         extra_params["state_dir"] = state_dir

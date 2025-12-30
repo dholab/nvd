@@ -8,14 +8,16 @@ workflow BUNDLE_GOTTCHA2_FOR_LABKEY {
 
     main:
 
-    //gottcha2_results.view()
-    //ottcha2_extracted_fastas.view()
+    // Fork the extracted fastas channel since it's consumed by two processes.
+    // Queue channels can only be consumed once; .tap() creates a fork.
+    fastas_for_labkey_upload = gottcha2_extracted_fastas
+        .tap { fastas_for_webdav_upload }
 
     LABKEY_UPLOAD_GOTTCHA2_FULL(gottcha2_results)
 
-    LABKEY_UPLOAD_GOTTCHA2_FASTA(gottcha2_extracted_fastas)
+    LABKEY_UPLOAD_GOTTCHA2_FASTA(fastas_for_labkey_upload)
 
-    LABKEY_WEBDAV_UPLOAD_FILES(gottcha2_extracted_fastas)
+    LABKEY_WEBDAV_UPLOAD_FILES(fastas_for_webdav_upload)
 }
 
 process LABKEY_UPLOAD_GOTTCHA2_FULL {

@@ -17,16 +17,28 @@ workflow GOTTCHA2_WORKFLOW {
     ch_sample_fastqs // Queue channel of sample IDs, platforms, and (interleaved) FASTQ files: tuple val(sample_id), val(platform), path(fastq)
 
     main:
-    ch_gottcha2_db = Channel
-        .fromPath("${params.gottcha2_db}{.tax.tsv,.stats,.mmi}")
-        .collect()
-        .map { files ->
-            // Sort or pick files into the right tuple slots
-            def ref_mmi   = files.find { it.name.endsWith(".mmi") }
-            def stats     = files.find { it.name.endsWith(".stats") }
-            def tax_tsv   = files.find { it.name.endsWith(".tax.tsv") }
-            tuple(ref_mmi, stats, tax_tsv)
-        }
+    // Check if GOTTCHA2 workflow should run
+    // Supports: gottcha, all
+    if (params.tools && (params.tools.contains("gottcha") || params.tools.contains("all"))) {
+        // Validate LabKey params required for GOTTCHA2 if LabKey is enabled
+        NvdUtils.validateLabkeyGottcha2(params)
+    }
+
+    // Guard channel declaration with ternary fallback to Channel.empty().
+    // When --tools doesn't include 'gottcha', this param is null.
+    // Empty channel maintains the DAG but results in no-op downstream processes.
+    ch_gottcha2_db = params.gottcha2_db
+        ? Channel
+            .fromPath("${params.gottcha2_db}{.tax.tsv,.stats,.mmi}")
+            .collect()
+            .map { files ->
+                // Sort or pick files into the right tuple slots
+                def ref_mmi   = files.find { it.name.endsWith(".mmi") }
+                def stats     = files.find { it.name.endsWith(".stats") }
+                def tax_tsv   = files.find { it.name.endsWith(".tax.tsv") }
+                tuple(ref_mmi, stats, tax_tsv)
+            }
+        : Channel.empty()
 
     if (params.labkey) {
         VALIDATE_LK_GOTTCHA2()
