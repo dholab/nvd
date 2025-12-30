@@ -304,8 +304,8 @@ def register_processed_sample(
     """
     with connect(state_dir) as conn:
         conn.execute(
-            """INSERT INTO processed_samples 
-               (sample_id, sample_set_id, run_id, processed_at, blast_db_version, 
+            """INSERT INTO processed_samples
+               (sample_id, sample_set_id, run_id, processed_at, blast_db_version,
                 stat_db_version, taxonomy_hash, status)
                VALUES (?, ?, ?, datetime('now'), ?, ?, ?, 'processing')""",
             (
@@ -563,9 +563,7 @@ def get_upload(
             (sample_id, sample_set_id, upload_type, upload_target),
         ).fetchone()
         if row:
-            metadata = (
-                json.loads(row["target_metadata"]) if row["target_metadata"] else None
-            )
+            metadata = json.loads(row["target_metadata"]) if row["target_metadata"] else None
             return Upload(
                 sample_id=row["sample_id"],
                 sample_set_id=row["sample_set_id"],

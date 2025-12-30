@@ -206,3 +206,200 @@ class TestRunCommandHelp:
         result = runner.invoke(app, ["run", "--help"])
         assert result.exit_code == 0
         assert "samplesheet" in result.stdout.lower()
+
+
+class TestSamplesheetCommands:
+    """Verify samplesheet commands work."""
+
+    def test_samplesheet_help(self):
+        """samplesheet --help exits cleanly."""
+        result = runner.invoke(app, ["samplesheet", "--help"])
+        assert result.exit_code == 0
+        assert "generate" in result.stdout.lower()
+        assert "validate" in result.stdout.lower()
+
+    def test_samplesheet_generate_help(self):
+        """samplesheet generate --help shows options."""
+        result = runner.invoke(app, ["samplesheet", "generate", "--help"])
+        assert result.exit_code == 0
+        assert "--from-dir" in result.stdout
+        assert "--from-sra" in result.stdout
+        assert "--platform" in result.stdout
+        assert "--dry-run" in result.stdout
+
+    def test_samplesheet_validate_help(self):
+        """samplesheet validate --help shows usage."""
+        result = runner.invoke(app, ["samplesheet", "validate", "--help"])
+        assert result.exit_code == 0
+
+    def test_samplesheet_generate_requires_input(self):
+        """samplesheet generate fails without --from-dir or --from-sra."""
+        result = runner.invoke(
+            app, ["samplesheet", "generate", "--platform", "illumina"]
+        )
+        assert result.exit_code == 1
+        assert "Must specify" in result.stdout
+
+    def test_samplesheet_generate_dry_run(self, tmp_path):
+        """samplesheet generate --dry-run works with FASTQ directory."""
+        # Create test FASTQ files
+        (tmp_path / "sample1_R1.fastq.gz").touch()
+        (tmp_path / "sample1_R2.fastq.gz").touch()
+
+        result = runner.invoke(
+            app,
+            [
+                "samplesheet",
+                "generate",
+                "--from-dir",
+                str(tmp_path),
+                "--platform",
+                "illumina",
+                "--dry-run",
+            ],
+        )
+        assert result.exit_code == 0
+        assert "sample1" in result.stdout
+        assert "Dry run" in result.stdout
+
+    def test_samplesheet_generate_writes_file(self, tmp_path):
+        """samplesheet generate creates valid CSV file."""
+        # Create test FASTQ files
+        fastq_dir = tmp_path / "fastqs"
+        fastq_dir.mkdir()
+        (fastq_dir / "sample1_R1.fastq.gz").touch()
+        (fastq_dir / "sample1_R2.fastq.gz").touch()
+
+        output_file = tmp_path / "samplesheet.csv"
+
+        result = runner.invoke(
+            app,
+            [
+                "samplesheet",
+                "generate",
+                "--from-dir",
+                str(fastq_dir),
+                "--platform",
+                "illumina",
+                "--output",
+                str(output_file),
+                "--force",
+            ],
+        )
+        assert result.exit_code == 0
+        assert output_file.exists()
+        assert "Wrote samplesheet" in result.stdout
+
+        # Verify CSV content
+        content = output_file.read_text()
+        assert "sample_id" in content
+        assert "sample1" in content
+        assert "illumina" in content
+
+    def test_samplesheet_generate_from_sra(self, tmp_path):
+        """samplesheet generate --from-sra works with accession list."""
+        # Create test accession file
+        accession_file = tmp_path / "accessions.txt"
+        accession_file.write_text("SRR123456\nSRR789012\n")
+
+        result = runner.invoke(
+            app,
+            [
+                "samplesheet",
+                "generate",
+                "--from-sra",
+                str(accession_file),
+                "--platform",
+                "ont",
+                "--dry-run",
+            ],
+        )
+        assert result.exit_code == 0
+        assert "SRR123456" in result.stdout
+        assert "SRR789012" in result.stdout
+
+    def test_samplesheet_validate_valid_file(self, tmp_path):
+        """samplesheet validate passes for valid samplesheet."""
+        # Create valid samplesheet
+        samplesheet = tmp_path / "samples.csv"
+        samplesheet.write_text(
+            "sample_id,srr,platform,fastq1,fastq2\nsample1,SRR123456,illumina,,\n"
+        )
+
+        result = runner.invoke(app, ["samplesheet", "validate", str(samplesheet)])
+        assert result.exit_code == 0
+        assert "valid" in result.stdout.lower()
+
+    def test_samplesheet_validate_invalid_file(self, tmp_path):
+        """samplesheet validate fails for invalid samplesheet."""
+        # Create invalid samplesheet (missing required column)
+        samplesheet = tmp_path / "samples.csv"
+        samplesheet.write_text("sample_id,platform\nsample1,illumina\n")
+
+        result = runner.invoke(app, ["samplesheet", "validate", str(samplesheet)])
+        assert result.exit_code == 1
+        assert "Missing required columns" in result.stdout
+
+    def test_samplesheet_validate_missing_file(self, tmp_path):
+        """samplesheet validate fails for missing file."""
+        result = runner.invoke(
+            app, ["samplesheet", "validate", str(tmp_path / "nonexistent.csv")]
+        )
+        assert result.exit_code == 1
+
+    def test_samplesheet_alias_ss(self):
+        """ss alias works for samplesheet."""
+        result = runner.invoke(app, ["ss", "--help"])
+        assert result.exit_code == 0
+        assert "generate" in result.stdout.lower()
+
+    def test_samplesheet_alias_sheet(self):
+        """sheet alias works for samplesheet."""
+        result = runner.invoke(app, ["sheet", "--help"])
+        assert result.exit_code == 0
+        assert "generate" in result.stdout.lower()
+
+    def test_samplesheet_generate_warns_previously_processed(
+        self, tmp_path, monkeypatch
+    ):
+        """samplesheet generate warns about previously processed samples."""
+        monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
+
+        # Initialize state and register a previous run with sample1
+        from py_nvd.state import (
+            compute_sample_set_id,
+            record_upload,
+            register_processed_sample,
+            register_run,
+        )
+
+        sample_ids = ["sample1", "other_sample"]
+        sample_set_id = compute_sample_set_id(sample_ids)
+        register_run("previous_run", sample_set_id)
+        register_processed_sample("sample1", sample_set_id, "previous_run")
+        record_upload("sample1", sample_set_id, "blast", "labkey", "hash123")
+
+        # Create test FASTQ files including sample1
+        fastq_dir = tmp_path / "fastqs"
+        fastq_dir.mkdir()
+        (fastq_dir / "sample1_R1.fastq.gz").touch()
+        (fastq_dir / "sample1_R2.fastq.gz").touch()
+
+        # State check happens automatically - no flag needed
+        result = runner.invoke(
+            app,
+            [
+                "samplesheet",
+                "generate",
+                "--from-dir",
+                str(fastq_dir),
+                "--platform",
+                "illumina",
+                "--dry-run",
+            ],
+        )
+        assert result.exit_code == 0
+        assert "previously processed" in result.stdout
+        assert "sample1" in result.stdout
+        assert "previous_run" in result.stdout
+        assert "uploaded" in result.stdout

@@ -23,6 +23,7 @@ from py_nvd.cli.commands.config import config_app
 from py_nvd.cli.commands.params import params_app
 from py_nvd.cli.commands.preset import preset_app
 from py_nvd.cli.commands.run import run
+from py_nvd.cli.commands.samplesheet import samplesheet_app
 from py_nvd.cli.commands.state import state_app
 from py_nvd.cli.commands.validate import validate_app
 from py_nvd.cli.commands.version import version
@@ -69,6 +70,11 @@ app.add_typer(config_app, name="cfg", hidden=True)  # Alias
 
 # State commands
 app.add_typer(state_app, name="state")
+
+# Samplesheet commands
+app.add_typer(samplesheet_app, name="samplesheet")
+app.add_typer(samplesheet_app, name="sheet", hidden=True)  # Alias
+app.add_typer(samplesheet_app, name="ss", hidden=True)  # Short alias
 
 # Wrapped command (seasonal easter egg - Dec 15 to Jan 15)
 _today = datetime.now()

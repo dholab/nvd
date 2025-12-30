@@ -4,7 +4,6 @@ import argparse
 
 from labkey.api_wrapper import APIWrapper
 from loguru import logger
-import sys
 
 # Define the expected schema for the BLAST hit lists
 blast_fields = [
@@ -82,7 +81,7 @@ gottcha2_fasta_fields = [
 def main() -> None:
     # Parse command-line arguments
     parser = argparse.ArgumentParser(
-        description="Validate LabKey list schema and permissions"
+        description="Validate LabKey list schema and permissions",
     )
     parser.add_argument("--server", required=True, help="LabKey server URL")
     parser.add_argument(
@@ -91,10 +90,14 @@ def main() -> None:
         help="LabKey container path (e.g., project folder)",
     )
     parser.add_argument(
-        "--list", required=True, help="Name of the LabKey list to validate"
+        "--list",
+        required=True,
+        help="Name of the LabKey list to validate",
     )
     parser.add_argument(
-        "--api_key", required=True, help="API key with insert/delete permissions"
+        "--api_key",
+        required=True,
+        help="API key with insert/delete permissions",
     )
     parser.add_argument(
         "--type",
@@ -239,7 +242,7 @@ def main() -> None:
         print()
         logger.info("1. API Key Issues:")
         logger.info(
-            "   • Check that your nvd2 secret is correctly configured in Nextflow"
+            "   • Check that your nvd2 secret is correctly configured in Nextflow",
         )
         logger.info("   • Verify the API key has INSERT and DELETE permissions")
         logger.info("   • Ensure the API key hasn't expired")
