@@ -13,7 +13,7 @@ Refer to that workflow for more notes.
 
 process VALIDATE_GOTTCHA2_FULL_LIST {
     label 'low'
-    secret 'nvd2'
+    secret 'LABKEY_API_KEY'
 
     output:
     path 'gottcha2_full_validation_report.txt'
@@ -27,7 +27,7 @@ process VALIDATE_GOTTCHA2_FULL_LIST {
         --server '${params.labkey_server}' \
         --container '${params.labkey_project_name}' \
         --list '${params.labkey_gottcha_full_list}' \
-        --api_key \$nvd2 \
+        --api_key \$LABKEY_API_KEY \
         --experiment_id ${params.experiment_id} \
         --type gottcha2_full > gottcha2_full_validation_report.txt 2>&1
     """
@@ -38,7 +38,7 @@ process VALIDATE_GOTTCHA2_FULL_LIST {
 // that the correct different list is passed through.
 process VALIDATE_GOTTCHA2_BLAST_VERIFIED_LIST {
     label 'low'
-    secret 'nvd2'
+    secret 'LABKEY_API_KEY'
 
     output:
     path 'gottcha2_blast_verified_validation_report.txt'
@@ -52,7 +52,7 @@ process VALIDATE_GOTTCHA2_BLAST_VERIFIED_LIST {
         --server '${params.labkey_server}' \
         --container '${params.labkey_project_name}' \
         --list '${params.labkey_gottcha_blast_verified_full_list}' \
-        --api_key \$nvd2 \
+        --api_key \$LABKEY_API_KEY \
         --experiment_id ${params.experiment_id} \
         --type gottcha2_full > gottcha2_blast_verified_validation_report.txt 2>&1
     """
@@ -60,7 +60,7 @@ process VALIDATE_GOTTCHA2_BLAST_VERIFIED_LIST {
 
 process VALIDATE_GOTTCHA2_FASTA_LIST {
     label 'low'
-    secret 'nvd2'
+    secret 'LABKEY_API_KEY'
 
     output:
     path 'gottcha2_fasta_validation_report.txt'
@@ -74,7 +74,7 @@ process VALIDATE_GOTTCHA2_FASTA_LIST {
         --server '${params.labkey_server}' \\
         --container '${params.labkey_project_name}' \\
         --list '${params.labkey_gottcha_fasta_list}' \\
-        --api_key \$nvd2 \\
+        --api_key \$LABKEY_API_KEY \\
         --experiment_id ${params.experiment_id} \\
         --type gottcha2_fasta > gottcha2_fasta_validation_report.txt 2>&1
     """

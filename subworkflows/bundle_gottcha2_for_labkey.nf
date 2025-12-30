@@ -23,7 +23,7 @@ process LABKEY_UPLOAD_GOTTCHA2_FULL {
 
     tag "${sample_id}"
 
-    secret 'nvd2'
+    secret 'LABKEY_API_KEY'
 
     input:
     tuple val(sample_id), path(full_tsv), path(ref_mmi), path(stats), path(tax_tsv)
@@ -39,7 +39,7 @@ process LABKEY_UPLOAD_GOTTCHA2_FULL {
     --experiment '${params.experiment_id}' \
     --labkey-server '${params.labkey_server}' \
     --labkey-project-name '${params.labkey_project_name}' \
-    --labkey-api-key \$nvd2 \
+    --labkey-api-key \$LABKEY_API_KEY \
     --db-version ${params.gottcha2_db_version} \
     --labkey-schema '${params.labkey_schema}' \
     --table-name '${params.labkey_gottcha_full_list}' \
@@ -51,7 +51,7 @@ process LABKEY_UPLOAD_GOTTCHA2_FASTA {
     label 'low'
     tag "${sample_id}"
 
-    secret 'nvd2'
+    secret 'LABKEY_API_KEY'
 
     input:
     tuple val(sample_id), path(fasta), path(full_tsv)
@@ -69,7 +69,7 @@ process LABKEY_UPLOAD_GOTTCHA2_FASTA {
         --experiment_id  ${params.experiment_id} \
         --container ${params.labkey_project_name} \
         --list ${params.labkey_gottcha_fasta_list} \
-        --api_key \$nvd2 \
+        --api_key \$LABKEY_API_KEY \
         --batch_size 10000 \
         --notes "NVD2 upload" \
         --run_id ${params.condor_cluster} \
@@ -81,7 +81,7 @@ process LABKEY_WEBDAV_UPLOAD_FILES {
 
     tag "${sample_id}"
 
-    secret 'nvd2'
+    secret 'LABKEY_API_KEY'
 
     input:
     tuple val(sample_id), path(fasta), path(full_tsv)
@@ -97,13 +97,13 @@ process LABKEY_WEBDAV_UPLOAD_FILES {
 
     # Upload tabular Gottcha2 report
     webdav_CLIent.py \
-        --password \$nvd2 \
+        --password \$LABKEY_API_KEY \
         --server ${params.labkey_webdav} \
         upload ${full_tsv}.gz ${params.experiment_id}/${sample_id}/gottcha2/${full_tsv}.gz
 
     # Upload fasta file
     webdav_CLIent.py \
-        --password \$nvd2 \
+        --password \$LABKEY_API_KEY \
         --server ${params.labkey_webdav} \
         upload ${fasta}.gz ${params.experiment_id}/${sample_id}/gottcha2/${fasta}.gz
     """

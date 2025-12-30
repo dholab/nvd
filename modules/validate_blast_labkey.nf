@@ -2,7 +2,7 @@
 process VALIDATE_LK_EXP_FRESH {
 
     cache false
-    secret 'nvd2'
+    secret 'LABKEY_API_KEY'
     tag "exp_${params.experiment_id}"
     label "low"
 
@@ -22,7 +22,7 @@ process VALIDATE_LK_EXP_FRESH {
         --server ${params.labkey_server} \\
         --container ${params.labkey_project_name} \\
         --guard_list ${params.labkey_exp_id_guard_list} \\
-        --api_key \$nvd2 \\
+        --api_key \$LABKEY_API_KEY \\
         --experiment_id ${params.experiment_id}
     """
 }
@@ -31,7 +31,7 @@ process VALIDATE_LK_EXP_FRESH {
 process REGISTER_LK_EXPERIMENT {
 
     cache false
-    secret 'nvd2'
+    secret 'LABKEY_API_KEY'
     tag "exp_${params.experiment_id}"
     label 'low'
 
@@ -51,7 +51,7 @@ process REGISTER_LK_EXPERIMENT {
         --server ${params.labkey_server} \\
         --container ${params.labkey_project_name} \\
         --guard_list ${params.labkey_exp_id_guard_list} \\
-        --api_key \$nvd2 \\
+        --api_key \$LABKEY_API_KEY \\
         --experiment_id ${params.experiment_id}
     """
 }

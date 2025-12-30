@@ -86,7 +86,7 @@ process WEBDAV_UPLOAD_BLAST {
 
     tag "${sample_id}"
 
-    secret 'nvd2'
+    secret 'LABKEY_API_KEY'
 
     input:
     tuple val(sample_id), path(blast_csv), path(fasta)
@@ -102,13 +102,13 @@ process WEBDAV_UPLOAD_BLAST {
 
     # Upload tabular Gottcha2 report
     webdav_CLIent.py \
-        --password \$nvd2 \
+        --password \$LABKEY_API_KEY \
         --server ${params.labkey_webdav} \
         upload ${blast_csv}.gz ${params.experiment_id}/${sample_id}/nvd/${blast_csv}.gz
 
     # Upload fasta file
     webdav_CLIent.py \
-        --password \$nvd2 \
+        --password \$LABKEY_API_KEY \
         --server ${params.labkey_webdav} \
         upload ${fasta}.gz ${params.experiment_id}/${sample_id}/nvd/${fasta}.gz
     """
@@ -193,7 +193,7 @@ process PREPARE_FASTA_LABKEY {
 process LABKEY_UPLOAD_BLAST {
     label 'low'
 
-    secret 'nvd2'
+    secret 'LABKEY_API_KEY'
 
     input:
     path csv_files        // collected list of all sample CSVs (value channel from .collect())
@@ -217,7 +217,7 @@ process LABKEY_UPLOAD_BLAST {
     ${state_dir_arg} \
     --labkey-server '${params.labkey_server}' \
     --labkey-project-name '${params.labkey_project_name}' \
-    --labkey-api-key \$nvd2 \
+    --labkey-api-key \$LABKEY_API_KEY \
     --labkey-schema '${params.labkey_schema}' \
     --table-name '${params.labkey_blast_meta_hits_list}'
     """
@@ -227,7 +227,7 @@ process LABKEY_UPLOAD_BLAST {
 process LABKEY_UPLOAD_FASTA {
     label 'low'
 
-    secret 'nvd2'
+    secret 'LABKEY_API_KEY'
 
     input:
     path csv_files        // collected list of all sample CSVs (value channel from .collect())
@@ -250,7 +250,7 @@ process LABKEY_UPLOAD_FASTA {
     ${state_dir_arg} \
     --labkey-server '${params.labkey_server}' \
     --labkey-project-name '${params.labkey_project_name}' \
-    --labkey-api-key \$nvd2 \
+    --labkey-api-key \$LABKEY_API_KEY \
     --labkey-schema '${params.labkey_schema}' \
     --table-name '${params.labkey_blast_fasta_list}'
     """

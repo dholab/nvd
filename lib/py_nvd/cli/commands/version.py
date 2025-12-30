@@ -13,6 +13,7 @@ from rich.panel import Panel
 
 from py_nvd import __version__
 from py_nvd.cli.utils import (
+    PIPELINE_ROOT,
     check_command_exists,
     console,
     docker_is_running,
@@ -26,7 +27,7 @@ def version() -> None:  # noqa: PLR0912
             f"[bold cyan]NVD2 CLI[/bold cyan]\n"
             f"Version: {__version__}\n\n"
             f"A user-friendly wrapper for the NVD2 Nextflow pipeline.\n"
-            f"Pipeline: dhoconno/nvd",
+            f"Pipeline: {PIPELINE_ROOT}",
             title="Version Info",
             border_style="cyan",
         ),

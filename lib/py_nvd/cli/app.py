@@ -22,8 +22,10 @@ import typer
 from py_nvd.cli.commands.config import config_app
 from py_nvd.cli.commands.params import params_app
 from py_nvd.cli.commands.preset import preset_app
+from py_nvd.cli.commands.resume import resume
 from py_nvd.cli.commands.run import run
 from py_nvd.cli.commands.samplesheet import samplesheet_app
+from py_nvd.cli.commands.secrets import secrets_app
 from py_nvd.cli.commands.state import state_app
 from py_nvd.cli.commands.validate import validate_app
 from py_nvd.cli.commands.version import version
@@ -50,6 +52,9 @@ app = typer.Typer(
 app.command("run")(run)
 app.command("r", hidden=True)(run)  # Alias
 
+# Resume command
+app.command("resume")(resume)
+
 # Version command
 app.command("version")(version)
 app.command("v", hidden=True)(version)  # Alias
@@ -75,6 +80,9 @@ app.add_typer(state_app, name="state")
 app.add_typer(samplesheet_app, name="samplesheet")
 app.add_typer(samplesheet_app, name="sheet", hidden=True)  # Alias
 app.add_typer(samplesheet_app, name="ss", hidden=True)  # Short alias
+
+# Secrets commands
+app.add_typer(secrets_app, name="secrets")
 
 # Wrapped command (seasonal easter egg - Dec 15 to Jan 15)
 _today = datetime.now()

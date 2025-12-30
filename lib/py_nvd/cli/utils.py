@@ -7,6 +7,7 @@ instance used across all CLI commands.
 
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import subprocess
@@ -23,6 +24,63 @@ from py_nvd.db import DEFAULT_CONFIG_PATH, get_config_path
 
 # Re-export for backward compatibility (prefer get_config_path() for new code)
 DEFAULT_CONFIG = DEFAULT_CONFIG_PATH
+
+# Resume file for `nvd resume` command (stored in launch directory)
+RESUME_FILE = Path(".nfresume")
+
+
+def _find_pipeline_root() -> Path:
+    """
+    Find the NVD pipeline root directory.
+
+    Strategy:
+    1. Walk up from this file's location looking for main.nf
+    2. Verify nextflow.config also exists (sanity check)
+
+    This is more robust than counting parent directories, which breaks
+    if the package structure changes.
+
+    Returns:
+        Path to the pipeline root directory.
+
+    Raises:
+        RuntimeError: If the pipeline root cannot be found.
+    """
+    current = Path(__file__).resolve().parent
+    max_depth = 10  # Safety limit to avoid infinite loops
+
+    for _ in range(max_depth):
+        if (current / "main.nf").exists() and (current / "nextflow.config").exists():
+            return current
+        if current.parent == current:  # Hit filesystem root
+            break
+        current = current.parent
+
+    # This should never happen if installed correctly
+    msg = (
+        "Could not find NVD pipeline root (main.nf not found). "
+        "Ensure the CLI is installed from the cloned repository."
+    )
+    raise RuntimeError(msg)
+
+
+PIPELINE_ROOT = _find_pipeline_root()
+
+
+def get_editor() -> str:
+    """
+    Get the user's preferred text editor.
+
+    Resolution order (following git's convention):
+    1. $VISUAL
+    2. $EDITOR
+    3. vi (POSIX-mandated fallback)
+
+    Returns:
+        The editor command to use.
+    """
+    return os.environ.get("VISUAL") or os.environ.get("EDITOR") or "vi"
+
 
 VALID_TOOLS = [
     "stat_blast",

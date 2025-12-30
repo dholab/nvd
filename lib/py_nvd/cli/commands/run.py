@@ -22,6 +22,8 @@ from py_nvd.cli.utils import (
     PANEL_LABKEY,
     PANEL_PREPROCESSING,
     PANEL_SRA,
+    PIPELINE_ROOT,
+    RESUME_FILE,
     VALID_PROFILES,
     VALID_TOOLS,
     auto_detect_profile,
@@ -49,7 +51,7 @@ def build_nextflow_command(  # noqa: PLR0913
 ) -> list[str]:
     """Construct the nextflow run command."""
 
-    cmd = ["nextflow", "run", "dhoconno/nvd"]
+    cmd = ["nextflow", "run", str(PIPELINE_ROOT)]
 
     # Profile
     cmd.extend(["-profile", profile])
@@ -399,9 +401,12 @@ def run(  # noqa: PLR0913, PLR0912, PLR0915, C901
     """
     Run the NVD2 pipeline.
 
-    This command wraps 'nextflow run dhoconno/nvd' with a simpler interface.
-    Database paths and settings are loaded from ~/.nvd/user.config
-    unless overridden with command-line options or NVD_CONFIG env var.
+    This command wraps 'nextflow run' with a simpler interface, running the
+    pipeline from the local installation. Database paths and settings are
+    loaded from ~/.nvd/user.config unless overridden with command-line
+    options or NVD_CONFIG env var.
+
+    The command is saved to .nfresume for easy resumption with 'nvd resume'.
 
     Examples:
 
@@ -414,8 +419,9 @@ def run(  # noqa: PLR0913, PLR0912, PLR0915, C901
         # Run only GOTTCHA2 workflow
         nvd run -s samples.csv -e exp003 -t gottcha
 
-        # Resume a failed run
+        # Resume a failed run (two ways)
         nvd run -s samples.csv -e exp003 --resume
+        nvd resume  # Uses saved command from .nfresume
 
         # Use a preset (CLI args override preset values)
         nvd run -s samples.csv -e exp004 --preset production
@@ -577,13 +583,22 @@ def run(  # noqa: PLR0913, PLR0912, PLR0915, C901
         **extra_params,
     )
 
+    # Build command string for display and resume file
+    cmd_str = " ".join(cmd)
+
     # Show command
     console.print("\n[bold]Executing command:[/bold]")
-    console.print(f"[dim]{' '.join(cmd)}[/dim]\n")
+    console.print(f"[dim]{cmd_str}[/dim]\n")
 
     if dry_run:
         success("Dry-run mode: command shown above but not executed")
         return
+
+    # Save resume-enabled version for 'nvd resume' command
+    # If the command already has -resume, use as-is; otherwise append it
+    resume_cmd = cmd_str if "-resume" in cmd_str else f"{cmd_str} -resume"
+    RESUME_FILE.write_text(resume_cmd, encoding="utf-8")
+    info(f"Saved resume command to {RESUME_FILE}")
 
     # Execute nextflow
     try:

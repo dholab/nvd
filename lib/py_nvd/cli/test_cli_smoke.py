@@ -403,3 +403,117 @@ class TestSamplesheetCommands:
         assert "sample1" in result.stdout
         assert "previous_run" in result.stdout
         assert "uploaded" in result.stdout
+
+
+class TestSecretsCommands:
+    """Verify secrets commands work (requires nextflow in PATH)."""
+
+    def test_secrets_help(self):
+        """secrets --help exits cleanly."""
+        result = runner.invoke(app, ["secrets", "--help"])
+        assert result.exit_code == 0
+        assert "list" in result.stdout.lower()
+        assert "set" in result.stdout.lower()
+
+    def test_secrets_list_help(self):
+        """secrets list --help shows options."""
+        result = runner.invoke(app, ["secrets", "list", "--help"])
+        assert result.exit_code == 0
+        assert "--show-values" in result.stdout
+
+    def test_secrets_set_help(self):
+        """secrets set --help shows usage."""
+        result = runner.invoke(app, ["secrets", "set", "--help"])
+        assert result.exit_code == 0
+        assert "LABKEY_API_KEY" in result.stdout
+
+    def test_secrets_check_help(self):
+        """secrets check --help shows usage."""
+        result = runner.invoke(app, ["secrets", "check", "--help"])
+        assert result.exit_code == 0
+
+
+class TestResumeCommand:
+    """Verify resume command works."""
+
+    def test_resume_help(self):
+        """resume --help exits cleanly."""
+        result = runner.invoke(app, ["resume", "--help"])
+        assert result.exit_code == 0
+        assert "--interactive" in result.stdout
+        assert "-i" in result.stdout
+        assert ".nfresume" in result.stdout
+
+    def test_resume_no_file(self, tmp_path, monkeypatch):
+        """resume fails gracefully when no .nfresume exists."""
+        monkeypatch.chdir(tmp_path)
+        result = runner.invoke(app, ["resume"])
+        assert result.exit_code == 1
+        assert "No previous run detected" in result.stdout
+        assert ".nfresume not found" in result.stdout
+
+    def test_resume_interactive_no_file(self, tmp_path, monkeypatch):
+        """resume -i fails gracefully when no .nfresume exists."""
+        monkeypatch.chdir(tmp_path)
+        result = runner.invoke(app, ["resume", "-i"])
+        assert result.exit_code == 1
+        assert "No previous run detected" in result.stdout
+
+
+class TestPipelineRoot:
+    """Verify PIPELINE_ROOT detection works correctly."""
+
+    def test_pipeline_root_exists(self):
+        """PIPELINE_ROOT points to a valid pipeline directory."""
+        from py_nvd.cli.utils import PIPELINE_ROOT
+
+        assert PIPELINE_ROOT.exists()
+        assert (PIPELINE_ROOT / "main.nf").exists()
+        assert (PIPELINE_ROOT / "nextflow.config").exists()
+
+    def test_pipeline_root_is_absolute(self):
+        """PIPELINE_ROOT is an absolute path."""
+        from py_nvd.cli.utils import PIPELINE_ROOT
+
+        assert PIPELINE_ROOT.is_absolute()
+
+
+class TestResumeFile:
+    """Verify .nfresume file handling."""
+
+    def test_resume_file_constant(self):
+        """RESUME_FILE is correctly defined."""
+        from py_nvd.cli.utils import RESUME_FILE
+
+        assert RESUME_FILE.name == ".nfresume"
+
+    def test_get_editor_fallback(self, monkeypatch):
+        """get_editor falls back to vi when env vars not set."""
+        from py_nvd.cli.utils import get_editor
+
+        monkeypatch.delenv("VISUAL", raising=False)
+        monkeypatch.delenv("EDITOR", raising=False)
+        assert get_editor() == "vi"
+
+    def test_get_editor_visual(self, monkeypatch):
+        """get_editor prefers $VISUAL."""
+        from py_nvd.cli.utils import get_editor
+
+        monkeypatch.setenv("VISUAL", "code")
+        monkeypatch.setenv("EDITOR", "nano")
+        assert get_editor() == "code"
+
+    def test_get_editor_editor(self, monkeypatch):
+        """get_editor uses $EDITOR when $VISUAL not set."""
+        from py_nvd.cli.utils import get_editor
+
+        monkeypatch.delenv("VISUAL", raising=False)
+        monkeypatch.setenv("EDITOR", "nano")
+        assert get_editor() == "nano"
+
+    def test_editor_min_duration_constant(self):
+        """EDITOR_MIN_DURATION_SECONDS is defined for fast-exit detection."""
+        from py_nvd.cli.commands.resume import EDITOR_MIN_DURATION_SECONDS
+
+        assert EDITOR_MIN_DURATION_SECONDS > 0
+        assert EDITOR_MIN_DURATION_SECONDS <= 2  # Reasonable threshold

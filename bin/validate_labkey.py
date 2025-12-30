@@ -242,7 +242,7 @@ def main() -> None:
         print()
         logger.info("1. API Key Issues:")
         logger.info(
-            "   • Check that your nvd2 secret is correctly configured in Nextflow",
+            "   • Check that LABKEY_API_KEY secret is configured: nvd secrets set",
         )
         logger.info("   • Verify the API key has INSERT and DELETE permissions")
         logger.info("   • Ensure the API key hasn't expired")

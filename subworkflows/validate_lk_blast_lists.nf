@@ -4,7 +4,7 @@ workflow VALIDATE_LK_BLAST {
 }
 
 /*
-This workflow validates your LabKey configuration for nvd2 pipeline.
+This workflow validates your LabKey configuration for the NVD pipeline.
 
 It checks:
 - API key authentication and permissions
@@ -16,7 +16,7 @@ The validation inserts and immediately deletes test records to verify
 full read/write access without affecting real data.
 
 Requirements:
-- nvd2 secret configured with valid LabKey API key
+- LABKEY_API_KEY secret configured with valid LabKey API key
 - API key must have INSERT/DELETE permissions on target lists
 - Network access to LabKey server
 - Correct nextflow.config parameters
@@ -24,7 +24,7 @@ Requirements:
 
 process VALIDATE_BLAST_HITS_LIST {
     label 'low'
-    secret 'nvd2'
+    secret 'LABKEY_API_KEY'
 
     output:
     path 'blast_validation_report.txt'
@@ -38,7 +38,7 @@ process VALIDATE_BLAST_HITS_LIST {
         --server '${params.labkey_server}' \
         --container '${params.labkey_project_name}' \
         --list '${params.labkey_blast_meta_hits_list}' \
-        --api_key \$nvd2 \
+        --api_key \$LABKEY_API_KEY \
         --experiment_id ${params.experiment_id} \
         --type blast > blast_validation_report.txt 2>&1
     """
@@ -46,7 +46,7 @@ process VALIDATE_BLAST_HITS_LIST {
 
 process VALIDATE_BLAST_FASTA_LIST {
     label 'low'
-    secret 'nvd2'
+    secret 'LABKEY_API_KEY'
 
     output:
     path 'fasta_validation_report.txt'
@@ -61,7 +61,7 @@ process VALIDATE_BLAST_FASTA_LIST {
         --server '${params.labkey_server}' \
         --container '${params.labkey_project_name}' \
         --list '${params.labkey_blast_fasta_list}' \
-        --api_key \$nvd2 \
+        --api_key \$LABKEY_API_KEY \
         --experiment_id ${params.experiment_id} \
         --type blast_fasta > fasta_validation_report.txt 2>&1
     """
