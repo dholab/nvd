@@ -156,6 +156,7 @@ def _format_command_for_display(cmd: list[str]) -> str:
 
 def run(  # noqa: PLR0913, PLR0912, PLR0915, C901
     # Complexity/boolean/B008 warnings are acceptable for CLI with many options
+    ctx: typer.Context,
     # -------------------------------------------------------------------------
     # Core Options
     # -------------------------------------------------------------------------
@@ -238,6 +239,16 @@ def run(  # noqa: PLR0913, PLR0912, PLR0915, C901
         "--preset",
         "-P",
         help="Use a registered preset (CLI args override preset values)",
+        rich_help_panel=PANEL_CORE,
+    ),
+    params_file: Path | None = typer.Option(
+        None,
+        "--params-file",
+        "-f",
+        help="JSON/YAML params file (passed to Nextflow, its precedence rules apply)",
+        exists=True,
+        file_okay=True,
+        dir_okay=False,
         rich_help_panel=PANEL_CORE,
     ),
     # -------------------------------------------------------------------------
@@ -534,6 +545,10 @@ def run(  # noqa: PLR0913, PLR0912, PLR0915, C901
         3. User config file (~/.nvd/user.config)
         4. Pipeline defaults (nextflow.config)
 
+    Any arguments after '--' are passed directly to Nextflow. This allows
+    using Nextflow-native options like -params-file, -with-tower, -with-trace,
+    etc. Nextflow handles precedence for -params-file contents.
+
     Examples:
 
         # Simple run with auto-detected profile
@@ -554,6 +569,12 @@ def run(  # noqa: PLR0913, PLR0912, PLR0915, C901
 
         # Use a preset with overrides
         nvd run -s samples.csv -e exp005 --preset production --cutoff-percent 0.01
+
+        # Load additional params from a JSON/YAML file
+        nvd run -s samples.csv --params-file extra-params.json
+
+        # Pass other Nextflow options via '--' separator
+        nvd run -s samples.csv -- -with-tower -with-trace
     """
 
     # =========================================================================
@@ -764,6 +785,14 @@ def run(  # noqa: PLR0913, PLR0912, PLR0915, C901
     # STEP 5: Build and execute command
     # =========================================================================
     cmd = build_nextflow_command(params)
+
+    # Append params file if provided (Nextflow handles precedence)
+    if params_file is not None:
+        cmd.extend(["-params-file", str(params_file)])
+
+    # Append any extra args passed through to Nextflow (e.g., -with-tower)
+    if ctx.args:
+        cmd.extend(ctx.args)
 
     # Format for display (pretty-printed with continuations)
     cmd_display = _format_command_for_display(cmd)

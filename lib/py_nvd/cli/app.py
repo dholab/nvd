@@ -50,9 +50,16 @@ app = typer.Typer(
 # COMMAND REGISTRATION
 # ============================================================================
 
-# Run command
-app.command("run")(run)
-app.command("r", hidden=True)(run)  # Alias
+# Run command - allow extra args to pass through to Nextflow
+app.command(
+    "run",
+    context_settings={"allow_extra_args": True, "allow_interspersed_args": False},
+)(run)
+app.command(
+    "r",
+    hidden=True,
+    context_settings={"allow_extra_args": True, "allow_interspersed_args": False},
+)(run)  # Alias
 
 # Resume command
 app.command("resume")(resume)
