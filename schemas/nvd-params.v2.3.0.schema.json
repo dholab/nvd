@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://raw.githubusercontent.com/dhoconno/nvd/state-management/schemas/nvd-params.latest.schema.json",
+  "$id": "https://raw.githubusercontent.com/dhoconno/nvd/state-management/schemas/nvd-params.v2.3.0.schema.json",
   "title": "NVD Pipeline Parameters",
   "description": "Parameters for the Novel Virus Detection (NVD) metagenomics pipeline. Use with Nextflow's -params-file option or register as a preset with nvd preset register.",
   "type": "object",
@@ -60,8 +60,8 @@
     },
     "tools": {
       "type": "string",
-      "enum": ["stat_blast", "nvd", "stat", "blast", "stast", "gottcha", "all", "clumpify"],
-      "description": "Which analysis tool(s) to run"
+      "pattern": "^(stat_blast|nvd|stat|blast|stast|gottcha|all|clumpify)(,(stat_blast|nvd|stat|blast|stast|gottcha|all|clumpify))*$",
+      "description": "Which analysis tool(s) to run. Valid tools: stat_blast, nvd, stat, blast, gottcha, all, clumpify. For multiple tools, use comma-separated values with no spaces (e.g., 'stat,blast,gottcha'). Use 'all' to run the complete pipeline."
     },
     "experiment_id": {
       "type": "integer",
