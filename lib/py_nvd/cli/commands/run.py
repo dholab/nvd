@@ -110,7 +110,48 @@ def _validate_tools(tools: str) -> None:
 def _validate_profile(profile: str) -> None:
     """Validate profile option."""
     if profile not in VALID_PROFILES:
-        error(f"Invalid profile: {profile}. Must be one of: {', '.join(VALID_PROFILES)}")
+        error(
+            f"Invalid profile: {profile}. Must be one of: {', '.join(VALID_PROFILES)}"
+        )
+
+
+def _format_command_for_display(cmd: list[str]) -> str:
+    """
+    Format a command list for readable display with line continuations.
+
+    Each argument pair (--flag value) gets its own line, indented and
+    with shell continuation characters for copy-paste compatibility.
+    """
+    if len(cmd) < 3:
+        return " ".join(cmd)
+
+    lines = []
+    # First line: nextflow run <pipeline_root>
+    lines.append(f"{cmd[0]} {cmd[1]} {cmd[2]} \\")
+
+    # Process remaining args in pairs where possible
+    i = 3
+    while i < len(cmd):
+        arg = cmd[i]
+
+        # Check if this is a flag that takes a value (not a standalone flag like -resume)
+        if i + 1 < len(cmd) and not cmd[i + 1].startswith("-"):
+            # Flag with value: --param value
+            value = cmd[i + 1]
+            if i + 2 < len(cmd):
+                lines.append(f"    {arg} {value} \\")
+            else:
+                lines.append(f"    {arg} {value}")
+            i += 2
+        else:
+            # Standalone flag like -resume
+            if i + 1 < len(cmd):
+                lines.append(f"    {arg} \\")
+            else:
+                lines.append(f"    {arg}")
+            i += 1
+
+    return "\n".join(lines)
 
 
 def run(  # noqa: PLR0913, PLR0912, PLR0915, C901
@@ -666,7 +707,9 @@ def run(  # noqa: PLR0913, PLR0912, PLR0915, C901
     if labkey_gottcha_full_list is not None:
         params["labkey_gottcha_full_list"] = labkey_gottcha_full_list
     if labkey_gottcha_blast_verified_full_list is not None:
-        params["labkey_gottcha_blast_verified_full_list"] = labkey_gottcha_blast_verified_full_list
+        params["labkey_gottcha_blast_verified_full_list"] = (
+            labkey_gottcha_blast_verified_full_list
+        )
     if labkey_blast_meta_hits_list is not None:
         params["labkey_blast_meta_hits_list"] = labkey_blast_meta_hits_list
     if labkey_blast_fasta_list is not None:
@@ -720,11 +763,16 @@ def run(  # noqa: PLR0913, PLR0912, PLR0915, C901
     # STEP 5: Build and execute command
     # =========================================================================
     cmd = build_nextflow_command(params)
+
+    # Format for display (pretty-printed with continuations)
+    cmd_display = _format_command_for_display(cmd)
+
+    # Single-line version for .nfresume file
     cmd_str = " ".join(cmd)
 
     # Show command
     console.print("\n[bold]Executing command:[/bold]")
-    console.print(f"[dim]{cmd_str}[/dim]\n")
+    console.print(f"[dim]{cmd_display}[/dim]\n")
 
     if dry_run:
         success("Dry-run mode: command shown above but not executed")
