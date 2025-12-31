@@ -1,4 +1,4 @@
-# ruff: noqa: B008, FBT001, FBT002, FBT003
+# ruff: noqa: B008, FBT001, FBT003
 """
 Run command for the NVD CLI.
 
@@ -11,6 +11,7 @@ from __future__ import annotations
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 import typer
 
@@ -36,65 +37,80 @@ from py_nvd.cli.utils import (
     warning,
 )
 
+# Nextflow-native options that use special syntax (not --param value)
+NEXTFLOW_NATIVE_OPTIONS = frozenset({"profile", "config", "work_dir", "resume"})
 
-def build_nextflow_command(  # noqa: PLR0913
-    samplesheet: Path,
-    experiment_id: str,
-    tools: str,
-    profile: str,
-    config: Path | None,
-    results: Path | None = None,
-    resume: bool = False,
-    cleanup: bool = False,
-    work_dir: Path | None = None,
-    **extra_params: str | Path | float | bool,
-) -> list[str]:
-    """Construct the nextflow run command."""
 
+def build_nextflow_command(params: dict[str, Any]) -> list[str]:
+    """
+    Construct the nextflow run command from a unified params dict.
+
+    All parameters flow through this single dict. Special handling:
+    - profile → -profile value
+    - config → -c value
+    - work_dir → -work-dir value
+    - resume → -resume (flag)
+    - All others → --param-name value
+
+    Booleans are converted to "true"/"false" strings for Nextflow.
+    Underscores in param names are converted to hyphens.
+    """
     cmd = ["nextflow", "run", str(PIPELINE_ROOT)]
 
-    # Profile
-    cmd.extend(["-profile", profile])
+    # Handle Nextflow-native options first
+    if params.get("profile"):
+        cmd.extend(["-profile", params["profile"]])
 
-    # Config file
-    if config:
-        cmd.extend(["-c", str(config)])
+    if params.get("config"):
+        cmd.extend(["-c", str(params["config"])])
 
-    # Work directory
-    if work_dir:
-        cmd.extend(["-work-dir", str(work_dir)])
+    if params.get("work_dir"):
+        cmd.extend(["-work-dir", str(params["work_dir"])])
 
-    # Resume flag
-    if resume:
+    if params.get("resume"):
         cmd.append("-resume")
 
-    # Required pipeline parameters
-    cmd.extend(
-        [
-            "--samplesheet",
-            str(samplesheet),
-            "--experiment_id",
-            experiment_id,
-            "--tools",
-            tools,
-        ],
-    )
+    # Handle all pipeline parameters (--param-name value)
+    for key, value in params.items():
+        # Skip Nextflow-native options (already handled above)
+        if key in NEXTFLOW_NATIVE_OPTIONS:
+            continue
 
-    # Optional pipeline parameters
-    if results:
-        cmd.extend(["--results", str(results)])
+        # Skip None values
+        if value is None:
+            continue
 
-    if cleanup:
-        cmd.append("--cleanup")
+        # Convert param name: Python snake_case → Nextflow kebab-case
+        param_name = key.replace("_", "-")
 
-    # Add any extra parameters passed as database overrides
-    for key, value in extra_params.items():
-        if value is not None:
-            # Convert Python arg names (gottcha2_db) to Nextflow params (--gottcha2-db)
-            param_name = key.replace("_", "-")
-            cmd.extend([f"--{param_name}", str(value)])
+        # Convert value to string, handling booleans specially
+        if isinstance(value, bool):
+            str_value = "true" if value else "false"
+        elif isinstance(value, Path):
+            str_value = str(value)
+        else:
+            str_value = str(value)
+
+        cmd.extend([f"--{param_name}", str_value])
 
     return cmd
+
+
+def _validate_tools(tools: str) -> None:
+    """Validate tools option (supports comma-separated values)."""
+    tools_list = [t.strip() for t in tools.split(",")]
+    invalid_tools = [t for t in tools_list if t not in VALID_TOOLS]
+    if invalid_tools:
+        error(
+            f"Invalid tools option(s): {', '.join(invalid_tools)}. "
+            f"Must be one of: {', '.join(VALID_TOOLS)}",
+        )
+
+
+def _validate_profile(profile: str) -> None:
+    """Validate profile option."""
+    if profile not in VALID_PROFILES:
+        error(f"Invalid profile: {profile}. Must be one of: {', '.join(VALID_PROFILES)}")
 
 
 def run(  # noqa: PLR0913, PLR0912, PLR0915, C901
@@ -119,11 +135,14 @@ def run(  # noqa: PLR0913, PLR0912, PLR0915, C901
         help="Unique experiment identifier",
         rich_help_panel=PANEL_CORE,
     ),
-    tools: str = typer.Option(
-        "all",
+    # NOTE: Default is None, not "all" - this lets us detect if user provided it
+    # vs using preset value. Default "all" is applied after preset merge.
+    tools: str | None = typer.Option(
+        None,
         "--tools",
         "-t",
-        help="Tools to run: stat_blast, gottcha, or all",
+        help="Workflow(s) to run: all, stat_blast, gottcha, blast, clumpify. "
+        "Combine with commas, e.g. 'stat_blast,clumpify' (default: all)",
         rich_help_panel=PANEL_CORE,
     ),
     results: Path | None = typer.Option(
@@ -148,15 +167,15 @@ def run(  # noqa: PLR0913, PLR0912, PLR0915, C901
         exists=True,
         rich_help_panel=PANEL_CORE,
     ),
-    resume: bool = typer.Option(
-        False,
-        "--resume",
+    resume: bool | None = typer.Option(
+        None,
+        "--resume/--no-resume",
         help="Resume from checkpoint",
         rich_help_panel=PANEL_CORE,
     ),
-    cleanup: bool = typer.Option(
-        False,
-        "--cleanup",
+    cleanup: bool | None = typer.Option(
+        None,
+        "--cleanup/--no-cleanup",
         help="Clean work directory after success",
         rich_help_panel=PANEL_CORE,
     ),
@@ -170,7 +189,7 @@ def run(  # noqa: PLR0913, PLR0912, PLR0915, C901
     state_dir: Path | None = typer.Option(
         None,
         "--state-dir",
-        help="State directory for run tracking and upload deduplication (default: ~/.nvd/ or NVD_STATE_DIR)",
+        help="State directory for run tracking (default: ~/.nvd/ or NVD_STATE_DIR)",
         rich_help_panel=PANEL_CORE,
     ),
     preset: str | None = typer.Option(
@@ -291,9 +310,9 @@ def run(  # noqa: PLR0913, PLR0912, PLR0915, C901
     # -------------------------------------------------------------------------
     # Read Preprocessing
     # -------------------------------------------------------------------------
-    preprocess: bool = typer.Option(
-        False,
-        "--preprocess",
+    preprocess: bool | None = typer.Option(
+        None,
+        "--preprocess/--no-preprocess",
         help="Enable all preprocessing steps (dedup, trim, scrub, filter)",
         rich_help_panel=PANEL_PREPROCESSING,
     ),
@@ -382,9 +401,9 @@ def run(  # noqa: PLR0913, PLR0912, PLR0915, C901
     # -------------------------------------------------------------------------
     # LabKey Integration
     # -------------------------------------------------------------------------
-    labkey: bool = typer.Option(
-        False,
-        "--labkey",
+    labkey: bool | None = typer.Option(
+        None,
+        "--labkey/--no-labkey",
         help="Enable LabKey integration (requires all labkey-* params to be set)",
         rich_help_panel=PANEL_LABKEY,
     ),
@@ -468,6 +487,12 @@ def run(  # noqa: PLR0913, PLR0912, PLR0915, C901
 
     The command is saved to .nfresume for easy resumption with 'nvd resume'.
 
+    Parameter precedence (highest to lowest):
+        1. CLI arguments (--tools, --blast-db, etc.)
+        2. Preset values (--preset production)
+        3. User config file (~/.nvd/user.config)
+        4. Pipeline defaults (nextflow.config)
+
     Examples:
 
         # Simple run with auto-detected profile
@@ -490,8 +515,10 @@ def run(  # noqa: PLR0913, PLR0912, PLR0915, C901
         nvd run -s samples.csv -e exp005 --preset production --cutoff-percent 0.01
     """
 
-    # Load preset if specified
-    preset_params: dict[str, str | int | float | bool] = {}
+    # =========================================================================
+    # STEP 1: Load preset params (if specified)
+    # =========================================================================
+    preset_params: dict[str, Any] = {}
     if preset:
         from py_nvd import state
 
@@ -514,25 +541,170 @@ def run(  # noqa: PLR0913, PLR0912, PLR0915, C901
         preset_params = preset_obj.params
         info(f"Using preset '{preset}' ({len(preset_params)} parameters)")
 
-    # Validate tools option
-    if tools not in VALID_TOOLS:
-        error(
-            f"Invalid tools option: {tools}. Must be one of: {', '.join(VALID_TOOLS)}",
+    # =========================================================================
+    # STEP 2: Build unified params dict with proper precedence
+    #
+    # Precedence: CLI args > preset params > defaults
+    # We start with preset, then overlay CLI args (if provided, i.e., not None)
+    # =========================================================================
+    params: dict[str, Any] = {}
+
+    # Layer 1: Start with preset params
+    for key, value in preset_params.items():
+        if value is not None:
+            params[key] = value
+
+    # Layer 2: CLI args override (only if actually provided, not None)
+    # Required params (always provided)
+    params["samplesheet"] = samplesheet
+    params["experiment_id"] = experiment_id
+
+    # Optional params - only override if CLI provided a value
+    if tools is not None:
+        params["tools"] = tools
+    if results is not None:
+        params["results"] = results
+    if profile is not None:
+        params["profile"] = profile
+    if config is not None:
+        params["config"] = config
+    if resume is not None:
+        params["resume"] = resume
+    if cleanup is not None:
+        params["cleanup"] = cleanup
+    if work_dir is not None:
+        params["work_dir"] = work_dir
+    if state_dir is not None:
+        params["state_dir"] = state_dir
+
+    # Database paths
+    if gottcha2_db is not None:
+        params["gottcha2_db"] = gottcha2_db
+    if blast_db is not None:
+        params["blast_db"] = blast_db
+    if blast_db_prefix is not None:
+        params["blast_db_prefix"] = blast_db_prefix
+    if stat_index is not None:
+        params["stat_index"] = stat_index
+    if stat_dbss is not None:
+        params["stat_dbss"] = stat_dbss
+    if stat_annotation is not None:
+        params["stat_annotation"] = stat_annotation
+    if human_virus_taxlist is not None:
+        params["human_virus_taxlist"] = human_virus_taxlist
+
+    # Analysis parameters
+    if cutoff_percent is not None:
+        params["cutoff_percent"] = cutoff_percent
+    if tax_stringency is not None:
+        params["tax_stringency"] = tax_stringency
+    if entropy is not None:
+        params["entropy"] = entropy
+    if min_gottcha_reads is not None:
+        params["min_gottcha_reads"] = min_gottcha_reads
+    if max_blast_targets is not None:
+        params["max_blast_targets"] = max_blast_targets
+    if blast_retention_count is not None:
+        params["blast_retention_count"] = blast_retention_count
+    if min_consecutive_bases is not None:
+        params["min_consecutive_bases"] = min_consecutive_bases
+    if qtrim is not None:
+        params["qtrim"] = qtrim
+    if include_children is not None:
+        params["include_children"] = include_children
+    if max_concurrent_downloads is not None:
+        params["max_concurrent_downloads"] = max_concurrent_downloads
+
+    # Preprocessing options
+    if preprocess is not None:
+        params["preprocess"] = preprocess
+    if merge_pairs is not None:
+        params["merge_pairs"] = merge_pairs
+    if dedup is not None:
+        params["dedup"] = dedup
+    if trim_adapters is not None:
+        params["trim_adapters"] = trim_adapters
+    if scrub_host_reads is not None:
+        params["scrub_host_reads"] = scrub_host_reads
+    if hostile_index is not None:
+        params["hostile_index"] = hostile_index
+    if hostile_index_name is not None:
+        params["hostile_index_name"] = hostile_index_name
+    if filter_reads is not None:
+        params["filter_reads"] = filter_reads
+    if min_read_quality_illumina is not None:
+        params["min_read_quality_illumina"] = min_read_quality_illumina
+    if min_read_quality_nanopore is not None:
+        params["min_read_quality_nanopore"] = min_read_quality_nanopore
+    if min_read_length is not None:
+        params["min_read_length"] = min_read_length
+    if max_read_length is not None:
+        params["max_read_length"] = max_read_length
+
+    # SRA options (handle deprecation)
+    if human_read_scrub is not None and sra_human_db is None:
+        warning(
+            "DEPRECATION: --human-read-scrub is deprecated. Please use --sra-human-db instead.",
         )
+        params["sra_human_db"] = human_read_scrub
+    elif sra_human_db is not None:
+        params["sra_human_db"] = sra_human_db
+
+    # LabKey options
+    if labkey is not None:
+        params["labkey"] = labkey
+    if labkey_server is not None:
+        params["labkey_server"] = labkey_server
+    if labkey_project_name is not None:
+        params["labkey_project_name"] = labkey_project_name
+    if labkey_webdav is not None:
+        params["labkey_webdav"] = labkey_webdav
+    if labkey_schema is not None:
+        params["labkey_schema"] = labkey_schema
+    if labkey_gottcha_fasta_list is not None:
+        params["labkey_gottcha_fasta_list"] = labkey_gottcha_fasta_list
+    if labkey_gottcha_full_list is not None:
+        params["labkey_gottcha_full_list"] = labkey_gottcha_full_list
+    if labkey_gottcha_blast_verified_full_list is not None:
+        params["labkey_gottcha_blast_verified_full_list"] = labkey_gottcha_blast_verified_full_list
+    if labkey_blast_meta_hits_list is not None:
+        params["labkey_blast_meta_hits_list"] = labkey_blast_meta_hits_list
+    if labkey_blast_fasta_list is not None:
+        params["labkey_blast_fasta_list"] = labkey_blast_fasta_list
+    if labkey_exp_id_guard_list is not None:
+        params["labkey_exp_id_guard_list"] = labkey_exp_id_guard_list
+
+    # =========================================================================
+    # STEP 3: Apply defaults for required params not yet set
+    # =========================================================================
+    params.setdefault("tools", "all")
+    params.setdefault("resume", False)
+    params.setdefault("cleanup", False)
+
+    # =========================================================================
+    # STEP 4: Auto-detect and validate
+    # =========================================================================
 
     # Auto-detect profile if not specified
-    if not profile:
-        profile = auto_detect_profile()
-        info(f"Auto-detected execution profile: {profile}")
-    elif profile not in VALID_PROFILES:
-        valid_profiles = ", ".join(VALID_PROFILES)
-        error(f"Invalid profile: {profile}. Must be one of: {valid_profiles}")
+    if params.get("profile") is None:
+        params["profile"] = auto_detect_profile()
+        info(f"Auto-detected execution profile: {params['profile']}")
+    else:
+        _validate_profile(params["profile"])
 
-    # Find config file
-    config_file = find_config_file(config)
+    # Validate tools
+    _validate_tools(params["tools"])
+    if params["tools"] != "all":
+        info(f"Using tools: {params['tools']}")
+
+    # Find config file (user.config auto-discovery)
+    config_file = find_config_file(params.get("config"))
     if config_file:
+        params["config"] = config_file
         info(f"Using config: {config_file}")
     else:
+        # Remove config key if no file found (don't pass None to Nextflow)
+        params.pop("config", None)
         warning("No config file found. Using command-line parameters only.")
         warning(f"Consider creating a config file at: {DEFAULT_CONFIG}")
 
@@ -544,129 +716,10 @@ def run(  # noqa: PLR0913, PLR0912, PLR0915, C901
             "  Or visit: https://www.nextflow.io/docs/latest/getstarted.html",
         )
 
-    # Start with preset params (if any), CLI values will override
-    extra_params: dict[str, str | Path | float | bool | int] = {}
-    for key, value in preset_params.items():
-        # Convert booleans to Nextflow string format
-        if isinstance(value, bool):
-            extra_params[key] = "true" if value else "false"
-        else:
-            extra_params[key] = value
-
-    # CLI overrides (these take precedence over preset values)
-    if gottcha2_db:
-        extra_params["gottcha2_db"] = gottcha2_db
-    if blast_db:
-        extra_params["blast_db"] = blast_db
-    if blast_db_prefix:
-        extra_params["blast_db_prefix"] = blast_db_prefix
-    if stat_index:
-        extra_params["stat_index"] = stat_index
-    if stat_dbss:
-        extra_params["stat_dbss"] = stat_dbss
-    if stat_annotation:
-        extra_params["stat_annotation"] = stat_annotation
-    if human_virus_taxlist:
-        extra_params["human_virus_taxlist"] = human_virus_taxlist
-    if cutoff_percent is not None:
-        extra_params["cutoff_percent"] = cutoff_percent
-    if tax_stringency is not None:
-        extra_params["tax_stringency"] = tax_stringency
-    if entropy is not None:
-        extra_params["entropy"] = entropy
-    if min_gottcha_reads is not None:
-        extra_params["min_gottcha_reads"] = min_gottcha_reads
-    if max_blast_targets is not None:
-        extra_params["max_blast_targets"] = max_blast_targets
-    if blast_retention_count is not None:
-        extra_params["blast_retention_count"] = blast_retention_count
-    if min_consecutive_bases is not None:
-        extra_params["min_consecutive_bases"] = min_consecutive_bases
-    if qtrim is not None:
-        extra_params["qtrim"] = qtrim
-    if include_children is not None:
-        extra_params["include_children"] = "true" if include_children else "false"
-    if max_concurrent_downloads is not None:
-        extra_params["max_concurrent_downloads"] = max_concurrent_downloads
-    # Preprocessing options
-    if preprocess:
-        extra_params["preprocess"] = "true"
-    if merge_pairs is not None:
-        extra_params["merge_pairs"] = "true" if merge_pairs else "false"
-    if dedup is not None:
-        extra_params["dedup"] = "true" if dedup else "false"
-    if trim_adapters is not None:
-        extra_params["trim_adapters"] = "true" if trim_adapters else "false"
-    if scrub_host_reads is not None:
-        extra_params["scrub_host_reads"] = "true" if scrub_host_reads else "false"
-    if hostile_index:
-        extra_params["hostile_index"] = hostile_index
-    if hostile_index_name:
-        extra_params["hostile_index_name"] = hostile_index_name
-    if filter_reads is not None:
-        extra_params["filter_reads"] = "true" if filter_reads else "false"
-    if min_read_quality_illumina is not None:
-        extra_params["min_read_quality_illumina"] = min_read_quality_illumina
-    if min_read_quality_nanopore is not None:
-        extra_params["min_read_quality_nanopore"] = min_read_quality_nanopore
-    if min_read_length is not None:
-        extra_params["min_read_length"] = min_read_length
-    if max_read_length is not None:
-        extra_params["max_read_length"] = max_read_length
-    # SRA submission options
-    # Handle deprecated --human-read-scrub option
-    if human_read_scrub and not sra_human_db:
-        warning(
-            "DEPRECATION: --human-read-scrub is deprecated. "
-            "Please use --sra-human-db instead.",
-        )
-        extra_params["sra_human_db"] = human_read_scrub
-    elif sra_human_db:
-        extra_params["sra_human_db"] = sra_human_db
-    # LabKey integration options
-    if labkey:
-        extra_params["labkey"] = "true"
-    if labkey_server:
-        extra_params["labkey_server"] = labkey_server
-    if labkey_project_name:
-        extra_params["labkey_project_name"] = labkey_project_name
-    if labkey_webdav:
-        extra_params["labkey_webdav"] = labkey_webdav
-    if labkey_schema:
-        extra_params["labkey_schema"] = labkey_schema
-    if labkey_gottcha_fasta_list:
-        extra_params["labkey_gottcha_fasta_list"] = labkey_gottcha_fasta_list
-    if labkey_gottcha_full_list:
-        extra_params["labkey_gottcha_full_list"] = labkey_gottcha_full_list
-    if labkey_gottcha_blast_verified_full_list:
-        extra_params["labkey_gottcha_blast_verified_full_list"] = (
-            labkey_gottcha_blast_verified_full_list
-        )
-    if labkey_blast_meta_hits_list:
-        extra_params["labkey_blast_meta_hits_list"] = labkey_blast_meta_hits_list
-    if labkey_blast_fasta_list:
-        extra_params["labkey_blast_fasta_list"] = labkey_blast_fasta_list
-    if labkey_exp_id_guard_list:
-        extra_params["labkey_exp_id_guard_list"] = labkey_exp_id_guard_list
-    # State directory for run tracking and upload deduplication
-    if state_dir:
-        extra_params["state_dir"] = state_dir
-
-    # Build command
-    cmd = build_nextflow_command(
-        samplesheet=samplesheet,
-        experiment_id=experiment_id,
-        tools=tools,
-        profile=profile,
-        config=config_file,
-        results=results,
-        resume=resume,
-        cleanup=cleanup,
-        work_dir=work_dir,
-        **extra_params,
-    )
-
-    # Build command string for display and resume file
+    # =========================================================================
+    # STEP 5: Build and execute command
+    # =========================================================================
+    cmd = build_nextflow_command(params)
     cmd_str = " ".join(cmd)
 
     # Show command
@@ -678,7 +731,6 @@ def run(  # noqa: PLR0913, PLR0912, PLR0915, C901
         return
 
     # Save resume-enabled version for 'nvd resume' command
-    # If the command already has -resume, use as-is; otherwise append it
     resume_cmd = cmd_str if "-resume" in cmd_str else f"{cmd_str} -resume"
     RESUME_FILE.write_text(resume_cmd, encoding="utf-8")
     info(f"Saved resume command to {RESUME_FILE}")
