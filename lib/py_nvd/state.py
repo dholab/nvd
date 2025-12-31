@@ -563,7 +563,9 @@ def get_upload(
             (sample_id, sample_set_id, upload_type, upload_target),
         ).fetchone()
         if row:
-            metadata = json.loads(row["target_metadata"]) if row["target_metadata"] else None
+            metadata = (
+                json.loads(row["target_metadata"]) if row["target_metadata"] else None
+            )
             return Upload(
                 sample_id=row["sample_id"],
                 sample_set_id=row["sample_set_id"],

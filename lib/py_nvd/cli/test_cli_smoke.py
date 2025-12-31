@@ -802,6 +802,646 @@ class TestHitsCommands:
         assert "hit_key" in content
         assert hit.hit_key in content
 
+    def test_hits_stats_help(self):
+        """hits stats --help shows options."""
+        result = runner.invoke(app, ["hits", "stats", "--help"])
+        assert result.exit_code == 0
+        assert "--json" in result.stdout
+        assert "--top" in result.stdout
+
+    def test_hits_stats_empty_database(self, tmp_path, monkeypatch):
+        """hits stats handles empty database gracefully."""
+        monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
+        runner.invoke(app, ["state", "init"])
+        result = runner.invoke(app, ["hits", "stats"])
+        assert result.exit_code == 0
+        assert "No hits in database" in result.stdout
+
+    def test_hits_stats_empty_database_json(self, tmp_path, monkeypatch):
+        """hits stats --json handles empty database."""
+        monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
+        runner.invoke(app, ["state", "init"])
+        result = runner.invoke(app, ["hits", "stats", "--json"])
+        assert result.exit_code == 0
+        import json
+
+        data = json.loads(result.stdout)
+        assert data["total_hits"] == 0
+        assert data["top_recurring"] == []
+
+    def test_hits_stats_with_data(self, tmp_path, monkeypatch):
+        """hits stats shows statistics for hits."""
+        monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
+        runner.invoke(app, ["state", "init"])
+
+        from py_nvd.hits import record_hit_observation, register_hit
+
+        hit, _ = register_hit("ACGTACGTACGT", "2024-01-01", tmp_path)
+        record_hit_observation(
+            hit.hit_key,
+            "set_001",
+            "sample_a",
+            "2024-01-01",
+            state_dir=tmp_path,
+        )
+
+        result = runner.invoke(app, ["hits", "stats"])
+        assert result.exit_code == 0
+        assert "Total unique hits:" in result.stdout
+        assert "1" in result.stdout
+
+    def test_hits_stats_json_with_data(self, tmp_path, monkeypatch):
+        """hits stats --json outputs valid JSON with data."""
+        monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
+        runner.invoke(app, ["state", "init"])
+
+        from py_nvd.hits import record_hit_observation, register_hit
+
+        hit, _ = register_hit("ACGTACGTACGT", "2024-01-01", tmp_path)
+        record_hit_observation(
+            hit.hit_key,
+            "set_001",
+            "sample_a",
+            "2024-01-01",
+            state_dir=tmp_path,
+        )
+
+        result = runner.invoke(app, ["hits", "stats", "--json"])
+        assert result.exit_code == 0
+        import json
+
+        data = json.loads(result.stdout)
+        assert data["total_hits"] == 1
+        assert data["total_observations"] == 1
+        assert data["unique_samples"] == 1
+
+    def test_hits_stats_top_recurring(self, tmp_path, monkeypatch):
+        """hits stats shows recurring hits."""
+        monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
+        runner.invoke(app, ["state", "init"])
+
+        from py_nvd.hits import record_hit_observation, register_hit
+
+        hit, _ = register_hit("ACGTACGTACGT", "2024-01-01", tmp_path)
+        # Same hit in two samples
+        record_hit_observation(
+            hit.hit_key,
+            "set_001",
+            "sample_a",
+            "2024-01-01",
+            state_dir=tmp_path,
+        )
+        record_hit_observation(
+            hit.hit_key,
+            "set_001",
+            "sample_b",
+            "2024-01-01",
+            state_dir=tmp_path,
+        )
+
+        result = runner.invoke(app, ["hits", "stats"])
+        assert result.exit_code == 0
+        assert hit.hit_key[:16] in result.stdout  # Truncated key shown
+
+    def test_hits_stats_no_recurring(self, tmp_path, monkeypatch):
+        """hits stats shows message when no recurring hits."""
+        monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
+        runner.invoke(app, ["state", "init"])
+
+        from py_nvd.hits import record_hit_observation, register_hit
+
+        hit, _ = register_hit("ACGTACGTACGT", "2024-01-01", tmp_path)
+        # Only one sample
+        record_hit_observation(
+            hit.hit_key,
+            "set_001",
+            "sample_a",
+            "2024-01-01",
+            state_dir=tmp_path,
+        )
+
+        result = runner.invoke(app, ["hits", "stats"])
+        assert result.exit_code == 0
+        assert "No recurring hits found" in result.stdout
+
+    def test_hits_lookup_help(self):
+        """hits lookup --help shows options."""
+        result = runner.invoke(app, ["hits", "lookup", "--help"])
+        assert result.exit_code == 0
+        assert "--json" in result.stdout
+        assert "QUERY" in result.stdout
+
+    def test_hits_lookup_not_found(self, tmp_path, monkeypatch):
+        """hits lookup shows message when not found."""
+        monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
+        runner.invoke(app, ["state", "init"])
+
+        result = runner.invoke(app, ["hits", "lookup", "ACGTACGT"])
+        assert result.exit_code == 0
+        assert "not found" in result.stdout.lower()
+
+    def test_hits_lookup_not_found_json(self, tmp_path, monkeypatch):
+        """hits lookup --json shows found=false when not found."""
+        monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
+        runner.invoke(app, ["state", "init"])
+
+        result = runner.invoke(app, ["hits", "lookup", "ACGTACGT", "--json"])
+        assert result.exit_code == 0
+        import json
+
+        data = json.loads(result.stdout)
+        assert data["found"] is False
+
+    def test_hits_lookup_by_sequence(self, tmp_path, monkeypatch):
+        """hits lookup finds hit by sequence."""
+        monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
+        runner.invoke(app, ["state", "init"])
+
+        from py_nvd.hits import record_hit_observation, register_hit
+
+        seq = "ACGTACGTACGT"
+        hit, _ = register_hit(seq, "2024-01-01", tmp_path)
+        record_hit_observation(
+            hit.hit_key,
+            "set_001",
+            "sample_a",
+            "2024-01-01",
+            state_dir=tmp_path,
+        )
+
+        result = runner.invoke(app, ["hits", "lookup", seq])
+        assert result.exit_code == 0
+        assert "Hit found" in result.stdout
+        assert hit.hit_key in result.stdout
+
+    def test_hits_lookup_by_key(self, tmp_path, monkeypatch):
+        """hits lookup finds hit by key."""
+        monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
+        runner.invoke(app, ["state", "init"])
+
+        from py_nvd.hits import record_hit_observation, register_hit
+
+        hit, _ = register_hit("ACGTACGTACGT", "2024-01-01", tmp_path)
+        record_hit_observation(
+            hit.hit_key,
+            "set_001",
+            "sample_a",
+            "2024-01-01",
+            state_dir=tmp_path,
+        )
+
+        result = runner.invoke(app, ["hits", "lookup", hit.hit_key])
+        assert result.exit_code == 0
+        assert "Hit found" in result.stdout
+
+    def test_hits_lookup_json(self, tmp_path, monkeypatch):
+        """hits lookup --json outputs valid JSON."""
+        monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
+        runner.invoke(app, ["state", "init"])
+
+        from py_nvd.hits import record_hit_observation, register_hit
+
+        hit, _ = register_hit("ACGTACGTACGT", "2024-01-01", tmp_path)
+        record_hit_observation(
+            hit.hit_key,
+            "set_001",
+            "sample_a",
+            "2024-01-01",
+            state_dir=tmp_path,
+        )
+
+        result = runner.invoke(app, ["hits", "lookup", hit.hit_key, "--json"])
+        assert result.exit_code == 0
+        import json
+
+        data = json.loads(result.stdout)
+        assert data["found"] is True
+        assert data["hit"]["hit_key"] == hit.hit_key
+        assert len(data["observations"]) == 1
+
+    def test_hits_lookup_shows_observations(self, tmp_path, monkeypatch):
+        """hits lookup shows all observations."""
+        monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
+        runner.invoke(app, ["state", "init"])
+
+        from py_nvd.hits import record_hit_observation, register_hit
+
+        hit, _ = register_hit("ACGTACGTACGT", "2024-01-01", tmp_path)
+        record_hit_observation(
+            hit.hit_key,
+            "set_001",
+            "sample_a",
+            "2024-01-01",
+            state_dir=tmp_path,
+        )
+        record_hit_observation(
+            hit.hit_key,
+            "set_001",
+            "sample_b",
+            "2024-01-02",
+            state_dir=tmp_path,
+        )
+
+        result = runner.invoke(app, ["hits", "lookup", hit.hit_key])
+        assert result.exit_code == 0
+        assert "sample_a" in result.stdout
+        assert "sample_b" in result.stdout
+        assert "2 total" in result.stdout
+
+    def test_hits_trace_help(self):
+        """hits trace --help shows options."""
+        result = runner.invoke(app, ["hits", "trace", "--help"])
+        assert result.exit_code == 0
+        assert "--json" in result.stdout
+        assert "HIT_KEY" in result.stdout
+
+    def test_hits_trace_invalid_key(self, tmp_path, monkeypatch):
+        """hits trace rejects invalid key format."""
+        monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
+        runner.invoke(app, ["state", "init"])
+
+        result = runner.invoke(app, ["hits", "trace", "not-a-valid-key"])
+        assert result.exit_code == 1
+        assert "Invalid hit key" in result.stdout
+
+    def test_hits_trace_not_found(self, tmp_path, monkeypatch):
+        """hits trace shows message when not found."""
+        monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
+        runner.invoke(app, ["state", "init"])
+
+        # Valid format but doesn't exist
+        fake_key = "a" * 32
+        result = runner.invoke(app, ["hits", "trace", fake_key])
+        assert result.exit_code == 0
+        assert "not found" in result.stdout.lower()
+
+    def test_hits_trace_not_found_json(self, tmp_path, monkeypatch):
+        """hits trace --json shows found=false when not found."""
+        monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
+        runner.invoke(app, ["state", "init"])
+
+        fake_key = "b" * 32
+        result = runner.invoke(app, ["hits", "trace", fake_key, "--json"])
+        assert result.exit_code == 0
+        import json
+
+        data = json.loads(result.stdout)
+        assert data["found"] is False
+
+    def test_hits_trace_shows_sequence(self, tmp_path, monkeypatch):
+        """hits trace shows full sequence."""
+        monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
+        runner.invoke(app, ["state", "init"])
+
+        from py_nvd.hits import record_hit_observation, register_hit
+
+        seq = "ACGTACGTACGT"
+        hit, _ = register_hit(seq, "2024-01-01", tmp_path)
+        record_hit_observation(
+            hit.hit_key,
+            "set_001",
+            "sample_a",
+            "2024-01-01",
+            state_dir=tmp_path,
+        )
+
+        result = runner.invoke(app, ["hits", "trace", hit.hit_key])
+        assert result.exit_code == 0
+        assert "Hit found" in result.stdout
+        assert "Sequence:" in result.stdout
+        assert seq in result.stdout
+
+    def test_hits_trace_json_includes_sequence(self, tmp_path, monkeypatch):
+        """hits trace --json includes full sequence."""
+        monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
+        runner.invoke(app, ["state", "init"])
+
+        from py_nvd.hits import record_hit_observation, register_hit
+
+        seq = "ACGTACGTACGT"
+        hit, _ = register_hit(seq, "2024-01-01", tmp_path)
+        record_hit_observation(
+            hit.hit_key,
+            "set_001",
+            "sample_a",
+            "2024-01-01",
+            state_dir=tmp_path,
+        )
+
+        result = runner.invoke(app, ["hits", "trace", hit.hit_key, "--json"])
+        assert result.exit_code == 0
+        import json
+
+        data = json.loads(result.stdout)
+        assert data["found"] is True
+        assert data["sequence"] == seq
+        assert "sequence_compressed" not in data["hit"]
+
+    def test_hits_trace_shows_observations(self, tmp_path, monkeypatch):
+        """hits trace shows all observations."""
+        monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
+        runner.invoke(app, ["state", "init"])
+
+        from py_nvd.hits import record_hit_observation, register_hit
+
+        hit, _ = register_hit("ACGTACGTACGT", "2024-01-01", tmp_path)
+        record_hit_observation(
+            hit.hit_key,
+            "set_001",
+            "sample_a",
+            "2024-01-01",
+            state_dir=tmp_path,
+        )
+        record_hit_observation(
+            hit.hit_key,
+            "set_001",
+            "sample_b",
+            "2024-01-02",
+            state_dir=tmp_path,
+        )
+
+        result = runner.invoke(app, ["hits", "trace", hit.hit_key])
+        assert result.exit_code == 0
+        assert "sample_a" in result.stdout
+        assert "sample_b" in result.stdout
+        assert "2 total" in result.stdout
+
+    def test_hits_timeline_help(self):
+        """hits timeline --help shows options."""
+        result = runner.invoke(app, ["hits", "timeline", "--help"])
+        assert result.exit_code == 0
+        assert "--granularity" in result.stdout
+        assert "--json" in result.stdout
+
+    def test_hits_timeline_empty(self, tmp_path, monkeypatch):
+        """hits timeline handles empty database."""
+        monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
+        runner.invoke(app, ["state", "init"])
+
+        result = runner.invoke(app, ["hits", "timeline"])
+        assert result.exit_code == 0
+        assert "No hits in database" in result.stdout
+
+    def test_hits_timeline_invalid_granularity(self, tmp_path, monkeypatch):
+        """hits timeline rejects invalid granularity."""
+        monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
+        runner.invoke(app, ["state", "init"])
+
+        result = runner.invoke(app, ["hits", "timeline", "--granularity", "hourly"])
+        assert result.exit_code == 1
+        assert "Invalid granularity" in result.stdout
+
+    def test_hits_timeline_shows_histogram(self, tmp_path, monkeypatch):
+        """hits timeline shows ASCII histogram."""
+        monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
+        runner.invoke(app, ["state", "init"])
+
+        from py_nvd.hits import record_hit_observation, register_hit
+
+        hit, _ = register_hit("ACGTACGTACGT", "2024-01-15", tmp_path)
+        record_hit_observation(
+            hit.hit_key,
+            "set_001",
+            "sample_a",
+            "2024-01-15",
+            state_dir=tmp_path,
+        )
+
+        result = runner.invoke(app, ["hits", "timeline"])
+        assert result.exit_code == 0
+        assert "Discovery Timeline" in result.stdout
+        assert "2024-01" in result.stdout
+        assert "█" in result.stdout
+        assert "1 unique hits discovered" in result.stdout
+
+    def test_hits_timeline_fills_gaps(self, tmp_path, monkeypatch):
+        """hits timeline fills gaps between periods."""
+        monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
+        runner.invoke(app, ["state", "init"])
+
+        from py_nvd.hits import record_hit_observation, register_hit
+
+        # Hit in January
+        hit1, _ = register_hit("ACGTACGTACGT", "2024-01-15", tmp_path)
+        record_hit_observation(
+            hit1.hit_key,
+            "set_001",
+            "sample_a",
+            "2024-01-15",
+            state_dir=tmp_path,
+        )
+        # Hit in March (skip February)
+        hit2, _ = register_hit("GGGGCCCCAAAA", "2024-03-15", tmp_path)
+        record_hit_observation(
+            hit2.hit_key,
+            "set_001",
+            "sample_b",
+            "2024-03-15",
+            state_dir=tmp_path,
+        )
+
+        result = runner.invoke(app, ["hits", "timeline"])
+        assert result.exit_code == 0
+        # All three months should appear
+        assert "2024-01" in result.stdout
+        assert "2024-02" in result.stdout
+        assert "2024-03" in result.stdout
+        assert "2 unique hits discovered" in result.stdout
+
+    def test_hits_timeline_json(self, tmp_path, monkeypatch):
+        """hits timeline --json outputs valid JSON."""
+        monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
+        runner.invoke(app, ["state", "init"])
+
+        from py_nvd.hits import record_hit_observation, register_hit
+
+        hit, _ = register_hit("ACGTACGTACGT", "2024-01-15", tmp_path)
+        record_hit_observation(
+            hit.hit_key,
+            "set_001",
+            "sample_a",
+            "2024-01-15",
+            state_dir=tmp_path,
+        )
+
+        result = runner.invoke(app, ["hits", "timeline", "--json"])
+        assert result.exit_code == 0
+        import json
+
+        data = json.loads(result.stdout)
+        assert isinstance(data, list)
+        assert len(data) == 1
+        assert data[0]["period"] == "2024-01"
+        assert data[0]["new_hits"] == 1
+
+    def test_hits_timeline_json_no_gap_fill(self, tmp_path, monkeypatch):
+        """hits timeline --json does not fill gaps (sparse data)."""
+        monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
+        runner.invoke(app, ["state", "init"])
+
+        from py_nvd.hits import record_hit_observation, register_hit
+
+        # Hit in January and March (skip February)
+        hit1, _ = register_hit("ACGTACGTACGT", "2024-01-15", tmp_path)
+        record_hit_observation(
+            hit1.hit_key,
+            "set_001",
+            "sample_a",
+            "2024-01-15",
+            state_dir=tmp_path,
+        )
+        hit2, _ = register_hit("GGGGCCCCAAAA", "2024-03-15", tmp_path)
+        record_hit_observation(
+            hit2.hit_key,
+            "set_001",
+            "sample_b",
+            "2024-03-15",
+            state_dir=tmp_path,
+        )
+
+        result = runner.invoke(app, ["hits", "timeline", "--json"])
+        assert result.exit_code == 0
+        import json
+
+        data = json.loads(result.stdout)
+        # JSON output should be sparse (no February)
+        assert len(data) == 2
+        periods = [d["period"] for d in data]
+        assert "2024-01" in periods
+        assert "2024-02" not in periods
+        assert "2024-03" in periods
+
+    def test_hits_recur_help(self):
+        """hits recur --help shows options."""
+        result = runner.invoke(app, ["hits", "recur", "--help"])
+        assert result.exit_code == 0
+        assert "--min-samples" in result.stdout
+        assert "--min-runs" in result.stdout
+        assert "--limit" in result.stdout
+        assert "--json" in result.stdout
+
+    def test_hits_recur_empty(self, tmp_path, monkeypatch):
+        """hits recur handles empty database."""
+        monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
+        runner.invoke(app, ["state", "init"])
+
+        result = runner.invoke(app, ["hits", "recur"])
+        assert result.exit_code == 0
+        assert "No recurring hits found" in result.stdout
+
+    def test_hits_recur_no_recurring(self, tmp_path, monkeypatch):
+        """hits recur shows message when no hits recur."""
+        monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
+        runner.invoke(app, ["state", "init"])
+
+        from py_nvd.hits import record_hit_observation, register_hit
+
+        hit, _ = register_hit("ACGTACGTACGT", "2024-01-01", tmp_path)
+        record_hit_observation(
+            hit.hit_key,
+            "set_001",
+            "sample_a",
+            "2024-01-01",
+            state_dir=tmp_path,
+        )
+
+        result = runner.invoke(app, ["hits", "recur"])
+        assert result.exit_code == 0
+        assert "No recurring hits found" in result.stdout
+
+    def test_hits_recur_finds_recurring(self, tmp_path, monkeypatch):
+        """hits recur finds hits in multiple samples."""
+        monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
+        runner.invoke(app, ["state", "init"])
+
+        from py_nvd.hits import record_hit_observation, register_hit
+
+        hit, _ = register_hit("ACGTACGTACGT", "2024-01-01", tmp_path)
+        record_hit_observation(
+            hit.hit_key,
+            "set_001",
+            "sample_a",
+            "2024-01-01",
+            state_dir=tmp_path,
+        )
+        record_hit_observation(
+            hit.hit_key,
+            "set_001",
+            "sample_b",
+            "2024-01-01",
+            state_dir=tmp_path,
+        )
+
+        result = runner.invoke(app, ["hits", "recur"])
+        assert result.exit_code == 0
+        assert "1 recurring hit" in result.stdout
+
+    def test_hits_recur_json(self, tmp_path, monkeypatch):
+        """hits recur --json outputs valid JSON."""
+        monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
+        runner.invoke(app, ["state", "init"])
+
+        from py_nvd.hits import record_hit_observation, register_hit
+
+        hit, _ = register_hit("ACGTACGTACGT", "2024-01-01", tmp_path)
+        record_hit_observation(
+            hit.hit_key,
+            "set_001",
+            "sample_a",
+            "2024-01-01",
+            state_dir=tmp_path,
+        )
+        record_hit_observation(
+            hit.hit_key,
+            "set_001",
+            "sample_b",
+            "2024-01-01",
+            state_dir=tmp_path,
+        )
+
+        result = runner.invoke(app, ["hits", "recur", "--json"])
+        assert result.exit_code == 0
+        import json
+
+        data = json.loads(result.stdout)
+        assert len(data) == 1
+        assert data[0]["hit_key"] == hit.hit_key
+        assert data[0]["sample_count"] == 2
+
+    def test_hits_recur_min_samples_filter(self, tmp_path, monkeypatch):
+        """hits recur --min-samples filters correctly."""
+        monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
+        runner.invoke(app, ["state", "init"])
+
+        from py_nvd.hits import record_hit_observation, register_hit
+
+        hit, _ = register_hit("ACGTACGTACGT", "2024-01-01", tmp_path)
+        # Only 2 samples
+        record_hit_observation(
+            hit.hit_key,
+            "set_001",
+            "sample_a",
+            "2024-01-01",
+            state_dir=tmp_path,
+        )
+        record_hit_observation(
+            hit.hit_key,
+            "set_001",
+            "sample_b",
+            "2024-01-01",
+            state_dir=tmp_path,
+        )
+
+        # Should find with min-samples=2
+        result = runner.invoke(app, ["hits", "recur", "--min-samples", "2"])
+        assert result.exit_code == 0
+        assert "1 recurring hit" in result.stdout
+
+        # Should not find with min-samples=3
+        result = runner.invoke(app, ["hits", "recur", "--min-samples", "3"])
+        assert result.exit_code == 0
+        assert "No recurring hits found" in result.stdout
+
 
 class TestResumeFile:
     """Verify .nfresume file handling."""

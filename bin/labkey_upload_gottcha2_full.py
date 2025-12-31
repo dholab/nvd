@@ -215,7 +215,9 @@ def main():
 
     log_entries.append("=" * 80)
     log_entries.append(
-        "GOTTCHA2 UPLOAD COMPLETE" if upload_enabled else "GOTTCHA2 SIMULATION COMPLETE",
+        "GOTTCHA2 UPLOAD COMPLETE"
+        if upload_enabled
+        else "GOTTCHA2 SIMULATION COMPLETE",
     )
 
     # Save log

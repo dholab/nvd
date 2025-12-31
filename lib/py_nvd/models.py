@@ -144,3 +144,58 @@ class HitObservation:
     sample_id: str  # Source sample
     run_date: str  # ISO8601
     contig_id: str | None = None  # Original SPAdes contig ID (for traceability)
+
+
+@dataclass(frozen=True)
+class HitStats:
+    """
+    Summary statistics for the hits collection.
+
+    Provides aggregate metrics for dashboard displays and health checks.
+    All fields are None when the database is empty.
+    """
+
+    total_hits: int
+    total_observations: int
+    unique_samples: int
+    unique_runs: int
+    length_min: int | None
+    length_max: int | None
+    length_median: float | None
+    gc_min: float | None
+    gc_max: float | None
+    gc_median: float | None
+    date_first: str | None  # ISO8601, earliest first_seen_date
+    date_last: str | None  # ISO8601, latest first_seen_date
+
+
+@dataclass(frozen=True)
+class RecurringHit:
+    """
+    A hit that appears in multiple samples or runs.
+
+    Used for identifying sequences that recur across the dataset,
+    which may indicate persistent infections, contamination, or
+    lab reagent artifacts.
+    """
+
+    hit_key: str
+    sequence_length: int
+    gc_content: float
+    first_seen_date: str  # ISO8601
+    last_seen_date: str  # ISO8601, most recent observation
+    sample_count: int  # Number of distinct samples
+    run_count: int  # Number of distinct runs (sample_set_ids)
+    observation_count: int  # Total observations
+
+
+@dataclass(frozen=True)
+class TimelineBucket:
+    """
+    Count of new hits discovered in a time period.
+
+    Used for visualizing discovery rate over time (e.g., ASCII histograms).
+    """
+
+    period: str  # e.g., "2024-01" for month, "2024-W05" for week
+    new_hits: int

@@ -24,11 +24,15 @@ from py_nvd.hits import (
     decompress_sequence,
     delete_observations_for_sample_set,
     delete_orphaned_hits,
+    get_discovery_timeline,
     get_hit,
     get_hit_sequence,
+    get_hit_stats,
+    get_recurring_hits,
     list_hit_observations,
     list_hits,
     list_hits_with_observations,
+    lookup_hit,
     prune_hits_for_sample_set,
     record_hit_observation,
     register_hit,
@@ -944,3 +948,541 @@ class TestPruneHitsForSampleSet:
         assert hits_deleted == 1  # Only hit2 becomes orphaned
         assert count_hit_observations(temp_state_dir) == 1
         assert count_hits(temp_state_dir) == 1
+
+
+# =============================================================================
+# Statistics / Aggregation Tests
+# =============================================================================
+
+
+class TestGetHitStats:
+    """Tests for get_hit_stats()."""
+
+    @pytest.fixture
+    def temp_state_dir(self):
+        """Create a temporary directory for state database."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            yield Path(tmpdir)
+
+    def test_empty_database(self, temp_state_dir):
+        """Empty database returns zero counts and None for distributions."""
+        stats = get_hit_stats(temp_state_dir)
+
+        assert stats.total_hits == 0
+        assert stats.total_observations == 0
+        assert stats.unique_samples == 0
+        assert stats.unique_runs == 0
+        assert stats.length_min is None
+        assert stats.length_max is None
+        assert stats.length_median is None
+        assert stats.gc_min is None
+        assert stats.gc_max is None
+        assert stats.gc_median is None
+        assert stats.date_first is None
+        assert stats.date_last is None
+
+    def test_single_hit_no_observations(self, temp_state_dir):
+        """Single hit with no observations."""
+        register_hit("ACGTACGT", "2024-01-15", temp_state_dir)
+
+        stats = get_hit_stats(temp_state_dir)
+
+        assert stats.total_hits == 1
+        assert stats.total_observations == 0
+        assert stats.unique_samples == 0
+        assert stats.unique_runs == 0
+        assert stats.length_min == 8
+        assert stats.length_max == 8
+        assert stats.length_median == 8.0
+        assert stats.gc_min == 0.5
+        assert stats.gc_max == 0.5
+        assert stats.gc_median == 0.5
+        assert stats.date_first == "2024-01-15"
+        assert stats.date_last == "2024-01-15"
+
+    def test_single_hit_with_observations(self, temp_state_dir):
+        """Single hit with observations in multiple samples."""
+        hit, _ = register_hit("ACGTACGT", "2024-01-15", temp_state_dir)
+        record_hit_observation(
+            hit.hit_key, "run_001", "sample_a", "2024-01-15", state_dir=temp_state_dir
+        )
+        record_hit_observation(
+            hit.hit_key, "run_001", "sample_b", "2024-01-15", state_dir=temp_state_dir
+        )
+
+        stats = get_hit_stats(temp_state_dir)
+
+        assert stats.total_hits == 1
+        assert stats.total_observations == 2
+        assert stats.unique_samples == 2
+        assert stats.unique_runs == 1
+
+    def test_multiple_hits_length_distribution(self, temp_state_dir):
+        """Multiple hits with varying lengths."""
+        # Lengths: 8, 12, 16 -> median = 12
+        register_hit("ACGTACGT", "2024-01-01", temp_state_dir)  # 8 bp
+        register_hit("ACGTACGTACGT", "2024-01-02", temp_state_dir)  # 12 bp
+        register_hit("ACGTACGTACGTACGT", "2024-01-03", temp_state_dir)  # 16 bp
+
+        stats = get_hit_stats(temp_state_dir)
+
+        assert stats.total_hits == 3
+        assert stats.length_min == 8
+        assert stats.length_max == 16
+        assert stats.length_median == 12.0
+
+    def test_multiple_hits_gc_distribution(self, temp_state_dir):
+        """Multiple hits with varying GC content."""
+        # GC contents: 0.0, 0.5, 1.0 -> median = 0.5
+        register_hit("AAAAAAAA", "2024-01-01", temp_state_dir)  # 0% GC
+        register_hit("ACGTACGT", "2024-01-02", temp_state_dir)  # 50% GC
+        register_hit("GCGCGCGC", "2024-01-03", temp_state_dir)  # 100% GC
+
+        stats = get_hit_stats(temp_state_dir)
+
+        assert stats.total_hits == 3
+        assert stats.gc_min == 0.0
+        assert stats.gc_max == 1.0
+        assert stats.gc_median == 0.5
+
+    def test_date_range(self, temp_state_dir):
+        """Date range spans first and last seen dates."""
+        register_hit("AAACCC", "2024-01-15", temp_state_dir)
+        register_hit("AAAGGG", "2024-06-20", temp_state_dir)
+        register_hit("AAATTT", "2024-03-10", temp_state_dir)
+
+        stats = get_hit_stats(temp_state_dir)
+
+        assert stats.date_first == "2024-01-15"
+        assert stats.date_last == "2024-06-20"
+
+    def test_multiple_runs_and_samples(self, temp_state_dir):
+        """Correctly counts unique runs and samples."""
+        hit1, _ = register_hit("AAACCC", "2024-01-01", temp_state_dir)
+        hit2, _ = register_hit("AAAGGG", "2024-01-01", temp_state_dir)
+
+        # hit1 in run_001: sample_a, sample_b
+        record_hit_observation(
+            hit1.hit_key, "run_001", "sample_a", "2024-01-01", state_dir=temp_state_dir
+        )
+        record_hit_observation(
+            hit1.hit_key, "run_001", "sample_b", "2024-01-01", state_dir=temp_state_dir
+        )
+        # hit1 in run_002: sample_a (same sample, different run)
+        record_hit_observation(
+            hit1.hit_key, "run_002", "sample_a", "2024-01-02", state_dir=temp_state_dir
+        )
+        # hit2 in run_001: sample_c
+        record_hit_observation(
+            hit2.hit_key, "run_001", "sample_c", "2024-01-01", state_dir=temp_state_dir
+        )
+
+        stats = get_hit_stats(temp_state_dir)
+
+        assert stats.total_hits == 2
+        assert stats.total_observations == 4
+        assert stats.unique_samples == 3  # sample_a, sample_b, sample_c
+        assert stats.unique_runs == 2  # run_001, run_002
+
+    def test_median_even_count(self, temp_state_dir):
+        """Median calculation for even number of values."""
+        # Lengths: 8, 12, 16, 20 -> median = (12 + 16) / 2 = 14
+        register_hit("ACGTACGT", "2024-01-01", temp_state_dir)  # 8 bp
+        register_hit("ACGTACGTACGT", "2024-01-02", temp_state_dir)  # 12 bp
+        register_hit("ACGTACGTACGTACGT", "2024-01-03", temp_state_dir)  # 16 bp
+        register_hit("ACGTACGTACGTACGTACGT", "2024-01-04", temp_state_dir)  # 20 bp
+
+        stats = get_hit_stats(temp_state_dir)
+
+        assert stats.length_median == 14.0
+
+
+class TestGetRecurringHits:
+    """Tests for get_recurring_hits()."""
+
+    @pytest.fixture
+    def temp_state_dir(self):
+        """Create a temporary directory for state database."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            yield Path(tmpdir)
+
+    def test_empty_database(self, temp_state_dir):
+        """Empty database returns empty list."""
+        result = get_recurring_hits(state_dir=temp_state_dir)
+        assert result == []
+
+    def test_no_recurring_hits(self, temp_state_dir):
+        """Hits with only one sample each don't appear."""
+        hit1, _ = register_hit("AAACCC", "2024-01-01", temp_state_dir)
+        hit2, _ = register_hit("AAAGGG", "2024-01-01", temp_state_dir)
+
+        record_hit_observation(
+            hit1.hit_key, "run_001", "sample_a", "2024-01-01", state_dir=temp_state_dir
+        )
+        record_hit_observation(
+            hit2.hit_key, "run_001", "sample_b", "2024-01-01", state_dir=temp_state_dir
+        )
+
+        result = get_recurring_hits(min_samples=2, state_dir=temp_state_dir)
+        assert result == []
+
+    def test_finds_recurring_hit(self, temp_state_dir):
+        """Hit appearing in multiple samples is returned."""
+        hit, _ = register_hit("AAACCC", "2024-01-01", temp_state_dir)
+
+        record_hit_observation(
+            hit.hit_key, "run_001", "sample_a", "2024-01-01", state_dir=temp_state_dir
+        )
+        record_hit_observation(
+            hit.hit_key, "run_001", "sample_b", "2024-01-02", state_dir=temp_state_dir
+        )
+
+        result = get_recurring_hits(min_samples=2, state_dir=temp_state_dir)
+
+        assert len(result) == 1
+        assert result[0].hit_key == hit.hit_key
+        assert result[0].sample_count == 2
+        assert result[0].run_count == 1
+        assert result[0].observation_count == 2
+
+    def test_min_samples_filter(self, temp_state_dir):
+        """min_samples parameter filters correctly."""
+        hit, _ = register_hit("AAACCC", "2024-01-01", temp_state_dir)
+
+        # Observed in 3 samples
+        record_hit_observation(
+            hit.hit_key, "run_001", "sample_a", "2024-01-01", state_dir=temp_state_dir
+        )
+        record_hit_observation(
+            hit.hit_key, "run_001", "sample_b", "2024-01-01", state_dir=temp_state_dir
+        )
+        record_hit_observation(
+            hit.hit_key, "run_001", "sample_c", "2024-01-01", state_dir=temp_state_dir
+        )
+
+        # Should appear with min_samples=2 or 3, not 4
+        assert len(get_recurring_hits(min_samples=2, state_dir=temp_state_dir)) == 1
+        assert len(get_recurring_hits(min_samples=3, state_dir=temp_state_dir)) == 1
+        assert len(get_recurring_hits(min_samples=4, state_dir=temp_state_dir)) == 0
+
+    def test_min_runs_filter(self, temp_state_dir):
+        """min_runs parameter filters correctly."""
+        hit, _ = register_hit("AAACCC", "2024-01-01", temp_state_dir)
+
+        # Observed in 2 samples across 2 runs
+        record_hit_observation(
+            hit.hit_key, "run_001", "sample_a", "2024-01-01", state_dir=temp_state_dir
+        )
+        record_hit_observation(
+            hit.hit_key, "run_002", "sample_b", "2024-01-02", state_dir=temp_state_dir
+        )
+
+        # Should appear with min_runs=1 or 2, not 3
+        assert (
+            len(get_recurring_hits(min_samples=2, min_runs=1, state_dir=temp_state_dir))
+            == 1
+        )
+        assert (
+            len(get_recurring_hits(min_samples=2, min_runs=2, state_dir=temp_state_dir))
+            == 1
+        )
+        assert (
+            len(get_recurring_hits(min_samples=2, min_runs=3, state_dir=temp_state_dir))
+            == 0
+        )
+
+    def test_limit_parameter(self, temp_state_dir):
+        """limit parameter restricts results."""
+        hit1, _ = register_hit("AAACCC", "2024-01-01", temp_state_dir)
+        hit2, _ = register_hit("AAAGGG", "2024-01-01", temp_state_dir)
+
+        # Both hits in 2 samples
+        for hit in [hit1, hit2]:
+            record_hit_observation(
+                hit.hit_key,
+                "run_001",
+                "sample_a",
+                "2024-01-01",
+                state_dir=temp_state_dir,
+            )
+            record_hit_observation(
+                hit.hit_key,
+                "run_001",
+                "sample_b",
+                "2024-01-01",
+                state_dir=temp_state_dir,
+            )
+
+        assert len(get_recurring_hits(min_samples=2, state_dir=temp_state_dir)) == 2
+        assert (
+            len(get_recurring_hits(min_samples=2, limit=1, state_dir=temp_state_dir))
+            == 1
+        )
+
+    def test_ordered_by_sample_count(self, temp_state_dir):
+        """Results ordered by sample_count descending."""
+        hit1, _ = register_hit("AAACCC", "2024-01-01", temp_state_dir)
+        hit2, _ = register_hit("AAAGGG", "2024-01-01", temp_state_dir)
+
+        # hit1 in 2 samples, hit2 in 3 samples
+        record_hit_observation(
+            hit1.hit_key, "run_001", "sample_a", "2024-01-01", state_dir=temp_state_dir
+        )
+        record_hit_observation(
+            hit1.hit_key, "run_001", "sample_b", "2024-01-01", state_dir=temp_state_dir
+        )
+
+        record_hit_observation(
+            hit2.hit_key, "run_001", "sample_a", "2024-01-01", state_dir=temp_state_dir
+        )
+        record_hit_observation(
+            hit2.hit_key, "run_001", "sample_b", "2024-01-01", state_dir=temp_state_dir
+        )
+        record_hit_observation(
+            hit2.hit_key, "run_001", "sample_c", "2024-01-01", state_dir=temp_state_dir
+        )
+
+        result = get_recurring_hits(min_samples=2, state_dir=temp_state_dir)
+
+        assert len(result) == 2
+        assert result[0].hit_key == hit2.hit_key  # 3 samples first
+        assert result[0].sample_count == 3
+        assert result[1].hit_key == hit1.hit_key  # 2 samples second
+        assert result[1].sample_count == 2
+
+    def test_last_seen_date(self, temp_state_dir):
+        """last_seen_date is the most recent observation."""
+        hit, _ = register_hit("AAACCC", "2024-01-01", temp_state_dir)
+
+        record_hit_observation(
+            hit.hit_key, "run_001", "sample_a", "2024-01-15", state_dir=temp_state_dir
+        )
+        record_hit_observation(
+            hit.hit_key, "run_001", "sample_b", "2024-06-20", state_dir=temp_state_dir
+        )
+        record_hit_observation(
+            hit.hit_key, "run_002", "sample_c", "2024-03-10", state_dir=temp_state_dir
+        )
+
+        result = get_recurring_hits(min_samples=2, state_dir=temp_state_dir)
+
+        assert len(result) == 1
+        assert result[0].first_seen_date == "2024-01-01"
+        assert result[0].last_seen_date == "2024-06-20"
+
+    def test_returns_correct_metadata(self, temp_state_dir):
+        """Returned RecurringHit has correct hit metadata."""
+        hit, _ = register_hit("GCGCGCGC", "2024-01-01", temp_state_dir)  # 100% GC, 8 bp
+
+        record_hit_observation(
+            hit.hit_key, "run_001", "sample_a", "2024-01-01", state_dir=temp_state_dir
+        )
+        record_hit_observation(
+            hit.hit_key, "run_001", "sample_b", "2024-01-01", state_dir=temp_state_dir
+        )
+
+        result = get_recurring_hits(min_samples=2, state_dir=temp_state_dir)
+
+        assert len(result) == 1
+        assert result[0].sequence_length == 8
+        assert result[0].gc_content == 1.0
+
+
+class TestGetDiscoveryTimeline:
+    """Tests for get_discovery_timeline()."""
+
+    @pytest.fixture
+    def temp_state_dir(self):
+        """Create a temporary directory for state database."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            yield Path(tmpdir)
+
+    def test_empty_database(self, temp_state_dir):
+        """Empty database returns empty list."""
+        result = get_discovery_timeline(state_dir=temp_state_dir)
+        assert result == []
+
+    def test_single_hit(self, temp_state_dir):
+        """Single hit returns one bucket."""
+        register_hit("AAACCC", "2024-01-15", temp_state_dir)
+
+        result = get_discovery_timeline(granularity="month", state_dir=temp_state_dir)
+
+        assert len(result) == 1
+        assert result[0].period == "2024-01"
+        assert result[0].new_hits == 1
+
+    def test_multiple_hits_same_month(self, temp_state_dir):
+        """Multiple hits in same month are grouped."""
+        register_hit("AAACCC", "2024-01-10", temp_state_dir)
+        register_hit("AAAGGG", "2024-01-20", temp_state_dir)
+        register_hit("AAATTT", "2024-01-25", temp_state_dir)
+
+        result = get_discovery_timeline(granularity="month", state_dir=temp_state_dir)
+
+        assert len(result) == 1
+        assert result[0].period == "2024-01"
+        assert result[0].new_hits == 3
+
+    def test_multiple_months(self, temp_state_dir):
+        """Hits across months create separate buckets."""
+        register_hit("AAACCC", "2024-01-15", temp_state_dir)
+        register_hit("AAAGGG", "2024-01-20", temp_state_dir)
+        register_hit("AAATTT", "2024-03-10", temp_state_dir)
+        register_hit("CCCGGG", "2024-06-01", temp_state_dir)
+
+        result = get_discovery_timeline(granularity="month", state_dir=temp_state_dir)
+
+        assert len(result) == 3
+        assert result[0].period == "2024-01"
+        assert result[0].new_hits == 2
+        assert result[1].period == "2024-03"
+        assert result[1].new_hits == 1
+        assert result[2].period == "2024-06"
+        assert result[2].new_hits == 1
+
+    def test_ordered_ascending(self, temp_state_dir):
+        """Results are ordered by period ascending."""
+        # Register in non-chronological order
+        register_hit("AAAGGG", "2024-06-01", temp_state_dir)
+        register_hit("AAACCC", "2024-01-15", temp_state_dir)
+        register_hit("AAATTT", "2024-03-10", temp_state_dir)
+
+        result = get_discovery_timeline(granularity="month", state_dir=temp_state_dir)
+
+        periods = [b.period for b in result]
+        assert periods == ["2024-01", "2024-03", "2024-06"]
+
+    def test_granularity_day(self, temp_state_dir):
+        """Day granularity groups by exact date."""
+        register_hit("AAACCC", "2024-01-15", temp_state_dir)
+        register_hit("AAAGGG", "2024-01-15", temp_state_dir)
+        register_hit("AAATTT", "2024-01-16", temp_state_dir)
+
+        result = get_discovery_timeline(granularity="day", state_dir=temp_state_dir)
+
+        assert len(result) == 2
+        assert result[0].period == "2024-01-15"
+        assert result[0].new_hits == 2
+        assert result[1].period == "2024-01-16"
+        assert result[1].new_hits == 1
+
+    def test_granularity_year(self, temp_state_dir):
+        """Year granularity groups by year."""
+        register_hit("AAACCC", "2023-06-15", temp_state_dir)
+        register_hit("AAAGGG", "2024-01-15", temp_state_dir)
+        register_hit("AAATTT", "2024-12-31", temp_state_dir)
+
+        result = get_discovery_timeline(granularity="year", state_dir=temp_state_dir)
+
+        assert len(result) == 2
+        assert result[0].period == "2023"
+        assert result[0].new_hits == 1
+        assert result[1].period == "2024"
+        assert result[1].new_hits == 2
+
+    def test_granularity_week(self, temp_state_dir):
+        """Week granularity groups by ISO week."""
+        # 2024-01-01 is Monday of week 01
+        # 2024-01-08 is Monday of week 02
+        register_hit("AAACCC", "2024-01-01", temp_state_dir)
+        register_hit("AAAGGG", "2024-01-07", temp_state_dir)  # Same week
+        register_hit("AAATTT", "2024-01-08", temp_state_dir)  # Next week
+
+        result = get_discovery_timeline(granularity="week", state_dir=temp_state_dir)
+
+        assert len(result) == 2
+        # First bucket should have 2 hits, second should have 1
+        assert result[0].new_hits == 2
+        assert result[1].new_hits == 1
+
+
+class TestLookupHit:
+    """Tests for lookup_hit()."""
+
+    @pytest.fixture
+    def temp_state_dir(self):
+        """Create a temporary directory for state database."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            yield Path(tmpdir)
+
+    def test_lookup_by_key(self, temp_state_dir):
+        """Lookup by hit key returns the hit."""
+        seq = "ACGTACGTACGT"
+        hit, _ = register_hit(seq, "2024-01-01", temp_state_dir)
+
+        result = lookup_hit(hit.hit_key, state_dir=temp_state_dir)
+
+        assert result is not None
+        assert result.hit_key == hit.hit_key
+
+    def test_lookup_by_key_uppercase(self, temp_state_dir):
+        """Lookup by uppercase hit key works."""
+        seq = "ACGTACGTACGT"
+        hit, _ = register_hit(seq, "2024-01-01", temp_state_dir)
+
+        result = lookup_hit(hit.hit_key.upper(), state_dir=temp_state_dir)
+
+        assert result is not None
+        assert result.hit_key == hit.hit_key
+
+    def test_lookup_by_sequence(self, temp_state_dir):
+        """Lookup by sequence returns the hit."""
+        seq = "ACGTACGTACGT"
+        hit, _ = register_hit(seq, "2024-01-01", temp_state_dir)
+
+        result = lookup_hit(seq, state_dir=temp_state_dir)
+
+        assert result is not None
+        assert result.hit_key == hit.hit_key
+
+    def test_lookup_by_sequence_lowercase(self, temp_state_dir):
+        """Lookup by lowercase sequence works."""
+        seq = "ACGTACGTACGT"
+        hit, _ = register_hit(seq, "2024-01-01", temp_state_dir)
+
+        result = lookup_hit(seq.lower(), state_dir=temp_state_dir)
+
+        assert result is not None
+        assert result.hit_key == hit.hit_key
+
+    def test_lookup_by_reverse_complement(self, temp_state_dir):
+        """Lookup by reverse complement finds the same hit."""
+        seq = "AAACCCGGG"
+        hit, _ = register_hit(seq, "2024-01-01", temp_state_dir)
+
+        revcomp = reverse_complement(seq)
+        result = lookup_hit(revcomp, state_dir=temp_state_dir)
+
+        assert result is not None
+        assert result.hit_key == hit.hit_key
+
+    def test_lookup_not_found_key(self, temp_state_dir):
+        """Lookup by nonexistent key returns None."""
+        result = lookup_hit("a" * 32, state_dir=temp_state_dir)
+        assert result is None
+
+    def test_lookup_not_found_sequence(self, temp_state_dir):
+        """Lookup by nonexistent sequence returns None."""
+        result = lookup_hit("ACGTACGTACGT", state_dir=temp_state_dir)
+        assert result is None
+
+    def test_lookup_strips_whitespace(self, temp_state_dir):
+        """Lookup strips leading/trailing whitespace."""
+        seq = "ACGTACGTACGT"
+        hit, _ = register_hit(seq, "2024-01-01", temp_state_dir)
+
+        result = lookup_hit(f"  {seq}  \n", state_dir=temp_state_dir)
+
+        assert result is not None
+        assert result.hit_key == hit.hit_key
+
+    def test_lookup_key_with_whitespace(self, temp_state_dir):
+        """Lookup key with whitespace is stripped."""
+        seq = "ACGTACGTACGT"
+        hit, _ = register_hit(seq, "2024-01-01", temp_state_dir)
+
+        result = lookup_hit(f"  {hit.hit_key}  ", state_dir=temp_state_dir)
+
+        assert result is not None
+        assert result.hit_key == hit.hit_key

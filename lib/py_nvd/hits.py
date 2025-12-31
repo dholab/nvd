@@ -19,11 +19,12 @@ from __future__ import annotations
 
 import zlib
 from pathlib import Path
+from typing import Literal
 
 import blake3
 
 from py_nvd.db import connect
-from py_nvd.models import Hit, HitObservation
+from py_nvd.models import Hit, HitObservation, HitStats, RecurringHit, TimelineBucket
 
 # Hit key length in hex characters (128 bits = 32 hex chars)
 HIT_KEY_LENGTH = 32
@@ -487,6 +488,265 @@ def list_hits_with_observations(
             )
             for row in rows
         ]
+
+
+# --- Statistics / Aggregations ---
+
+
+def get_hit_stats(state_dir: Path | str | None = None) -> HitStats:
+    """
+    Compute summary statistics for all hits.
+
+    Returns aggregate metrics including counts, length/GC distributions,
+    and date range. Useful for dashboard displays and health checks.
+
+    Args:
+        state_dir: Optional state directory override
+
+    Returns:
+        HitStats with all computed metrics. Counts are 0 and distributions
+        are None when the database is empty.
+    """
+    with connect(state_dir) as conn:
+        # Basic counts
+        total_hits = conn.execute("SELECT COUNT(*) FROM hits").fetchone()[0]
+        total_observations = conn.execute(
+            "SELECT COUNT(*) FROM hit_observations"
+        ).fetchone()[0]
+        unique_samples = conn.execute(
+            "SELECT COUNT(DISTINCT sample_id) FROM hit_observations"
+        ).fetchone()[0]
+        unique_runs = conn.execute(
+            "SELECT COUNT(DISTINCT sample_set_id) FROM hit_observations"
+        ).fetchone()[0]
+
+        # If no hits, return early with empty stats
+        if total_hits == 0:
+            return HitStats(
+                total_hits=0,
+                total_observations=0,
+                unique_samples=0,
+                unique_runs=0,
+                length_min=None,
+                length_max=None,
+                length_median=None,
+                gc_min=None,
+                gc_max=None,
+                gc_median=None,
+                date_first=None,
+                date_last=None,
+            )
+
+        # Length stats (min, max)
+        length_row = conn.execute(
+            "SELECT MIN(sequence_length), MAX(sequence_length) FROM hits"
+        ).fetchone()
+        length_min, length_max = length_row[0], length_row[1]
+
+        # GC stats (min, max)
+        gc_row = conn.execute(
+            "SELECT MIN(gc_content), MAX(gc_content) FROM hits"
+        ).fetchone()
+        gc_min, gc_max = gc_row[0], gc_row[1]
+
+        # Date range
+        date_row = conn.execute(
+            "SELECT MIN(first_seen_date), MAX(first_seen_date) FROM hits"
+        ).fetchone()
+        date_first, date_last = date_row[0], date_row[1]
+
+        # Median calculations require fetching sorted values
+        # SQLite doesn't have a built-in MEDIAN function
+        lengths = [
+            row[0]
+            for row in conn.execute(
+                "SELECT sequence_length FROM hits ORDER BY sequence_length"
+            ).fetchall()
+        ]
+        length_median = _compute_median(lengths)
+
+        gc_values = [
+            row[0]
+            for row in conn.execute(
+                "SELECT gc_content FROM hits ORDER BY gc_content"
+            ).fetchall()
+        ]
+        gc_median = _compute_median(gc_values)
+
+        return HitStats(
+            total_hits=total_hits,
+            total_observations=total_observations,
+            unique_samples=unique_samples,
+            unique_runs=unique_runs,
+            length_min=length_min,
+            length_max=length_max,
+            length_median=length_median,
+            gc_min=gc_min,
+            gc_max=gc_max,
+            gc_median=gc_median,
+            date_first=date_first,
+            date_last=date_last,
+        )
+
+
+def _compute_median(values: list[int | float]) -> float | None:
+    """Compute median of a sorted list of values."""
+    if not values:
+        return None
+    n = len(values)
+    mid = n // 2
+    if n % 2 == 0:
+        return (values[mid - 1] + values[mid]) / 2
+    return float(values[mid])
+
+
+def get_recurring_hits(
+    min_samples: int = 2,
+    min_runs: int | None = None,
+    limit: int | None = None,
+    state_dir: Path | str | None = None,
+) -> list[RecurringHit]:
+    """
+    Find hits that appear in multiple samples or runs.
+
+    Recurring hits may indicate persistent infections, contamination,
+    or lab reagent artifacts. This query helps identify sequences that
+    warrant further investigation.
+
+    Args:
+        min_samples: Minimum number of distinct samples (default: 2)
+        min_runs: Minimum number of distinct runs (sample_set_ids), or None for no filter
+        limit: Maximum number of results to return, or None for all
+        state_dir: Optional state directory override
+
+    Returns:
+        List of RecurringHit objects, ordered by sample_count DESC, then
+        observation_count DESC. Empty list if no hits meet the criteria.
+    """
+    with connect(state_dir) as conn:
+        # Build query with dynamic HAVING clause
+        query = """
+            SELECT
+                h.hit_key,
+                h.sequence_length,
+                h.gc_content,
+                h.first_seen_date,
+                MAX(o.run_date) as last_seen_date,
+                COUNT(DISTINCT o.sample_id) as sample_count,
+                COUNT(DISTINCT o.sample_set_id) as run_count,
+                COUNT(*) as observation_count
+            FROM hits h
+            INNER JOIN hit_observations o ON h.hit_key = o.hit_key
+            GROUP BY h.hit_key
+            HAVING sample_count >= ?
+        """
+        params: list[int] = [min_samples]
+
+        if min_runs is not None:
+            query += " AND run_count >= ?"
+            params.append(min_runs)
+
+        query += " ORDER BY sample_count DESC, observation_count DESC"
+
+        if limit is not None:
+            query += " LIMIT ?"
+            params.append(limit)
+
+        rows = conn.execute(query, params).fetchall()
+
+        return [
+            RecurringHit(
+                hit_key=row["hit_key"],
+                sequence_length=row["sequence_length"],
+                gc_content=row["gc_content"],
+                first_seen_date=row["first_seen_date"],
+                last_seen_date=row["last_seen_date"],
+                sample_count=row["sample_count"],
+                run_count=row["run_count"],
+                observation_count=row["observation_count"],
+            )
+            for row in rows
+        ]
+
+
+def get_discovery_timeline(
+    granularity: Literal["day", "week", "month", "year"] = "month",
+    state_dir: Path | str | None = None,
+) -> list[TimelineBucket]:
+    """
+    Count new hits discovered per time period.
+
+    Groups hits by their first_seen_date and counts how many were discovered
+    in each period. Useful for visualizing discovery rate over time.
+
+    Args:
+        granularity: Time period grouping - "day", "week", "month", or "year"
+        state_dir: Optional state directory override
+
+    Returns:
+        List of TimelineBucket objects ordered by period ascending.
+        Empty list if no hits exist.
+    """
+    # SQLite strftime format strings for each granularity
+    format_map = {
+        "day": "%Y-%m-%d",
+        "week": "%Y-W%W",  # ISO week number
+        "month": "%Y-%m",
+        "year": "%Y",
+    }
+    date_format = format_map[granularity]
+
+    with connect(state_dir) as conn:
+        query = f"""
+            SELECT
+                strftime('{date_format}', first_seen_date) as period,
+                COUNT(*) as new_hits
+            FROM hits
+            GROUP BY period
+            ORDER BY period ASC
+        """
+
+        rows = conn.execute(query).fetchall()
+
+        return [
+            TimelineBucket(
+                period=row["period"],
+                new_hits=row["new_hits"],
+            )
+            for row in rows
+        ]
+
+
+def lookup_hit(
+    query: str,
+    state_dir: Path | str | None = None,
+) -> Hit | None:
+    """
+    Find a hit by key or sequence.
+
+    Auto-detects whether the query is a hit key (32 hex characters) or a
+    DNA sequence. For sequences, computes the canonical hash and looks up.
+
+    This is a convenience function for CLI and interactive use.
+
+    Args:
+        query: Either a 32-character hex hit key, or a DNA sequence
+        state_dir: Optional state directory override
+
+    Returns:
+        The Hit if found, None otherwise.
+    """
+    query = query.strip()
+
+    # Check if it looks like a hex key (32 chars, all hex digits)
+    if len(query) == HIT_KEY_LENGTH and all(
+        c in "0123456789abcdefABCDEF" for c in query
+    ):
+        return get_hit(query.lower(), state_dir)
+
+    # Otherwise treat as sequence, compute key and look up
+    hit_key = compute_hit_key(query)
+    return get_hit(hit_key, state_dir)
 
 
 # --- Cleanup Operations ---

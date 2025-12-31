@@ -44,7 +44,9 @@ def experiment_exists(labkey, guard_list_name, experiment_id) -> bool:
     # Method 3: Get all rows and filter in Python (fallback)
     if result is None:
         logger.info("Falling back to client-side filtering")
-        result = labkey.query.select_rows(schema_name="lists", query_name=guard_list_name)
+        result = labkey.query.select_rows(
+            schema_name="lists", query_name=guard_list_name
+        )
         if result["rows"]:
             original_rows = result["rows"]
             filtered_rows = [
@@ -86,7 +88,10 @@ def check_experiment(labkey, guard_list_name, experiment_id) -> bool:
 
     except Exception as e:
         error_msg = str(e).lower()
-        if any(x in error_msg for x in ["does not exist", "table", "querynotfound", "not found"]):
+        if any(
+            x in error_msg
+            for x in ["does not exist", "table", "querynotfound", "not found"]
+        ):
             logger.warning(
                 f"Guard list '{guard_list_name}' doesn't exist - assuming safe to proceed"
             )
@@ -113,7 +118,9 @@ def register_experiment(labkey, guard_list_name, experiment_id) -> bool:
 
         # Double-check it doesn't already exist
         if experiment_exists(labkey, guard_list_name, experiment_id):
-            logger.warning(f"Experiment ID {experiment_id} already exists - skipping registration")
+            logger.warning(
+                f"Experiment ID {experiment_id} already exists - skipping registration"
+            )
             return True
 
         # Insert new entry
@@ -127,12 +134,17 @@ def register_experiment(labkey, guard_list_name, experiment_id) -> bool:
 
     except Exception as e:
         error_msg = str(e).lower()
-        if any(x in error_msg for x in ["does not exist", "table", "querynotfound", "not found"]):
+        if any(
+            x in error_msg
+            for x in ["does not exist", "table", "querynotfound", "not found"]
+        ):
             logger.warning(f"Guard list '{guard_list_name}' doesn't exist")
             logger.info("Attempting to create entry anyway...")
             try:
                 guard_row = {"experiment_id": experiment_id}
-                insert_result = labkey.query.insert_rows("lists", guard_list_name, [guard_row])
+                insert_result = labkey.query.insert_rows(
+                    "lists", guard_list_name, [guard_row]
+                )
                 logger.info(
                     f"Successfully created guard list entry for experiment ID {experiment_id}"
                 )
@@ -149,7 +161,9 @@ def register_experiment(labkey, guard_list_name, experiment_id) -> bool:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Check and manage LabKey experiment ID guard list")
+    parser = argparse.ArgumentParser(
+        description="Check and manage LabKey experiment ID guard list"
+    )
     parser.add_argument(
         "--mode",
         choices=["check", "register"],
@@ -162,8 +176,12 @@ def main() -> None:
         required=True,
         help="LabKey container path (e.g., project folder)",
     )
-    parser.add_argument("--guard_list", required=True, help="Name of the LabKey guard list")
-    parser.add_argument("--api_key", required=True, help="API key with insert permissions")
+    parser.add_argument(
+        "--guard_list", required=True, help="Name of the LabKey guard list"
+    )
+    parser.add_argument(
+        "--api_key", required=True, help="API key with insert permissions"
+    )
     parser.add_argument(
         "--experiment_id",
         type=int,
@@ -196,7 +214,9 @@ def main() -> None:
         logger.info(f"{mode_label} FAILED")
         logger.info("=" * 80)
         if args.mode == "check":
-            logger.error(f"Experiment ID {args.experiment_id} has already been uploaded to LabKey")
+            logger.error(
+                f"Experiment ID {args.experiment_id} has already been uploaded to LabKey"
+            )
             logger.info("Options:")
             logger.info(f"   - Use a different experiment_id")
             logger.info(
