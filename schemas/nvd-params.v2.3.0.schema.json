@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://raw.githubusercontent.com/dhoconno/nvd/main/schemas/nvd-params.v2.3.0.schema.json",
+  "$id": "https://raw.githubusercontent.com/dhoconno/nvd/state-management/schemas/nvd-params.latest.schema.json",
   "title": "NVD Pipeline Parameters",
   "description": "Parameters for the Novel Virus Detection (NVD) metagenomics pipeline. Use with Nextflow's -params-file option or register as a preset with nvd preset register.",
   "type": "object",
@@ -8,7 +8,47 @@
     "labkey": {
       "type": "boolean",
       "default": false,
-      "description": "Enable LabKey integration for result uploads"
+      "description": "Enable LabKey integration for result uploads. When enabled, all labkey_* params must be set."
+    },
+    "labkey_server": {
+      "type": "string",
+      "description": "LabKey server URL"
+    },
+    "labkey_project_name": {
+      "type": "string",
+      "description": "LabKey project name"
+    },
+    "labkey_webdav": {
+      "type": "string",
+      "description": "LabKey WebDAV endpoint URL"
+    },
+    "labkey_schema": {
+      "type": "string",
+      "description": "LabKey schema name"
+    },
+    "labkey_gottcha_fasta_list": {
+      "type": "string",
+      "description": "LabKey list name for GOTTCHA2 FASTA uploads"
+    },
+    "labkey_gottcha_full_list": {
+      "type": "string",
+      "description": "LabKey list name for GOTTCHA2 full results"
+    },
+    "labkey_gottcha_blast_verified_full_list": {
+      "type": "string",
+      "description": "LabKey list name for BLAST-verified GOTTCHA2 results"
+    },
+    "labkey_blast_meta_hits_list": {
+      "type": "string",
+      "description": "LabKey list name for BLAST meta hits"
+    },
+    "labkey_blast_fasta_list": {
+      "type": "string",
+      "description": "LabKey list name for BLAST FASTA uploads"
+    },
+    "labkey_exp_id_guard_list": {
+      "type": "string",
+      "description": "LabKey list name for experiment ID guard (prevents duplicate uploads)"
     },
     "samplesheet": {
       "type": "string",
@@ -37,9 +77,23 @@
       "type": "boolean",
       "description": "Whether to empty the work directory after successful completion"
     },
+    "gottcha2_db_version": {
+      "type": "string",
+      "default": "RefSeq-r220",
+      "description": "GOTTCHA2 database version identifier"
+    },
+    "blast_db_version": {
+      "type": "string",
+      "default": "core-nt_2025-08-03",
+      "description": "BLAST database version identifier"
+    },
     "gottcha2_db": {
       "type": "string",
       "description": "Path to GOTTCHA2 database directory"
+    },
+    "nvd_files": {
+      "type": "string",
+      "description": "Path to NVD resource files directory"
     },
     "blast_db": {
       "type": "string",
@@ -168,6 +222,43 @@
       "default": true,
       "description": "Include child taxa in taxonomic analysis"
     },
+    "human_virus_families": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": [
+        "Adenoviridae",
+        "Anelloviridae",
+        "Arenaviridae",
+        "Arteriviridae",
+        "Astroviridae",
+        "Bornaviridae",
+        "Peribunyaviridae",
+        "Caliciviridae",
+        "Coronaviridae",
+        "Filoviridae",
+        "Flaviviridae",
+        "Hepadnaviridae",
+        "Hepeviridae",
+        "Orthoherpesviridae",
+        "Orthomyxoviridae",
+        "Papillomaviridae",
+        "Paramyxoviridae",
+        "Parvoviridae",
+        "Picobirnaviridae",
+        "Picornaviridae",
+        "Pneumoviridae",
+        "Polyomaviridae",
+        "Poxviridae",
+        "Sedoreoviridae",
+        "Retroviridae",
+        "Rhabdoviridae",
+        "Togaviridae",
+        "Kolmioviridae"
+      ],
+      "description": "List of virus family names to include in human virus analysis"
+    },
     "min_gottcha_reads": {
       "type": "integer",
       "default": 250,
@@ -185,6 +276,10 @@
       "default": 5,
       "minimum": 1,
       "description": "Number of top BLAST hits to retain"
+    },
+    "state_dir": {
+      "type": "string",
+      "description": "State directory for run tracking, upload deduplication, and taxonomy cache. Defaults to NVD_STATE_DIR env var or ~/.cache/nvd"
     }
   },
   "additionalProperties": false

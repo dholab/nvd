@@ -22,9 +22,7 @@ import yaml
 SCHEMA_FILENAME = "nvd-params.latest.schema.json"
 
 # GitHub raw URL for schema (fallback and for generated templates)
-SCHEMA_URL = (
-    "https://raw.githubusercontent.com/dhoconno/nvd/main/schemas/nvd-params.latest.schema.json"
-)
+SCHEMA_URL = "https://raw.githubusercontent.com/dhoconno/nvd/state-management/schemas/nvd-params.latest.schema.json"
 
 
 def _find_schema_path() -> Path:
@@ -262,6 +260,31 @@ def _generate_yaml_template(path: Path, schema: dict, schema_url: str) -> None:
                 lines.append(f"# {name}: {value}  # {desc}")
     lines.append("")
 
+    # LabKey integration (commented out - optional)
+    lines.append("# === LabKey Integration ===")
+    lines.append("# Set labkey: true and configure these for LabKey uploads.")
+    labkey_params = [
+        "labkey",
+        "labkey_server",
+        "labkey_project_name",
+        "labkey_webdav",
+        "labkey_schema",
+        "labkey_gottcha_fasta_list",
+        "labkey_gottcha_full_list",
+        "labkey_gottcha_blast_verified_full_list",
+        "labkey_blast_meta_hits_list",
+        "labkey_blast_fasta_list",
+        "labkey_exp_id_guard_list",
+    ]
+    for name in labkey_params:
+        if name in properties:
+            prop = properties[name]
+            default = prop.get("default")
+            desc = prop.get("description", "")
+            value = _format_yaml_value(default)
+            lines.append(f"# {name}: {value}  # {desc}")
+    lines.append("")
+
     # Database paths (commented out - environment specific)
     lines.append("# === Database Paths ===")
     lines.append(
@@ -275,6 +298,7 @@ def _generate_yaml_template(path: Path, schema: dict, schema_url: str) -> None:
         "stat_dbss",
         "stat_annotation",
         "human_virus_taxlist",
+        "nvd_files",
     ]
     for name in databases:
         if name in properties:
