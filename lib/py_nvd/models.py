@@ -724,8 +724,10 @@ class NvdParams(BaseModel):
         cmd = ["nextflow", "run", str(pipeline_root)]
 
         for field_name, value in self.model_dump(exclude_none=True).items():
-            # Convert param name: Python snake_case → Nextflow kebab-case
-            param_name = field_name.replace("_", "-")
+            # Nextflow params use underscores (Groovy identifiers), so pass field names as-is.
+            # The CLI uses kebab-case (--blast-db) per convention, but Typer handles that
+            # conversion automatically. Here we're talking directly to Nextflow.
+            param_name = field_name
 
             # Convert value to string
             if isinstance(value, bool):

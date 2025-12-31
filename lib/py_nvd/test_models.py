@@ -351,20 +351,20 @@ class TestNvdParamsToNextflowArgs:
         assert cmd[2] == "/path/to/pipeline"
 
     def test_params_as_double_dash_args(self):
-        """Params are formatted as --param-name value."""
+        """Params are formatted as --param_name value (underscores for Nextflow)."""
         p = NvdParams(tools="blast", cutoff_percent=0.01)
         cmd = p.to_nextflow_args(Path("/pipeline"))
         assert "--tools" in cmd
         assert "blast" in cmd
-        assert "--cutoff-percent" in cmd
+        assert "--cutoff_percent" in cmd
         assert "0.01" in cmd
 
-    def test_snake_case_to_kebab_case(self):
-        """Param names are converted from snake_case to kebab-case."""
+    def test_underscores_preserved_for_nextflow(self):
+        """Param names keep underscores (Nextflow/Groovy requires them)."""
         p = NvdParams(min_gottcha_reads=100)
         cmd = p.to_nextflow_args(Path("/pipeline"))
-        assert "--min-gottcha-reads" in cmd
-        assert "--min_gottcha_reads" not in cmd
+        assert "--min_gottcha_reads" in cmd
+        assert "--min-gottcha-reads" not in cmd
 
     def test_bool_to_string(self):
         """Booleans are converted to 'true'/'false' strings."""
@@ -394,7 +394,7 @@ class TestNvdParamsToNextflowArgs:
         """Lists are converted to comma-separated strings."""
         p = NvdParams(human_virus_families=["Adenoviridae", "Coronaviridae"])
         cmd = p.to_nextflow_args(Path("/pipeline"))
-        families_idx = cmd.index("--human-virus-families")
+        families_idx = cmd.index("--human_virus_families")
         assert cmd[families_idx + 1] == "Adenoviridae,Coronaviridae"
 
 
