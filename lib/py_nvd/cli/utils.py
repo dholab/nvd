@@ -92,7 +92,6 @@ VALID_TOOLS = [
     "all",
     "clumpify",
 ]
-VALID_PROFILES = ["docker", "apptainer", "local", "chtc_hpc"]
 MAX_PREVIEW_ITEMS = 5  # Max items to show before "... and N more"
 
 # Help panel names for organizing --help output

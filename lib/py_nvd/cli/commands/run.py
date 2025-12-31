@@ -27,7 +27,6 @@ from py_nvd.cli.utils import (
     PANEL_SRA,
     PIPELINE_ROOT,
     RESUME_FILE,
-    VALID_PROFILES,
     auto_detect_profile,
     check_command_exists,
     console,
@@ -37,14 +36,6 @@ from py_nvd.cli.utils import (
     success,
     warning,
 )
-
-
-def _validate_profile(profile: str) -> None:
-    """Validate profile option."""
-    if profile not in VALID_PROFILES:
-        error(
-            f"Invalid profile: {profile}. Must be one of: {', '.join(VALID_PROFILES)}"
-        )
 
 
 def _format_command_for_display(cmd: list[str]) -> str:
@@ -704,13 +695,12 @@ def run(  # noqa: PLR0913, PLR0912, PLR0915, C901
     # STEP 4: Handle Nextflow-native options (not pipeline params)
     # =========================================================================
 
-    # Auto-detect profile if not specified
+    # Auto-detect profile if not specified, otherwise use user's choice as-is
+    # (users may define custom profiles in their nextflow.config)
     effective_profile = profile
     if effective_profile is None:
         effective_profile = auto_detect_profile()
         info(f"Auto-detected execution profile: {effective_profile}")
-    else:
-        _validate_profile(effective_profile)
 
     # Find config file (user.config auto-discovery)
     effective_config = find_config_file(config)

@@ -24,7 +24,6 @@ from py_nvd.cli.utils import (
     PANEL_LABKEY,
     PANEL_PREPROCESSING,
     PANEL_SRA,
-    VALID_PROFILES,
     VALID_TOOLS,
     console,
     error,
@@ -58,7 +57,6 @@ __all__ = [
     "PANEL_LABKEY",
     "PANEL_PREPROCESSING",
     "PANEL_SRA",
-    "VALID_PROFILES",
     "VALID_TOOLS",
     # Command sub-apps
     "config_app",
