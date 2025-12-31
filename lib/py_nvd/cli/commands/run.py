@@ -38,7 +38,7 @@ from py_nvd.cli.utils import (
 )
 
 # Nextflow-native options that use special syntax (not --param value)
-NEXTFLOW_NATIVE_OPTIONS = frozenset({"profile", "config", "work_dir", "resume"})
+NEXTFLOW_NATIVE_OPTIONS = frozenset({"profile", "config", "resume"})
 
 
 def build_nextflow_command(params: dict[str, Any]) -> list[str]:
@@ -48,9 +48,8 @@ def build_nextflow_command(params: dict[str, Any]) -> list[str]:
     All parameters flow through this single dict. Special handling:
     - profile → -profile value
     - config → -c value
-    - work_dir → -work-dir value
     - resume → -resume (flag)
-    - All others → --param-name value
+    - All others → --param-name value (including work_dir)
 
     Booleans are converted to "true"/"false" strings for Nextflow.
     Underscores in param names are converted to hyphens.
@@ -63,9 +62,6 @@ def build_nextflow_command(params: dict[str, Any]) -> list[str]:
 
     if params.get("config"):
         cmd.extend(["-c", str(params["config"])])
-
-    if params.get("work_dir"):
-        cmd.extend(["-work-dir", str(params["work_dir"])])
 
     if params.get("resume"):
         cmd.append("-resume")
