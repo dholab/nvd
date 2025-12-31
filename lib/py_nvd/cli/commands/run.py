@@ -15,6 +15,8 @@ from typing import Any
 
 import typer
 
+from py_nvd.models import NvdParams
+from py_nvd.params import load_params_file
 from py_nvd.cli.utils import (
     DEFAULT_CONFIG,
     PANEL_ANALYSIS,
@@ -26,7 +28,6 @@ from py_nvd.cli.utils import (
     PIPELINE_ROOT,
     RESUME_FILE,
     VALID_PROFILES,
-    VALID_TOOLS,
     auto_detect_profile,
     check_command_exists,
     console,
@@ -36,71 +37,6 @@ from py_nvd.cli.utils import (
     success,
     warning,
 )
-
-# Nextflow-native options that use special syntax (not --param value)
-NEXTFLOW_NATIVE_OPTIONS = frozenset({"profile", "config", "resume"})
-
-
-def build_nextflow_command(params: dict[str, Any]) -> list[str]:
-    """
-    Construct the nextflow run command from a unified params dict.
-
-    All parameters flow through this single dict. Special handling:
-    - profile → -profile value
-    - config → -c value
-    - resume → -resume (flag)
-    - All others → --param-name value (including work_dir)
-
-    Booleans are converted to "true"/"false" strings for Nextflow.
-    Underscores in param names are converted to hyphens.
-    """
-    cmd = ["nextflow", "run", str(PIPELINE_ROOT)]
-
-    # Handle Nextflow-native options first
-    if params.get("profile"):
-        cmd.extend(["-profile", params["profile"]])
-
-    if params.get("config"):
-        cmd.extend(["-c", str(params["config"])])
-
-    if params.get("resume"):
-        cmd.append("-resume")
-
-    # Handle all pipeline parameters (--param-name value)
-    for key, value in params.items():
-        # Skip Nextflow-native options (already handled above)
-        if key in NEXTFLOW_NATIVE_OPTIONS:
-            continue
-
-        # Skip None values
-        if value is None:
-            continue
-
-        # Convert param name: Python snake_case → Nextflow kebab-case
-        param_name = key.replace("_", "-")
-
-        # Convert value to string, handling booleans specially
-        if isinstance(value, bool):
-            str_value = "true" if value else "false"
-        elif isinstance(value, Path):
-            str_value = str(value)
-        else:
-            str_value = str(value)
-
-        cmd.extend([f"--{param_name}", str_value])
-
-    return cmd
-
-
-def _validate_tools(tools: str) -> None:
-    """Validate tools option (supports comma-separated values)."""
-    tools_list = [t.strip() for t in tools.split(",")]
-    invalid_tools = [t for t in tools_list if t not in VALID_TOOLS]
-    if invalid_tools:
-        error(
-            f"Invalid tools option(s): {', '.join(invalid_tools)}. "
-            f"Must be one of: {', '.join(VALID_TOOLS)}",
-        )
 
 
 def _validate_profile(profile: str) -> None:
@@ -156,12 +92,11 @@ def run(  # noqa: PLR0913, PLR0912, PLR0915, C901
     # -------------------------------------------------------------------------
     # Core Options
     # -------------------------------------------------------------------------
-    samplesheet: Path = typer.Option(
-        ...,
+    samplesheet: Path | None = typer.Option(
+        None,
         "--samplesheet",
         "-s",
-        help="Path to samplesheet CSV",
-        exists=True,
+        help="Path to samplesheet CSV (required; can come from --preset or --params-file)",
         file_okay=True,
         dir_okay=False,
         rich_help_panel=PANEL_CORE,
@@ -241,7 +176,7 @@ def run(  # noqa: PLR0913, PLR0912, PLR0915, C901
         None,
         "--params-file",
         "-f",
-        help="JSON/YAML params file (passed to Nextflow, its precedence rules apply)",
+        help="JSON/YAML params file (merged with CLI args; CLI takes precedence)",
         exists=True,
         file_okay=True,
         dir_okay=False,
@@ -537,13 +472,15 @@ def run(  # noqa: PLR0913, PLR0912, PLR0915, C901
 
     Parameter precedence (highest to lowest):
         1. CLI arguments (--tools, --blast-db, etc.)
-        2. Preset values (--preset production)
-        3. User config file (~/.nvd/user.config)
+        2. Params file (--params-file params.yaml)
+        3. Preset values (--preset production)
         4. Pipeline defaults (nextflow.config)
 
+    The samplesheet can come from any of these sources. For example, you can
+    define it in a params file or preset and omit --samplesheet from the CLI.
+
     Any arguments after '--' are passed directly to Nextflow. This allows
-    using Nextflow-native options like -params-file, -with-tower, -with-trace,
-    etc. Nextflow handles precedence for -params-file contents.
+    using Nextflow-native options like -with-tower, -with-trace, etc.
 
     Examples:
 
@@ -566,8 +503,11 @@ def run(  # noqa: PLR0913, PLR0912, PLR0915, C901
         # Use a preset with overrides
         nvd run -s samples.csv -e exp005 --preset production --cutoff-percent 0.01
 
-        # Load additional params from a JSON/YAML file
-        nvd run -s samples.csv --params-file extra-params.json
+        # Load params from a YAML file (can include samplesheet)
+        nvd run --params-file run-config.yaml
+
+        # Combine params file with CLI overrides
+        nvd run -f run-config.yaml --tools blast --cutoff-percent 0.01
 
         # Pass other Nextflow options via '--' separator
         nvd run -s samples.csv -- -with-tower -with-trace
@@ -600,172 +540,123 @@ def run(  # noqa: PLR0913, PLR0912, PLR0915, C901
         info(f"Using preset '{preset}' ({len(preset_params)} parameters)")
 
     # =========================================================================
-    # STEP 2: Build unified params dict with proper precedence
+    # STEP 2: Build CLI args dict and merge with precedence
     #
-    # Precedence: CLI args > preset params > defaults
-    # We start with preset, then overlay CLI args (if provided, i.e., not None)
+    # Precedence (highest to lowest): CLI args > params_file > preset > defaults
+    # NvdParams.merge() handles None filtering and validation.
+    # Nextflow-native options (profile, config, resume) are handled separately.
     # =========================================================================
-    params: dict[str, Any] = {}
 
-    # Layer 1: Start with preset params
-    for key, value in preset_params.items():
-        if value is not None:
-            params[key] = value
-
-    # Layer 2: CLI args override (only if actually provided, not None)
-    # Required params (always provided)
-    params["samplesheet"] = samplesheet
-
-    # Optional params - only override if CLI provided a value
-    if experiment_id is not None:
-        params["experiment_id"] = experiment_id
-    if tools is not None:
-        params["tools"] = tools
-    if results is not None:
-        params["results"] = results
-    if profile is not None:
-        params["profile"] = profile
-    if config is not None:
-        params["config"] = config
-    if resume is not None:
-        params["resume"] = resume
-    if cleanup is not None:
-        params["cleanup"] = cleanup
-    if work_dir is not None:
-        params["work_dir"] = work_dir
-    if state_dir is not None:
-        params["state_dir"] = state_dir
-
-    # Database paths
-    if gottcha2_db is not None:
-        params["gottcha2_db"] = gottcha2_db
-    if blast_db is not None:
-        params["blast_db"] = blast_db
-    if blast_db_prefix is not None:
-        params["blast_db_prefix"] = blast_db_prefix
-    if stat_index is not None:
-        params["stat_index"] = stat_index
-    if stat_dbss is not None:
-        params["stat_dbss"] = stat_dbss
-    if stat_annotation is not None:
-        params["stat_annotation"] = stat_annotation
-    if human_virus_taxlist is not None:
-        params["human_virus_taxlist"] = human_virus_taxlist
-
-    # Analysis parameters
-    if cutoff_percent is not None:
-        params["cutoff_percent"] = cutoff_percent
-    if tax_stringency is not None:
-        params["tax_stringency"] = tax_stringency
-    if entropy is not None:
-        params["entropy"] = entropy
-    if min_gottcha_reads is not None:
-        params["min_gottcha_reads"] = min_gottcha_reads
-    if max_blast_targets is not None:
-        params["max_blast_targets"] = max_blast_targets
-    if blast_retention_count is not None:
-        params["blast_retention_count"] = blast_retention_count
-    if min_consecutive_bases is not None:
-        params["min_consecutive_bases"] = min_consecutive_bases
-    if qtrim is not None:
-        params["qtrim"] = qtrim
-    if include_children is not None:
-        params["include_children"] = include_children
-    if max_concurrent_downloads is not None:
-        params["max_concurrent_downloads"] = max_concurrent_downloads
-
-    # Preprocessing options
-    if preprocess is not None:
-        params["preprocess"] = preprocess
-    if merge_pairs is not None:
-        params["merge_pairs"] = merge_pairs
-    if dedup is not None:
-        params["dedup"] = dedup
-    if trim_adapters is not None:
-        params["trim_adapters"] = trim_adapters
-    if scrub_host_reads is not None:
-        params["scrub_host_reads"] = scrub_host_reads
-    if hostile_index is not None:
-        params["hostile_index"] = hostile_index
-    if hostile_index_name is not None:
-        params["hostile_index_name"] = hostile_index_name
-    if filter_reads is not None:
-        params["filter_reads"] = filter_reads
-    if min_read_quality_illumina is not None:
-        params["min_read_quality_illumina"] = min_read_quality_illumina
-    if min_read_quality_nanopore is not None:
-        params["min_read_quality_nanopore"] = min_read_quality_nanopore
-    if min_read_length is not None:
-        params["min_read_length"] = min_read_length
-    if max_read_length is not None:
-        params["max_read_length"] = max_read_length
-
-    # SRA options (handle deprecation)
+    # Handle deprecation warning for human_read_scrub -> sra_human_db
+    effective_sra_human_db = sra_human_db
     if human_read_scrub is not None and sra_human_db is None:
         warning(
             "DEPRECATION: --human-read-scrub is deprecated. Please use --sra-human-db instead.",
         )
-        params["sra_human_db"] = human_read_scrub
-    elif sra_human_db is not None:
-        params["sra_human_db"] = sra_human_db
+        effective_sra_human_db = human_read_scrub
 
-    # LabKey options
-    if labkey is not None:
-        params["labkey"] = labkey
-    if labkey_server is not None:
-        params["labkey_server"] = labkey_server
-    if labkey_project_name is not None:
-        params["labkey_project_name"] = labkey_project_name
-    if labkey_webdav is not None:
-        params["labkey_webdav"] = labkey_webdav
-    if labkey_schema is not None:
-        params["labkey_schema"] = labkey_schema
-    if labkey_gottcha_fasta_list is not None:
-        params["labkey_gottcha_fasta_list"] = labkey_gottcha_fasta_list
-    if labkey_gottcha_full_list is not None:
-        params["labkey_gottcha_full_list"] = labkey_gottcha_full_list
-    if labkey_gottcha_blast_verified_full_list is not None:
-        params["labkey_gottcha_blast_verified_full_list"] = (
-            labkey_gottcha_blast_verified_full_list
+    # All pipeline params from CLI (None values are filtered by merge)
+    # NOTE: profile, config, resume are Nextflow-native, not pipeline params
+    cli_args: dict[str, Any] = {
+        # Core
+        "samplesheet": samplesheet,
+        "experiment_id": experiment_id,
+        "tools": tools,
+        "results": results,
+        "cleanup": cleanup,
+        "work_dir": work_dir,
+        "state_dir": state_dir,
+        # Database paths
+        "gottcha2_db": gottcha2_db,
+        "blast_db": blast_db,
+        "blast_db_prefix": blast_db_prefix,
+        "stat_index": stat_index,
+        "stat_dbss": stat_dbss,
+        "stat_annotation": stat_annotation,
+        "human_virus_taxlist": human_virus_taxlist,
+        # Analysis
+        "cutoff_percent": cutoff_percent,
+        "tax_stringency": tax_stringency,
+        "entropy": entropy,
+        "min_gottcha_reads": min_gottcha_reads,
+        "max_blast_targets": max_blast_targets,
+        "blast_retention_count": blast_retention_count,
+        "min_consecutive_bases": min_consecutive_bases,
+        "qtrim": qtrim,
+        "include_children": include_children,
+        "max_concurrent_downloads": max_concurrent_downloads,
+        # Preprocessing
+        "preprocess": preprocess,
+        "merge_pairs": merge_pairs,
+        "dedup": dedup,
+        "trim_adapters": trim_adapters,
+        "scrub_host_reads": scrub_host_reads,
+        "hostile_index": hostile_index,
+        "hostile_index_name": hostile_index_name,
+        "filter_reads": filter_reads,
+        "min_read_quality_illumina": min_read_quality_illumina,
+        "min_read_quality_nanopore": min_read_quality_nanopore,
+        "min_read_length": min_read_length,
+        "max_read_length": max_read_length,
+        # SRA (with deprecation handling)
+        "sra_human_db": effective_sra_human_db,
+        # LabKey
+        "labkey": labkey,
+        "labkey_server": labkey_server,
+        "labkey_project_name": labkey_project_name,
+        "labkey_webdav": labkey_webdav,
+        "labkey_schema": labkey_schema,
+        "labkey_gottcha_fasta_list": labkey_gottcha_fasta_list,
+        "labkey_gottcha_full_list": labkey_gottcha_full_list,
+        "labkey_gottcha_blast_verified_full_list": labkey_gottcha_blast_verified_full_list,
+        "labkey_blast_meta_hits_list": labkey_blast_meta_hits_list,
+        "labkey_blast_fasta_list": labkey_blast_fasta_list,
+        "labkey_exp_id_guard_list": labkey_exp_id_guard_list,
+    }
+
+    # Load params file if provided (we merge it ourselves, not Nextflow)
+    params_file_dict = load_params_file(params_file) if params_file else None
+
+    # Merge with precedence: preset < params_file < CLI
+    # NvdParams.merge() filters None values and applies validation
+    params = NvdParams.merge(preset_params, params_file_dict, cli_args)
+
+    # =========================================================================
+    # STEP 3: Post-merge validation
+    # =========================================================================
+
+    # Validate samplesheet is present (required, but can come from any source)
+    if params.samplesheet is None:
+        error(
+            "Samplesheet is required. Provide via --samplesheet, --preset, or --params-file"
         )
-    if labkey_blast_meta_hits_list is not None:
-        params["labkey_blast_meta_hits_list"] = labkey_blast_meta_hits_list
-    if labkey_blast_fasta_list is not None:
-        params["labkey_blast_fasta_list"] = labkey_blast_fasta_list
-    if labkey_exp_id_guard_list is not None:
-        params["labkey_exp_id_guard_list"] = labkey_exp_id_guard_list
+        raise typer.Exit(1)
+
+    if not params.samplesheet.exists():
+        error(f"Samplesheet not found: {params.samplesheet}")
+        raise typer.Exit(1)
+
+    # Tools validation is handled by NvdParams, just show info
+    if params.tools and params.tools != "all":
+        info(f"Using tools: {params.tools}")
 
     # =========================================================================
-    # STEP 3: Apply defaults for required params not yet set
-    # =========================================================================
-    params.setdefault("tools", "all")
-    params.setdefault("resume", False)
-    params.setdefault("cleanup", False)
-
-    # =========================================================================
-    # STEP 4: Auto-detect and validate
+    # STEP 4: Handle Nextflow-native options (not pipeline params)
     # =========================================================================
 
     # Auto-detect profile if not specified
-    if params.get("profile") is None:
-        params["profile"] = auto_detect_profile()
-        info(f"Auto-detected execution profile: {params['profile']}")
+    effective_profile = profile
+    if effective_profile is None:
+        effective_profile = auto_detect_profile()
+        info(f"Auto-detected execution profile: {effective_profile}")
     else:
-        _validate_profile(params["profile"])
-
-    # Validate tools
-    _validate_tools(params["tools"])
-    if params["tools"] != "all":
-        info(f"Using tools: {params['tools']}")
+        _validate_profile(effective_profile)
 
     # Find config file (user.config auto-discovery)
-    config_file = find_config_file(params.get("config"))
-    if config_file:
-        params["config"] = config_file
-        info(f"Using config: {config_file}")
+    effective_config = find_config_file(config)
+    if effective_config:
+        info(f"Using config: {effective_config}")
     else:
-        # Remove config key if no file found (don't pass None to Nextflow)
-        params.pop("config", None)
         warning("No config file found. Using command-line parameters only.")
         warning(f"Consider creating a config file at: {DEFAULT_CONFIG}")
 
@@ -780,11 +671,17 @@ def run(  # noqa: PLR0913, PLR0912, PLR0915, C901
     # =========================================================================
     # STEP 5: Build and execute command
     # =========================================================================
-    cmd = build_nextflow_command(params)
 
-    # Append params file if provided (Nextflow handles precedence)
-    if params_file is not None:
-        cmd.extend(["-params-file", str(params_file)])
+    # Build command with pipeline params
+    cmd = params.to_nextflow_args(PIPELINE_ROOT)
+
+    # Add Nextflow-native options (not pipeline params)
+    if effective_profile:
+        cmd.extend(["-profile", effective_profile])
+    if effective_config:
+        cmd.extend(["-c", str(effective_config)])
+    if resume:
+        cmd.append("-resume")
 
     # Append any extra args passed through to Nextflow (e.g., -with-tower)
     if ctx.args:

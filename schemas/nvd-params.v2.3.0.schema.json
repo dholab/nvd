@@ -52,10 +52,12 @@
     },
     "samplesheet": {
       "type": "string",
+      "format": "path",
       "description": "Path to samplesheet CSV with columns: sample_id, srr, platform, fastq1, fastq2"
     },
     "results": {
       "type": "string",
+      "format": "path",
       "description": "Directory for pipeline output files"
     },
     "tools": {
@@ -64,8 +66,8 @@
       "description": "Which analysis tool(s) to run. Valid tools: stat_blast, nvd, stat, blast, gottcha, all, clumpify. For multiple tools, use comma-separated values with no spaces (e.g., 'stat,blast,gottcha'). Use 'all' to run the complete pipeline."
     },
     "experiment_id": {
-      "type": "integer",
-      "description": "Experiment number for tracking and LabKey integration"
+      "type": "string",
+      "description": "Experiment identifier for tracking and LabKey integration"
     },
     "max_concurrent_downloads": {
       "type": "integer",
@@ -78,8 +80,8 @@
       "description": "Whether to empty the work directory after successful completion"
     },
     "work_dir": {
-      "type": "string",
-      "default": "work",
+      "type": ["string", "null"],
+      "format": "path",
       "description": "Nextflow work directory for intermediate files"
     },
     "gottcha2_db_version": {
@@ -94,14 +96,17 @@
     },
     "gottcha2_db": {
       "type": "string",
+      "format": "path",
       "description": "Path to GOTTCHA2 database directory"
     },
     "nvd_files": {
       "type": "string",
+      "format": "path",
       "description": "Path to NVD resource files directory"
     },
     "blast_db": {
       "type": "string",
+      "format": "path",
       "description": "Path to BLAST database directory"
     },
     "blast_db_prefix": {
@@ -110,18 +115,22 @@
     },
     "stat_index": {
       "type": "string",
+      "format": "path",
       "description": "Path to STAT index file"
     },
     "stat_dbss": {
       "type": "string",
+      "format": "path",
       "description": "Path to STAT DBSS file"
     },
     "stat_annotation": {
       "type": "string",
+      "format": "path",
       "description": "Path to STAT annotation file"
     },
     "human_virus_taxlist": {
       "type": "string",
+      "format": "path",
       "description": "Path to human virus taxonomy list file"
     },
     "preprocess": {
@@ -147,6 +156,7 @@
     },
     "hostile_index": {
       "type": "string",
+      "format": "path",
       "description": "Path to local hostile index for offline use; if null, hostile will auto-download"
     },
     "hostile_index_name": {
@@ -156,10 +166,12 @@
     },
     "sra_human_db": {
       "type": "string",
+      "format": "path",
       "description": "Path to human reads database for SRA submission scrubbing (clumpify workflow)"
     },
     "human_read_scrub": {
       "type": "string",
+      "format": "path",
       "deprecated": true,
       "description": "DEPRECATED: Use sra_human_db instead. Path to human reads database for SRA submission scrubbing"
     },
@@ -284,7 +296,18 @@
     },
     "state_dir": {
       "type": "string",
+      "format": "path",
       "description": "State directory for run tracking, upload deduplication, and taxonomy cache. Defaults to NVD_STATE_DIR env var or ~/.cache/nvd"
+    },
+    "refman_registry": {
+      "type": "string",
+      "format": "path",
+      "description": "Path to refman registry file for reference management"
+    },
+    "monoimage": {
+      "type": "string",
+      "default": "nrminor/nvd2:v0.1.0",
+      "description": "Container image to use for pipeline execution"
     }
   },
   "additionalProperties": false

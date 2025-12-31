@@ -6,6 +6,8 @@ Commands:
     nvd preset list     - List all registered presets
     nvd preset show     - Show details of a specific preset
     nvd preset register - Register a new preset or update existing
+    nvd preset merge    - Merge multiple presets into a new preset
+    nvd preset diff     - Show differences between two presets
     nvd preset export   - Export a preset to YAML or JSON
     nvd preset import   - Import a preset from a params file
     nvd preset delete   - Delete a preset
@@ -14,6 +16,7 @@ Commands:
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import typer
 from rich.table import Table
@@ -24,6 +27,9 @@ from py_nvd.cli.utils import (
     info,
     success,
 )
+
+if TYPE_CHECKING:
+    from py_nvd.models import TracedParams
 
 preset_app = typer.Typer(
     name="preset",
@@ -201,13 +207,19 @@ def preset_register(  # noqa: PLR0913
     if not preset_params:
         error("No parameters specified. Use --from-file or inline options.")
 
-    # Validate against schema
-    errors = params.validate_params(preset_params)
-    if errors:
+    # Validate with Pydantic model
+    from pydantic import ValidationError
+
+    from py_nvd.models import NvdParams
+
+    try:
+        NvdParams.model_validate(preset_params)
+    except ValidationError as e:
         console.print("[red]Invalid parameters:[/red]")
-        for err in errors:
-            console.print(f"  • {err}")
-        raise typer.Exit(1)
+        for err in e.errors():
+            field = ".".join(str(loc) for loc in err["loc"])
+            console.print(f"  • [bold]{field}[/bold]: {err['msg']}")
+        raise typer.Exit(1) from None
 
     # Check if updating existing
     existing = state.get_preset(name)
@@ -218,6 +230,195 @@ def preset_register(  # noqa: PLR0913
         success(f"Updated preset '{preset.name}' ({len(preset.params)} parameters)")
     else:
         success(f"Registered preset '{preset.name}' ({len(preset.params)} parameters)")
+
+
+@preset_app.command("merge")
+def preset_merge(
+    presets: list[str] = typer.Argument(
+        ...,
+        help="Presets to merge (later presets take precedence)",
+    ),
+    name: str = typer.Option(
+        ...,
+        "--name",
+        "-n",
+        help="Name for the new merged preset",
+    ),
+    description: str | None = typer.Option(
+        None,
+        "--description",
+        "-d",
+        help="Description for the new preset",
+    ),
+) -> None:
+    """
+    Merge multiple presets into a new preset.
+
+    Presets are merged in order, with later presets taking precedence over
+    earlier ones. The merged result is validated before being registered.
+
+    Examples:
+
+        # Merge two presets (production values override base)
+        nvd preset merge base production --name prod-merged
+
+        # Merge with description
+        nvd preset merge base tweaks --name custom -d "Base with custom tweaks"
+
+        # Merge three presets
+        nvd preset merge defaults team-settings my-overrides --name final
+    """
+    from pydantic import ValidationError
+    from rich.panel import Panel
+    from rich.table import Table
+
+    from py_nvd import state
+    from py_nvd.models import (
+        PARAM_CATEGORIES,
+        TracedParams,
+        get_field_category,
+        trace_merge,
+    )
+
+    if len(presets) < 2:
+        error("At least two presets are required for merging")
+        raise typer.Exit(1)
+
+    # Load all presets with labels for trace_merge
+    labeled_sources: list[tuple[str, dict]] = []
+    for preset_name in presets:
+        preset_obj = state.get_preset(preset_name)
+        if not preset_obj:
+            error(f"Preset not found: {preset_name}")
+            available = state.list_presets()
+            if available:
+                console.print("\n[cyan]Available presets:[/cyan]")
+                for p in available:
+                    console.print(f"  • {p.name}")
+            raise typer.Exit(1)
+        labeled_sources.append((preset_name, dict(preset_obj.params)))
+
+    # Merge with source tracking
+    try:
+        traced = trace_merge(*labeled_sources)
+    except ValidationError as e:
+        console.print("\n[red]✗ Validation failed after merge:[/red]\n")
+        for err in e.errors():
+            field = ".".join(str(loc) for loc in err["loc"])
+            msg = err["msg"]
+            console.print(f"  • [bold]{field}[/bold]: {msg}")
+        console.print()
+        raise typer.Exit(1) from None
+
+    # Check if name already exists
+    existing = state.get_preset(name)
+    if existing:
+        console.print(f"[yellow]Preset '{name}' already exists.[/yellow]")
+        if not typer.confirm("Overwrite?"):
+            raise typer.Abort()
+
+    # Build merged params dict (only explicitly set values, not defaults)
+    explicitly_set = set()
+    for _, params_dict in labeled_sources:
+        explicitly_set.update(params_dict.keys())
+
+    merged_params = {
+        k: v
+        for k, v in traced.params.model_dump(exclude_none=True).items()
+        if k in explicitly_set
+    }
+
+    # Register the new preset
+    new_preset = state.register_preset(name, merged_params, description)
+
+    # Display merge summary
+    _display_preset_merge_summary(presets, traced, new_preset.name, explicitly_set)
+
+
+def _display_preset_merge_summary(
+    preset_names: list[str],
+    traced: "TracedParams",  # noqa: F821 - forward reference
+    new_name: str,
+    explicitly_set: set[str],
+) -> None:
+    """Display a Rich Panel summarizing the preset merge result."""
+    from rich.panel import Panel
+    from rich.table import Table
+
+    from py_nvd.models import PARAM_CATEGORIES, get_field_category
+
+    # Build title from preset names
+    names_str = " + ".join(preset_names)
+    title = f"Preset Merge: {names_str}"
+
+    # Group sources by category (only explicitly set values)
+    categories: dict[str, list] = {cat: [] for cat in PARAM_CATEGORIES}
+
+    for src in traced.sources:
+        if src.source == "default":
+            continue
+        if src.value is None:
+            continue
+        if src.field not in explicitly_set:
+            continue
+
+        category = get_field_category(src.field)
+        categories[category].append(src)
+
+    # Build the table
+    table = Table(
+        show_header=False,
+        box=None,
+        padding=(0, 2),
+        collapse_padding=True,
+    )
+    table.add_column("Field", style="cyan", no_wrap=True)
+    table.add_column("Value", style="white")
+    table.add_column("Source", style="dim")
+
+    param_count = 0
+    for category, sources in categories.items():
+        if not sources:
+            continue
+
+        # Category header
+        table.add_row(f"[bold]{category}[/bold]", "", "")
+
+        for src in sources:
+            param_count += 1
+
+            # Format value (truncate long values)
+            value_str = str(src.value)
+            if len(value_str) > 40:
+                value_str = value_str[:37] + "..."
+
+            # Format source with override info
+            source_str = f"← {src.source}"
+            if src.overridden_value is not None:
+                ov = str(src.overridden_value)
+                if len(ov) > 20:
+                    ov = ov[:17] + "..."
+                source_str += f" [dim](was {src.overridden_source}: {ov})[/dim]"
+
+            table.add_row(f"  {src.field}", value_str, source_str)
+
+        table.add_row("", "", "")  # Spacer between categories
+
+    # Summary line
+    summary = f"[green]✓ Registered as '{new_name}'[/green] ({param_count} params)"
+
+    # Wrap in panel
+    panel = Panel(
+        table,
+        title=f"[bold]{title}[/bold]",
+        subtitle=summary,
+        border_style="blue",
+        padding=(1, 2),
+    )
+
+    console.print()
+    console.print(panel)
+    console.print()
 
 
 @preset_app.command("export")
@@ -325,7 +526,10 @@ def preset_import(
         nvd preset import shared-settings.yaml
         nvd preset import settings.yaml --name production -d "From shared config"
     """
+    from pydantic import ValidationError
+
     from py_nvd import params, state
+    from py_nvd.models import NvdParams
 
     # Determine name from filename if not specified
     if name is None:
@@ -337,12 +541,14 @@ def preset_import(
     if not preset_params:
         error(f"No parameters found in {path}")
 
-    errors = params.validate_params(preset_params)
-    if errors:
+    try:
+        NvdParams.model_validate(preset_params)
+    except ValidationError as e:
         console.print(f"[red]Invalid parameters in {path}:[/red]")
-        for err in errors:
-            console.print(f"  • {err}")
-        raise typer.Exit(1)
+        for err in e.errors():
+            field = ".".join(str(loc) for loc in err["loc"])
+            console.print(f"  • [bold]{field}[/bold]: {err['msg']}")
+        raise typer.Exit(1) from None
 
     # Check if updating existing
     existing = state.get_preset(name)
@@ -396,3 +602,162 @@ def preset_delete(
         success(f"Deleted preset '{name}'")
     else:
         error(f"Failed to delete preset '{name}'")
+
+
+@preset_app.command("diff")
+def preset_diff(
+    preset1: str = typer.Argument(..., help="First preset (base)"),
+    preset2: str = typer.Argument(..., help="Second preset (to compare)"),
+) -> None:
+    """
+    Show differences between two presets.
+
+    Compares the two presets and shows which parameters differ, which are
+    only in one preset, and which are the same. Output is grouped by category.
+
+    Examples:
+
+        nvd preset diff base production
+        nvd preset diff defaults my-settings
+    """
+    from rich.panel import Panel
+    from rich.table import Table
+
+    from py_nvd import state
+    from py_nvd.models import PARAM_CATEGORIES, get_field_category
+
+    # Load both presets
+    p1 = state.get_preset(preset1)
+    if not p1:
+        error(f"Preset not found: {preset1}")
+        raise typer.Exit(1)
+
+    p2 = state.get_preset(preset2)
+    if not p2:
+        error(f"Preset not found: {preset2}")
+        raise typer.Exit(1)
+
+    params1 = dict(p1.params)
+    params2 = dict(p2.params)
+
+    # Find differences
+    all_keys = set(params1.keys()) | set(params2.keys())
+
+    # Categorize differences
+    changed: list[tuple[str, str, object, object]] = []  # (category, field, val1, val2)
+    only_in_first: list[tuple[str, str, object]] = []  # (category, field, val)
+    only_in_second: list[tuple[str, str, object]] = []  # (category, field, val)
+
+    for key in sorted(all_keys):
+        category = get_field_category(key)
+        in_first = key in params1
+        in_second = key in params2
+
+        if in_first and in_second:
+            if params1[key] != params2[key]:
+                changed.append((category, key, params1[key], params2[key]))
+        elif in_first:
+            only_in_first.append((category, key, params1[key]))
+        else:
+            only_in_second.append((category, key, params2[key]))
+
+    # Check if identical
+    if not changed and not only_in_first and not only_in_second:
+        info(f"Presets '{preset1}' and '{preset2}' are identical")
+        return
+
+    # Build display
+    title = f"Diff: {preset1} → {preset2}"
+
+    table = Table(
+        show_header=False,
+        box=None,
+        padding=(0, 2),
+        collapse_padding=True,
+    )
+    table.add_column("Field", style="cyan", no_wrap=True)
+    table.add_column("Change", style="white")
+
+    # Group by category for display
+    def add_section(
+        items,  # list of tuples: (category, field, ...)
+        format_fn,
+    ):
+        """Add items grouped by category."""
+        by_category: dict[str, list] = {cat: [] for cat in PARAM_CATEGORIES}
+        for item in items:
+            by_category[item[0]].append(item)
+
+        for category in PARAM_CATEGORIES:
+            cat_items = by_category[category]
+            if not cat_items:
+                continue
+            table.add_row(f"[bold]{category}[/bold]", "")
+            for item in cat_items:
+                field = item[1]
+                change_str = format_fn(item)
+                table.add_row(f"  {field}", change_str)
+            table.add_row("", "")
+
+    # Changed values
+    if changed:
+        table.add_row("[bold yellow]Changed[/bold yellow]", "")
+        table.add_row("", "")
+        add_section(
+            changed,
+            lambda x: f"[red]{_format_diff_value(x[2])}[/red] → [green]{_format_diff_value(x[3])}[/green]",
+        )
+
+    # Only in first
+    if only_in_first:
+        table.add_row(f"[bold red]Only in {preset1}[/bold red]", "")
+        table.add_row("", "")
+        add_section(
+            only_in_first,
+            lambda x: f"[red]{_format_diff_value(x[2])}[/red]",
+        )
+
+    # Only in second
+    if only_in_second:
+        table.add_row(f"[bold green]Only in {preset2}[/bold green]", "")
+        table.add_row("", "")
+        add_section(
+            only_in_second,
+            lambda x: f"[green]{_format_diff_value(x[2])}[/green]",
+        )
+
+    # Summary
+    parts = []
+    if changed:
+        parts.append(f"{len(changed)} changed")
+    if only_in_first:
+        parts.append(f"{len(only_in_first)} only in {preset1}")
+    if only_in_second:
+        parts.append(f"{len(only_in_second)} only in {preset2}")
+    summary = ", ".join(parts)
+
+    panel = Panel(
+        table,
+        title=f"[bold]{title}[/bold]",
+        subtitle=f"[dim]{summary}[/dim]",
+        border_style="blue",
+        padding=(1, 2),
+    )
+
+    console.print()
+    console.print(panel)
+    console.print()
+
+
+def _format_diff_value(value: object) -> str:
+    """Format a value for diff display, truncating if needed."""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, list):
+        if len(value) > 3:
+            return f"[{', '.join(str(v) for v in value[:3])}, ...]"
+        return f"[{', '.join(str(v) for v in value)}]"
+    s = str(value)
+    if len(s) > 30:
+        return s[:27] + "..."
+    return s

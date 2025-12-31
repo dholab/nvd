@@ -302,12 +302,16 @@ class TestStateCommands:
 class TestValidateCommands:
     """Verify validate commands run without crashing."""
 
-    def test_validate_params(self):
-        """validate params runs (may warn but shouldn't crash)."""
-        result = runner.invoke(app, ["validate", "params"])
-        # Exit code 0 or 1 acceptable (validation pass/fail)
-        # Exit code 2 would indicate crash
-        assert result.exit_code in (0, 1)
+    def test_validate_params(self, tmp_path):
+        """validate params validates a params file."""
+        # Create a valid params file
+        params_file = tmp_path / "test-params.yaml"
+        params_file.write_text("tools: blast\ncutoff_percent: 0.01\n")
+
+        result = runner.invoke(app, ["validate", "params", str(params_file)])
+        # Should succeed with valid params
+        assert result.exit_code == 0
+        assert "Valid" in result.output or "valid" in result.output.lower()
 
     def test_validate_deps(self):
         """validate deps runs (may fail if deps missing but shouldn't crash)."""
@@ -361,6 +365,109 @@ class TestRunCommandHelp:
         result = runner.invoke(app, ["run", "--help"])
         assert result.exit_code == 0
         assert "samplesheet" in result.stdout.lower()
+
+
+class TestRunCommandValidation:
+    """Verify run command validation behavior."""
+
+    def test_run_missing_samplesheet_error(self, tmp_path, monkeypatch):
+        """run without samplesheet from any source shows error."""
+        monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
+        # Don't provide samplesheet via CLI, preset, or params-file
+        result = runner.invoke(app, ["run", "--dry-run"])
+        assert result.exit_code == 1
+        assert "samplesheet is required" in result.stdout.lower()
+
+    def test_run_samplesheet_from_params_file(self, tmp_path, monkeypatch):
+        """run can get samplesheet from --params-file."""
+        monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
+
+        # Create a valid samplesheet
+        samplesheet = tmp_path / "samples.csv"
+        samplesheet.write_text(
+            "sample_id,srr,platform,fastq1,fastq2\n"
+            "sample1,,illumina,/path/to/r1.fastq.gz,/path/to/r2.fastq.gz\n"
+        )
+
+        # Create params file with samplesheet
+        params_file = tmp_path / "params.yaml"
+        params_file.write_text(f"samplesheet: {samplesheet}\ntools: blast\n")
+
+        result = runner.invoke(
+            app, ["run", "--params-file", str(params_file), "--dry-run"]
+        )
+        # Should succeed (dry-run mode, won't actually run nextflow)
+        assert result.exit_code == 0
+        assert "dry-run" in result.stdout.lower()
+
+    def test_run_cli_overrides_params_file(self, tmp_path, monkeypatch):
+        """CLI args override params-file values."""
+        monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
+
+        # Create a valid samplesheet
+        samplesheet = tmp_path / "samples.csv"
+        samplesheet.write_text(
+            "sample_id,srr,platform,fastq1,fastq2\n"
+            "sample1,,illumina,/path/to/r1.fastq.gz,/path/to/r2.fastq.gz\n"
+        )
+
+        # Create params file with tools=all
+        params_file = tmp_path / "params.yaml"
+        params_file.write_text(f"samplesheet: {samplesheet}\ntools: all\n")
+
+        # CLI specifies tools=blast, should override
+        result = runner.invoke(
+            app,
+            [
+                "run",
+                "--params-file",
+                str(params_file),
+                "--tools",
+                "blast",
+                "--dry-run",
+            ],
+        )
+        assert result.exit_code == 0
+        # The command output should show blast, not all
+        assert "--tools" in result.stdout
+        assert "blast" in result.stdout
+
+    def test_run_samplesheet_not_found_error(self, tmp_path, monkeypatch):
+        """run with nonexistent samplesheet shows error."""
+        monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
+        nonexistent = tmp_path / "nonexistent.csv"
+        result = runner.invoke(
+            app, ["run", "--samplesheet", str(nonexistent), "--dry-run"]
+        )
+        assert result.exit_code == 1
+        assert "not found" in result.stdout.lower()
+
+    def test_run_invalid_tools_error(self, tmp_path, monkeypatch):
+        """run with invalid tools option raises validation error."""
+        monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
+
+        # Create a valid samplesheet
+        samplesheet = tmp_path / "samples.csv"
+        samplesheet.write_text(
+            "sample_id,srr,platform,fastq1,fastq2\n"
+            "sample1,,illumina,/path/to/r1.fastq.gz,/path/to/r2.fastq.gz\n"
+        )
+
+        result = runner.invoke(
+            app,
+            [
+                "run",
+                "--samplesheet",
+                str(samplesheet),
+                "--tools",
+                "invalid",
+                "--dry-run",
+            ],
+        )
+        assert result.exit_code == 1
+        # Pydantic ValidationError is raised with details about invalid tools
+        assert result.exception is not None
+        assert "invalid" in str(result.exception).lower()
 
 
 class TestSamplesheetCommands:
