@@ -5,7 +5,8 @@ A user-friendly wrapper around the Nextflow-based NVD2 pipeline for
 metagenomic virus detection and taxonomic classification.
 
 Usage:
-    nvd run --samplesheet samples.csv --experiment-id exp001
+    nvd run --samplesheet samples.csv
+    nvd run --samplesheet samples.csv --experiment-id exp001 --labkey
     nvd version
 
 This module defines the Typer app and registers all commands.

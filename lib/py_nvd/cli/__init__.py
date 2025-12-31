@@ -5,7 +5,8 @@ This package provides a user-friendly wrapper around the Nextflow-based
 NVD pipeline for metagenomic virus detection and taxonomic classification.
 
 Usage:
-    nvd run --samplesheet samples.csv --experiment-id exp001
+    nvd run --samplesheet samples.csv
+    nvd run --samplesheet samples.csv --experiment-id exp001 --labkey
     nvd version
     nvd --help
 """

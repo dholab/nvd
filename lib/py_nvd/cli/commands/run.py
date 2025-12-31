@@ -169,11 +169,11 @@ def run(  # noqa: PLR0913, PLR0912, PLR0915, C901
         dir_okay=False,
         rich_help_panel=PANEL_CORE,
     ),
-    experiment_id: str = typer.Option(
-        ...,
+    experiment_id: str | None = typer.Option(
+        None,
         "--experiment-id",
         "-e",
-        help="Unique experiment identifier",
+        help="Unique experiment identifier (required for LabKey uploads)",
         rich_help_panel=PANEL_CORE,
     ),
     # NOTE: Default is None, not "all" - this lets us detect if user provided it
@@ -598,9 +598,10 @@ def run(  # noqa: PLR0913, PLR0912, PLR0915, C901
     # Layer 2: CLI args override (only if actually provided, not None)
     # Required params (always provided)
     params["samplesheet"] = samplesheet
-    params["experiment_id"] = experiment_id
 
     # Optional params - only override if CLI provided a value
+    if experiment_id is not None:
+        params["experiment_id"] = experiment_id
     if tools is not None:
         params["tools"] = tools
     if results is not None:
