@@ -86,13 +86,15 @@
     },
     "gottcha2_db_version": {
       "type": "string",
-      "default": "RefSeq-r220",
       "description": "GOTTCHA2 database version identifier"
     },
     "blast_db_version": {
       "type": "string",
-      "default": "core-nt_2025-08-03",
       "description": "BLAST database version identifier"
+    },
+    "stat_db_version": {
+      "type": "string",
+      "description": "STAT database version identifier"
     },
     "gottcha2_db": {
       "type": "string",

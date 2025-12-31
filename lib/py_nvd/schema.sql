@@ -50,6 +50,9 @@ CREATE TABLE IF NOT EXISTS databases (
     PRIMARY KEY (db_type, version)
 );
 
+-- Index for looking up databases by path (for version auto-resolution)
+CREATE INDEX IF NOT EXISTS idx_databases_path ON databases(db_type, path);
+
 -- Upload tracking (target-agnostic)
 -- Tracks where results were uploaded with content hashing for idempotency.
 -- Keyed by (sample_id, sample_set_id, upload_type, upload_target) to track each upload.

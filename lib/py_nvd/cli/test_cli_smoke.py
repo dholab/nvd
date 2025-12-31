@@ -131,10 +131,10 @@ class TestStateCommands:
         assert result.exit_code == 0
 
     def test_state_databases_empty(self, tmp_path, monkeypatch):
-        """state databases handles empty database."""
+        """state database list handles empty database."""
         monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
         runner.invoke(app, ["state", "init"])
-        result = runner.invoke(app, ["state", "databases"])
+        result = runner.invoke(app, ["state", "database", "list"])
         assert result.exit_code == 0
 
     def test_state_taxonomy(self, tmp_path, monkeypatch):

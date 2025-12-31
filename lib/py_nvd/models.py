@@ -58,6 +58,31 @@ class Database:
     checksum: str | None = None
 
 
+@dataclass
+class DatabaseResolution:
+    """
+    Result of resolving database versions from the registry.
+
+    Used by resolve_database_versions() to return resolved versions,
+    warnings about unregistered paths or version mismatches, and
+    a list of registrations that were performed.
+
+    Note: This is a mutable dataclass (not frozen) because the resolution
+    process builds it incrementally.
+    """
+
+    # Resolved versions (None if path not provided or unresolvable)
+    blast_db_version: str | None = None
+    gottcha2_db_version: str | None = None
+    stat_db_version: str | None = None
+
+    # Warnings to display to the user
+    warnings: list[str] = Field(default_factory=list)
+
+    # Registrations performed: list of (db_type, version, path)
+    auto_registered: list[tuple[DbType, str, str]] = Field(default_factory=list)
+
+
 @dataclass(frozen=True)
 class Upload:
     """Record of a sample upload to any target (LabKey, local, Globus, etc.)."""
@@ -309,14 +334,19 @@ class NvdParams(BaseModel):
     # =========================================================================
     # Database Versions
     # =========================================================================
-    gottcha2_db_version: str = Field(
-        "RefSeq-r220",
+    gottcha2_db_version: str | None = Field(
+        None,
         description="GOTTCHA2 database version",
         json_schema_extra={"category": "Databases"},
     )
-    blast_db_version: str = Field(
-        "core-nt_2025-08-03",
+    blast_db_version: str | None = Field(
+        None,
         description="BLAST database version",
+        json_schema_extra={"category": "Databases"},
+    )
+    stat_db_version: str | None = Field(
+        None,
+        description="STAT database version",
         json_schema_extra={"category": "Databases"},
     )
 

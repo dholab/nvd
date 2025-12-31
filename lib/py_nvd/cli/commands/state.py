@@ -41,6 +41,14 @@ state_app = typer.Typer(
     no_args_is_help=True,
 )
 
+# Database subcommand group
+database_app = typer.Typer(
+    name="database",
+    help="Manage reference database registrations",
+    no_args_is_help=True,
+)
+state_app.add_typer(database_app, name="database")
+
 
 def _format_size(size_bytes: int) -> str:
     """Format bytes as human-readable size."""
@@ -1053,14 +1061,11 @@ def state_uploads(
     console.print()
 
 
-@state_app.command("databases")
-def state_databases(
+@database_app.command("list")
+def database_list(
     json_output: Annotated[
         bool,
-        typer.Option(
-            "--json",
-            help="Output as JSON",
-        ),
+        typer.Option("--json", help="Output as JSON"),
     ] = False,
 ) -> None:
     """
@@ -1071,11 +1076,8 @@ def state_databases(
 
     Examples:
 
-        # List all databases
-        nvd state databases
-
-        # Output as JSON
-        nvd state databases --json
+        nvd state database list
+        nvd state database list --json
     """
     from py_nvd import state
 
@@ -1097,7 +1099,6 @@ def state_databases(
                     "version": db.version,
                     "path": db.path,
                     "registered_at": db.registered_at,
-                    "checksum": db.checksum,
                     "path_exists": Path(db.path).exists(),
                 }
                 for db in databases
@@ -1107,7 +1108,7 @@ def state_databases(
 
     if not databases:
         info("No databases registered")
-        console.print("[dim]Use pipeline commands to register databases[/dim]")
+        console.print("[dim]Use 'nvd state database register' to add databases[/dim]")
         return
 
     table = Table(
@@ -1121,10 +1122,7 @@ def state_databases(
 
     for db in databases:
         path_exists = Path(db.path).exists()
-        if path_exists:
-            status_str = "[green]valid[/green]"
-        else:
-            status_str = "[red]missing[/red]"
+        status_str = "[green]valid[/green]" if path_exists else "[red]missing[/red]"
 
         # Truncate path if too long
         display_path = db.path
@@ -1145,22 +1143,19 @@ def state_databases(
     console.print()
 
 
-@state_app.command("database")
-def state_database(
+@database_app.command("show")
+def database_show(
     db_type: Annotated[
         str,
-        typer.Argument(help="Database type (blast, stat, gottcha2, hostile)"),
+        typer.Argument(help="Database type (blast, stat, gottcha2)"),
     ],
     version: Annotated[
         str | None,
-        typer.Argument(help="Database version (optional, shows latest if omitted)"),
+        typer.Argument(help="Version (optional, shows latest if omitted)"),
     ] = None,
     json_output: Annotated[
         bool,
-        typer.Option(
-            "--json",
-            help="Output as JSON",
-        ),
+        typer.Option("--json", help="Output as JSON"),
     ] = False,
 ) -> None:
     """
@@ -1170,17 +1165,11 @@ def state_database(
 
     Examples:
 
-        # Show latest BLAST database
-        nvd state database blast
-
-        # Show specific version
-        nvd state database blast core-nt_2024-12
-
-        # Output as JSON
-        nvd state database blast --json
+        nvd state database show blast
+        nvd state database show blast core-nt_2024-12
+        nvd state database show blast --json
     """
     from py_nvd import state
-    from py_nvd.models import DbType
 
     db_path = get_state_db_path()
     if not db_path.exists():
@@ -1191,7 +1180,7 @@ def state_database(
         raise typer.Exit(1)
 
     # Validate db_type
-    valid_types = ["blast", "stat", "gottcha2", "hostile"]
+    valid_types = ["blast", "stat", "gottcha2"]
     if db_type not in valid_types:
         if json_output:
             _output_json(
@@ -1206,16 +1195,12 @@ def state_database(
         )
         raise typer.Exit(1)
 
-    db = state.get_database(db_type, version)  # type: ignore[arg-type]
+    db = state.get_database_by_version(db_type, version)  # type: ignore[arg-type]
 
     if db is None:
         if json_output:
             _output_json(
-                {
-                    "error": "Database not found",
-                    "db_type": db_type,
-                    "version": version,
-                }
+                {"error": "Database not found", "db_type": db_type, "version": version}
             )
             raise typer.Exit(1)
         if version:
@@ -1233,7 +1218,6 @@ def state_database(
                 "version": db.version,
                 "path": db.path,
                 "registered_at": db.registered_at,
-                "checksum": db.checksum,
                 "path_exists": path_exists,
             }
         )
@@ -1244,8 +1228,6 @@ def state_database(
     console.print(f"  Version: {db.version}")
     console.print(f"  Path: {db.path}")
     console.print(f"  Registered: {db.registered_at}")
-    if db.checksum:
-        console.print(f"  Checksum: {db.checksum[:16]}...")
     console.print()
 
     if path_exists:
@@ -1253,6 +1235,177 @@ def state_database(
     else:
         warning("Path does not exist or is not accessible")
 
+    console.print()
+
+
+@database_app.command("register")
+def database_register(
+    db_type: Annotated[
+        str,
+        typer.Argument(help="Database type (blast, stat, gottcha2)"),
+    ],
+    path: Annotated[
+        Path,
+        typer.Argument(help="Path to the database"),
+    ],
+    version: Annotated[
+        str,
+        typer.Option("--version", "-v", help="Version label for this database"),
+    ],
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", help="Output as JSON"),
+    ] = False,
+) -> None:
+    """
+    Register a reference database.
+
+    Associates a database path with a version label for tracking and
+    auto-resolution during pipeline runs.
+
+    Examples:
+
+        nvd state database register blast /data/blast/core-nt -v core-nt_2025-01
+        nvd state database register gottcha2 /data/gottcha2/RefSeq-r220 -v RefSeq-r220
+        nvd state database register stat /data/stat/index.k31 -v 2024-12
+    """
+    from py_nvd import state
+
+    # Validate db_type
+    valid_types = ["blast", "stat", "gottcha2"]
+    if db_type not in valid_types:
+        if json_output:
+            _output_json(
+                {
+                    "error": f"Invalid database type: {db_type}",
+                    "valid_types": valid_types,
+                }
+            )
+            raise typer.Exit(1)
+        error(
+            f"Invalid database type: {db_type!r}. Must be one of: {', '.join(valid_types)}"
+        )
+        raise typer.Exit(1)
+
+    # Warn if path doesn't exist (but allow registration)
+    if not path.exists():
+        if not json_output:
+            warning(f"Path does not exist: {path}")
+            warning(
+                "Registering anyway - ensure path is correct before running pipeline"
+            )
+
+    # Register the database (path is canonicalized by register_database)
+    db = state.register_database(
+        db_type=db_type,  # type: ignore[arg-type]
+        version=version,
+        path=str(path),
+    )
+
+    if json_output:
+        _output_json(
+            {
+                "registered": True,
+                "db_type": db.db_type,
+                "version": db.version,
+                "path": db.path,
+                "registered_at": db.registered_at,
+            }
+        )
+        return
+
+    success(f"Registered {db.db_type} database: {db.version}")
+    console.print(f"  Path: {db.path}")
+    console.print()
+
+
+@database_app.command("unregister")
+def database_unregister(
+    db_type: Annotated[
+        str,
+        typer.Argument(help="Database type (blast, stat, gottcha2)"),
+    ],
+    version: Annotated[
+        str,
+        typer.Argument(help="Version to unregister"),
+    ],
+    yes: Annotated[
+        bool,
+        typer.Option("--yes", "-y", help="Skip confirmation prompt"),
+    ] = False,
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", help="Output as JSON"),
+    ] = False,
+) -> None:
+    """
+    Unregister a reference database.
+
+    Removes a database registration from the state. This does not delete
+    the actual database files.
+
+    Examples:
+
+        nvd state database unregister blast core-nt_2024-01
+        nvd state database unregister blast core-nt_2024-01 --yes
+    """
+    from py_nvd import state
+    from py_nvd.db import connect
+
+    # Validate db_type
+    valid_types = ["blast", "stat", "gottcha2"]
+    if db_type not in valid_types:
+        if json_output:
+            _output_json(
+                {
+                    "error": f"Invalid database type: {db_type}",
+                    "valid_types": valid_types,
+                }
+            )
+            raise typer.Exit(1)
+        error(
+            f"Invalid database type: {db_type!r}. Must be one of: {', '.join(valid_types)}"
+        )
+        raise typer.Exit(1)
+
+    # Check if database exists
+    db = state.get_database_by_version(db_type, version)  # type: ignore[arg-type]
+    if db is None:
+        if json_output:
+            _output_json(
+                {"error": "Database not found", "db_type": db_type, "version": version}
+            )
+            raise typer.Exit(1)
+        error(f"Database not found: {db_type} version {version}")
+        raise typer.Exit(1)
+
+    # Confirm unless --yes
+    if not yes and not json_output:
+        console.print(f"\n[bold]Database to unregister:[/bold]")
+        console.print(f"  Type: {db.db_type}")
+        console.print(f"  Version: {db.version}")
+        console.print(f"  Path: {db.path}")
+        console.print()
+        warning("This will remove the registration (not the actual files).")
+
+        confirm = typer.confirm("Proceed with unregistration?")
+        if not confirm:
+            info("Cancelled")
+            raise typer.Exit(0)
+
+    # Delete the registration
+    with connect() as conn:
+        conn.execute(
+            "DELETE FROM databases WHERE db_type = ? AND version = ?",
+            (db_type, version),
+        )
+        conn.commit()
+
+    if json_output:
+        _output_json({"unregistered": True, "db_type": db_type, "version": version})
+        return
+
+    success(f"Unregistered {db_type} database: {version}")
     console.print()
 
 

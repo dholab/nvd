@@ -17,6 +17,7 @@ from typing import Literal
 from py_nvd.db import connect
 from py_nvd.models import (
     Database,
+    DatabaseResolution,
     DbType,
     Preset,
     ProcessedSample,
@@ -201,30 +202,56 @@ def complete_run(
 def register_database(
     db_type: DbType,
     version: str,
-    path: str,
-    checksum: str | None = None,
+    path: str | Path,
     state_dir: Path | str | None = None,
 ) -> Database:
-    """Register a reference database."""
+    """
+    Register a reference database.
+
+    The path is canonicalized (resolved to absolute, symlinks followed)
+    before storage to ensure consistent lookups.
+
+    Args:
+        db_type: Type of database (blast, stat, gottcha2)
+        version: Version string for this database
+        path: Path to the database (will be canonicalized)
+        state_dir: Optional state directory override
+
+    Returns:
+        The registered Database
+    """
+    # Canonicalize path for consistent storage/lookup
+    canonical_path = str(Path(path).resolve())
+
     with connect(state_dir) as conn:
         conn.execute(
             """INSERT OR REPLACE INTO databases 
                (db_type, version, path, checksum, registered_at)
-               VALUES (?, ?, ?, ?, datetime('now'))""",
-            (db_type, version, path, checksum),
+               VALUES (?, ?, ?, NULL, datetime('now'))""",
+            (db_type, version, canonical_path),
         )
         conn.commit()
-        result = get_database(db_type, version, state_dir)
+        result = get_database_by_version(db_type, version, state_dir)
         assert result is not None  # We just inserted it
         return result
 
 
-def get_database(
+def get_database_by_version(
     db_type: DbType,
     version: str | None = None,
     state_dir: Path | str | None = None,
 ) -> Database | None:
-    """Get database info. If version is None, returns most recently registered."""
+    """
+    Get database info by version.
+
+    Args:
+        db_type: Type of database (blast, stat, gottcha2, hostile)
+        version: Version string. If None, returns most recently registered.
+        state_dir: Optional state directory override
+
+    Returns:
+        Database if found, None otherwise
+    """
     with connect(state_dir) as conn:
         if version:
             row = conn.execute(
@@ -245,6 +272,106 @@ def get_database(
                 checksum=row["checksum"],
             )
         return None
+
+
+def get_database_by_path(
+    db_type: DbType,
+    path: str | Path,
+    state_dir: Path | str | None = None,
+) -> tuple[Database | None, str | None]:
+    """
+    Look up database by canonical path.
+
+    When multiple versions are registered at the same path, returns the
+    most recently registered version and includes a warning.
+
+    Args:
+        db_type: Type of database (blast, stat, gottcha2, hostile)
+        path: Path to the database (will be canonicalized)
+        state_dir: Optional state directory override
+
+    Returns:
+        (database, warning) tuple:
+        - database: The Database if found, None otherwise
+        - warning: Warning message if multiple versions found, None otherwise
+    """
+    # Canonicalize path (resolve symlinks, make absolute)
+    canonical_path = str(Path(path).resolve())
+
+    with connect(state_dir) as conn:
+        # Use rowid as tiebreaker when timestamps are equal (same second)
+        rows = conn.execute(
+            """SELECT * FROM databases 
+               WHERE db_type = ? AND path = ? 
+               ORDER BY registered_at DESC, rowid DESC""",
+            (db_type, canonical_path),
+        ).fetchall()
+
+        if not rows:
+            return None, None
+
+        # Build Database from first (newest) row
+        row = rows[0]
+        database = Database(
+            db_type=row["db_type"],
+            version=row["version"],
+            path=row["path"],
+            registered_at=row["registered_at"],
+            checksum=row["checksum"],
+        )
+
+        # Warn if multiple versions exist for this path
+        warning = None
+        if len(rows) > 1:
+            versions = [r["version"] for r in rows]
+            warning = (
+                f"Multiple versions registered for {db_type} at {canonical_path}: "
+                f"{', '.join(versions)}. Using newest: {database.version}"
+            )
+
+        return database, warning
+
+
+def get_databases_by_path(
+    db_type: DbType,
+    path: str | Path,
+    state_dir: Path | str | None = None,
+) -> list[Database]:
+    """
+    Get all database versions registered at a given path.
+
+    Useful for debugging when multiple versions are registered at the same path.
+
+    Args:
+        db_type: Type of database (blast, stat, gottcha2, hostile)
+        path: Path to the database (will be canonicalized)
+        state_dir: Optional state directory override
+
+    Returns:
+        List of Database objects, ordered by registered_at DESC (newest first)
+    """
+    # Canonicalize path
+    canonical_path = str(Path(path).resolve())
+
+    with connect(state_dir) as conn:
+        # Use rowid as tiebreaker when timestamps are equal (same second)
+        rows = conn.execute(
+            """SELECT * FROM databases 
+               WHERE db_type = ? AND path = ? 
+               ORDER BY registered_at DESC, rowid DESC""",
+            (db_type, canonical_path),
+        ).fetchall()
+
+        return [
+            Database(
+                db_type=row["db_type"],
+                version=row["version"],
+                path=row["path"],
+                registered_at=row["registered_at"],
+                checksum=row["checksum"],
+            )
+            for row in rows
+        ]
 
 
 def list_databases(state_dir: Path | str | None = None) -> list[Database]:
@@ -275,12 +402,157 @@ def validate_databases(
     """
     errors = []
     for db_type, version in required:
-        db = get_database(db_type, version, state_dir)
+        db = get_database_by_version(db_type, version, state_dir)
         if not db:
             errors.append(f"Database not registered: {db_type} ({version or 'any'})")
         elif not Path(db.path).exists():
             errors.append(f"Database path missing: {db.path}")
     return errors
+
+
+# --- Database Version Resolution ---
+
+
+def _resolve_single_database(
+    db_type: DbType,
+    path: Path | None,
+    version: str | None,
+    state_dir: Path | str | None = None,
+) -> tuple[str | None, str | None, tuple[DbType, str, str] | None]:
+    """
+    Resolve version for a single database type.
+
+    Implements the resolution logic:
+    - path=None: skip (return None for all)
+    - path set, version set: register/update, return provided version
+    - path set, version None: lookup, return registered version or warn
+
+    Args:
+        db_type: Type of database (blast, stat, gottcha2)
+        path: Database path (None means skip)
+        version: User-provided version (None means auto-resolve)
+        state_dir: Optional state directory override
+
+    Returns:
+        (resolved_version, warning, registration) tuple:
+        - resolved_version: The version to use (None if unresolvable)
+        - warning: Warning message if any (None otherwise)
+        - registration: (db_type, version, path) if registered (None otherwise)
+    """
+    # Case 1: No path provided - nothing to resolve
+    if path is None:
+        return version, None, None
+
+    canonical_path = str(Path(path).resolve())
+
+    # Look up existing registration for this path
+    existing_db, lookup_warning = get_database_by_path(db_type, path, state_dir)
+
+    # Case 2: Path and version both provided - register/update
+    if version is not None:
+        if existing_db is None:
+            # Not registered - auto-register
+            register_database(db_type, version, canonical_path, state_dir=state_dir)
+            return version, None, (db_type, version, canonical_path)
+
+        if existing_db.version == version:
+            # Already registered with same version - no-op
+            # But still warn if there were multiple versions at this path
+            return version, lookup_warning, None
+
+        # Registered with different version - warn and add new registration
+        # (old registration is preserved for history)
+        warning = (
+            f"{db_type} database at {canonical_path}: "
+            f"registering new version '{version}' (previously registered as '{existing_db.version}')"
+        )
+        register_database(db_type, version, canonical_path, state_dir=state_dir)
+        return version, warning, (db_type, version, canonical_path)
+
+    # Case 3: Path provided but no version - auto-resolve from registry
+    if existing_db is not None:
+        # Found in registry - use registered version
+        # Include lookup_warning if there were multiple versions
+        return existing_db.version, lookup_warning, None
+
+    # Not in registry and no version provided - warn
+    warning = (
+        f"{db_type} database path not registered: {canonical_path}. "
+        f"Provide --{db_type.replace('_', '-')}-db-version or register with: "
+        f"nvd state database register {db_type} {canonical_path} --version <version>"
+    )
+    return None, warning, None
+
+
+def resolve_database_versions(
+    blast_db: Path | None = None,
+    blast_db_version: str | None = None,
+    gottcha2_db: Path | None = None,
+    gottcha2_db_version: str | None = None,
+    stat_index: Path | None = None,
+    stat_db_version: str | None = None,
+    state_dir: Path | str | None = None,
+) -> DatabaseResolution:
+    """
+    Resolve database versions from the registry based on provided paths.
+
+    For each database type, applies the following logic:
+    1. If path is None: skip (no resolution needed)
+    2. If path is set and version is set:
+       - Look up path in registry
+       - If not found: auto-register (path, version)
+       - If found with same version: no-op
+       - If found with different version: warn and update registry
+    3. If path is set and version is None:
+       - Look up path in registry
+       - If found: use registered version
+       - If not found: warn "unregistered path"
+
+    Args:
+        blast_db: Path to BLAST database (None to skip)
+        blast_db_version: User-provided BLAST version (None to auto-resolve)
+        gottcha2_db: Path to GOTTCHA2 database (None to skip)
+        gottcha2_db_version: User-provided GOTTCHA2 version (None to auto-resolve)
+        stat_index: Path to STAT index file (None to skip)
+        stat_db_version: User-provided STAT version (None to auto-resolve)
+        state_dir: Optional state directory override
+
+    Returns:
+        DatabaseResolution with resolved versions, warnings, and registrations
+    """
+    resolution = DatabaseResolution()
+
+    # Resolve BLAST
+    blast_resolved, blast_warning, blast_reg = _resolve_single_database(
+        "blast", blast_db, blast_db_version, state_dir
+    )
+    resolution.blast_db_version = blast_resolved
+    if blast_warning:
+        resolution.warnings.append(blast_warning)
+    if blast_reg:
+        resolution.auto_registered.append(blast_reg)
+
+    # Resolve GOTTCHA2
+    gottcha2_resolved, gottcha2_warning, gottcha2_reg = _resolve_single_database(
+        "gottcha2", gottcha2_db, gottcha2_db_version, state_dir
+    )
+    resolution.gottcha2_db_version = gottcha2_resolved
+    if gottcha2_warning:
+        resolution.warnings.append(gottcha2_warning)
+    if gottcha2_reg:
+        resolution.auto_registered.append(gottcha2_reg)
+
+    # Resolve STAT (uses stat_index as canonical path)
+    stat_resolved, stat_warning, stat_reg = _resolve_single_database(
+        "stat", stat_index, stat_db_version, state_dir
+    )
+    resolution.stat_db_version = stat_resolved
+    if stat_warning:
+        resolution.warnings.append(stat_warning)
+    if stat_reg:
+        resolution.auto_registered.append(stat_reg)
+
+    return resolution
 
 
 # --- Processed Sample Tracking ---

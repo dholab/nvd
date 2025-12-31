@@ -1495,3 +1495,477 @@ class TestSchemaMigrationSafety:
         assert str(EXPECTED_VERSION) in error_msg  # Expected version
         assert "--update-db-destructive" in error_msg  # CLI flag
         assert str(db_path) in error_msg  # Path to database
+
+
+class TestDatabasePathLookup:
+    """Tests for get_database_by_path() and get_databases_by_path()."""
+
+    @pytest.fixture
+    def temp_state_dir(self):
+        """Create a temporary directory for state database."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            yield Path(tmpdir)
+
+    @pytest.fixture
+    def temp_db_path(self, temp_state_dir):
+        """Create a temporary 'database' directory to register."""
+        db_dir = temp_state_dir / "fake_blast_db"
+        db_dir.mkdir()
+        return db_dir
+
+    def test_get_database_by_path_not_found(self, temp_state_dir, temp_db_path):
+        """Looking up unregistered path returns (None, None)."""
+        from py_nvd.state import get_database_by_path
+
+        db, warning = get_database_by_path("blast", temp_db_path, temp_state_dir)
+
+        assert db is None
+        assert warning is None
+
+    def test_get_database_by_path_single_match(self, temp_state_dir, temp_db_path):
+        """Looking up registered path returns (database, None)."""
+        from py_nvd.state import get_database_by_path, register_database
+
+        register_database("blast", "v1.0", str(temp_db_path), state_dir=temp_state_dir)
+
+        db, warning = get_database_by_path("blast", temp_db_path, temp_state_dir)
+
+        assert db is not None
+        assert db.version == "v1.0"
+        assert db.db_type == "blast"
+        assert warning is None
+
+    def test_get_database_by_path_multiple_versions_returns_newest(
+        self, temp_state_dir, temp_db_path
+    ):
+        """When multiple versions share a path, returns newest with warning."""
+        import time
+
+        from py_nvd.state import get_database_by_path, register_database
+
+        # Register first version
+        register_database("blast", "v1.0", str(temp_db_path), state_dir=temp_state_dir)
+        # Small delay to ensure different timestamps
+        time.sleep(0.1)
+        # Register second version at same path
+        register_database("blast", "v2.0", str(temp_db_path), state_dir=temp_state_dir)
+
+        db, warning = get_database_by_path("blast", temp_db_path, temp_state_dir)
+
+        assert db is not None
+        assert db.version == "v2.0"  # Newest
+        assert warning is not None
+        assert "v1.0" in warning
+        assert "v2.0" in warning
+        assert "Multiple versions" in warning
+
+    def test_get_database_by_path_canonicalizes_path(
+        self, temp_state_dir, temp_db_path
+    ):
+        """Path is canonicalized before lookup."""
+        from py_nvd.state import get_database_by_path, register_database
+
+        # Register with absolute path
+        register_database(
+            "blast", "v1.0", str(temp_db_path.resolve()), state_dir=temp_state_dir
+        )
+
+        # Look up with relative path (from temp_state_dir)
+        relative_path = temp_db_path.relative_to(temp_state_dir.parent)
+        # We need to be in the right directory for relative paths to work
+        # Instead, test with a symlink
+        symlink_path = temp_state_dir / "symlink_to_db"
+        symlink_path.symlink_to(temp_db_path)
+
+        db, warning = get_database_by_path("blast", symlink_path, temp_state_dir)
+
+        assert db is not None
+        assert db.version == "v1.0"
+
+    def test_get_database_by_path_different_types_independent(
+        self, temp_state_dir, temp_db_path
+    ):
+        """Different db_types at same path are independent."""
+        from py_nvd.state import get_database_by_path, register_database
+
+        register_database(
+            "blast", "blast-v1", str(temp_db_path), state_dir=temp_state_dir
+        )
+        register_database(
+            "gottcha2", "gottcha-v1", str(temp_db_path), state_dir=temp_state_dir
+        )
+
+        blast_db, _ = get_database_by_path("blast", temp_db_path, temp_state_dir)
+        gottcha_db, _ = get_database_by_path("gottcha2", temp_db_path, temp_state_dir)
+
+        assert blast_db is not None
+        assert blast_db.version == "blast-v1"
+        assert gottcha_db is not None
+        assert gottcha_db.version == "gottcha-v1"
+
+    def test_get_databases_by_path_returns_all_versions(
+        self, temp_state_dir, temp_db_path
+    ):
+        """get_databases_by_path returns all versions at a path."""
+        import time
+
+        from py_nvd.state import get_databases_by_path, register_database
+
+        register_database("blast", "v1.0", str(temp_db_path), state_dir=temp_state_dir)
+        time.sleep(0.1)
+        register_database("blast", "v2.0", str(temp_db_path), state_dir=temp_state_dir)
+        time.sleep(0.1)
+        register_database("blast", "v3.0", str(temp_db_path), state_dir=temp_state_dir)
+
+        databases = get_databases_by_path("blast", temp_db_path, temp_state_dir)
+
+        assert len(databases) == 3
+        # Should be ordered newest first
+        assert databases[0].version == "v3.0"
+        assert databases[1].version == "v2.0"
+        assert databases[2].version == "v1.0"
+
+    def test_get_databases_by_path_empty_when_not_found(
+        self, temp_state_dir, temp_db_path
+    ):
+        """get_databases_by_path returns empty list when path not registered."""
+        from py_nvd.state import get_databases_by_path
+
+        databases = get_databases_by_path("blast", temp_db_path, temp_state_dir)
+
+        assert databases == []
+
+    def test_get_database_by_version_still_works(self, temp_state_dir, temp_db_path):
+        """Renamed get_database_by_version still works correctly."""
+        from py_nvd.state import get_database_by_version, register_database
+
+        register_database("blast", "v1.0", str(temp_db_path), state_dir=temp_state_dir)
+
+        # Lookup by specific version
+        db = get_database_by_version("blast", "v1.0", temp_state_dir)
+        assert db is not None
+        assert db.version == "v1.0"
+
+        # Lookup latest (version=None)
+        db = get_database_by_version("blast", None, temp_state_dir)
+        assert db is not None
+        assert db.version == "v1.0"
+
+        # Lookup non-existent version
+        db = get_database_by_version("blast", "v999", temp_state_dir)
+        assert db is None
+
+
+class TestResolveDatabaseVersions:
+    """Tests for resolve_database_versions() and _resolve_single_database()."""
+
+    @pytest.fixture
+    def temp_state_dir(self):
+        """Create a temporary directory for state database."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            yield Path(tmpdir)
+
+    @pytest.fixture
+    def temp_db_paths(self, temp_state_dir):
+        """Create temporary 'database' directories for each type."""
+        paths = {}
+        for db_type in ["blast", "gottcha2", "stat"]:
+            db_dir = temp_state_dir / f"fake_{db_type}_db"
+            db_dir.mkdir()
+            paths[db_type] = db_dir
+        return paths
+
+    # =========================================================================
+    # Case 1: No paths provided - nothing to resolve
+    # =========================================================================
+
+    def test_no_paths_returns_empty_resolution(self, temp_state_dir):
+        """When no paths provided, returns empty resolution."""
+        from py_nvd.state import resolve_database_versions
+
+        resolution = resolve_database_versions(state_dir=temp_state_dir)
+
+        assert resolution.blast_db_version is None
+        assert resolution.gottcha2_db_version is None
+        assert resolution.stat_db_version is None
+        assert resolution.warnings == []
+        assert resolution.auto_registered == []
+
+    def test_version_without_path_passes_through(self, temp_state_dir):
+        """Version provided without path is returned as-is (unusual but valid)."""
+        from py_nvd.state import resolve_database_versions
+
+        resolution = resolve_database_versions(
+            blast_db_version="v1.0",
+            state_dir=temp_state_dir,
+        )
+
+        # Version passes through even without path
+        assert resolution.blast_db_version == "v1.0"
+        assert resolution.warnings == []
+        assert resolution.auto_registered == []
+
+    # =========================================================================
+    # Case 2: Path and version both provided - auto-register
+    # =========================================================================
+
+    def test_path_and_version_auto_registers_new(self, temp_state_dir, temp_db_paths):
+        """Path + version auto-registers when not in registry."""
+        from py_nvd.state import get_database_by_version, resolve_database_versions
+
+        resolution = resolve_database_versions(
+            blast_db=temp_db_paths["blast"],
+            blast_db_version="core-nt_2025-01",
+            state_dir=temp_state_dir,
+        )
+
+        # Version is resolved
+        assert resolution.blast_db_version == "core-nt_2025-01"
+        assert resolution.warnings == []
+
+        # Was auto-registered
+        assert len(resolution.auto_registered) == 1
+        assert resolution.auto_registered[0][0] == "blast"
+        assert resolution.auto_registered[0][1] == "core-nt_2025-01"
+
+        # Verify it's in the database
+        db = get_database_by_version("blast", "core-nt_2025-01", temp_state_dir)
+        assert db is not None
+        assert db.version == "core-nt_2025-01"
+
+    def test_path_and_version_same_as_registered_is_noop(
+        self, temp_state_dir, temp_db_paths
+    ):
+        """Path + version matching registry is a no-op."""
+        from py_nvd.state import register_database, resolve_database_versions
+
+        # Pre-register
+        register_database(
+            "blast",
+            "core-nt_2025-01",
+            str(temp_db_paths["blast"]),
+            state_dir=temp_state_dir,
+        )
+
+        resolution = resolve_database_versions(
+            blast_db=temp_db_paths["blast"],
+            blast_db_version="core-nt_2025-01",
+            state_dir=temp_state_dir,
+        )
+
+        # Version is resolved
+        assert resolution.blast_db_version == "core-nt_2025-01"
+        # No warnings, no new registrations
+        assert resolution.warnings == []
+        assert resolution.auto_registered == []
+
+    def test_path_and_version_different_from_registered_warns_and_updates(
+        self, temp_state_dir, temp_db_paths
+    ):
+        """Path + version different from registry warns and updates."""
+        from py_nvd.state import (
+            get_database_by_version,
+            register_database,
+            resolve_database_versions,
+        )
+
+        # Pre-register with old version
+        register_database(
+            "blast",
+            "core-nt_2024-01",
+            str(temp_db_paths["blast"]),
+            state_dir=temp_state_dir,
+        )
+
+        resolution = resolve_database_versions(
+            blast_db=temp_db_paths["blast"],
+            blast_db_version="core-nt_2025-01",  # Different version
+            state_dir=temp_state_dir,
+        )
+
+        # Uses provided version
+        assert resolution.blast_db_version == "core-nt_2025-01"
+
+        # Warns about new registration (old one preserved)
+        assert len(resolution.warnings) == 1
+        assert "registering new version" in resolution.warnings[0].lower()
+        assert "core-nt_2024-01" in resolution.warnings[0]
+        assert "core-nt_2025-01" in resolution.warnings[0]
+
+        # Was registered
+        assert len(resolution.auto_registered) == 1
+
+        # Verify new version is in database
+        db = get_database_by_version("blast", "core-nt_2025-01", temp_state_dir)
+        assert db is not None
+
+        # Verify old version is ALSO still in database (history preserved)
+        old_db = get_database_by_version("blast", "core-nt_2024-01", temp_state_dir)
+        assert old_db is not None
+
+    # =========================================================================
+    # Case 3: Path provided without version - auto-resolve from registry
+    # =========================================================================
+
+    def test_path_without_version_resolves_from_registry(
+        self, temp_state_dir, temp_db_paths
+    ):
+        """Path without version resolves from registry."""
+        from py_nvd.state import register_database, resolve_database_versions
+
+        # Pre-register
+        register_database(
+            "blast",
+            "core-nt_2025-01",
+            str(temp_db_paths["blast"]),
+            state_dir=temp_state_dir,
+        )
+
+        resolution = resolve_database_versions(
+            blast_db=temp_db_paths["blast"],
+            # No blast_db_version provided
+            state_dir=temp_state_dir,
+        )
+
+        # Resolved from registry
+        assert resolution.blast_db_version == "core-nt_2025-01"
+        assert resolution.warnings == []
+        assert resolution.auto_registered == []
+
+    def test_path_without_version_not_registered_warns(
+        self, temp_state_dir, temp_db_paths
+    ):
+        """Path without version, not in registry, warns."""
+        from py_nvd.state import resolve_database_versions
+
+        resolution = resolve_database_versions(
+            blast_db=temp_db_paths["blast"],
+            # No blast_db_version provided, not registered
+            state_dir=temp_state_dir,
+        )
+
+        # Cannot resolve
+        assert resolution.blast_db_version is None
+
+        # Warns about unregistered path
+        assert len(resolution.warnings) == 1
+        assert "not registered" in resolution.warnings[0]
+        assert "blast" in resolution.warnings[0]
+        assert "nvd state database register" in resolution.warnings[0]
+
+        # No registrations
+        assert resolution.auto_registered == []
+
+    # =========================================================================
+    # Multiple database types
+    # =========================================================================
+
+    def test_resolves_all_database_types(self, temp_state_dir, temp_db_paths):
+        """Resolves all three database types independently."""
+        from py_nvd.state import resolve_database_versions
+
+        resolution = resolve_database_versions(
+            blast_db=temp_db_paths["blast"],
+            blast_db_version="blast-v1",
+            gottcha2_db=temp_db_paths["gottcha2"],
+            gottcha2_db_version="gottcha-v1",
+            stat_index=temp_db_paths["stat"],
+            stat_db_version="stat-v1",
+            state_dir=temp_state_dir,
+        )
+
+        assert resolution.blast_db_version == "blast-v1"
+        assert resolution.gottcha2_db_version == "gottcha-v1"
+        assert resolution.stat_db_version == "stat-v1"
+        assert resolution.warnings == []
+        assert len(resolution.auto_registered) == 3
+
+    def test_mixed_resolution_scenarios(self, temp_state_dir, temp_db_paths):
+        """Different resolution scenarios for different db types."""
+        from py_nvd.state import register_database, resolve_database_versions
+
+        # Pre-register BLAST
+        register_database(
+            "blast",
+            "blast-v1",
+            str(temp_db_paths["blast"]),
+            state_dir=temp_state_dir,
+        )
+
+        resolution = resolve_database_versions(
+            # BLAST: path only, should resolve from registry
+            blast_db=temp_db_paths["blast"],
+            # GOTTCHA2: path + version, should auto-register
+            gottcha2_db=temp_db_paths["gottcha2"],
+            gottcha2_db_version="gottcha-v1",
+            # STAT: path only, not registered, should warn
+            stat_index=temp_db_paths["stat"],
+            state_dir=temp_state_dir,
+        )
+
+        # BLAST resolved from registry
+        assert resolution.blast_db_version == "blast-v1"
+
+        # GOTTCHA2 auto-registered
+        assert resolution.gottcha2_db_version == "gottcha-v1"
+        assert any(r[0] == "gottcha2" for r in resolution.auto_registered)
+
+        # STAT unresolved with warning
+        assert resolution.stat_db_version is None
+        assert any("stat" in w and "not registered" in w for w in resolution.warnings)
+
+    # =========================================================================
+    # Edge cases
+    # =========================================================================
+
+    def test_path_canonicalization_in_resolution(self, temp_state_dir, temp_db_paths):
+        """Paths are canonicalized during resolution."""
+        from py_nvd.state import register_database, resolve_database_versions
+
+        # Register with absolute path
+        register_database(
+            "blast",
+            "v1.0",
+            str(temp_db_paths["blast"].resolve()),
+            state_dir=temp_state_dir,
+        )
+
+        # Create symlink
+        symlink = temp_state_dir / "blast_symlink"
+        symlink.symlink_to(temp_db_paths["blast"])
+
+        # Resolve using symlink
+        resolution = resolve_database_versions(
+            blast_db=symlink,
+            state_dir=temp_state_dir,
+        )
+
+        # Should resolve via symlink
+        assert resolution.blast_db_version == "v1.0"
+        assert resolution.warnings == []
+
+    def test_multiple_versions_at_path_uses_newest_with_warning(
+        self, temp_state_dir, temp_db_paths
+    ):
+        """When multiple versions at path, uses newest and warns."""
+        from py_nvd.state import register_database, resolve_database_versions
+
+        # Register multiple versions at same path
+        register_database(
+            "blast", "v1.0", str(temp_db_paths["blast"]), state_dir=temp_state_dir
+        )
+        register_database(
+            "blast", "v2.0", str(temp_db_paths["blast"]), state_dir=temp_state_dir
+        )
+
+        resolution = resolve_database_versions(
+            blast_db=temp_db_paths["blast"],
+            state_dir=temp_state_dir,
+        )
+
+        # Uses newest
+        assert resolution.blast_db_version == "v2.0"
+
+        # Warns about multiple versions
+        assert len(resolution.warnings) == 1
+        assert "Multiple versions" in resolution.warnings[0]

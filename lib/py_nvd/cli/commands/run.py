@@ -228,6 +228,27 @@ def run(  # noqa: PLR0913, PLR0912, PLR0915, C901
         rich_help_panel=PANEL_DATABASES,
     ),
     # -------------------------------------------------------------------------
+    # Database Versions
+    # -------------------------------------------------------------------------
+    gottcha2_db_version: str | None = typer.Option(
+        None,
+        "--gottcha2-db-version",
+        help="GOTTCHA2 database version (auto-resolved from registry if path registered)",
+        rich_help_panel=PANEL_DATABASES,
+    ),
+    blast_db_version: str | None = typer.Option(
+        None,
+        "--blast-db-version",
+        help="BLAST database version (auto-resolved from registry if path registered)",
+        rich_help_panel=PANEL_DATABASES,
+    ),
+    stat_db_version: str | None = typer.Option(
+        None,
+        "--stat-db-version",
+        help="STAT database version (auto-resolved from registry if path registered)",
+        rich_help_panel=PANEL_DATABASES,
+    ),
+    # -------------------------------------------------------------------------
     # Analysis Parameters
     # -------------------------------------------------------------------------
     cutoff_percent: float | None = typer.Option(
@@ -574,6 +595,10 @@ def run(  # noqa: PLR0913, PLR0912, PLR0915, C901
         "stat_dbss": stat_dbss,
         "stat_annotation": stat_annotation,
         "human_virus_taxlist": human_virus_taxlist,
+        # Database versions
+        "gottcha2_db_version": gottcha2_db_version,
+        "blast_db_version": blast_db_version,
+        "stat_db_version": stat_db_version,
         # Analysis
         "cutoff_percent": cutoff_percent,
         "tax_stringency": tax_stringency,
@@ -639,6 +664,41 @@ def run(  # noqa: PLR0913, PLR0912, PLR0915, C901
     # Tools validation is handled by NvdParams, just show info
     if params.tools and params.tools != "all":
         info(f"Using tools: {params.tools}")
+
+    # =========================================================================
+    # STEP 3b: Resolve database versions from registry
+    # =========================================================================
+    from py_nvd.state import resolve_database_versions
+
+    resolution = resolve_database_versions(
+        blast_db=params.blast_db,
+        blast_db_version=params.blast_db_version,
+        gottcha2_db=params.gottcha2_db,
+        gottcha2_db_version=params.gottcha2_db_version,
+        stat_index=params.stat_index,
+        stat_db_version=params.stat_db_version,
+        state_dir=state_dir,
+    )
+
+    # Display warnings (unregistered paths, version mismatches)
+    for warn in resolution.warnings:
+        warning(warn)
+
+    # Display info for auto-registrations
+    for db_type, version, path in resolution.auto_registered:
+        info(f"Registered {db_type} database: {version} at {path}")
+
+    # Apply resolved versions to params
+    resolved_updates: dict[str, Any] = {}
+    if resolution.blast_db_version is not None:
+        resolved_updates["blast_db_version"] = resolution.blast_db_version
+    if resolution.gottcha2_db_version is not None:
+        resolved_updates["gottcha2_db_version"] = resolution.gottcha2_db_version
+    if resolution.stat_db_version is not None:
+        resolved_updates["stat_db_version"] = resolution.stat_db_version
+
+    if resolved_updates:
+        params = NvdParams.merge(params, resolved_updates)
 
     # =========================================================================
     # STEP 4: Handle Nextflow-native options (not pipeline params)
