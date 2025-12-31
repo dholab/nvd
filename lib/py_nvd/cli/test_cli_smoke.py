@@ -143,6 +143,161 @@ class TestStateCommands:
         result = runner.invoke(app, ["state", "taxonomy"])
         assert result.exit_code == 0
 
+    def test_state_info_includes_hits(self, tmp_path, monkeypatch):
+        """state info shows hit counts."""
+        monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
+        runner.invoke(app, ["state", "init"])
+
+        from py_nvd.hits import record_hit_observation, register_hit
+
+        hit, _ = register_hit("ACGTACGT", "2024-01-01T00:00:00Z", tmp_path)
+        record_hit_observation(
+            hit.hit_key,
+            "set_001",
+            "sample_a",
+            "2024-01-01T00:00:00Z",
+            state_dir=tmp_path,
+        )
+
+        result = runner.invoke(app, ["state", "info", "--json"])
+        assert result.exit_code == 0
+        assert '"hits": 1' in result.stdout
+        assert '"hit_observations": 1' in result.stdout
+
+    def test_state_prune_cascades_to_hit_observations(self, tmp_path, monkeypatch):
+        """Pruning a run deletes its hit observations."""
+        from datetime import datetime, timedelta
+
+        monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
+        runner.invoke(app, ["state", "init"])
+
+        from py_nvd.hits import (
+            count_hit_observations,
+            record_hit_observation,
+            register_hit,
+        )
+        from py_nvd.state import complete_run, register_run
+
+        # Create an old run and mark it completed
+        old_date = (datetime.now() - timedelta(days=100)).strftime("%Y-%m-%d %H:%M:%S")
+        register_run("old_run", "old_set", state_dir=tmp_path)
+        complete_run("old_run", "completed", state_dir=tmp_path)
+
+        # Manually set the started_at to be old
+        from py_nvd.db import connect
+
+        with connect(tmp_path) as conn:
+            conn.execute(
+                "UPDATE runs SET started_at = ? WHERE run_id = ?", (old_date, "old_run")
+            )
+            conn.commit()
+
+        # Register hit and observation for this run
+        hit, _ = register_hit("ACGTACGT", old_date, tmp_path)
+        record_hit_observation(
+            hit.hit_key, "old_set", "sample_a", old_date, state_dir=tmp_path
+        )
+
+        assert count_hit_observations(tmp_path) == 1
+
+        # Prune runs older than 90 days
+        result = runner.invoke(app, ["state", "prune", "--older-than", "90d", "--yes"])
+        assert result.exit_code == 0
+        assert "hit observation" in result.stdout
+
+        # Observation should be deleted
+        assert count_hit_observations(tmp_path) == 0
+
+    def test_state_prune_garbage_collects_orphaned_hits(self, tmp_path, monkeypatch):
+        """Hits with no observations are deleted after prune."""
+        from datetime import datetime, timedelta
+
+        monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
+        runner.invoke(app, ["state", "init"])
+
+        from py_nvd.hits import count_hits, record_hit_observation, register_hit
+        from py_nvd.state import complete_run, register_run
+
+        old_date = (datetime.now() - timedelta(days=100)).strftime("%Y-%m-%d %H:%M:%S")
+        register_run("old_run", "old_set", state_dir=tmp_path)
+        complete_run("old_run", "completed", state_dir=tmp_path)
+
+        from py_nvd.db import connect
+
+        with connect(tmp_path) as conn:
+            conn.execute(
+                "UPDATE runs SET started_at = ? WHERE run_id = ?", (old_date, "old_run")
+            )
+            conn.commit()
+
+        # Register hit with single observation
+        hit, _ = register_hit("ACGTACGT", old_date, tmp_path)
+        record_hit_observation(
+            hit.hit_key, "old_set", "sample_a", old_date, state_dir=tmp_path
+        )
+
+        assert count_hits(tmp_path) == 1
+
+        # Prune
+        result = runner.invoke(app, ["state", "prune", "--older-than", "90d", "--yes"])
+        assert result.exit_code == 0
+        assert "orphaned hit" in result.stdout
+
+        # Hit should be garbage collected
+        assert count_hits(tmp_path) == 0
+
+    def test_state_prune_preserves_shared_hits(self, tmp_path, monkeypatch):
+        """Hits observed in multiple runs survive partial prune."""
+        from datetime import datetime, timedelta
+
+        monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
+        runner.invoke(app, ["state", "init"])
+
+        from py_nvd.hits import count_hits, record_hit_observation, register_hit
+        from py_nvd.state import complete_run, register_run
+
+        old_date = (datetime.now() - timedelta(days=100)).strftime("%Y-%m-%d %H:%M:%S")
+        new_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        # Create old run and new run, mark both completed
+        register_run("old_run", "old_set", state_dir=tmp_path)
+        complete_run("old_run", "completed", state_dir=tmp_path)
+        register_run("new_run", "new_set", state_dir=tmp_path)
+        complete_run("new_run", "completed", state_dir=tmp_path)
+
+        from py_nvd.db import connect
+
+        with connect(tmp_path) as conn:
+            conn.execute(
+                "UPDATE runs SET started_at = ? WHERE run_id = ?", (old_date, "old_run")
+            )
+            conn.commit()
+
+        # Same hit observed in both runs
+        hit, _ = register_hit("ACGTACGT", old_date, tmp_path)
+        record_hit_observation(
+            hit.hit_key, "old_set", "sample_a", old_date, state_dir=tmp_path
+        )
+        record_hit_observation(
+            hit.hit_key, "new_set", "sample_b", new_date, state_dir=tmp_path
+        )
+
+        assert count_hits(tmp_path) == 1
+
+        # Prune old run only
+        result = runner.invoke(app, ["state", "prune", "--older-than", "90d", "--yes"])
+        assert result.exit_code == 0
+
+        # Hit should still exist (has observation from new run)
+        assert count_hits(tmp_path) == 1
+
+        # Prune old run only
+        result = runner.invoke(app, ["state", "prune", "--older-than", "90d", "--yes"])
+        assert result.exit_code == 0
+
+        # Hit should still exist (has observation from new run)
+        assert count_hits(tmp_path) == 1
+
 
 class TestValidateCommands:
     """Verify validate commands run without crashing."""
@@ -476,6 +631,176 @@ class TestPipelineRoot:
         from py_nvd.cli.utils import PIPELINE_ROOT
 
         assert PIPELINE_ROOT.is_absolute()
+
+
+class TestHitsCommands:
+    """Verify hits commands work with isolated state directory."""
+
+    def test_hits_help(self):
+        """hits --help exits cleanly."""
+        result = runner.invoke(app, ["hits", "--help"])
+        assert result.exit_code == 0
+        assert "export" in result.stdout.lower()
+
+    def test_hits_export_help(self):
+        """hits export --help shows options."""
+        result = runner.invoke(app, ["hits", "export", "--help"])
+        assert result.exit_code == 0
+        assert "--format" in result.stdout
+        assert "--output" in result.stdout
+        assert "--include-sequence" in result.stdout
+
+    def test_hits_export_empty_database(self, tmp_path, monkeypatch):
+        """hits export handles empty database gracefully."""
+        monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
+        runner.invoke(app, ["state", "init"])
+        result = runner.invoke(app, ["hits", "export"])
+        assert result.exit_code == 0
+        assert "No hits found" in result.stdout
+
+    def test_hits_export_tsv(self, tmp_path, monkeypatch):
+        """hits export outputs TSV format."""
+        monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
+        runner.invoke(app, ["state", "init"])
+
+        # Register a hit
+        from py_nvd.hits import record_hit_observation, register_hit
+
+        hit, _ = register_hit("ACGTACGTACGT", "2024-01-01T00:00:00Z", tmp_path)
+        record_hit_observation(
+            hit.hit_key,
+            "set_001",
+            "sample_a",
+            "2024-01-01T00:00:00Z",
+            contig_id="NODE_1",
+            state_dir=tmp_path,
+        )
+
+        result = runner.invoke(app, ["hits", "export", "--format", "tsv"])
+        assert result.exit_code == 0
+        assert "hit_key" in result.stdout
+        assert "sample_a" in result.stdout
+        assert hit.hit_key in result.stdout
+
+    def test_hits_export_csv(self, tmp_path, monkeypatch):
+        """hits export outputs CSV format."""
+        monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
+        runner.invoke(app, ["state", "init"])
+
+        from py_nvd.hits import record_hit_observation, register_hit
+
+        hit, _ = register_hit("ACGTACGTACGT", "2024-01-01T00:00:00Z", tmp_path)
+        record_hit_observation(
+            hit.hit_key,
+            "set_001",
+            "sample_a",
+            "2024-01-01T00:00:00Z",
+            state_dir=tmp_path,
+        )
+
+        result = runner.invoke(app, ["hits", "export", "--format", "csv"])
+        assert result.exit_code == 0
+        assert "hit_key" in result.stdout
+
+    def test_hits_export_fasta(self, tmp_path, monkeypatch):
+        """hits export outputs FASTA format with just hit_key header."""
+        monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
+        runner.invoke(app, ["state", "init"])
+
+        from py_nvd.hits import record_hit_observation, register_hit
+
+        hit, _ = register_hit("ACGTACGTACGT", "2024-01-01T00:00:00Z", tmp_path)
+        record_hit_observation(
+            hit.hit_key,
+            "set_001",
+            "sample_a",
+            "2024-01-01T00:00:00Z",
+            state_dir=tmp_path,
+        )
+
+        result = runner.invoke(app, ["hits", "export", "--format", "fasta"])
+        assert result.exit_code == 0
+        assert f">{hit.hit_key}" in result.stdout
+        assert "ACGTACGTACGT" in result.stdout
+
+    def test_hits_export_parquet_requires_output(self, tmp_path, monkeypatch):
+        """hits export --format parquet requires --output."""
+        monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
+        runner.invoke(app, ["state", "init"])
+
+        result = runner.invoke(app, ["hits", "export", "--format", "parquet"])
+        assert result.exit_code == 1
+        assert "requires --output" in result.stdout
+
+    def test_hits_export_parquet_to_file(self, tmp_path, monkeypatch):
+        """hits export --format parquet writes to file."""
+        monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
+        runner.invoke(app, ["state", "init"])
+
+        from py_nvd.hits import record_hit_observation, register_hit
+
+        hit, _ = register_hit("ACGTACGTACGT", "2024-01-01T00:00:00Z", tmp_path)
+        record_hit_observation(
+            hit.hit_key,
+            "set_001",
+            "sample_a",
+            "2024-01-01T00:00:00Z",
+            state_dir=tmp_path,
+        )
+
+        output_file = tmp_path / "hits.parquet"
+        result = runner.invoke(
+            app, ["hits", "export", "--format", "parquet", "--output", str(output_file)]
+        )
+        assert result.exit_code == 0
+        assert output_file.exists()
+
+    def test_hits_export_include_sequence(self, tmp_path, monkeypatch):
+        """hits export --include-sequence includes full sequence."""
+        monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
+        runner.invoke(app, ["state", "init"])
+
+        from py_nvd.hits import record_hit_observation, register_hit
+
+        hit, _ = register_hit("ACGTACGTACGT", "2024-01-01T00:00:00Z", tmp_path)
+        record_hit_observation(
+            hit.hit_key,
+            "set_001",
+            "sample_a",
+            "2024-01-01T00:00:00Z",
+            state_dir=tmp_path,
+        )
+
+        result = runner.invoke(app, ["hits", "export", "--include-sequence"])
+        assert result.exit_code == 0
+        assert "sequence" in result.stdout
+        assert "ACGTACGTACGT" in result.stdout
+
+    def test_hits_export_to_file(self, tmp_path, monkeypatch):
+        """hits export --output writes to file."""
+        monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
+        runner.invoke(app, ["state", "init"])
+
+        from py_nvd.hits import record_hit_observation, register_hit
+
+        hit, _ = register_hit("ACGTACGTACGT", "2024-01-01T00:00:00Z", tmp_path)
+        record_hit_observation(
+            hit.hit_key,
+            "set_001",
+            "sample_a",
+            "2024-01-01T00:00:00Z",
+            state_dir=tmp_path,
+        )
+
+        output_file = tmp_path / "hits.tsv"
+        result = runner.invoke(app, ["hits", "export", "--output", str(output_file)])
+        assert result.exit_code == 0
+        assert output_file.exists()
+        assert "Wrote" in result.stdout
+
+        content = output_file.read_text()
+        assert "hit_key" in content
+        assert hit.hit_key in content
 
 
 class TestResumeFile:

@@ -111,3 +111,36 @@ class Preset:
     created_at: str
     updated_at: str
     description: str | None = None
+
+
+@dataclass(frozen=True)
+class Hit:
+    """
+    A unique biological sequence identified by BLAST.
+
+    The hit_key is a BLAKE3 hash of the canonical sequence (lexicographically
+    smaller of the sequence and its reverse complement), making it strand-agnostic
+    and deterministic across runs.
+    """
+
+    hit_key: str  # BLAKE3 hash of canonical sequence (32 hex chars)
+    sequence_length: int  # Original length in bp
+    sequence_compressed: bytes  # 2-bit + zlib compressed (with N positions)
+    gc_content: float  # GC fraction (0.0-1.0)
+    first_seen_date: str  # ISO8601
+
+
+@dataclass(frozen=True)
+class HitObservation:
+    """
+    Record of when/where a hit was observed.
+
+    Links a Hit to a specific sample and run, enabling queries like
+    "which samples have seen this hit?" and "what hits appeared in this run?"
+    """
+
+    hit_key: str  # References Hit.hit_key
+    sample_set_id: str  # Links to Run.sample_set_id
+    sample_id: str  # Source sample
+    run_date: str  # ISO8601
+    contig_id: str | None = None  # Original SPAdes contig ID (for traceability)

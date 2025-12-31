@@ -108,3 +108,35 @@ CREATE TABLE IF NOT EXISTS presets (
 
 -- Index for listing presets by creation date
 CREATE INDEX IF NOT EXISTS idx_presets_created_at ON presets(created_at);
+
+-- Unique biological sequences (deduplicated by canonical sequence hash)
+-- A "hit" is a contig that had BLAST results. The hit_key is computed from
+-- the canonical sequence (lexicographically smaller of seq vs reverse-complement),
+-- making it strand-agnostic and deterministic across runs.
+CREATE TABLE IF NOT EXISTS hits (
+    hit_key TEXT PRIMARY KEY,              -- BLAKE3 hash of canonical sequence (32 hex chars)
+    sequence_length INTEGER NOT NULL,      -- original length in bp
+    sequence_compressed BLOB NOT NULL,     -- 2-bit + zlib compressed (with N positions)
+    gc_content REAL NOT NULL,              -- GC fraction (0.0-1.0)
+    first_seen_date TEXT NOT NULL          -- ISO8601
+);
+
+-- Records of when/where each hit was observed (many-to-one with hits)
+-- Enables queries like "which samples have seen this hit?" and 
+-- "what hits appeared in this run?"
+CREATE TABLE IF NOT EXISTS hit_observations (
+    id INTEGER PRIMARY KEY,
+    hit_key TEXT NOT NULL REFERENCES hits(hit_key),
+    sample_set_id TEXT NOT NULL,           -- links to runs table
+    sample_id TEXT NOT NULL,               -- source sample
+    run_date TEXT NOT NULL,                -- ISO8601
+    contig_id TEXT,                        -- original SPAdes contig ID (for traceability)
+    UNIQUE(hit_key, sample_set_id, sample_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_hit_observations_sample_set 
+    ON hit_observations(sample_set_id);
+CREATE INDEX IF NOT EXISTS idx_hit_observations_sample 
+    ON hit_observations(sample_id);
+CREATE INDEX IF NOT EXISTS idx_hit_observations_hit_key 
+    ON hit_observations(hit_key);

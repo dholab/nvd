@@ -234,6 +234,10 @@ def state_info(
         taxonomy_count = conn.execute(
             "SELECT COUNT(*) FROM taxonomy_versions"
         ).fetchone()[0]
+        hits_count = conn.execute("SELECT COUNT(*) FROM hits").fetchone()[0]
+        hit_observations_count = conn.execute(
+            "SELECT COUNT(*) FROM hit_observations"
+        ).fetchone()[0]
 
         # Get recent activity
         latest_run = conn.execute(
@@ -261,6 +265,8 @@ def state_info(
                     "databases": databases_count,
                     "presets": presets_count,
                     "taxonomy_versions": taxonomy_count,
+                    "hits": hits_count,
+                    "hit_observations": hit_observations_count,
                 },
                 "latest_run": {
                     "run_id": latest_run["run_id"] if latest_run else None,
@@ -295,6 +301,8 @@ def state_info(
     table.add_row("Databases", str(databases_count))
     table.add_row("Presets", str(presets_count))
     table.add_row("Taxonomy Versions", str(taxonomy_count))
+    table.add_row("Hits", str(hits_count))
+    table.add_row("Hit Observations", str(hit_observations_count))
 
     console.print(table)
     console.print()
@@ -1517,6 +1525,7 @@ def state_prune(
         total_samples = 0
         total_uploads = 0
         total_taxonomy = 0
+        total_observations = 0
 
         for run in runs_to_prune:
             run_id = run["run_id"]
@@ -1531,6 +1540,12 @@ def state_prune(
             # Count uploads for samples in this run's sample_set
             upload_count = conn.execute(
                 "SELECT COUNT(*) FROM uploads WHERE sample_set_id = ?",
+                (sample_set_id,),
+            ).fetchone()[0]
+
+            # Count hit observations for this sample_set
+            observation_count = conn.execute(
+                "SELECT COUNT(*) FROM hit_observations WHERE sample_set_id = ?",
                 (sample_set_id,),
             ).fetchone()[0]
 
@@ -1550,12 +1565,14 @@ def state_prune(
                     "status": run["status"],
                     "sample_count": sample_count,
                     "upload_count": upload_count,
+                    "observation_count": observation_count,
                     "has_taxonomy": has_taxonomy,
                 }
             )
 
             total_samples += sample_count
             total_uploads += upload_count
+            total_observations += observation_count
             if has_taxonomy:
                 total_taxonomy += 1
 
@@ -1573,6 +1590,7 @@ def state_prune(
                         "samples": total_samples,
                         "uploads": total_uploads,
                         "taxonomy_versions": total_taxonomy,
+                        "hit_observations": total_observations,
                     },
                 }
             )
@@ -1621,6 +1639,7 @@ def state_prune(
             console.print(f"  {total_samples} processed sample(s)")
             console.print(f"  {total_uploads} upload(s)")
             console.print(f"  {total_taxonomy} taxonomy version(s)")
+            console.print(f"  {total_observations} hit observation(s)")
             console.print()
 
             if dry_run:
@@ -1636,6 +1655,7 @@ def state_prune(
                     raise typer.Exit(0)
 
         # Perform the deletion
+        sample_set_ids_to_prune = []
         for detail in prune_details:
             run_id = detail["run_id"]
 
@@ -1645,6 +1665,7 @@ def state_prune(
                 (run_id,),
             ).fetchone()
             sample_set_id = run_row["sample_set_id"]
+            sample_set_ids_to_prune.append(sample_set_id)
 
             # Delete uploads for this sample_set
             conn.execute(
@@ -1672,11 +1693,20 @@ def state_prune(
 
         conn.commit()
 
-        if not json_output:
-            success(
-                f"Pruned {len(prune_details)} run(s), {total_samples} sample(s), "
-                f"{total_uploads} upload(s), {total_taxonomy} taxonomy version(s)"
-            )
+    # Prune hit observations and orphaned hits (separate transactions, idempotent)
+    from py_nvd.hits import prune_hits_for_sample_set
+
+    total_orphaned_hits = 0
+    for sample_set_id in sample_set_ids_to_prune:
+        _, orphaned = prune_hits_for_sample_set(sample_set_id)
+        total_orphaned_hits += orphaned
+
+    if not json_output:
+        success(
+            f"Pruned {len(prune_details)} run(s), {total_samples} sample(s), "
+            f"{total_uploads} upload(s), {total_taxonomy} taxonomy version(s), "
+            f"{total_observations} hit observation(s), {total_orphaned_hits} orphaned hit(s)"
+        )
 
 
 def _get_table_counts(conn) -> dict[str, int]:
@@ -1693,6 +1723,10 @@ def _get_table_counts(conn) -> dict[str, int]:
             "SELECT COUNT(*) FROM taxonomy_versions"
         ).fetchone()[0],
         "sra_cache": conn.execute("SELECT COUNT(*) FROM sra_cache").fetchone()[0],
+        "hits": conn.execute("SELECT COUNT(*) FROM hits").fetchone()[0],
+        "hit_observations": conn.execute(
+            "SELECT COUNT(*) FROM hit_observations"
+        ).fetchone()[0],
     }
 
 

@@ -66,3 +66,47 @@ process ANNOTATE_LEAST_COMMON_ANCESTORS {
     """
 
 }
+
+/*
+ * Register BLAST hits with idempotent keys in the state database.
+ *
+ * This process computes deterministic hit keys from contig sequences,
+ * enabling cross-run and cross-sample deduplication. The hit key is
+ * derived from the canonical sequence (lexicographically smaller of
+ * the sequence and its reverse complement).
+ *
+ * Input:
+ *   - tuple of (sample_id, contigs, blast_results, sample_set_id, state_dir)
+ * Output:
+ *   - tuple of (sample_id, log_file)
+ *
+ * Note: This is currently a "dead end" - output is not consumed by
+ * downstream processes. The hits are registered in the state database
+ * for later querying via `nvd hits export`.
+ */
+process REGISTER_HITS {
+
+    tag "${sample_id}"
+    label "low"
+
+    errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
+    maxRetries 2
+
+    input:
+    tuple val(sample_id), path(contigs), path(blast_results), val(sample_set_id), path(state_dir)
+
+    output:
+    tuple val(sample_id), path("${sample_id}_hits_registered.log")
+
+    script:
+    """
+    register_hits.py \\
+        --contigs ${contigs} \\
+        --blast-results ${blast_results} \\
+        --state-dir ${state_dir} \\
+        --sample-set-id '${sample_set_id}' \\
+        --sample-id '${sample_id}' \\
+        -v \\
+        > ${sample_id}_hits_registered.log 2>&1
+    """
+}

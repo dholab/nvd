@@ -16,7 +16,7 @@ include { CLASSIFY_WITH_MEGABLAST } from "../subworkflows/classify_with_megablas
 include { CLASSIFY_WITH_BLASTN } from "../subworkflows/classify_with_blastn"
 include { BUNDLE_BLAST_FOR_LABKEY } from "../subworkflows/bundle_blast_for_labkey"
 include { COUNT_READS } from "../modules/count_reads"
-include { CHECK_RUN_STATE } from "../modules/utils"
+include { CHECK_RUN_STATE; REGISTER_HITS } from "../modules/utils"
 include { VALIDATE_LK_BLAST } from "../subworkflows/validate_lk_blast_lists.nf"
 include { VALIDATE_LK_EXP_FRESH } from "../modules/validate_blast_labkey.nf"
 include { REGISTER_LK_EXPERIMENT } from "../modules/validate_blast_labkey.nf"
@@ -136,6 +136,25 @@ workflow STAT_BLAST_WORKFLOW {
     merged_results_for_labkey = CLASSIFY_WITH_BLASTN.out.merged_results
         .tap { merged_results_for_trigger }
         .tap { merged_results_for_completion }
+        .tap { merged_results_for_hits }
+
+    // Convert run_context from queue channel to value channel so it can be
+    // consumed by multiple processes (hit registration, LabKey uploads, etc.).
+    // This is safe because CHECK_RUN_STATE emits exactly once per pipeline run.
+    ch_run_context = CHECK_RUN_STATE.out.run_context.first()
+
+    // Register hits with idempotent keys in the state database.
+    // Join contigs with merged BLAST results, then combine with run context.
+    ch_register_hits_input = EXTRACT_HUMAN_VIRUSES.out.contigs
+        .join(merged_results_for_hits, by: 0)
+        .combine(ch_run_context)
+        .map { sample_id, contigs, blast_results, sample_set_id, state_dir ->
+            tuple(sample_id, contigs, blast_results, sample_set_id, state_dir)
+        }
+
+    REGISTER_HITS(ch_register_hits_input)
+    // Dead end for now - output not consumed by downstream processes.
+    // Hits are registered in the state database for querying via `nvd hits export`.
 
     if (params.labkey) {
         // Check LabKey guard list - ensures experiment_id hasn't been uploaded before
@@ -151,11 +170,6 @@ workflow STAT_BLAST_WORKFLOW {
         ch_validation_gate = CHECK_RUN_STATE.out.ready
             .combine(VALIDATE_LK_EXP_FRESH.out.validated)
             .map { _ready, _validated -> true }
-
-        // Convert run_context from queue channel to value channel so it can be
-        // consumed by multiple processes (LABKEY_UPLOAD_BLAST and LABKEY_UPLOAD_FASTA).
-        // This is safe because CHECK_RUN_STATE emits exactly once per pipeline run.
-        ch_run_context = CHECK_RUN_STATE.out.run_context.first()
 
         BUNDLE_BLAST_FOR_LABKEY(
             merged_results_for_labkey,
