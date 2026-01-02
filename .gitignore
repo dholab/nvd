@@ -2,6 +2,7 @@
 
 # project root files
 !.gitignore
+!.pre-commit-config.yaml
 !Dockerfile
 !Containerfile
 !LICENSE
@@ -38,6 +39,7 @@
 !/lib/py_nvd
 !/lib/py_nvd/*.py
 !/lib/py_nvd/*.sql
+!/lib/py_nvd/*.json
 !/lib/py_nvd/cli/
 !/lib/py_nvd/cli/*.py
 !/lib/py_nvd/cli/commands/

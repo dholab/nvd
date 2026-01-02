@@ -7,10 +7,9 @@ from pydantic import ValidationError
 
 from py_nvd.models import (
     DEFAULT_HUMAN_VIRUS_FAMILIES,
-    NvdParams,
-    ParamSource,
-    TracedParams,
     VALID_TOOLS,
+    NvdParams,
+    TracedParams,
     trace_merge,
 )
 from py_nvd.params import load_params_file
@@ -440,14 +439,11 @@ class TestNvdParamsDefaults:
 
     def test_default_hostile_index_name(self):
         """Default hostile_index_name matches nextflow.config."""
-        assert (
-            NvdParams().hostile_index_name
-            == "human-t2t-hla.rs-viral-202401_ml-phage-202401"
-        )
+        assert NvdParams().hostile_index_name == "human-t2t-hla.rs-viral-202401_ml-phage-202401"
 
     def test_default_monoimage(self):
         """Default monoimage matches nextflow.config."""
-        assert NvdParams().monoimage == "nrminor/nvd2:v0.1.0"
+        assert NvdParams().monoimage == "nrminor/nvd:v2.4.0"
 
 
 class TestLoadParamsFile:
@@ -483,7 +479,7 @@ class TestLoadParamsFile:
         """$schema key is stripped from loaded params."""
         yaml_file = tmp_path / "params.yaml"
         yaml_file.write_text(
-            '$schema: "https://example.com/schema.json"\ntools: blast\n'
+            '$schema: "https://example.com/schema.json"\ntools: blast\n',
         )
 
         params = load_params_file(yaml_file)

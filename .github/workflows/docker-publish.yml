@@ -68,7 +68,7 @@ jobs:
           file: ./Containerfile
           push: false
           load: true
-          tags: nrminor/nvd2:${{ steps.version.outputs.version }}
+          tags: nrminor/nvd:${{ steps.version.outputs.version }}
           cache-from: |
             type=gha,scope=${{ github.ref_name }}
             type=gha,scope=main
@@ -76,7 +76,7 @@ jobs:
 
       - name: Test py_nvd imports in container
         run: |
-          docker run --rm nrminor/nvd2:${{ steps.version.outputs.version }} \
+          docker run --rm nrminor/nvd:${{ steps.version.outputs.version }} \
             bash -c '
               echo "Testing py_nvd imports..."
               python -c "from py_nvd import __version__; print(f\"py_nvd version: {__version__}\")" &&
@@ -86,7 +86,7 @@ jobs:
 
       - name: Test nvd CLI in container
         run: |
-          docker run --rm nrminor/nvd2:${{ steps.version.outputs.version }} \
+          docker run --rm nrminor/nvd:${{ steps.version.outputs.version }} \
             bash -c '
               echo "Testing nvd CLI..."
               nvd --help &&
@@ -101,7 +101,7 @@ jobs:
           context: .
           file: ./Containerfile
           push: true
-          tags: nrminor/nvd2:${{ steps.version.outputs.version }}
+          tags: nrminor/nvd:${{ steps.version.outputs.version }}
           cache-from: type=gha,scope=${{ github.ref_name }}
 
       - name: Push latest tag (for version tags only)
@@ -111,13 +111,13 @@ jobs:
           context: .
           file: ./Containerfile
           push: true
-          tags: nrminor/nvd2:latest
+          tags: nrminor/nvd:latest
           cache-from: type=gha,scope=${{ github.ref_name }}
 
       - name: Summary
         run: |
           echo "## Docker Image Published" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- **Image**: nrminor/nvd2:${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Image**: nrminor/nvd:${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Trigger**: ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY

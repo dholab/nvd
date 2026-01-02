@@ -308,7 +308,7 @@
     },
     "monoimage": {
       "type": "string",
-      "default": "nrminor/nvd2:v0.1.0",
+      "default": "nrminor/nvd:v2.4.0",
       "description": "Container image to use for pipeline execution"
     }
   },

@@ -1,0 +1,14 @@
+# Pre-commit hooks for NVD
+# Install with: pre-commit install
+# Run manually: pre-commit run --all-files
+
+repos:
+  # Local hooks (no external repo needed)
+  - repo: local
+    hooks:
+      - id: update-fingerprint
+        name: Update pipeline fingerprint
+        entry: pixi run fingerprint
+        language: system
+        files: ^(main\.nf|nextflow\.config)$
+        pass_filenames: false

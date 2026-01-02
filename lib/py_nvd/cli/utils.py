@@ -7,6 +7,7 @@ instance used across all CLI commands.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
@@ -14,11 +15,11 @@ import subprocess
 import sys
 from pathlib import Path
 
+import typer
 from rich.console import Console
 
-import typer
-
 from py_nvd.db import DEFAULT_CONFIG_PATH, get_config_path, get_state_db_path
+from py_nvd.fingerprint import is_dev_mode, verify_pipeline
 
 # Re-export for backward compatibility (prefer get_config_path() for new code)
 DEFAULT_CONFIG = DEFAULT_CONFIG_PATH
@@ -30,16 +31,42 @@ RESUME_FILE = Path(".nfresume")
 MAX_PIPELINE_ROOT_DEPTH = 10
 
 
+def _has_pipeline_files(candidate: Path) -> bool:
+    """Check if a directory contains the core pipeline files."""
+    return (candidate / "main.nf").exists() and (candidate / "nextflow.config").exists()
+
+
+def _is_verified_nvd_pipeline(candidate: Path) -> bool:
+    """
+    Verify a candidate directory is the authentic NVD pipeline.
+
+    In dev mode (editable install or NVD_DEV_MODE set), only checks for
+    file presence. In production, verifies blake3 hashes match the
+    fingerprint file.
+    """
+    if not _has_pipeline_files(candidate):
+        return False
+
+    # In dev mode, skip hash verification (files change during development)
+    # In production, verify hashes match
+    return verify_pipeline(candidate, strict=not is_dev_mode())
+
+
 def _find_pipeline_root() -> Path:
     """
     Find the NVD pipeline root directory.
 
-    Strategy:
-    1. Walk up from this file's location looking for main.nf
-    2. Verify nextflow.config also exists (sanity check)
+    Strategy (in order of precedence):
+    1. NVD_PIPELINE_ROOT environment variable (explicit override)
+    2. Current working directory (if main.nf exists there)
+    3. Walk up from this file's location (development/editable install)
 
-    This is more robust than counting parent directories, which breaks
-    if the package structure changes.
+    Each candidate is verified against the pipeline fingerprint to ensure
+    it's actually the NVD pipeline and not some other Nextflow project.
+    In dev mode, verification is relaxed to allow for local edits.
+
+    The cwd check (strategy 2) enables running the CLI from within a container
+    when the repo is bind-mounted to the working directory.
 
     Returns:
         Path to the pipeline root directory.
@@ -47,19 +74,32 @@ def _find_pipeline_root() -> Path:
     Raises:
         RuntimeError: If the pipeline root cannot be found.
     """
-    current = Path(__file__).resolve().parent
+    # Strategy 1: Explicit override via environment variable
+    if env_root := os.environ.get("NVD_PIPELINE_ROOT"):
+        candidate = Path(env_root).resolve()
+        if _is_verified_nvd_pipeline(candidate):
+            return candidate
+        # If explicitly set but invalid, warn and continue to other strategies
+        # (could also raise here, but graceful fallback seems friendlier)
 
+    # Strategy 2: Current working directory (container-friendly)
+    cwd = Path.cwd()
+    if _is_verified_nvd_pipeline(cwd):
+        return cwd
+
+    # Strategy 3: Walk up from installed package location (original behavior)
+    current = Path(__file__).resolve().parent
     for _ in range(MAX_PIPELINE_ROOT_DEPTH):
-        if (current / "main.nf").exists() and (current / "nextflow.config").exists():
+        if _is_verified_nvd_pipeline(current):
             return current
         if current.parent == current:  # Hit filesystem root
             break
         current = current.parent
 
-    # This should never happen if installed correctly
     msg = (
-        "Could not find NVD pipeline root (main.nf not found). "
-        "Ensure the CLI is installed from the cloned repository."
+        "Could not find NVD pipeline root (main.nf not found or fingerprint mismatch). "
+        "Either run from the repository root, set NVD_PIPELINE_ROOT, "
+        "or ensure the CLI is installed from the cloned repository."
     )
     raise RuntimeError(msg)
 
@@ -145,10 +185,8 @@ def ensure_db_exists(json_output: bool = False) -> Path:
     db_path = get_state_db_path()
     if not db_path.exists():
         if json_output:
-            import json
-
             console.print_json(
-                json.dumps({"error": "Database not found", "path": str(db_path)})
+                json.dumps({"error": "Database not found", "path": str(db_path)}),
             )
             raise typer.Exit(1)
         error(f"Database not found: {db_path}\nRun 'nvd state init' to create it.")

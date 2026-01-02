@@ -273,7 +273,7 @@ jobs:
           echo "bin/__main__.py version: $CLI_VERSION"
           
           # Extract monoimage version from nextflow.config
-          MONOIMAGE=$(grep 'monoimage.*=' nextflow.config | grep -oP 'nrminor/nvd2:\K[^"]+')
+          MONOIMAGE=$(grep 'monoimage.*=' nextflow.config | grep -oP 'nrminor/nvd:\K[^"]+')
           echo "monoimage_version=$MONOIMAGE" >> $GITHUB_OUTPUT
           echo "nextflow.config monoimage: $MONOIMAGE"
       
