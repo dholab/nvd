@@ -15,8 +15,10 @@ from typing import Any
 
 import typer
 
+from py_nvd import state
 from py_nvd.models import NvdParams
 from py_nvd.params import load_params_file
+from py_nvd.state import resolve_database_versions
 from py_nvd.cli.utils import (
     DEFAULT_CONFIG,
     PANEL_ANALYSIS,
@@ -530,8 +532,6 @@ def run(  # noqa: PLR0913, PLR0912, PLR0915, C901
     # =========================================================================
     preset_params: dict[str, Any] = {}
     if preset:
-        from py_nvd import state
-
         preset_obj = state.get_preset(preset)
         if not preset_obj:
             available = state.list_presets()
@@ -659,8 +659,6 @@ def run(  # noqa: PLR0913, PLR0912, PLR0915, C901
     # =========================================================================
     # STEP 3b: Resolve database versions from registry
     # =========================================================================
-    from py_nvd.state import resolve_database_versions
-
     resolution = resolve_database_versions(
         blast_db=params.blast_db,
         blast_db_version=params.blast_db_version,

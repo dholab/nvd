@@ -68,7 +68,7 @@ def get_schema() -> dict[str, Any]:
         json.JSONDecodeError: If schema is not valid JSON
     """
     schema_path = _find_schema_path()
-    with open(schema_path) as f:
+    with open(schema_path, encoding="utf-8") as f:
         return json.load(f)
 
 
@@ -130,7 +130,7 @@ def load_params_file(path: Path | str) -> dict[str, Any]:
     """
     path = Path(path)
 
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         data = yaml.safe_load(f) if path.suffix in (".yaml", ".yml") else json.load(f)
 
     # Handle empty files
@@ -158,7 +158,7 @@ def validate_params_file(path: Path | str) -> list[str]:
     return validate_params(params)
 
 
-def generate_template(path: Path | str, format: str = "yaml") -> None:
+def generate_template(path: Path | str, output_format: str = "yaml") -> None:
     """
     Generate a template params file with schema reference.
 
@@ -168,13 +168,13 @@ def generate_template(path: Path | str, format: str = "yaml") -> None:
 
     Args:
         path: Output file path
-        format: Output format ("yaml" or "json")
+        output_format: Output format ("yaml" or "json")
     """
     path = Path(path)
     schema = get_schema()
     schema_url = get_schema_url()
 
-    if format == "yaml":
+    if output_format == "yaml":
         _generate_yaml_template(path, schema, schema_url)
     else:
         _generate_json_template(path, schema, schema_url)
@@ -342,7 +342,7 @@ def _generate_yaml_template(path: Path, schema: dict, schema_url: str) -> None:
             value = _format_yaml_value(default)
             lines.append(f"# {name}: {value}  # {desc}")
 
-    with open(path, "w") as f:
+    with open(path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
 
 
@@ -361,6 +361,6 @@ def _generate_json_template(path: Path, schema: dict, schema_url: str) -> None:
         "preprocess": False,
     }
 
-    with open(path, "w") as f:
+    with open(path, "w", encoding="utf-8") as f:
         json.dump(template, f, indent=2)
         f.write("\n")

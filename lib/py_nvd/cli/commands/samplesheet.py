@@ -16,6 +16,7 @@ from __future__ import annotations
 import csv
 import re
 import sys
+from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -30,13 +31,13 @@ from py_nvd.cli.prompts import (
     prompt_with_timeout,
 )
 from py_nvd.cli.utils import console, error, info, success, warning
-
-# ============================================================================
-# CONSTANTS
-# ============================================================================
+from py_nvd.state import get_sample_history, was_sample_ever_uploaded
 
 REQUIRED_COLUMNS = ("sample_id", "srr", "platform", "fastq1", "fastq2")
 VALID_PLATFORMS = {"illumina", "ont", ""}
+
+# Expected number of FASTQ files for paired-end samples
+PAIRED_END_FILE_COUNT = 2
 
 # FASTQ file extensions to recognize
 FASTQ_EXTENSIONS = {".fastq", ".fq", ".fastq.gz", ".fq.gz"}
@@ -53,11 +54,6 @@ STEM_PATTERN = re.compile(
     r"^(.+?)[._](?:R)?[12](?:_\d+)?(?:\.fastq|\.fq)?(?:\.gz)?$",
     re.IGNORECASE,
 )
-
-
-# ============================================================================
-# VALIDATION DATACLASSES AND FUNCTIONS
-# ============================================================================
 
 
 @dataclass
@@ -159,7 +155,7 @@ def validate_samplesheet(path: Path) -> SamplesheetValidationResult:
             result.samples = samples
 
             # Check for duplicate sample IDs
-            duplicates = [s for s in set(samples) if samples.count(s) > 1]
+            duplicates = [s for s, count in Counter(samples).items() if count > 1]
             if duplicates:
                 result.warnings.append(
                     f"Duplicate sample_id found: {', '.join(duplicates)}"
@@ -174,11 +170,6 @@ def validate_samplesheet(path: Path) -> SamplesheetValidationResult:
         result.errors.append(f"Failed to read samplesheet: {e}")
 
     return result
-
-
-# ============================================================================
-# FASTQ SCANNING AND PAIRING
-# ============================================================================
 
 
 @dataclass
@@ -317,7 +308,7 @@ def scan_fastq_directory(directory: Path) -> tuple[list[SampleEntry], list[str]]
                     fastq1=str(files[0]),
                 )
             )
-        elif len(files) == 2:  # noqa: PLR2004
+        elif len(files) == PAIRED_END_FILE_COUNT:
             # Paired-end: determine which is R1 and R2
             r1, r2 = None, None
             for f in files:
@@ -402,11 +393,6 @@ def parse_sra_accessions(path: Path) -> tuple[list[SampleEntry], list[str]]:
     return samples, warnings_list
 
 
-# ============================================================================
-# SAMPLESHEET WRITING
-# ============================================================================
-
-
 def write_samplesheet(samples: list[SampleEntry], output: Path, platform: str) -> None:
     """
     Write samples to a samplesheet CSV file.
@@ -478,11 +464,6 @@ def format_samples_table(samples: list[SampleEntry], platform: str) -> Table:
     return table
 
 
-# ============================================================================
-# STATE INTEGRATION (READ-ONLY)
-# ============================================================================
-
-
 @dataclass
 class PreviousProcessingInfo:
     """Information about a sample's previous processing history."""
@@ -510,8 +491,6 @@ def check_samples_against_state(
     Returns:
         List of PreviousProcessingInfo for samples that were previously processed
     """
-    from py_nvd.state import get_sample_history, was_sample_ever_uploaded
-
     previously_processed: list[PreviousProcessingInfo] = []
 
     for sid in sample_ids:
@@ -559,10 +538,6 @@ def format_state_warnings(previously_processed: list[PreviousProcessingInfo]) ->
         "Use --force to proceed anyway."
     )
 
-
-# ============================================================================
-# TYPER APP AND COMMANDS
-# ============================================================================
 
 samplesheet_app = typer.Typer(
     name="samplesheet",

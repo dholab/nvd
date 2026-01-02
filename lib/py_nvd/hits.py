@@ -35,15 +35,26 @@ BASES_PER_BYTE = 4
 # Byte size for storing integer counts/positions in compressed format
 INT_BYTE_SIZE = 4
 
+
+def is_valid_hit_key(key: str) -> bool:
+    """
+    Check if a string is a valid hit key (32 lowercase hex characters).
+
+    Args:
+        key: The string to validate
+
+    Returns:
+        True if key is exactly 32 lowercase hex characters, False otherwise.
+    """
+    return len(key) == HIT_KEY_LENGTH and all(c in "0123456789abcdef" for c in key)
+
+
 # Complement table for reverse complement
 # Handles standard bases, N, and IUPAC ambiguity codes
 COMPLEMENT = str.maketrans(
     "ACGTacgtNnRYSWKMBDHVryswkmbdhv",
     "TGCAtgcaNnYRSWMKVHDByrswmkvhdb",
 )
-
-
-# --- Sequence Operations ---
 
 
 def reverse_complement(seq: str) -> str:
@@ -148,7 +159,7 @@ def decompress_sequence(data: bytes, length: int) -> str:
         result.append(mapping[(byte >> 4) & 0x3])
         result.append(mapping[(byte >> 2) & 0x3])
         result.append(mapping[byte & 0x3])
-    result = list("".join(result[:length]))
+    result = result[:length]
 
     # Restore N positions
     for pos in n_positions:
@@ -163,9 +174,6 @@ def calculate_gc_content(seq: str) -> float:
     gc_count = seq.count("G") + seq.count("C")
     total = len(seq)
     return gc_count / total if total > 0 else 0.0
-
-
-# --- Hit Registration ---
 
 
 def register_hit(
@@ -199,16 +207,7 @@ def register_hit(
 
         if row is not None:
             # Existing hit
-            return (
-                Hit(
-                    hit_key=row["hit_key"],
-                    sequence_length=row["sequence_length"],
-                    sequence_compressed=row["sequence_compressed"],
-                    gc_content=row["gc_content"],
-                    first_seen_date=row["first_seen_date"],
-                ),
-                False,
-            )
+            return (Hit.from_row(row), False)
 
         # New hit - insert
         compressed = compress_sequence(seq)
@@ -285,9 +284,6 @@ def record_hit_observation(
         )
 
 
-# --- Hit Queries ---
-
-
 def get_hit(hit_key: str, state_dir: Path | str | None = None) -> Hit | None:
     """Get a hit by its key."""
     with connect(state_dir) as conn:
@@ -299,13 +295,7 @@ def get_hit(hit_key: str, state_dir: Path | str | None = None) -> Hit | None:
         if row is None:
             return None
 
-        return Hit(
-            hit_key=row["hit_key"],
-            sequence_length=row["sequence_length"],
-            sequence_compressed=row["sequence_compressed"],
-            gc_content=row["gc_content"],
-            first_seen_date=row["first_seen_date"],
-        )
+        return Hit.from_row(row)
 
 
 def list_hits(
@@ -332,16 +322,7 @@ def list_hits(
 
         rows = conn.execute(query, params).fetchall()
 
-        return [
-            Hit(
-                hit_key=row["hit_key"],
-                sequence_length=row["sequence_length"],
-                sequence_compressed=row["sequence_compressed"],
-                gc_content=row["gc_content"],
-                first_seen_date=row["first_seen_date"],
-            )
-            for row in rows
-        ]
+        return [Hit.from_row(row) for row in rows]
 
 
 def list_hit_observations(
@@ -392,16 +373,7 @@ def list_hit_observations(
 
         rows = conn.execute(query, params).fetchall()
 
-        return [
-            HitObservation(
-                hit_key=row["hit_key"],
-                sample_set_id=row["sample_set_id"],
-                sample_id=row["sample_id"],
-                run_date=row["run_date"],
-                contig_id=row["contig_id"],
-            )
-            for row in rows
-        ]
+        return [HitObservation.from_row(row) for row in rows]
 
 
 def get_hit_sequence(hit: Hit) -> str:
@@ -429,9 +401,6 @@ def count_hit_observations(state_dir: Path | str | None = None) -> int:
     """Return the total number of hit observations in the database."""
     with connect(state_dir) as conn:
         return conn.execute("SELECT COUNT(*) FROM hit_observations").fetchone()[0]
-
-
-# --- Joined Queries ---
 
 
 def list_hits_with_observations(
@@ -469,28 +438,7 @@ def list_hits_with_observations(
 
         rows = conn.execute(query, params).fetchall()
 
-        return [
-            (
-                Hit(
-                    hit_key=row["hit_key"],
-                    sequence_length=row["sequence_length"],
-                    sequence_compressed=row["sequence_compressed"],
-                    gc_content=row["gc_content"],
-                    first_seen_date=row["first_seen_date"],
-                ),
-                HitObservation(
-                    hit_key=row["hit_key"],
-                    sample_set_id=row["sample_set_id"],
-                    sample_id=row["sample_id"],
-                    run_date=row["run_date"],
-                    contig_id=row["contig_id"],
-                ),
-            )
-            for row in rows
-        ]
-
-
-# --- Statistics / Aggregations ---
+        return [(Hit.from_row(row), HitObservation.from_row(row)) for row in rows]
 
 
 def get_hit_stats(state_dir: Path | str | None = None) -> HitStats:
@@ -739,17 +687,12 @@ def lookup_hit(
     query = query.strip()
 
     # Check if it looks like a hex key (32 chars, all hex digits)
-    if len(query) == HIT_KEY_LENGTH and all(
-        c in "0123456789abcdefABCDEF" for c in query
-    ):
+    if is_valid_hit_key(query.lower()):
         return get_hit(query.lower(), state_dir)
 
     # Otherwise treat as sequence, compute key and look up
     hit_key = compute_hit_key(query)
     return get_hit(hit_key, state_dir)
-
-
-# --- Cleanup Operations ---
 
 
 def delete_observations_for_sample_set(

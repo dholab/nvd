@@ -16,20 +16,26 @@ Commands:
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import typer
+from pydantic import ValidationError
+from rich.panel import Panel
 from rich.table import Table
 
+from py_nvd import params, state
 from py_nvd.cli.utils import (
     console,
     error,
     info,
     success,
 )
-
-if TYPE_CHECKING:
-    from py_nvd.models import TracedParams
+from py_nvd.models import (
+    PARAM_CATEGORIES,
+    NvdParams,
+    TracedParams,
+    get_field_category,
+    trace_merge,
+)
 
 preset_app = typer.Typer(
     name="preset",
@@ -46,8 +52,6 @@ def preset_list() -> None:
 
     Shows preset names, descriptions, parameter counts, and creation dates.
     """
-    from py_nvd import state
-
     presets = state.list_presets()
 
     if not presets:
@@ -86,8 +90,6 @@ def preset_show(
 
     Displays all parameters and their values.
     """
-    from py_nvd import state
-
     preset = state.get_preset(name)
 
     if not preset:
@@ -177,8 +179,6 @@ def preset_register(  # noqa: PLR0913
         # Update existing preset
         nvd preset register production --from-file updated.yaml
     """
-    from py_nvd import params, state
-
     preset_params: dict[str, str | int | float | bool | None] = {}
 
     # Load from file if specified
@@ -208,10 +208,6 @@ def preset_register(  # noqa: PLR0913
         error("No parameters specified. Use --from-file or inline options.")
 
     # Validate with Pydantic model
-    from pydantic import ValidationError
-
-    from py_nvd.models import NvdParams
-
     try:
         NvdParams.model_validate(preset_params)
     except ValidationError as e:
@@ -268,18 +264,6 @@ def preset_merge(
         # Merge three presets
         nvd preset merge defaults team-settings my-overrides --name final
     """
-    from pydantic import ValidationError
-    from rich.panel import Panel
-    from rich.table import Table
-
-    from py_nvd import state
-    from py_nvd.models import (
-        PARAM_CATEGORIES,
-        TracedParams,
-        get_field_category,
-        trace_merge,
-    )
-
     if len(presets) < 2:
         error("At least two presets are required for merging")
         raise typer.Exit(1)
@@ -337,16 +321,11 @@ def preset_merge(
 
 def _display_preset_merge_summary(
     preset_names: list[str],
-    traced: "TracedParams",  # noqa: F821 - forward reference
+    traced: TracedParams,
     new_name: str,
     explicitly_set: set[str],
 ) -> None:
     """Display a Rich Panel summarizing the preset merge result."""
-    from rich.panel import Panel
-    from rich.table import Table
-
-    from py_nvd.models import PARAM_CATEGORIES, get_field_category
-
     # Build title from preset names
     names_str = " + ".join(preset_names)
     title = f"Preset Merge: {names_str}"
@@ -430,7 +409,7 @@ def preset_export(
         "-o",
         help="Output file path",
     ),
-    format: str | None = typer.Option(
+    output_format: str | None = typer.Option(
         None,
         "--format",
         "-f",
@@ -453,22 +432,20 @@ def preset_export(
 
     import yaml
 
-    from py_nvd import params, state
-
     preset = state.get_preset(name)
     if not preset:
         error(f"Preset not found: {name}")
 
     # Determine format
-    if format is None:
+    if output_format is None:
         if output.suffix == ".json":
-            format = "json"
+            output_format = "json"
         else:
-            format = "yaml"
+            output_format = "yaml"
 
     schema_url = params.get_schema_url()
 
-    if format == "yaml":
+    if output_format == "yaml":
         lines = [
             f"# yaml-language-server: $schema={schema_url}",
             "#",
@@ -481,7 +458,7 @@ def preset_export(
             lines.append(f"# {preset.description}")
         lines.append("")
 
-        with open(output, "w") as f:
+        with open(output, "w", encoding="utf-8") as f:
             f.write("\n".join(lines) + "\n")
             yaml.dump(dict(preset.params), f, default_flow_style=False, sort_keys=True)
     else:
@@ -489,7 +466,7 @@ def preset_export(
             "$schema": schema_url,
             **preset.params,
         }
-        with open(output, "w") as f:
+        with open(output, "w", encoding="utf-8") as f:
             json_module.dump(export_data, f, indent=2)
             f.write("\n")
 
@@ -526,11 +503,6 @@ def preset_import(
         nvd preset import shared-settings.yaml
         nvd preset import settings.yaml --name production -d "From shared config"
     """
-    from pydantic import ValidationError
-
-    from py_nvd import params, state
-    from py_nvd.models import NvdParams
-
     # Determine name from filename if not specified
     if name is None:
         name = path.stem
@@ -584,8 +556,6 @@ def preset_delete(
         nvd preset delete old-preset
         nvd preset rm old-preset --force
     """
-    from py_nvd import state
-
     # Check if exists
     preset = state.get_preset(name)
     if not preset:
@@ -620,12 +590,6 @@ def preset_diff(
         nvd preset diff base production
         nvd preset diff defaults my-settings
     """
-    from rich.panel import Panel
-    from rich.table import Table
-
-    from py_nvd import state
-    from py_nvd.models import PARAM_CATEGORIES, get_field_category
-
     # Load both presets
     p1 = state.get_preset(preset1)
     if not p1:

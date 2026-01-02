@@ -1,15 +1,22 @@
 """Tests for py_nvd.state module."""
 
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
 
+from py_nvd.db import EXPECTED_VERSION, SchemaMismatchError, connect
+from py_nvd.models import Run
 from py_nvd.state import (
     check_taxonomy_drift,
     check_upload,
+    complete_run,
     complete_sample,
     compute_sample_set_id,
+    get_database_by_path,
+    get_database_by_version,
+    get_databases_by_path,
     get_processed_sample,
     get_run,
     get_run_by_sample_set,
@@ -24,11 +31,32 @@ from py_nvd.state import (
     list_uploads,
     record_taxonomy_version,
     record_upload,
+    register_database,
     register_processed_sample,
     register_run,
+    resolve_database_versions,
     was_sample_ever_processed,
     was_sample_ever_uploaded,
 )
+
+
+@dataclass
+class RunContext:
+    """Context for a registered run fixture."""
+
+    run: Run
+    sample_set_id: str
+    state_dir: Path
+
+
+@dataclass
+class ProcessedSampleContext:
+    """Context for a processed sample fixture."""
+
+    sample_id: str
+    sample_set_id: str
+    run_id: str
+    state_dir: Path
 
 
 class TestComputeSampleSetId:
@@ -164,8 +192,6 @@ class TestRegisterRun:
 
     def test_list_runs_filter_by_status(self, temp_state_dir):
         """list_runs filters by status."""
-        from py_nvd.state import complete_run
-
         set1 = compute_sample_set_id(["s1"])
         set2 = compute_sample_set_id(["s2"])
         set3 = compute_sample_set_id(["s3"])
@@ -207,8 +233,6 @@ class TestRegisterRun:
         """list_runs filters by since with a date."""
         from datetime import date
 
-        from py_nvd.db import connect
-
         set1 = compute_sample_set_id(["s1"])
         set2 = compute_sample_set_id(["s2"])
 
@@ -239,8 +263,6 @@ class TestRegisterRun:
         """list_runs filters by since with a datetime."""
         from datetime import datetime
 
-        from py_nvd.db import connect
-
         set1 = compute_sample_set_id(["s1"])
         set2 = compute_sample_set_id(["s2"])
 
@@ -268,9 +290,6 @@ class TestRegisterRun:
     def test_list_runs_combined_filters(self, temp_state_dir):
         """list_runs combines multiple filters."""
         from datetime import date
-
-        from py_nvd.db import connect
-        from py_nvd.state import complete_run
 
         # Create runs with different dates and statuses
         with connect(temp_state_dir) as conn:
@@ -313,45 +332,48 @@ class TestProcessedSamples:
             yield Path(tmpdir)
 
     @pytest.fixture
-    def registered_run(self, temp_state_dir):
-        """Register a run and return (run, sample_set_id, temp_state_dir)."""
+    def registered_run(self, temp_state_dir) -> RunContext:
+        """Register a run and return RunContext."""
         sample_set_id = compute_sample_set_id(["s1", "s2", "s3"])
         run = register_run("run_001", sample_set_id, state_dir=temp_state_dir)
-        return run, sample_set_id, temp_state_dir
+        assert run is not None
+        return RunContext(
+            run=run, sample_set_id=sample_set_id, state_dir=temp_state_dir
+        )
 
-    def test_register_processed_sample(self, registered_run):
+    def test_register_processed_sample(self, registered_run: RunContext):
         """Registering a processed sample succeeds."""
-        run, sample_set_id, state_dir = registered_run
+        ctx = registered_run
 
         sample = register_processed_sample(
             sample_id="s1",
-            sample_set_id=sample_set_id,
-            run_id=run.run_id,
+            sample_set_id=ctx.sample_set_id,
+            run_id=ctx.run.run_id,
             blast_db_version="core-nt_2025-01-01",
             stat_db_version="v1.0",
-            state_dir=state_dir,
+            state_dir=ctx.state_dir,
         )
 
         assert sample is not None
         assert sample.sample_id == "s1"
-        assert sample.sample_set_id == sample_set_id
+        assert sample.sample_set_id == ctx.sample_set_id
         assert sample.run_id == "run_001"
         assert sample.status == "processing"
         assert sample.blast_db_version == "core-nt_2025-01-01"
         assert sample.stat_db_version == "v1.0"
 
-    def test_get_processed_sample(self, registered_run):
+    def test_get_processed_sample(self, registered_run: RunContext):
         """get_processed_sample retrieves a registered sample."""
-        run, sample_set_id, state_dir = registered_run
+        ctx = registered_run
 
         register_processed_sample(
             sample_id="s1",
-            sample_set_id=sample_set_id,
-            run_id=run.run_id,
-            state_dir=state_dir,
+            sample_set_id=ctx.sample_set_id,
+            run_id=ctx.run.run_id,
+            state_dir=ctx.state_dir,
         )
 
-        sample = get_processed_sample("s1", sample_set_id, state_dir=state_dir)
+        sample = get_processed_sample("s1", ctx.sample_set_id, state_dir=ctx.state_dir)
         assert sample is not None
         assert sample.sample_id == "s1"
 
@@ -364,80 +386,84 @@ class TestProcessedSamples:
         )
         assert sample is None
 
-    def test_get_samples_for_run(self, registered_run):
+    def test_get_samples_for_run(self, registered_run: RunContext):
         """get_samples_for_run returns all samples for a run."""
-        run, sample_set_id, state_dir = registered_run
+        ctx = registered_run
 
         for sid in ["s1", "s2", "s3"]:
             register_processed_sample(
                 sample_id=sid,
-                sample_set_id=sample_set_id,
-                run_id=run.run_id,
-                state_dir=state_dir,
+                sample_set_id=ctx.sample_set_id,
+                run_id=ctx.run.run_id,
+                state_dir=ctx.state_dir,
             )
 
-        samples = get_samples_for_run(run.run_id, state_dir=state_dir)
+        samples = get_samples_for_run(ctx.run.run_id, state_dir=ctx.state_dir)
         assert len(samples) == 3
         sample_ids = {s.sample_id for s in samples}
         assert sample_ids == {"s1", "s2", "s3"}
 
-    def test_was_sample_ever_processed(self, registered_run):
+    def test_was_sample_ever_processed(self, registered_run: RunContext):
         """was_sample_ever_processed returns True for processed samples."""
-        run, sample_set_id, state_dir = registered_run
+        ctx = registered_run
 
         # Not processed yet
-        assert was_sample_ever_processed("s1", state_dir=state_dir) is False
+        assert was_sample_ever_processed("s1", state_dir=ctx.state_dir) is False
 
         # Process it
         register_processed_sample(
             sample_id="s1",
-            sample_set_id=sample_set_id,
-            run_id=run.run_id,
-            state_dir=state_dir,
+            sample_set_id=ctx.sample_set_id,
+            run_id=ctx.run.run_id,
+            state_dir=ctx.state_dir,
         )
 
         # Now it's processed
-        assert was_sample_ever_processed("s1", state_dir=state_dir) is True
+        assert was_sample_ever_processed("s1", state_dir=ctx.state_dir) is True
         # Other samples still not processed
-        assert was_sample_ever_processed("s2", state_dir=state_dir) is False
+        assert was_sample_ever_processed("s2", state_dir=ctx.state_dir) is False
 
-    def test_complete_sample(self, registered_run):
+    def test_complete_sample(self, registered_run: RunContext):
         """complete_sample updates the sample status."""
-        run, sample_set_id, state_dir = registered_run
+        ctx = registered_run
 
         register_processed_sample(
             sample_id="s1",
-            sample_set_id=sample_set_id,
-            run_id=run.run_id,
-            state_dir=state_dir,
+            sample_set_id=ctx.sample_set_id,
+            run_id=ctx.run.run_id,
+            state_dir=ctx.state_dir,
         )
 
         # Initially processing
-        sample = get_processed_sample("s1", sample_set_id, state_dir=state_dir)
+        sample = get_processed_sample("s1", ctx.sample_set_id, state_dir=ctx.state_dir)
         assert sample is not None
         assert sample.status == "processing"
 
         # Mark as completed
-        complete_sample("s1", sample_set_id, status="completed", state_dir=state_dir)
+        complete_sample(
+            "s1", ctx.sample_set_id, status="completed", state_dir=ctx.state_dir
+        )
 
-        sample = get_processed_sample("s1", sample_set_id, state_dir=state_dir)
+        sample = get_processed_sample("s1", ctx.sample_set_id, state_dir=ctx.state_dir)
         assert sample is not None
         assert sample.status == "completed"
 
-    def test_complete_sample_failed(self, registered_run):
+    def test_complete_sample_failed(self, registered_run: RunContext):
         """complete_sample can mark a sample as failed."""
-        run, sample_set_id, state_dir = registered_run
+        ctx = registered_run
 
         register_processed_sample(
             sample_id="s1",
-            sample_set_id=sample_set_id,
-            run_id=run.run_id,
-            state_dir=state_dir,
+            sample_set_id=ctx.sample_set_id,
+            run_id=ctx.run.run_id,
+            state_dir=ctx.state_dir,
         )
 
-        complete_sample("s1", sample_set_id, status="failed", state_dir=state_dir)
+        complete_sample(
+            "s1", ctx.sample_set_id, status="failed", state_dir=ctx.state_dir
+        )
 
-        sample = get_processed_sample("s1", sample_set_id, state_dir=state_dir)
+        sample = get_processed_sample("s1", ctx.sample_set_id, state_dir=ctx.state_dir)
         assert sample is not None
         assert sample.status == "failed"
 
@@ -585,7 +611,7 @@ class TestUploads:
             yield Path(tmpdir)
 
     @pytest.fixture
-    def processed_sample(self, temp_state_dir):
+    def processed_sample(self, temp_state_dir) -> ProcessedSampleContext:
         """Register a run and processed sample, return context."""
         sample_set_id = compute_sample_set_id(["s1"])
         run = register_run("run_001", sample_set_id, state_dir=temp_state_dir)
@@ -596,25 +622,25 @@ class TestUploads:
             run_id=run.run_id,
             state_dir=temp_state_dir,
         )
-        return {
-            "sample_id": "s1",
-            "sample_set_id": sample_set_id,
-            "run_id": run.run_id,
-            "state_dir": temp_state_dir,
-        }
+        return ProcessedSampleContext(
+            sample_id="s1",
+            sample_set_id=sample_set_id,
+            run_id=run.run_id,
+            state_dir=temp_state_dir,
+        )
 
-    def test_record_upload(self, processed_sample):
+    def test_record_upload(self, processed_sample: ProcessedSampleContext):
         """record_upload creates an upload record."""
         ctx = processed_sample
 
         upload = record_upload(
-            sample_id=ctx["sample_id"],
-            sample_set_id=ctx["sample_set_id"],
+            sample_id=ctx.sample_id,
+            sample_set_id=ctx.sample_set_id,
             upload_type="blast",
             upload_target="labkey",
             content_hash="abc123",
             target_metadata={"experiment_id": 42, "labkey_row_id": 100},
-            state_dir=ctx["state_dir"],
+            state_dir=ctx.state_dir,
         )
 
         assert upload is not None
@@ -624,25 +650,25 @@ class TestUploads:
         assert upload.content_hash == "abc123"
         assert upload.target_metadata == {"experiment_id": 42, "labkey_row_id": 100}
 
-    def test_get_upload(self, processed_sample):
+    def test_get_upload(self, processed_sample: ProcessedSampleContext):
         """get_upload retrieves a specific upload."""
         ctx = processed_sample
 
         record_upload(
-            sample_id=ctx["sample_id"],
-            sample_set_id=ctx["sample_set_id"],
+            sample_id=ctx.sample_id,
+            sample_set_id=ctx.sample_set_id,
             upload_type="blast",
             upload_target="labkey",
             content_hash="abc123",
-            state_dir=ctx["state_dir"],
+            state_dir=ctx.state_dir,
         )
 
         upload = get_upload(
-            ctx["sample_id"],
-            ctx["sample_set_id"],
+            ctx.sample_id,
+            ctx.sample_set_id,
             "blast",
             "labkey",
-            state_dir=ctx["state_dir"],
+            state_dir=ctx.state_dir,
         )
         assert upload is not None
         assert upload.content_hash == "abc123"
@@ -658,138 +684,142 @@ class TestUploads:
         )
         assert upload is None
 
-    def test_check_upload_not_uploaded(self, processed_sample):
+    def test_check_upload_not_uploaded(self, processed_sample: ProcessedSampleContext):
         """check_upload returns 'not_uploaded' for new uploads."""
         ctx = processed_sample
 
         result = check_upload(
-            sample_id=ctx["sample_id"],
-            sample_set_id=ctx["sample_set_id"],
+            sample_id=ctx.sample_id,
+            sample_set_id=ctx.sample_set_id,
             upload_type="blast",
             upload_target="labkey",
             content_hash="abc123",
-            state_dir=ctx["state_dir"],
+            state_dir=ctx.state_dir,
         )
         assert result == "not_uploaded"
 
-    def test_check_upload_already_uploaded(self, processed_sample):
+    def test_check_upload_already_uploaded(
+        self, processed_sample: ProcessedSampleContext
+    ):
         """check_upload returns 'already_uploaded' for same content."""
         ctx = processed_sample
 
         record_upload(
-            sample_id=ctx["sample_id"],
-            sample_set_id=ctx["sample_set_id"],
+            sample_id=ctx.sample_id,
+            sample_set_id=ctx.sample_set_id,
             upload_type="blast",
             upload_target="labkey",
             content_hash="abc123",
-            state_dir=ctx["state_dir"],
+            state_dir=ctx.state_dir,
         )
 
         result = check_upload(
-            sample_id=ctx["sample_id"],
-            sample_set_id=ctx["sample_set_id"],
+            sample_id=ctx.sample_id,
+            sample_set_id=ctx.sample_set_id,
             upload_type="blast",
             upload_target="labkey",
             content_hash="abc123",  # Same hash
-            state_dir=ctx["state_dir"],
+            state_dir=ctx.state_dir,
         )
         assert result == "already_uploaded"
 
-    def test_check_upload_content_changed(self, processed_sample):
+    def test_check_upload_content_changed(
+        self, processed_sample: ProcessedSampleContext
+    ):
         """check_upload returns 'content_changed' for different content."""
         ctx = processed_sample
 
         record_upload(
-            sample_id=ctx["sample_id"],
-            sample_set_id=ctx["sample_set_id"],
+            sample_id=ctx.sample_id,
+            sample_set_id=ctx.sample_set_id,
             upload_type="blast",
             upload_target="labkey",
             content_hash="abc123",
-            state_dir=ctx["state_dir"],
+            state_dir=ctx.state_dir,
         )
 
         result = check_upload(
-            sample_id=ctx["sample_id"],
-            sample_set_id=ctx["sample_set_id"],
+            sample_id=ctx.sample_id,
+            sample_set_id=ctx.sample_set_id,
             upload_type="blast",
             upload_target="labkey",
             content_hash="different_hash",  # Different hash
-            state_dir=ctx["state_dir"],
+            state_dir=ctx.state_dir,
         )
         assert result == "content_changed"
 
-    def test_get_uploads_for_sample(self, processed_sample):
+    def test_get_uploads_for_sample(self, processed_sample: ProcessedSampleContext):
         """get_uploads_for_sample returns all uploads for a sample."""
         ctx = processed_sample
 
         # Upload to multiple targets
         record_upload(
-            sample_id=ctx["sample_id"],
-            sample_set_id=ctx["sample_set_id"],
+            sample_id=ctx.sample_id,
+            sample_set_id=ctx.sample_set_id,
             upload_type="blast",
             upload_target="labkey",
             content_hash="hash1",
-            state_dir=ctx["state_dir"],
+            state_dir=ctx.state_dir,
         )
         record_upload(
-            sample_id=ctx["sample_id"],
-            sample_set_id=ctx["sample_set_id"],
+            sample_id=ctx.sample_id,
+            sample_set_id=ctx.sample_set_id,
             upload_type="blast_fasta",
             upload_target="labkey",
             content_hash="hash2",
-            state_dir=ctx["state_dir"],
+            state_dir=ctx.state_dir,
         )
 
-        uploads = get_uploads_for_sample(ctx["sample_id"], state_dir=ctx["state_dir"])
+        uploads = get_uploads_for_sample(ctx.sample_id, state_dir=ctx.state_dir)
         assert len(uploads) == 2
         upload_types = {u.upload_type for u in uploads}
         assert upload_types == {"blast", "blast_fasta"}
 
-    def test_was_sample_ever_uploaded_false(self, processed_sample):
+    def test_was_sample_ever_uploaded_false(
+        self, processed_sample: ProcessedSampleContext
+    ):
         """was_sample_ever_uploaded returns False for un-uploaded samples."""
         ctx = processed_sample
-        assert (
-            was_sample_ever_uploaded(ctx["sample_id"], state_dir=ctx["state_dir"])
-            is False
-        )
+        assert was_sample_ever_uploaded(ctx.sample_id, state_dir=ctx.state_dir) is False
 
-    def test_was_sample_ever_uploaded_true(self, processed_sample):
+    def test_was_sample_ever_uploaded_true(
+        self, processed_sample: ProcessedSampleContext
+    ):
         """was_sample_ever_uploaded returns True for uploaded samples."""
         ctx = processed_sample
 
         record_upload(
-            sample_id=ctx["sample_id"],
-            sample_set_id=ctx["sample_set_id"],
+            sample_id=ctx.sample_id,
+            sample_set_id=ctx.sample_set_id,
             upload_type="blast",
             upload_target="labkey",
             content_hash="hash1",
-            state_dir=ctx["state_dir"],
+            state_dir=ctx.state_dir,
         )
 
-        assert (
-            was_sample_ever_uploaded(ctx["sample_id"], state_dir=ctx["state_dir"])
-            is True
-        )
+        assert was_sample_ever_uploaded(ctx.sample_id, state_dir=ctx.state_dir) is True
 
-    def test_was_sample_ever_uploaded_with_filters(self, processed_sample):
+    def test_was_sample_ever_uploaded_with_filters(
+        self, processed_sample: ProcessedSampleContext
+    ):
         """was_sample_ever_uploaded respects upload_type and upload_target filters."""
         ctx = processed_sample
 
         record_upload(
-            sample_id=ctx["sample_id"],
-            sample_set_id=ctx["sample_set_id"],
+            sample_id=ctx.sample_id,
+            sample_set_id=ctx.sample_set_id,
             upload_type="blast",
             upload_target="labkey",
             content_hash="hash1",
-            state_dir=ctx["state_dir"],
+            state_dir=ctx.state_dir,
         )
 
         # Uploaded to labkey
         assert (
             was_sample_ever_uploaded(
-                ctx["sample_id"],
+                ctx.sample_id,
                 upload_target="labkey",
-                state_dir=ctx["state_dir"],
+                state_dir=ctx.state_dir,
             )
             is True
         )
@@ -797,9 +827,9 @@ class TestUploads:
         # Not uploaded to globus
         assert (
             was_sample_ever_uploaded(
-                ctx["sample_id"],
+                ctx.sample_id,
                 upload_target="globus",
-                state_dir=ctx["state_dir"],
+                state_dir=ctx.state_dir,
             )
             is False
         )
@@ -807,9 +837,9 @@ class TestUploads:
         # Uploaded blast type
         assert (
             was_sample_ever_uploaded(
-                ctx["sample_id"],
+                ctx.sample_id,
                 upload_type="blast",
-                state_dir=ctx["state_dir"],
+                state_dir=ctx.state_dir,
             )
             is True
         )
@@ -817,9 +847,9 @@ class TestUploads:
         # Not uploaded gottcha2 type
         assert (
             was_sample_ever_uploaded(
-                ctx["sample_id"],
+                ctx.sample_id,
                 upload_type="gottcha2",
-                state_dir=ctx["state_dir"],
+                state_dir=ctx.state_dir,
             )
             is False
         )
@@ -1350,8 +1380,6 @@ class TestSchemaMigrationSafety:
 
     def test_new_database_created_without_prompts(self, temp_state_dir):
         """Creating a new database doesn't require any prompts."""
-        from py_nvd.db import connect
-
         db_path = temp_state_dir / "state.sqlite"
         assert not db_path.exists()
 
@@ -1364,8 +1392,6 @@ class TestSchemaMigrationSafety:
 
     def test_matching_schema_version_proceeds_normally(self, temp_state_dir):
         """Database with matching schema version works without prompts."""
-        from py_nvd.db import connect
-
         # Create database with correct schema
         with connect(temp_state_dir) as conn:
             conn.execute(
@@ -1384,8 +1410,6 @@ class TestSchemaMigrationSafety:
     def test_schema_mismatch_raises_error_in_non_interactive(self, temp_state_dir):
         """Schema mismatch raises SchemaMismatchError when not interactive."""
         import sqlite3
-
-        from py_nvd.db import EXPECTED_VERSION, SchemaMismatchError, connect
 
         db_path = temp_state_dir / "state.sqlite"
 
@@ -1408,8 +1432,6 @@ class TestSchemaMigrationSafety:
     def test_allow_destructive_update_creates_backup(self, temp_state_dir):
         """allow_destructive_update=True creates backup before deletion."""
         import sqlite3
-
-        from py_nvd.db import EXPECTED_VERSION, connect
 
         db_path = temp_state_dir / "state.sqlite"
 
@@ -1445,8 +1467,6 @@ class TestSchemaMigrationSafety:
         """Backup contains all original data before schema migration."""
         import sqlite3
 
-        from py_nvd.db import EXPECTED_VERSION, connect
-
         db_path = temp_state_dir / "state.sqlite"
 
         # Create database with old schema and multiple tables of data
@@ -1476,8 +1496,6 @@ class TestSchemaMigrationSafety:
     def test_schema_mismatch_error_message_is_helpful(self, temp_state_dir):
         """SchemaMismatchError message tells user what to do."""
         import sqlite3
-
-        from py_nvd.db import EXPECTED_VERSION, SchemaMismatchError, connect
 
         db_path = temp_state_dir / "state.sqlite"
 
@@ -1515,8 +1533,6 @@ class TestDatabasePathLookup:
 
     def test_get_database_by_path_not_found(self, temp_state_dir, temp_db_path):
         """Looking up unregistered path returns (None, None)."""
-        from py_nvd.state import get_database_by_path
-
         db, warning = get_database_by_path("blast", temp_db_path, temp_state_dir)
 
         assert db is None
@@ -1524,8 +1540,6 @@ class TestDatabasePathLookup:
 
     def test_get_database_by_path_single_match(self, temp_state_dir, temp_db_path):
         """Looking up registered path returns (database, None)."""
-        from py_nvd.state import get_database_by_path, register_database
-
         register_database("blast", "v1.0", str(temp_db_path), state_dir=temp_state_dir)
 
         db, warning = get_database_by_path("blast", temp_db_path, temp_state_dir)
@@ -1540,8 +1554,6 @@ class TestDatabasePathLookup:
     ):
         """When multiple versions share a path, returns newest with warning."""
         import time
-
-        from py_nvd.state import get_database_by_path, register_database
 
         # Register first version
         register_database("blast", "v1.0", str(temp_db_path), state_dir=temp_state_dir)
@@ -1563,8 +1575,6 @@ class TestDatabasePathLookup:
         self, temp_state_dir, temp_db_path
     ):
         """Path is canonicalized before lookup."""
-        from py_nvd.state import get_database_by_path, register_database
-
         # Register with absolute path
         register_database(
             "blast", "v1.0", str(temp_db_path.resolve()), state_dir=temp_state_dir
@@ -1586,8 +1596,6 @@ class TestDatabasePathLookup:
         self, temp_state_dir, temp_db_path
     ):
         """Different db_types at same path are independent."""
-        from py_nvd.state import get_database_by_path, register_database
-
         register_database(
             "blast", "blast-v1", str(temp_db_path), state_dir=temp_state_dir
         )
@@ -1609,8 +1617,6 @@ class TestDatabasePathLookup:
         """get_databases_by_path returns all versions at a path."""
         import time
 
-        from py_nvd.state import get_databases_by_path, register_database
-
         register_database("blast", "v1.0", str(temp_db_path), state_dir=temp_state_dir)
         time.sleep(0.1)
         register_database("blast", "v2.0", str(temp_db_path), state_dir=temp_state_dir)
@@ -1629,16 +1635,12 @@ class TestDatabasePathLookup:
         self, temp_state_dir, temp_db_path
     ):
         """get_databases_by_path returns empty list when path not registered."""
-        from py_nvd.state import get_databases_by_path
-
         databases = get_databases_by_path("blast", temp_db_path, temp_state_dir)
 
         assert databases == []
 
     def test_get_database_by_version_still_works(self, temp_state_dir, temp_db_path):
         """Renamed get_database_by_version still works correctly."""
-        from py_nvd.state import get_database_by_version, register_database
-
         register_database("blast", "v1.0", str(temp_db_path), state_dir=temp_state_dir)
 
         # Lookup by specific version
@@ -1675,14 +1677,8 @@ class TestResolveDatabaseVersions:
             paths[db_type] = db_dir
         return paths
 
-    # =========================================================================
-    # Case 1: No paths provided - nothing to resolve
-    # =========================================================================
-
     def test_no_paths_returns_empty_resolution(self, temp_state_dir):
         """When no paths provided, returns empty resolution."""
-        from py_nvd.state import resolve_database_versions
-
         resolution = resolve_database_versions(state_dir=temp_state_dir)
 
         assert resolution.blast_db_version is None
@@ -1693,8 +1689,6 @@ class TestResolveDatabaseVersions:
 
     def test_version_without_path_passes_through(self, temp_state_dir):
         """Version provided without path is returned as-is (unusual but valid)."""
-        from py_nvd.state import resolve_database_versions
-
         resolution = resolve_database_versions(
             blast_db_version="v1.0",
             state_dir=temp_state_dir,
@@ -1705,14 +1699,8 @@ class TestResolveDatabaseVersions:
         assert resolution.warnings == []
         assert resolution.auto_registered == []
 
-    # =========================================================================
-    # Case 2: Path and version both provided - auto-register
-    # =========================================================================
-
     def test_path_and_version_auto_registers_new(self, temp_state_dir, temp_db_paths):
         """Path + version auto-registers when not in registry."""
-        from py_nvd.state import get_database_by_version, resolve_database_versions
-
         resolution = resolve_database_versions(
             blast_db=temp_db_paths["blast"],
             blast_db_version="core-nt_2025-01",
@@ -1737,8 +1725,6 @@ class TestResolveDatabaseVersions:
         self, temp_state_dir, temp_db_paths
     ):
         """Path + version matching registry is a no-op."""
-        from py_nvd.state import register_database, resolve_database_versions
-
         # Pre-register
         register_database(
             "blast",
@@ -1763,12 +1749,6 @@ class TestResolveDatabaseVersions:
         self, temp_state_dir, temp_db_paths
     ):
         """Path + version different from registry warns and updates."""
-        from py_nvd.state import (
-            get_database_by_version,
-            register_database,
-            resolve_database_versions,
-        )
-
         # Pre-register with old version
         register_database(
             "blast",
@@ -1803,16 +1783,10 @@ class TestResolveDatabaseVersions:
         old_db = get_database_by_version("blast", "core-nt_2024-01", temp_state_dir)
         assert old_db is not None
 
-    # =========================================================================
-    # Case 3: Path provided without version - auto-resolve from registry
-    # =========================================================================
-
     def test_path_without_version_resolves_from_registry(
         self, temp_state_dir, temp_db_paths
     ):
         """Path without version resolves from registry."""
-        from py_nvd.state import register_database, resolve_database_versions
-
         # Pre-register
         register_database(
             "blast",
@@ -1836,8 +1810,6 @@ class TestResolveDatabaseVersions:
         self, temp_state_dir, temp_db_paths
     ):
         """Path without version, not in registry, warns."""
-        from py_nvd.state import resolve_database_versions
-
         resolution = resolve_database_versions(
             blast_db=temp_db_paths["blast"],
             # No blast_db_version provided, not registered
@@ -1856,14 +1828,8 @@ class TestResolveDatabaseVersions:
         # No registrations
         assert resolution.auto_registered == []
 
-    # =========================================================================
-    # Multiple database types
-    # =========================================================================
-
     def test_resolves_all_database_types(self, temp_state_dir, temp_db_paths):
         """Resolves all three database types independently."""
-        from py_nvd.state import resolve_database_versions
-
         resolution = resolve_database_versions(
             blast_db=temp_db_paths["blast"],
             blast_db_version="blast-v1",
@@ -1882,8 +1848,6 @@ class TestResolveDatabaseVersions:
 
     def test_mixed_resolution_scenarios(self, temp_state_dir, temp_db_paths):
         """Different resolution scenarios for different db types."""
-        from py_nvd.state import register_database, resolve_database_versions
-
         # Pre-register BLAST
         register_database(
             "blast",
@@ -1914,14 +1878,8 @@ class TestResolveDatabaseVersions:
         assert resolution.stat_db_version is None
         assert any("stat" in w and "not registered" in w for w in resolution.warnings)
 
-    # =========================================================================
-    # Edge cases
-    # =========================================================================
-
     def test_path_canonicalization_in_resolution(self, temp_state_dir, temp_db_paths):
         """Paths are canonicalized during resolution."""
-        from py_nvd.state import register_database, resolve_database_versions
-
         # Register with absolute path
         register_database(
             "blast",
@@ -1948,8 +1906,6 @@ class TestResolveDatabaseVersions:
         self, temp_state_dir, temp_db_paths
     ):
         """When multiple versions at path, uses newest and warns."""
-        from py_nvd.state import register_database, resolve_database_versions
-
         # Register multiple versions at same path
         register_database(
             "blast", "v1.0", str(temp_db_paths["blast"]), state_dir=temp_state_dir

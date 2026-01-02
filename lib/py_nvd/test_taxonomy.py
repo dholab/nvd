@@ -4,11 +4,13 @@ Tests for py_nvd.taxonomy module.
 Uses minimal test fixtures to avoid downloading real NCBI data during tests.
 """
 
+import sqlite3
 from pathlib import Path
 
 import pytest
 
 from py_nvd import taxonomy
+from py_nvd.db import get_taxdump_dir
 
 
 @pytest.fixture
@@ -546,7 +548,7 @@ class TestContextManagers:
 
         # After context, connection should be closed
         # Attempting to use it should raise an error
-        with pytest.raises(Exception):  # ProgrammingError
+        with pytest.raises(sqlite3.ProgrammingError):
             conn.execute("SELECT 1")
 
     def test_wal_mode_is_enabled(self, minimal_taxdump: Path, monkeypatch):
@@ -664,6 +666,7 @@ class TestNCBIIntegration:
             if "NVD_STATE_DIR" in os.environ:
                 del os.environ["NVD_STATE_DIR"]
 
+    @pytest.mark.slow
     def test_taxonomy_sqlite_is_cached(self, tmp_path):
         """
         Verify that taxonomy.sqlite is cached and reused.
@@ -788,8 +791,6 @@ class TestTaxonomyDbEnvVar:
         monkeypatch.setenv("NVD_TAXONOMY_DB", str(minimal_taxdump))
 
         # Should use the env var path, not the default
-        from py_nvd.db import get_taxdump_dir
-
         resolved = get_taxdump_dir()
         assert resolved == minimal_taxdump
 

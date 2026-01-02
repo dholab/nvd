@@ -16,17 +16,18 @@ from pathlib import Path
 
 from rich.console import Console
 
-from py_nvd.db import DEFAULT_CONFIG_PATH, get_config_path
+import typer
 
-# ============================================================================
-# CONSTANTS
-# ============================================================================
+from py_nvd.db import DEFAULT_CONFIG_PATH, get_config_path, get_state_db_path
 
 # Re-export for backward compatibility (prefer get_config_path() for new code)
 DEFAULT_CONFIG = DEFAULT_CONFIG_PATH
 
 # Resume file for `nvd resume` command (stored in launch directory)
 RESUME_FILE = Path(".nfresume")
+
+# Maximum directory depth to search when looking for pipeline root
+MAX_PIPELINE_ROOT_DEPTH = 10
 
 
 def _find_pipeline_root() -> Path:
@@ -47,9 +48,8 @@ def _find_pipeline_root() -> Path:
         RuntimeError: If the pipeline root cannot be found.
     """
     current = Path(__file__).resolve().parent
-    max_depth = 10  # Safety limit to avoid infinite loops
 
-    for _ in range(max_depth):
+    for _ in range(MAX_PIPELINE_ROOT_DEPTH):
         if (current / "main.nf").exists() and (current / "nextflow.config").exists():
             return current
         if current.parent == current:  # Hit filesystem root
@@ -102,10 +102,6 @@ PANEL_ANALYSIS = "Analysis Parameters"
 PANEL_SRA = "SRA Submission"
 PANEL_LABKEY = "LabKey Integration"
 
-# ============================================================================
-# CONSOLE AND OUTPUT UTILITIES
-# ============================================================================
-
 console = Console()
 
 
@@ -130,9 +126,34 @@ def warning(message: str) -> None:
     console.print(f"[yellow]⚠[/yellow]  {message}")
 
 
-# ============================================================================
-# CONFIG MANAGEMENT
-# ============================================================================
+def ensure_db_exists(json_output: bool = False) -> Path:
+    """
+    Ensure the state database exists, exiting with a helpful error if not.
+
+    This is for CLI commands that require an existing database (as opposed
+    to commands like `state init` that create it).
+
+    Args:
+        json_output: If True, output error as JSON instead of Rich formatted text.
+
+    Returns:
+        Path to the database file.
+
+    Raises:
+        typer.Exit: If the database does not exist.
+    """
+    db_path = get_state_db_path()
+    if not db_path.exists():
+        if json_output:
+            import json
+
+            console.print_json(
+                json.dumps({"error": "Database not found", "path": str(db_path)})
+            )
+            raise typer.Exit(1)
+        error(f"Database not found: {db_path}\nRun 'nvd state init' to create it.")
+        raise typer.Exit(1)  # unreachable, but satisfies type checker
+    return db_path
 
 
 def find_config_file(custom_path: Path | None = None) -> Path | None:
@@ -190,11 +211,6 @@ def parse_nextflow_config(config_path: Path) -> dict[str, str]:
         return params
     else:
         return params
-
-
-# ============================================================================
-# ENVIRONMENT DETECTION
-# ============================================================================
 
 
 def check_command_exists(command: str) -> bool:

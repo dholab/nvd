@@ -46,10 +46,6 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from collections.abc import Generator
 
-# =============================================================================
-# NVD HOME DIRECTORY AND PATH DEFAULTS
-# =============================================================================
-
 # The NVD home directory - all NVD data lives here by default
 DEFAULT_NVD_HOME = Path.home() / ".nvd"
 
@@ -61,10 +57,6 @@ ENV_VAR_TAXONOMY = "NVD_TAXONOMY_DB"
 # Default paths (all relative to NVD home)
 DEFAULT_CONFIG_PATH = DEFAULT_NVD_HOME / "user.config"
 DEFAULT_STATE_DIR = DEFAULT_NVD_HOME
-
-# =============================================================================
-# SCHEMA AND TIMEOUT CONSTANTS
-# =============================================================================
 
 EXPECTED_VERSION = 2
 
@@ -103,9 +95,6 @@ class SchemaMismatchError(Exception):
             f"  2. Pass --update-db-destructive to explicitly allow destruction\n"
             f"  3. Manually backup and delete: {db_path}"
         )
-
-
-# --- Path Resolution Functions ---
 
 
 def get_config_path(explicit_path: Path | str | None = None) -> Path:
@@ -187,9 +176,6 @@ def get_taxonomy_db_path(state_dir: Path | str | None = None) -> Path:
     return get_taxdump_dir(state_dir) / "taxonomy.sqlite"
 
 
-# --- Schema Management ---
-
-
 def _init_schema(conn: sqlite3.Connection) -> None:
     """Initialize database schema from schema.sql."""
     schema = files("py_nvd").joinpath("schema.sql").read_text()
@@ -211,9 +197,6 @@ def _configure_connection(conn: sqlite3.Connection) -> None:
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA busy_timeout=30000")
     conn.row_factory = sqlite3.Row
-
-
-# --- Schema Migration Safety ---
 
 
 def _get_backup_path(db_path: Path) -> Path:
@@ -312,7 +295,7 @@ def _prompt_for_confirmation(db_path: Path, timeout_seconds: int) -> bool:
         for table, count in stats["tables"].items():
             print(f"  - {table}: {count} rows", file=sys.stderr)
 
-    print(f"\nA backup will be created before deletion.", file=sys.stderr)
+    print("\nA backup will be created before deletion.", file=sys.stderr)
     print(f"You have {timeout_seconds // 60} minutes to respond.", file=sys.stderr)
     print(
         "\nType 'yes' to proceed, or anything else to abort: ", file=sys.stderr, end=""
@@ -378,9 +361,6 @@ def _handle_schema_mismatch(
 
     # Non-interactive and no explicit opt-in: refuse
     raise SchemaMismatchError(db_path, current_version, EXPECTED_VERSION)
-
-
-# --- Connection Context Manager ---
 
 
 @contextmanager

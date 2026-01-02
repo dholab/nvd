@@ -30,10 +30,6 @@ from py_nvd.cli.prompts import (
 )
 from py_nvd.cli.utils import console, error, info, success, warning
 
-# =============================================================================
-# CONSTANTS
-# =============================================================================
-
 # The secret name used by the pipeline for LabKey API key
 LABKEY_SECRET_NAME = "LABKEY_API_KEY"
 
@@ -41,11 +37,6 @@ LABKEY_SECRET_NAME = "LABKEY_API_KEY"
 KNOWN_SECRETS = {
     LABKEY_SECRET_NAME: "LabKey API key for uploading results",
 }
-
-
-# =============================================================================
-# NEXTFLOW CLI WRAPPERS
-# =============================================================================
 
 
 def _run_nextflow_secrets(
@@ -75,7 +66,6 @@ def _run_nextflow_secrets(
     except FileNotFoundError:
         # error() calls sys.exit() and never returns
         error("Nextflow not found. Please ensure nextflow is installed and in PATH.")
-        raise SystemExit(1)  # unreachable, but satisfies type checker
 
 
 def _list_secrets() -> list[str]:
@@ -120,10 +110,6 @@ def _delete_secret(name: str) -> bool:
     result = _run_nextflow_secrets(["delete", name])
     return result.returncode == 0
 
-
-# =============================================================================
-# TYPER APP AND COMMANDS
-# =============================================================================
 
 secrets_app = typer.Typer(
     name="secrets",

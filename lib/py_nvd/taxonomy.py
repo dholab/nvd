@@ -48,8 +48,6 @@ TAXDUMP_URL = "https://ftp.ncbi.nlm.nih.gov/pub/taxonomy/taxdump.tar.gz"
 REQUIRED_DMP_FILES = {"nodes.dmp", "names.dmp", "merged.dmp"}
 MAX_AGE = timedelta(days=30)
 
-# --- Taxdump Management ---
-
 
 def _is_taxdump_stale(taxdump_dir: Path) -> bool:
     """Check if taxdump needs refresh (missing or >30 days old)."""
@@ -194,9 +192,6 @@ def _ensure_taxdump(state_dir: Path | str | None = None) -> Path:
         _build_sqlite_from_dmp(taxdump_dir)
 
     return taxdump_dir
-
-
-# --- TaxonomyDB Class ---
 
 
 class TaxonomyDB:
@@ -413,7 +408,7 @@ class TaxonomyDB:
                 # by taxopy since we initialize TaxDb with merged_dmp.
                 continue
 
-        if len(valid_taxons) == 0:
+        if not valid_taxons:
             return None
         if len(valid_taxons) == 1:
             return valid_taxons[0].taxid
@@ -421,13 +416,8 @@ class TaxonomyDB:
         return taxopy.utilities.find_lca(valid_taxons, self.taxopy_db).taxid
 
 
-# --- Context Managers ---
-
-
 class TaxonomyOfflineError(Exception):
     """Raised when taxonomy database is unavailable in offline mode."""
-
-    pass
 
 
 @contextmanager

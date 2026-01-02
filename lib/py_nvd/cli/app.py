@@ -33,10 +33,6 @@ from py_nvd.cli.commands.validate import validate_app
 from py_nvd.cli.commands.version import version
 from py_nvd.cli.utils import console
 
-# ============================================================================
-# TYPER APP
-# ============================================================================
-
 app = typer.Typer(
     name="nvd",
     help="NVD2 - Metagenomic virus detection pipeline",
@@ -45,10 +41,6 @@ app = typer.Typer(
     rich_markup_mode="rich",
     context_settings={"help_option_names": ["-h", "--help"]},
 )
-
-# ============================================================================
-# COMMAND REGISTRATION
-# ============================================================================
 
 # Run command - allow extra args to pass through to Nextflow
 app.command(
@@ -103,14 +95,10 @@ _is_wrapped_season = (_today.month == 12 and _today.day >= 15) or (
 )
 
 if _is_wrapped_season:
+    # Local import intentional: avoid loading wrapped module outside of season
     from py_nvd.cli.commands.wrapped import wrapped
 
     app.command("wrapped")(wrapped)
-
-
-# ============================================================================
-# MAIN ENTRY POINT
-# ============================================================================
 
 
 def main() -> None:

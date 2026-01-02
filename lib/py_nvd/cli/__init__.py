@@ -11,10 +11,7 @@ Usage:
     nvd --help
 """
 
-# Import app and main from the app module
 from py_nvd.cli.app import app, main
-
-# Import utilities from the utils module
 from py_nvd.cli.utils import (
     DEFAULT_CONFIG,
     MAX_PREVIEW_ITEMS,
@@ -31,24 +28,19 @@ from py_nvd.cli.utils import (
     success,
     warning,
 )
-
-# Re-export command sub-apps for backward compatibility
 from py_nvd.cli.commands.config import config_app
 from py_nvd.cli.commands.params import params_app
 from py_nvd.cli.commands.preset import preset_app
 from py_nvd.cli.commands.validate import validate_app
 
 __all__ = [
-    # App and entry point
     "app",
     "main",
-    # Utilities
     "console",
     "error",
     "info",
     "success",
     "warning",
-    # Constants
     "DEFAULT_CONFIG",
     "MAX_PREVIEW_ITEMS",
     "PANEL_ANALYSIS",
@@ -58,7 +50,6 @@ __all__ = [
     "PANEL_PREPROCESSING",
     "PANEL_SRA",
     "VALID_TOOLS",
-    # Command sub-apps
     "config_app",
     "params_app",
     "preset_app",

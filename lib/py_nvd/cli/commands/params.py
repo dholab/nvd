@@ -23,12 +23,15 @@ from py_nvd.cli.utils import (
     success,
     warning,
 )
+from py_nvd import params, state
 from py_nvd.models import (
     PARAM_CATEGORIES,
     ParamSource,
     TracedParams,
     get_field_category,
+    trace_merge,
 )
+from py_nvd.params import get_schema_url, load_params_file
 
 params_app = typer.Typer(
     name="params",
@@ -43,7 +46,7 @@ def params_init(
         ...,
         help="Output file path (.yaml or .json)",
     ),
-    format: str | None = typer.Option(
+    output_format: str | None = typer.Option(
         None,
         "--format",
         "-f",
@@ -68,19 +71,17 @@ def params_init(
         # Specify format explicitly
         nvd params init my-params --format yaml
     """
-    from py_nvd import params
-
     # Determine format from extension or option
-    if format is None:
-        if output.suffix in (".json",):
-            format = "json"
+    if output_format is None:
+        if output.suffix == ".json":
+            output_format = "json"
         else:
-            format = "yaml"  # Default to YAML
+            output_format = "yaml"  # Default to YAML
 
     # Ensure correct extension
-    if format == "yaml" and output.suffix not in (".yaml", ".yml"):
+    if output_format == "yaml" and output.suffix not in (".yaml", ".yml"):
         output = output.with_suffix(".yaml")
-    elif format == "json" and output.suffix != ".json":
+    elif output_format == "json" and output.suffix != ".json":
         output = output.with_suffix(".json")
 
     # Check if file already exists
@@ -90,7 +91,7 @@ def params_init(
             raise typer.Abort()
 
     try:
-        params.generate_template(output, format=format)
+        params.generate_template(output, output_format=output_format)
         success(f"Created {output}")
         info("Edit this file in your IDE for autocomplete and validation")
         info(f"Use with: nextflow run dhoconno/nvd -params-file {output}")
@@ -143,10 +144,6 @@ def params_check(
         nvd params check my-params.yaml --show-defaults
     """
     from pydantic import ValidationError
-
-    from py_nvd import state
-    from py_nvd.models import ParamSource, trace_merge
-    from py_nvd.params import load_params_file
 
     # Load params file
     try:
@@ -320,7 +317,7 @@ def params_merge(
         "-o",
         help="Output file path (.yaml or .json)",
     ),
-    format: str | None = typer.Option(
+    output_format: str | None = typer.Option(
         None,
         "--format",
         "-f",
@@ -359,9 +356,6 @@ def params_merge(
     import yaml
     from pydantic import ValidationError
 
-    from py_nvd.models import trace_merge
-    from py_nvd.params import get_schema_url, load_params_file
-
     if len(files) < 2:
         error("At least two files are required for merging")
         raise typer.Exit(1)
@@ -392,16 +386,16 @@ def params_merge(
         raise typer.Exit(1) from None
 
     # Determine output format
-    if format is None:
+    if output_format is None:
         if output.suffix == ".json":
-            format = "json"
+            output_format = "json"
         else:
-            format = "yaml"
+            output_format = "yaml"
 
     # Ensure correct extension
-    if format == "yaml" and output.suffix not in (".yaml", ".yml"):
+    if output_format == "yaml" and output.suffix not in (".yaml", ".yml"):
         output = output.with_suffix(".yaml")
-    elif format == "json" and output.suffix != ".json":
+    elif output_format == "json" and output.suffix != ".json":
         output = output.with_suffix(".json")
 
     # Check if output exists
@@ -432,19 +426,19 @@ def params_merge(
     # Write output
     schema_url = get_schema_url()
 
-    if format == "yaml":
+    if output_format == "yaml":
         lines = [
             f"# yaml-language-server: $schema={schema_url}",
             "#",
             f"# Merged from: {', '.join(f.name for f in files)}",
             "#",
         ]
-        with open(output, "w") as f:
+        with open(output, "w", encoding="utf-8") as f:
             f.write("\n".join(lines) + "\n\n")
             yaml.dump(output_data, f, default_flow_style=False, sort_keys=True)
     else:
         output_data_with_schema = {"$schema": schema_url, **output_data}
-        with open(output, "w") as f:
+        with open(output, "w", encoding="utf-8") as f:
             json_module.dump(output_data_with_schema, f, indent=2)
             f.write("\n")
 

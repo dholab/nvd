@@ -29,7 +29,22 @@ from py_nvd.models import (
     UploadType,
 )
 
-# --- Run Management ---
+
+class RunNotFoundError(Exception):
+    """Raised when a run_id is not found in the database."""
+
+    def __init__(self, run_id: str):
+        self.run_id = run_id
+        super().__init__(f"Run not found: {run_id}")
+
+
+class SampleNotFoundError(Exception):
+    """Raised when a sample is not found in the database."""
+
+    def __init__(self, sample_id: str, sample_set_id: str):
+        self.sample_id = sample_id
+        self.sample_set_id = sample_set_id
+        super().__init__(f"Sample not found: {sample_id} in sample set {sample_set_id}")
 
 
 def compute_sample_set_id(sample_ids: list[str]) -> str:
@@ -89,14 +104,7 @@ def get_run(run_id: str, state_dir: Path | str | None = None) -> Run | None:
     with connect(state_dir) as conn:
         row = conn.execute("SELECT * FROM runs WHERE run_id = ?", (run_id,)).fetchone()
         if row:
-            return Run(
-                run_id=row["run_id"],
-                sample_set_id=row["sample_set_id"],
-                started_at=row["started_at"],
-                status=row["status"],
-                experiment_id=row["experiment_id"],
-                completed_at=row["completed_at"],
-            )
+            return Run.from_row(row)
         return None
 
 
@@ -111,14 +119,7 @@ def get_run_by_sample_set(
             (sample_set_id,),
         ).fetchone()
         if row:
-            return Run(
-                run_id=row["run_id"],
-                sample_set_id=row["sample_set_id"],
-                started_at=row["started_at"],
-                status=row["status"],
-                experiment_id=row["experiment_id"],
-                completed_at=row["completed_at"],
-            )
+            return Run.from_row(row)
         return None
 
 
@@ -169,34 +170,43 @@ def list_runs(
             params.append(limit)
 
         rows = conn.execute(query, params).fetchall()
-        return [
-            Run(
-                run_id=row["run_id"],
-                sample_set_id=row["sample_set_id"],
-                started_at=row["started_at"],
-                status=row["status"],
-                experiment_id=row["experiment_id"],
-                completed_at=row["completed_at"],
-            )
-            for row in rows
-        ]
+        return [Run.from_row(row) for row in rows]
 
 
 def complete_run(
     run_id: str,
     status: Status = "completed",
     state_dir: Path | str | None = None,
-) -> None:
-    """Mark a run as completed or failed."""
+    *,
+    strict: bool = False,
+) -> bool:
+    """
+    Mark a run as completed or failed.
+
+    Args:
+        run_id: The run identifier
+        status: New status ("completed" or "failed")
+        state_dir: Optional state directory override
+        strict: If True, raise RunNotFoundError when run_id doesn't exist
+
+    Returns:
+        True if the run was found and updated, False if run_id not found.
+
+    Raises:
+        RunNotFoundError: If strict=True and run_id doesn't exist.
+    """
     with connect(state_dir) as conn:
-        conn.execute(
+        cursor = conn.execute(
             "UPDATE runs SET completed_at = datetime('now'), status = ? WHERE run_id = ?",
             (status, run_id),
         )
         conn.commit()
 
-
-# --- Database Registry ---
+        if cursor.rowcount == 0:
+            if strict:
+                raise RunNotFoundError(run_id)
+            return False
+        return True
 
 
 def register_database(
@@ -253,7 +263,7 @@ def get_database_by_version(
         Database if found, None otherwise
     """
     with connect(state_dir) as conn:
-        if version:
+        if version is not None:
             row = conn.execute(
                 "SELECT * FROM databases WHERE db_type = ? AND version = ?",
                 (db_type, version),
@@ -264,13 +274,7 @@ def get_database_by_version(
                 (db_type,),
             ).fetchone()
         if row:
-            return Database(
-                db_type=row["db_type"],
-                version=row["version"],
-                path=row["path"],
-                registered_at=row["registered_at"],
-                checksum=row["checksum"],
-            )
+            return Database.from_row(row)
         return None
 
 
@@ -312,13 +316,7 @@ def get_database_by_path(
 
         # Build Database from first (newest) row
         row = rows[0]
-        database = Database(
-            db_type=row["db_type"],
-            version=row["version"],
-            path=row["path"],
-            registered_at=row["registered_at"],
-            checksum=row["checksum"],
-        )
+        database = Database.from_row(row)
 
         # Warn if multiple versions exist for this path
         warning = None
@@ -362,16 +360,7 @@ def get_databases_by_path(
             (db_type, canonical_path),
         ).fetchall()
 
-        return [
-            Database(
-                db_type=row["db_type"],
-                version=row["version"],
-                path=row["path"],
-                registered_at=row["registered_at"],
-                checksum=row["checksum"],
-            )
-            for row in rows
-        ]
+        return [Database.from_row(row) for row in rows]
 
 
 def list_databases(state_dir: Path | str | None = None) -> list[Database]:
@@ -380,16 +369,7 @@ def list_databases(state_dir: Path | str | None = None) -> list[Database]:
         rows = conn.execute(
             "SELECT * FROM databases ORDER BY db_type, registered_at DESC",
         ).fetchall()
-        return [
-            Database(
-                db_type=row["db_type"],
-                version=row["version"],
-                path=row["path"],
-                registered_at=row["registered_at"],
-                checksum=row["checksum"],
-            )
-            for row in rows
-        ]
+        return [Database.from_row(row) for row in rows]
 
 
 def validate_databases(
@@ -408,9 +388,6 @@ def validate_databases(
         elif not Path(db.path).exists():
             errors.append(f"Database path missing: {db.path}")
     return errors
-
-
-# --- Database Version Resolution ---
 
 
 def _resolve_single_database(
@@ -555,9 +532,6 @@ def resolve_database_versions(
     return resolution
 
 
-# --- Processed Sample Tracking ---
-
-
 def register_processed_sample(
     sample_id: str,
     sample_set_id: str,
@@ -607,16 +581,7 @@ def get_processed_sample(
             (sample_id, sample_set_id),
         ).fetchone()
         if row:
-            return ProcessedSample(
-                sample_id=row["sample_id"],
-                sample_set_id=row["sample_set_id"],
-                run_id=row["run_id"],
-                processed_at=row["processed_at"],
-                status=row["status"],
-                blast_db_version=row["blast_db_version"],
-                stat_db_version=row["stat_db_version"],
-                taxonomy_hash=row["taxonomy_hash"],
-            )
+            return ProcessedSample.from_row(row)
         return None
 
 
@@ -630,19 +595,7 @@ def get_samples_for_run(
             "SELECT * FROM processed_samples WHERE run_id = ? ORDER BY sample_id",
             (run_id,),
         ).fetchall()
-        return [
-            ProcessedSample(
-                sample_id=row["sample_id"],
-                sample_set_id=row["sample_set_id"],
-                run_id=row["run_id"],
-                processed_at=row["processed_at"],
-                status=row["status"],
-                blast_db_version=row["blast_db_version"],
-                stat_db_version=row["stat_db_version"],
-                taxonomy_hash=row["taxonomy_hash"],
-            )
-            for row in rows
-        ]
+        return [ProcessedSample.from_row(row) for row in rows]
 
 
 def list_samples(
@@ -686,19 +639,7 @@ def list_samples(
             params.append(limit)
 
         rows = conn.execute(query, params).fetchall()
-        return [
-            ProcessedSample(
-                sample_id=row["sample_id"],
-                sample_set_id=row["sample_set_id"],
-                run_id=row["run_id"],
-                processed_at=row["processed_at"],
-                status=row["status"],
-                blast_db_version=row["blast_db_version"],
-                stat_db_version=row["stat_db_version"],
-                taxonomy_hash=row["taxonomy_hash"],
-            )
-            for row in rows
-        ]
+        return [ProcessedSample.from_row(row) for row in rows]
 
 
 def get_sample_history(
@@ -723,19 +664,7 @@ def get_sample_history(
             "SELECT * FROM processed_samples WHERE sample_id = ? ORDER BY processed_at DESC",
             (sample_id,),
         ).fetchall()
-        return [
-            ProcessedSample(
-                sample_id=row["sample_id"],
-                sample_set_id=row["sample_set_id"],
-                run_id=row["run_id"],
-                processed_at=row["processed_at"],
-                status=row["status"],
-                blast_db_version=row["blast_db_version"],
-                stat_db_version=row["stat_db_version"],
-                taxonomy_hash=row["taxonomy_hash"],
-            )
-            for row in rows
-        ]
+        return [ProcessedSample.from_row(row) for row in rows]
 
 
 def was_sample_ever_processed(
@@ -756,17 +685,37 @@ def complete_sample(
     sample_set_id: str,
     status: ProcessedSampleStatus = "completed",
     state_dir: Path | str | None = None,
-) -> None:
-    """Mark a processed sample as completed or failed."""
+    *,
+    strict: bool = False,
+) -> bool:
+    """
+    Mark a processed sample as completed or failed.
+
+    Args:
+        sample_id: The sample identifier
+        sample_set_id: The sample set this sample belongs to
+        status: New status ("completed" or "failed")
+        state_dir: Optional state directory override
+        strict: If True, raise SampleNotFoundError when sample doesn't exist
+
+    Returns:
+        True if the sample was found and updated, False if not found.
+
+    Raises:
+        SampleNotFoundError: If strict=True and sample doesn't exist.
+    """
     with connect(state_dir) as conn:
-        conn.execute(
+        cursor = conn.execute(
             "UPDATE processed_samples SET status = ? WHERE sample_id = ? AND sample_set_id = ?",
             (status, sample_id, sample_set_id),
         )
         conn.commit()
 
-
-# --- Upload Tracking (Target-Agnostic) ---
+        if cursor.rowcount == 0:
+            if strict:
+                raise SampleNotFoundError(sample_id, sample_set_id)
+            return False
+        return True
 
 
 def record_upload(
@@ -835,18 +784,7 @@ def get_upload(
             (sample_id, sample_set_id, upload_type, upload_target),
         ).fetchone()
         if row:
-            metadata = (
-                json.loads(row["target_metadata"]) if row["target_metadata"] else None
-            )
-            return Upload(
-                sample_id=row["sample_id"],
-                sample_set_id=row["sample_set_id"],
-                upload_type=row["upload_type"],
-                upload_target=row["upload_target"],
-                content_hash=row["content_hash"],
-                uploaded_at=row["uploaded_at"],
-                target_metadata=metadata,
-            )
+            return Upload.from_row(row)
         return None
 
 
@@ -896,20 +834,7 @@ def get_uploads_for_sample(
             "SELECT * FROM uploads WHERE sample_id = ? ORDER BY uploaded_at",
             (sample_id,),
         ).fetchall()
-        return [
-            Upload(
-                sample_id=row["sample_id"],
-                sample_set_id=row["sample_set_id"],
-                upload_type=row["upload_type"],
-                upload_target=row["upload_target"],
-                content_hash=row["content_hash"],
-                uploaded_at=row["uploaded_at"],
-                target_metadata=json.loads(row["target_metadata"])
-                if row["target_metadata"]
-                else None,
-            )
-            for row in rows
-        ]
+        return [Upload.from_row(row) for row in rows]
 
 
 def list_uploads(
@@ -959,20 +884,7 @@ def list_uploads(
             params.append(limit)
 
         rows = conn.execute(query, params).fetchall()
-        return [
-            Upload(
-                sample_id=row["sample_id"],
-                sample_set_id=row["sample_set_id"],
-                upload_type=row["upload_type"],
-                upload_target=row["upload_target"],
-                content_hash=row["content_hash"],
-                uploaded_at=row["uploaded_at"],
-                target_metadata=json.loads(row["target_metadata"])
-                if row["target_metadata"]
-                else None,
-            )
-            for row in rows
-        ]
+        return [Upload.from_row(row) for row in rows]
 
 
 def was_sample_ever_uploaded(
@@ -996,7 +908,7 @@ def was_sample_ever_uploaded(
     """
     with connect(state_dir) as conn:
         query = "SELECT 1 FROM uploads WHERE sample_id = ?"
-        params: list = [sample_id]
+        params: list[str] = [sample_id]
 
         if upload_type is not None:
             query += " AND upload_type = ?"
@@ -1019,9 +931,6 @@ def hash_upload_content(data: dict | list) -> str:
     """
     content = json.dumps(data, sort_keys=True, default=str)
     return hashlib.sha256(content.encode()).hexdigest()
-
-
-# --- Taxonomy Version Tracking ---
 
 
 def record_taxonomy_version(
@@ -1058,14 +967,7 @@ def get_taxonomy_version(
             (run_id,),
         ).fetchone()
         if row:
-            return TaxonomyVersion(
-                run_id=row["run_id"],
-                file_hash=row["file_hash"],
-                ncbi_rebuild_timestamp=row["ncbi_rebuild_timestamp"],
-                file_size=row["file_size"],
-                downloaded_at=row["downloaded_at"],
-                recorded_at=row["recorded_at"],
-            )
+            return TaxonomyVersion.from_row(row)
         return None
 
 
@@ -1087,9 +989,6 @@ def check_taxonomy_drift(
         return True  # Can't compare if one is missing
 
     return version_a.file_hash != version_b.file_hash
-
-
-# --- Preset Management ---
 
 
 def register_preset(
@@ -1161,13 +1060,7 @@ def get_preset(name: str, state_dir: Path | str | None = None) -> Preset | None:
         row = conn.execute("SELECT * FROM presets WHERE name = ?", (name,)).fetchone()
 
         if row:
-            return Preset(
-                name=row["name"],
-                params=json.loads(row["params"]),
-                description=row["description"],
-                created_at=row["created_at"],
-                updated_at=row["updated_at"],
-            )
+            return Preset.from_row(row)
         return None
 
 
@@ -1184,16 +1077,7 @@ def list_presets(state_dir: Path | str | None = None) -> list[Preset]:
     with connect(state_dir) as conn:
         rows = conn.execute("SELECT * FROM presets ORDER BY created_at DESC").fetchall()
 
-        return [
-            Preset(
-                name=row["name"],
-                params=json.loads(row["params"]),
-                description=row["description"],
-                created_at=row["created_at"],
-                updated_at=row["updated_at"],
-            )
-            for row in rows
-        ]
+        return [Preset.from_row(row) for row in rows]
 
 
 def delete_preset(name: str, state_dir: Path | str | None = None) -> bool:

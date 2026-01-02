@@ -7,11 +7,52 @@ All data crossing API boundaries uses these models.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, Self, TypeVar
 
 from pydantic import BaseModel, Field, field_validator
 from pydantic.dataclasses import dataclass
+
+if TYPE_CHECKING:
+    from sqlite3 import Row
+
+T = TypeVar("T")
+
+
+def _from_row(cls: type[T], row: Row) -> T:
+    """
+    Construct a dataclass instance from a sqlite3.Row.
+
+    Extra columns in the row are ignored; missing columns raise
+    an assertion error with diagnostic information.
+
+    Args:
+        cls: A dataclass type to instantiate
+        row: A sqlite3.Row with column names matching field names
+
+    Returns:
+        An instance of cls populated from row data
+
+    Raises:
+        AssertionError: If cls is not a dataclass or row is missing required columns
+        ValidationError: If Pydantic validation fails
+    """
+    assert hasattr(cls, "__dataclass_fields__"), (
+        f"_from_row requires a dataclass, got {cls.__name__}"
+    )
+
+    fields = cls.__dataclass_fields__  # type: ignore[attr-defined]
+    row_keys = set(row.keys())
+
+    missing = [f for f in fields if f not in row_keys]
+    assert not missing, (
+        f"Row missing columns for {cls.__name__}: {missing}. "
+        f"Available: {sorted(row_keys)}"
+    )
+
+    return cls(**{f: row[f] for f in fields})
+
 
 # Type aliases for constrained values
 Status = Literal["running", "completed", "failed"]
@@ -32,6 +73,11 @@ class Run:
     experiment_id: int | None = None  # Optional LabKey linkage
     completed_at: str | None = None
 
+    @classmethod
+    def from_row(cls, row: Row) -> Self:
+        """Construct a Run from a sqlite3.Row."""
+        return _from_row(cls, row)
+
 
 @dataclass(frozen=True)
 class ProcessedSample:
@@ -46,6 +92,11 @@ class ProcessedSample:
     stat_db_version: str | None = None
     taxonomy_hash: str | None = None
 
+    @classmethod
+    def from_row(cls, row: Row) -> Self:
+        """Construct a ProcessedSample from a sqlite3.Row."""
+        return _from_row(cls, row)
+
 
 @dataclass(frozen=True)
 class Database:
@@ -56,6 +107,11 @@ class Database:
     path: str
     registered_at: str
     checksum: str | None = None
+
+    @classmethod
+    def from_row(cls, row: Row) -> Self:
+        """Construct a Database from a sqlite3.Row."""
+        return _from_row(cls, row)
 
 
 @dataclass
@@ -97,6 +153,19 @@ class Upload:
         None  # Target-specific data (e.g., experiment_id, row_id)
     )
 
+    @field_validator("target_metadata", mode="before")
+    @classmethod
+    def _parse_json_metadata(cls, v: str | dict | None) -> dict | None:
+        """Parse JSON string from database into dict."""
+        if isinstance(v, str):
+            return json.loads(v)
+        return v
+
+    @classmethod
+    def from_row(cls, row: Row) -> Self:
+        """Construct an Upload from a sqlite3.Row."""
+        return _from_row(cls, row)
+
 
 @dataclass(frozen=True)
 class TaxonomyVersion:
@@ -108,6 +177,11 @@ class TaxonomyVersion:
     recorded_at: str
     ncbi_rebuild_timestamp: str | None = None
     file_size: int | None = None
+
+    @classmethod
+    def from_row(cls, row: Row) -> Self:
+        """Construct a TaxonomyVersion from a sqlite3.Row."""
+        return _from_row(cls, row)
 
 
 @dataclass(frozen=True)
@@ -141,6 +215,19 @@ class Preset:
     updated_at: str
     description: str | None = None
 
+    @field_validator("params", mode="before")
+    @classmethod
+    def _parse_json_params(cls, v: str | dict) -> dict:
+        """Parse JSON string from database into dict."""
+        if isinstance(v, str):
+            return json.loads(v)
+        return v
+
+    @classmethod
+    def from_row(cls, row: Row) -> Self:
+        """Construct a Preset from a sqlite3.Row."""
+        return _from_row(cls, row)
+
 
 @dataclass(frozen=True)
 class Hit:
@@ -158,6 +245,11 @@ class Hit:
     gc_content: float  # GC fraction (0.0-1.0)
     first_seen_date: str  # ISO8601
 
+    @classmethod
+    def from_row(cls, row: Row) -> Self:
+        """Construct a Hit from a sqlite3.Row."""
+        return _from_row(cls, row)
+
 
 @dataclass(frozen=True)
 class HitObservation:
@@ -173,6 +265,11 @@ class HitObservation:
     sample_id: str  # Source sample
     run_date: str  # ISO8601
     contig_id: str | None = None  # Original SPAdes contig ID (for traceability)
+
+    @classmethod
+    def from_row(cls, row: Row) -> Self:
+        """Construct a HitObservation from a sqlite3.Row."""
+        return _from_row(cls, row)
 
 
 @dataclass(frozen=True)
@@ -230,10 +327,6 @@ class TimelineBucket:
     new_hits: int
 
 
-# =============================================================================
-# NvdParams: Pipeline Parameter Model
-# =============================================================================
-
 # Valid values for constrained fields
 VALID_TOOLS = frozenset(
     {
@@ -248,7 +341,7 @@ VALID_TOOLS = frozenset(
     }
 )
 
-DEFAULT_HUMAN_VIRUS_FAMILIES = [
+DEFAULT_HUMAN_VIRUS_FAMILIES = (
     "Adenoviridae",
     "Anelloviridae",
     "Arenaviridae",
@@ -277,7 +370,7 @@ DEFAULT_HUMAN_VIRUS_FAMILIES = [
     "Rhabdoviridae",
     "Togaviridae",
     "Kolmioviridae",
-]
+)
 
 
 class NvdParams(BaseModel):
@@ -502,7 +595,7 @@ class NvdParams(BaseModel):
         json_schema_extra={"category": "Analysis"},
     )
     human_virus_families: list[str] = Field(
-        default_factory=lambda: DEFAULT_HUMAN_VIRUS_FAMILIES.copy(),
+        default_factory=lambda: list(DEFAULT_HUMAN_VIRUS_FAMILIES),
         description="Virus family names to include in human virus analysis",
         json_schema_extra={"category": "Analysis"},
     )
@@ -746,11 +839,6 @@ class NvdParams(BaseModel):
         return cmd
 
 
-# =============================================================================
-# Param Source Tracking
-# =============================================================================
-
-
 @dataclass(frozen=True)
 class ParamSource:
     """
@@ -885,10 +973,6 @@ def trace_merge(
         defaults_used=defaults_used,
     )
 
-
-# =============================================================================
-# Field Metadata Helpers
-# =============================================================================
 
 # Canonical category order for display
 PARAM_CATEGORIES = [

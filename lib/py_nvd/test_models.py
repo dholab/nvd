@@ -13,6 +13,7 @@ from py_nvd.models import (
     VALID_TOOLS,
     trace_merge,
 )
+from py_nvd.params import load_params_file
 
 
 class TestNvdParamsInstantiation:
@@ -432,8 +433,9 @@ class TestNvdParamsDefaults:
     def test_default_human_virus_families(self):
         """Default human_virus_families matches nextflow.config."""
         p = NvdParams()
-        assert p.human_virus_families == DEFAULT_HUMAN_VIRUS_FAMILIES
-        # Verify it's a copy, not the same list
+        # Field creates a mutable list from the immutable tuple constant
+        assert p.human_virus_families == list(DEFAULT_HUMAN_VIRUS_FAMILIES)
+        # Verify it's a copy, not the same object
         assert p.human_virus_families is not DEFAULT_HUMAN_VIRUS_FAMILIES
 
     def test_default_hostile_index_name(self):
@@ -453,8 +455,6 @@ class TestLoadParamsFile:
 
     def test_load_yaml_file(self, tmp_path):
         """Can load params from YAML file."""
-        from py_nvd.params import load_params_file
-
         yaml_file = tmp_path / "params.yaml"
         yaml_file.write_text("tools: blast\ncutoff_percent: 0.01\n")
 
@@ -464,8 +464,6 @@ class TestLoadParamsFile:
 
     def test_load_yml_extension(self, tmp_path):
         """Can load params from .yml file."""
-        from py_nvd.params import load_params_file
-
         yml_file = tmp_path / "params.yml"
         yml_file.write_text("tools: gottcha\n")
 
@@ -474,8 +472,6 @@ class TestLoadParamsFile:
 
     def test_load_json_file(self, tmp_path):
         """Can load params from JSON file."""
-        from py_nvd.params import load_params_file
-
         json_file = tmp_path / "params.json"
         json_file.write_text('{"tools": "blast", "cutoff_percent": 0.01}')
 
@@ -485,8 +481,6 @@ class TestLoadParamsFile:
 
     def test_strips_schema_key(self, tmp_path):
         """$schema key is stripped from loaded params."""
-        from py_nvd.params import load_params_file
-
         yaml_file = tmp_path / "params.yaml"
         yaml_file.write_text(
             '$schema: "https://example.com/schema.json"\ntools: blast\n'
@@ -498,8 +492,6 @@ class TestLoadParamsFile:
 
     def test_empty_file_returns_empty_dict(self, tmp_path):
         """Empty file returns empty dict."""
-        from py_nvd.params import load_params_file
-
         yaml_file = tmp_path / "empty.yaml"
         yaml_file.write_text("")
 
@@ -508,15 +500,11 @@ class TestLoadParamsFile:
 
     def test_file_not_found_raises(self, tmp_path):
         """Missing file raises FileNotFoundError."""
-        from py_nvd.params import load_params_file
-
         with pytest.raises(FileNotFoundError):
             load_params_file(tmp_path / "nonexistent.yaml")
 
     def test_integration_with_nvdparams_merge(self, tmp_path):
         """load_params_file output works with NvdParams.merge()."""
-        from py_nvd.params import load_params_file
-
         yaml_file = tmp_path / "params.yaml"
         yaml_file.write_text("tools: blast\ncutoff_percent: 0.05\n")
 

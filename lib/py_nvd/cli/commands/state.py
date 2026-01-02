@@ -24,16 +24,19 @@ from typing import Annotated
 import typer
 from rich.table import Table
 
-from py_nvd.cli.utils import console, error, info, success, warning
-from py_nvd.models import Status
+from py_nvd import __version__, state
+from py_nvd.cli.utils import console, ensure_db_exists, error, info, success, warning
 from py_nvd.db import (
     DEFAULT_STATE_DIR,
     ENV_VAR,
     EXPECTED_VERSION,
+    connect,
     get_state_db_path,
     get_state_dir,
     get_taxdump_dir,
 )
+from py_nvd.hits import prune_hits_for_sample_set
+from py_nvd.models import ProcessedSampleStatus, Status, UploadType
 
 state_app = typer.Typer(
     name="state",
@@ -63,6 +66,32 @@ def _format_size(size_bytes: int) -> str:
 def _output_json(data: dict | list) -> None:
     """Print data as formatted JSON."""
     console.print_json(json.dumps(data, default=str))
+
+
+def _validate_path_for_sql(path: Path) -> Path:
+    """
+    Validate that a path can be safely used in SQL ATTACH statement.
+
+    SQLite's ATTACH DATABASE requires the path as a string literal,
+    which cannot be parameterized. This validates the path is safe.
+
+    Args:
+        path: The path to validate
+
+    Returns:
+        The resolved absolute path
+
+    Raises:
+        ValueError: If path contains characters unsafe for SQL string literals
+    """
+    resolved = path.resolve()
+    path_str = str(resolved)
+    if "'" in path_str:
+        raise ValueError(
+            f"Path contains single quote which cannot be safely used in SQL: {path_str}\n"
+            "Please rename the file to remove the quote."
+        )
+    return resolved
 
 
 @state_app.command("path")
@@ -168,8 +197,6 @@ def state_init(
         # Reinitialize (recreate) existing database
         nvd state init --force
     """
-    from py_nvd.db import connect
-
     # Resolve state directory
     state_dir = get_state_dir(path)
     db_path = get_state_db_path(path)
@@ -215,15 +242,7 @@ def state_info(
     Displays counts of runs, samples, uploads, databases, and presets,
     along with database size and schema version.
     """
-    from py_nvd.db import connect
-
-    db_path = get_state_db_path()
-
-    if not db_path.exists():
-        if json_output:
-            _output_json({"error": "Database not found", "path": str(db_path)})
-            raise typer.Exit(1)
-        error(f"Database not found: {db_path}\nRun 'nvd state init' to create it.")
+    db_path = ensure_db_exists(json_output)
 
     db_size = db_path.stat().st_size
 
@@ -411,15 +430,7 @@ def state_runs(
         # List the 5 most recent failed runs
         nvd state runs --status failed --limit 5
     """
-    from py_nvd import state
-
-    db_path = get_state_db_path()
-    if not db_path.exists():
-        if json_output:
-            _output_json({"error": "Database not found", "path": str(db_path)})
-            raise typer.Exit(1)
-        error(f"Database not found: {db_path}\nRun 'nvd state init' to create it.")
-        raise typer.Exit(1)
+    db_path = ensure_db_exists(json_output)
 
     # Validate and convert status
     status_filter: Status | None = None
@@ -517,15 +528,7 @@ def state_run(
         # Output as JSON for scripting
         nvd state run friendly_turing --json
     """
-    from py_nvd import state
-
-    db_path = get_state_db_path()
-    if not db_path.exists():
-        if json_output:
-            _output_json({"error": "Database not found", "path": str(db_path)})
-            raise typer.Exit(1)
-        error(f"Database not found: {db_path}\nRun 'nvd state init' to create it.")
-        raise typer.Exit(1)
+    db_path = ensure_db_exists(json_output)
 
     run = state.get_run(run_id)
     if run is None:
@@ -533,7 +536,6 @@ def state_run(
             _output_json({"error": "Run not found", "run_id": run_id})
             raise typer.Exit(1)
         error(f"Run not found: {run_id}")
-        raise typer.Exit(1)
 
     samples = state.get_samples_for_run(run_id)
     taxonomy = state.get_taxonomy_version(run_id)
@@ -698,16 +700,7 @@ def state_samples(
         # List the 10 most recent samples
         nvd state samples --limit 10
     """
-    from py_nvd import state
-    from py_nvd.models import ProcessedSampleStatus
-
-    db_path = get_state_db_path()
-    if not db_path.exists():
-        if json_output:
-            _output_json({"error": "Database not found", "path": str(db_path)})
-            raise typer.Exit(1)
-        error(f"Database not found: {db_path}\nRun 'nvd state init' to create it.")
-        raise typer.Exit(1)
+    db_path = ensure_db_exists(json_output)
 
     # Validate status
     status_filter: ProcessedSampleStatus | None = None
@@ -801,15 +794,7 @@ def state_sample(
         # Output as JSON for scripting
         nvd state sample sample_a --json
     """
-    from py_nvd import state
-
-    db_path = get_state_db_path()
-    if not db_path.exists():
-        if json_output:
-            _output_json({"error": "Database not found", "path": str(db_path)})
-            raise typer.Exit(1)
-        error(f"Database not found: {db_path}\nRun 'nvd state init' to create it.")
-        raise typer.Exit(1)
+    db_path = ensure_db_exists(json_output)
 
     processing_history = state.get_sample_history(sample_id)
     upload_history = state.get_uploads_for_sample(sample_id)
@@ -819,7 +804,6 @@ def state_sample(
             _output_json({"error": "Sample not found", "sample_id": sample_id})
             raise typer.Exit(1)
         error(f"Sample not found: {sample_id}")
-        raise typer.Exit(1)
 
     if json_output:
         _output_json(
@@ -987,16 +971,7 @@ def state_uploads(
         # List the 10 most recent uploads
         nvd state uploads --limit 10
     """
-    from py_nvd import state
-    from py_nvd.models import UploadType
-
-    db_path = get_state_db_path()
-    if not db_path.exists():
-        if json_output:
-            _output_json({"error": "Database not found", "path": str(db_path)})
-            raise typer.Exit(1)
-        error(f"Database not found: {db_path}\nRun 'nvd state init' to create it.")
-        raise typer.Exit(1)
+    db_path = ensure_db_exists(json_output)
 
     # Validate upload_type
     type_filter: UploadType | None = None
@@ -1079,15 +1054,7 @@ def database_list(
         nvd state database list
         nvd state database list --json
     """
-    from py_nvd import state
-
-    db_path = get_state_db_path()
-    if not db_path.exists():
-        if json_output:
-            _output_json({"error": "Database not found", "path": str(db_path)})
-            raise typer.Exit(1)
-        error(f"Database not found: {db_path}\nRun 'nvd state init' to create it.")
-        raise typer.Exit(1)
+    db_path = ensure_db_exists(json_output)
 
     databases = state.list_databases()
 
@@ -1169,15 +1136,7 @@ def database_show(
         nvd state database show blast core-nt_2024-12
         nvd state database show blast --json
     """
-    from py_nvd import state
-
-    db_path = get_state_db_path()
-    if not db_path.exists():
-        if json_output:
-            _output_json({"error": "Database not found", "path": str(db_path)})
-            raise typer.Exit(1)
-        error(f"Database not found: {db_path}\nRun 'nvd state init' to create it.")
-        raise typer.Exit(1)
+    db_path = ensure_db_exists(json_output)
 
     # Validate db_type
     valid_types = ["blast", "stat", "gottcha2"]
@@ -1193,7 +1152,6 @@ def database_show(
         error(
             f"Invalid database type: {db_type!r}. Must be one of: {', '.join(valid_types)}"
         )
-        raise typer.Exit(1)
 
     db = state.get_database_by_version(db_type, version)  # type: ignore[arg-type]
 
@@ -1207,7 +1165,6 @@ def database_show(
             error(f"Database not found: {db_type} version {version}")
         else:
             error(f"No {db_type} database registered")
-        raise typer.Exit(1)
 
     path_exists = Path(db.path).exists()
 
@@ -1269,8 +1226,6 @@ def database_register(
         nvd state database register gottcha2 /data/gottcha2/RefSeq-r220 -v RefSeq-r220
         nvd state database register stat /data/stat/index.k31 -v 2024-12
     """
-    from py_nvd import state
-
     # Validate db_type
     valid_types = ["blast", "stat", "gottcha2"]
     if db_type not in valid_types:
@@ -1349,9 +1304,6 @@ def database_unregister(
         nvd state database unregister blast core-nt_2024-01
         nvd state database unregister blast core-nt_2024-01 --yes
     """
-    from py_nvd import state
-    from py_nvd.db import connect
-
     # Validate db_type
     valid_types = ["blast", "stat", "gottcha2"]
     if db_type not in valid_types:
@@ -1377,7 +1329,6 @@ def database_unregister(
             )
             raise typer.Exit(1)
         error(f"Database not found: {db_type} version {version}")
-        raise typer.Exit(1)
 
     # Confirm unless --yes
     if not yes and not json_output:
@@ -1601,15 +1552,7 @@ def state_prune(
     """
     from datetime import timedelta
 
-    from py_nvd.db import connect
-
-    db_path = get_state_db_path()
-    if not db_path.exists():
-        if json_output:
-            _output_json({"error": "Database not found", "path": str(db_path)})
-            raise typer.Exit(1)
-        error(f"Database not found: {db_path}\nRun 'nvd state init' to create it.")
-        raise typer.Exit(1)
+    db_path = ensure_db_exists(json_output)
 
     # Parse duration
     try:
@@ -1619,7 +1562,6 @@ def state_prune(
             _output_json({"error": str(e)})
             raise typer.Exit(1)
         error(str(e))
-        raise typer.Exit(1)
 
     # Validate status filter
     valid_statuses = ["completed", "failed"]
@@ -1847,8 +1789,6 @@ def state_prune(
         conn.commit()
 
     # Prune hit observations and orphaned hits (separate transactions, idempotent)
-    from py_nvd.hits import prune_hits_for_sample_set
-
     total_orphaned_hits = 0
     for sample_set_id in sample_set_ids_to_prune:
         _, orphaned = prune_hits_for_sample_set(sample_set_id)
@@ -1886,8 +1826,6 @@ def _get_table_counts(conn) -> dict[str, int]:
 def _build_export_manifest(conn) -> dict:
     """Build the manifest for a state export."""
     import socket
-
-    from py_nvd import __version__
 
     schema_version = conn.execute("PRAGMA user_version").fetchone()[0]
     counts = _get_table_counts(conn)
@@ -1953,8 +1891,6 @@ def state_export(
     import tarfile
     import tempfile
 
-    from py_nvd.db import connect
-
     # Validate arguments
     if json_output and path is not None:
         error("Cannot specify both --json and a path")
@@ -1966,13 +1902,7 @@ def state_export(
         info("Usage: nvd state export <path> or nvd state export --json")
         raise typer.Exit(1)
 
-    db_path = get_state_db_path()
-    if not db_path.exists():
-        if json_output:
-            _output_json({"error": "Database not found", "path": str(db_path)})
-            raise typer.Exit(1)
-        error(f"Database not found: {db_path}\nRun 'nvd state init' to create it.")
-        raise typer.Exit(1)
+    db_path = ensure_db_exists(json_output)
 
     # Build manifest
     with connect() as conn:
@@ -2062,7 +1992,6 @@ def _validate_archive(archive_path: Path) -> tuple[dict, Path]:
 
     if not archive_path.exists():
         error(f"Archive not found: {archive_path}")
-        raise typer.Exit(1)
 
     # Create temp directory (caller is responsible for cleanup)
     tmpdir = tempfile.mkdtemp(prefix="nvd-import-")
@@ -2074,17 +2003,11 @@ def _validate_archive(archive_path: Path) -> tuple[dict, Path]:
             names = tar.getnames()
             if "state.sqlite" not in names:
                 error("Invalid archive: missing state.sqlite")
-                raise typer.Exit(1)
             if "manifest.json" not in names:
                 error("Invalid archive: missing manifest.json")
-                raise typer.Exit(1)
-
-            # Extract
-            tar.extractall(tmpdir_path)  # noqa: S202 - trusted archive
 
     except tarfile.TarError as e:
         error(f"Failed to read archive: {e}")
-        raise typer.Exit(1)
 
     # Parse manifest
     manifest_path = tmpdir_path / "manifest.json"
@@ -2092,89 +2015,13 @@ def _validate_archive(archive_path: Path) -> tuple[dict, Path]:
         manifest = json.loads(manifest_path.read_text())
     except (json.JSONDecodeError, OSError) as e:
         error(f"Failed to read manifest: {e}")
-        raise typer.Exit(1)
 
     # Validate manifest has required fields
     required_fields = ["schema_version", "exported_at", "nvd_version", "counts"]
     for field in required_fields:
         if field not in manifest:
             error(f"Invalid manifest: missing '{field}'")
-            raise typer.Exit(1)
 
-    return manifest, tmpdir_path
-
-
-def _find_conflicts(conn, backup_db_path: Path) -> dict[str, list[dict]]:
-    """
-    Find primary key conflicts between current DB and backup.
-
-    Uses ATTACH DATABASE to query both databases efficiently.
-
-    Returns:
-        Dict mapping table names to lists of conflict records.
-        Each conflict record has 'pk' (primary key values) and
-        'local'/'incoming' (display column values).
-    """
-    conflicts: dict[str, list[dict]] = {}
-
-    # Attach the backup database
-    conn.execute(f"ATTACH DATABASE '{backup_db_path}' AS backup")
-
-    try:
-        for table_name, pk_cols, display_cols in _IMPORT_TABLES:
-            # Build JOIN condition on primary key columns
-            join_cond = " AND ".join(
-                f"main.{table_name}.{col} = backup.{table_name}.{col}"
-                for col in pk_cols
-            )
-
-            # Build SELECT for PK and display columns from both sides
-            pk_select = ", ".join(f"main.{table_name}.{col}" for col in pk_cols)
-            local_select = ", ".join(
-                f"main.{table_name}.{col} AS local_{col}" for col in display_cols
-            )
-            incoming_select = ", ".join(
-                f"backup.{table_name}.{col} AS incoming_{col}" for col in display_cols
-            )
-
-            query = f"""
-                SELECT {pk_select}, {local_select}, {incoming_select}
-                FROM main.{table_name}
-                INNER JOIN backup.{table_name} ON {join_cond}
-            """
-
-            rows = conn.execute(query).fetchall()
-
-            if rows:
-                table_conflicts = []
-                for row in rows:
-                    # Extract PK values
-                    pk_values = {col: row[col] for col in pk_cols}
-
-                    # Extract local and incoming display values
-                    local_values = {col: row[f"local_{col}"] for col in display_cols}
-                    incoming_values = {
-                        col: row[f"incoming_{col}"] for col in display_cols
-                    }
-
-                    table_conflicts.append(
-                        {
-                            "pk": pk_values,
-                            "local": local_values,
-                            "incoming": incoming_values,
-                        }
-                    )
-
-                conflicts[table_name] = table_conflicts
-
-    finally:
-        conn.execute("DETACH DATABASE backup")
-
-    return conflicts
-
-
-def _print_conflicts(conflicts: dict[str, list[dict]], json_output: bool) -> None:
-    """Print conflict report to stdout/stderr."""
     if json_output:
         _output_json(
             {
@@ -2225,9 +2072,12 @@ def _do_merge_import(conn, backup_db_path: Path) -> dict[str, int]:
     Returns:
         Dict mapping table names to count of records imported.
     """
+    # Validate path is safe for SQL (ATTACH DATABASE cannot use parameterized queries)
+    validated_path = _validate_path_for_sql(backup_db_path)
+
     imported: dict[str, int] = {}
 
-    conn.execute(f"ATTACH DATABASE '{backup_db_path}' AS backup")
+    conn.execute(f"ATTACH DATABASE '{validated_path}' AS backup")
 
     try:
         for table_name, pk_cols, _ in _IMPORT_TABLES:
@@ -2346,8 +2196,6 @@ def state_import(
         nvd state import backup.nvd-state --json
     """
     import shutil
-
-    from py_nvd.db import EXPECTED_VERSION, connect
 
     # Validate archive and extract to temp directory
     manifest, tmpdir_path = _validate_archive(path)
@@ -2596,15 +2444,7 @@ def state_reset(
         # JSON output for scripting
         nvd state reset --json --yes-i-really-mean-it
     """
-    from py_nvd.db import connect
-
-    db_path = get_state_db_path()
-    if not db_path.exists():
-        if json_output:
-            _output_json({"error": "Database not found", "path": str(db_path)})
-            raise typer.Exit(1)
-        error(f"Database not found: {db_path}\nRun 'nvd state init' to create it.")
-        raise typer.Exit(1)
+    db_path = ensure_db_exists(json_output)
 
     with connect() as conn:
         counts = _get_table_counts(conn)

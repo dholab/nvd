@@ -16,10 +16,12 @@ import csv
 import re
 import subprocess
 import sys
+from collections import Counter
 from pathlib import Path
 
 import typer
 
+from py_nvd.cli.commands.params import params_check
 from py_nvd.cli.utils import (
     DEFAULT_CONFIG,
     check_command_exists,
@@ -32,11 +34,6 @@ from py_nvd.cli.utils import (
     success,
     warning,
 )
-
-
-# ============================================================================
-# VALIDATION COMMANDS
-# ============================================================================
 
 validate_app = typer.Typer(
     name="validate",
@@ -203,7 +200,7 @@ def validate_samplesheet_cmd(  # noqa: PLR0912, C901
                 error(f"Found {len(errors_found)} validation error(s)")
 
             # Check for duplicate sample IDs
-            duplicates = [s for s in set(samples) if samples.count(s) > 1]
+            duplicates = [s for s, count in Counter(samples).items() if count > 1]
             if duplicates:
                 warning(f"Duplicate sample_id found: {', '.join(duplicates)}")
 
@@ -376,7 +373,4 @@ def validate_params(
         nvd validate params my-params.yaml
         nvd validate params my-params.yaml --preset production
     """
-    # Import and delegate to params_check
-    from py_nvd.cli.commands.params import params_check
-
     params_check(path=path, preset=preset, show_defaults=show_defaults)

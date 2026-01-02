@@ -29,6 +29,7 @@ from py_nvd.hits import (
     get_hit_sequence,
     get_hit_stats,
     get_recurring_hits,
+    is_valid_hit_key,
     list_hit_observations,
     list_hits,
     list_hits_with_observations,
@@ -326,7 +327,7 @@ def hits_trace(
 
     # Validate key format (32 hex chars)
     hit_key = hit_key.strip().lower()
-    if len(hit_key) != 32 or not all(c in "0123456789abcdef" for c in hit_key):
+    if not is_valid_hit_key(hit_key):
         error(f"Invalid hit key: expected 32 hex characters, got {len(hit_key)}")
         raise typer.Exit(1)
 

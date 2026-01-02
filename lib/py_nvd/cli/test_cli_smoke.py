@@ -4,6 +4,22 @@ import pytest
 from typer.testing import CliRunner
 
 from py_nvd.cli.app import app
+from py_nvd.cli.commands.resume import EDITOR_MIN_DURATION_SECONDS
+from py_nvd.cli.utils import PIPELINE_ROOT, RESUME_FILE, get_editor
+from py_nvd.db import connect
+from py_nvd.hits import (
+    count_hit_observations,
+    count_hits,
+    record_hit_observation,
+    register_hit,
+)
+from py_nvd.state import (
+    complete_run,
+    compute_sample_set_id,
+    record_upload,
+    register_processed_sample,
+    register_run,
+)
 
 runner = CliRunner()
 
@@ -106,7 +122,7 @@ class TestStateCommands:
         result = runner.invoke(app, ["state", "runs"])
         assert result.exit_code == 0
         # Should indicate no runs or show empty table
-        assert "No runs" in result.stdout or result.exit_code == 0
+        assert "no runs" in result.stdout.lower() or "runs" in result.stdout.lower()
 
     def test_state_runs_json_empty(self, tmp_path, monkeypatch):
         """state runs --json outputs empty array for empty db."""
@@ -148,8 +164,6 @@ class TestStateCommands:
         monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
         runner.invoke(app, ["state", "init"])
 
-        from py_nvd.hits import record_hit_observation, register_hit
-
         hit, _ = register_hit("ACGTACGT", "2024-01-01T00:00:00Z", tmp_path)
         record_hit_observation(
             hit.hit_key,
@@ -171,21 +185,12 @@ class TestStateCommands:
         monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
         runner.invoke(app, ["state", "init"])
 
-        from py_nvd.hits import (
-            count_hit_observations,
-            record_hit_observation,
-            register_hit,
-        )
-        from py_nvd.state import complete_run, register_run
-
         # Create an old run and mark it completed
         old_date = (datetime.now() - timedelta(days=100)).strftime("%Y-%m-%d %H:%M:%S")
         register_run("old_run", "old_set", state_dir=tmp_path)
         complete_run("old_run", "completed", state_dir=tmp_path)
 
         # Manually set the started_at to be old
-        from py_nvd.db import connect
-
         with connect(tmp_path) as conn:
             conn.execute(
                 "UPDATE runs SET started_at = ? WHERE run_id = ?", (old_date, "old_run")
@@ -215,14 +220,9 @@ class TestStateCommands:
         monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
         runner.invoke(app, ["state", "init"])
 
-        from py_nvd.hits import count_hits, record_hit_observation, register_hit
-        from py_nvd.state import complete_run, register_run
-
         old_date = (datetime.now() - timedelta(days=100)).strftime("%Y-%m-%d %H:%M:%S")
         register_run("old_run", "old_set", state_dir=tmp_path)
         complete_run("old_run", "completed", state_dir=tmp_path)
-
-        from py_nvd.db import connect
 
         with connect(tmp_path) as conn:
             conn.execute(
@@ -253,9 +253,6 @@ class TestStateCommands:
         monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
         runner.invoke(app, ["state", "init"])
 
-        from py_nvd.hits import count_hits, record_hit_observation, register_hit
-        from py_nvd.state import complete_run, register_run
-
         old_date = (datetime.now() - timedelta(days=100)).strftime("%Y-%m-%d %H:%M:%S")
         new_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -264,8 +261,6 @@ class TestStateCommands:
         complete_run("old_run", "completed", state_dir=tmp_path)
         register_run("new_run", "new_set", state_dir=tmp_path)
         complete_run("new_run", "completed", state_dir=tmp_path)
-
-        from py_nvd.db import connect
 
         with connect(tmp_path) as conn:
             conn.execute(
@@ -282,13 +277,6 @@ class TestStateCommands:
             hit.hit_key, "new_set", "sample_b", new_date, state_dir=tmp_path
         )
 
-        assert count_hits(tmp_path) == 1
-
-        # Prune old run only
-        result = runner.invoke(app, ["state", "prune", "--older-than", "90d", "--yes"])
-        assert result.exit_code == 0
-
-        # Hit should still exist (has observation from new run)
         assert count_hits(tmp_path) == 1
 
         # Prune old run only
@@ -628,13 +616,6 @@ class TestSamplesheetCommands:
         monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
 
         # Initialize state and register a previous run with sample1
-        from py_nvd.state import (
-            compute_sample_set_id,
-            record_upload,
-            register_processed_sample,
-            register_run,
-        )
-
         sample_ids = ["sample1", "other_sample"]
         sample_set_id = compute_sample_set_id(sample_ids)
         register_run("previous_run", sample_set_id)
@@ -727,16 +708,12 @@ class TestPipelineRoot:
 
     def test_pipeline_root_exists(self):
         """PIPELINE_ROOT points to a valid pipeline directory."""
-        from py_nvd.cli.utils import PIPELINE_ROOT
-
         assert PIPELINE_ROOT.exists()
         assert (PIPELINE_ROOT / "main.nf").exists()
         assert (PIPELINE_ROOT / "nextflow.config").exists()
 
     def test_pipeline_root_is_absolute(self):
         """PIPELINE_ROOT is an absolute path."""
-        from py_nvd.cli.utils import PIPELINE_ROOT
-
         assert PIPELINE_ROOT.is_absolute()
 
 
@@ -771,8 +748,6 @@ class TestHitsCommands:
         runner.invoke(app, ["state", "init"])
 
         # Register a hit
-        from py_nvd.hits import record_hit_observation, register_hit
-
         hit, _ = register_hit("ACGTACGTACGT", "2024-01-01T00:00:00Z", tmp_path)
         record_hit_observation(
             hit.hit_key,
@@ -794,8 +769,6 @@ class TestHitsCommands:
         monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
         runner.invoke(app, ["state", "init"])
 
-        from py_nvd.hits import record_hit_observation, register_hit
-
         hit, _ = register_hit("ACGTACGTACGT", "2024-01-01T00:00:00Z", tmp_path)
         record_hit_observation(
             hit.hit_key,
@@ -813,8 +786,6 @@ class TestHitsCommands:
         """hits export outputs FASTA format with just hit_key header."""
         monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
         runner.invoke(app, ["state", "init"])
-
-        from py_nvd.hits import record_hit_observation, register_hit
 
         hit, _ = register_hit("ACGTACGTACGT", "2024-01-01T00:00:00Z", tmp_path)
         record_hit_observation(
@@ -844,8 +815,6 @@ class TestHitsCommands:
         monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
         runner.invoke(app, ["state", "init"])
 
-        from py_nvd.hits import record_hit_observation, register_hit
-
         hit, _ = register_hit("ACGTACGTACGT", "2024-01-01T00:00:00Z", tmp_path)
         record_hit_observation(
             hit.hit_key,
@@ -867,8 +836,6 @@ class TestHitsCommands:
         monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
         runner.invoke(app, ["state", "init"])
 
-        from py_nvd.hits import record_hit_observation, register_hit
-
         hit, _ = register_hit("ACGTACGTACGT", "2024-01-01T00:00:00Z", tmp_path)
         record_hit_observation(
             hit.hit_key,
@@ -887,8 +854,6 @@ class TestHitsCommands:
         """hits export --output writes to file."""
         monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
         runner.invoke(app, ["state", "init"])
-
-        from py_nvd.hits import record_hit_observation, register_hit
 
         hit, _ = register_hit("ACGTACGTACGT", "2024-01-01T00:00:00Z", tmp_path)
         record_hit_observation(
@@ -941,8 +906,6 @@ class TestHitsCommands:
         monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
         runner.invoke(app, ["state", "init"])
 
-        from py_nvd.hits import record_hit_observation, register_hit
-
         hit, _ = register_hit("ACGTACGTACGT", "2024-01-01", tmp_path)
         record_hit_observation(
             hit.hit_key,
@@ -961,8 +924,6 @@ class TestHitsCommands:
         """hits stats --json outputs valid JSON with data."""
         monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
         runner.invoke(app, ["state", "init"])
-
-        from py_nvd.hits import record_hit_observation, register_hit
 
         hit, _ = register_hit("ACGTACGTACGT", "2024-01-01", tmp_path)
         record_hit_observation(
@@ -986,8 +947,6 @@ class TestHitsCommands:
         """hits stats shows recurring hits."""
         monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
         runner.invoke(app, ["state", "init"])
-
-        from py_nvd.hits import record_hit_observation, register_hit
 
         hit, _ = register_hit("ACGTACGTACGT", "2024-01-01", tmp_path)
         # Same hit in two samples
@@ -1014,8 +973,6 @@ class TestHitsCommands:
         """hits stats shows message when no recurring hits."""
         monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
         runner.invoke(app, ["state", "init"])
-
-        from py_nvd.hits import record_hit_observation, register_hit
 
         hit, _ = register_hit("ACGTACGTACGT", "2024-01-01", tmp_path)
         # Only one sample
@@ -1064,8 +1021,6 @@ class TestHitsCommands:
         monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
         runner.invoke(app, ["state", "init"])
 
-        from py_nvd.hits import record_hit_observation, register_hit
-
         seq = "ACGTACGTACGT"
         hit, _ = register_hit(seq, "2024-01-01", tmp_path)
         record_hit_observation(
@@ -1086,8 +1041,6 @@ class TestHitsCommands:
         monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
         runner.invoke(app, ["state", "init"])
 
-        from py_nvd.hits import record_hit_observation, register_hit
-
         hit, _ = register_hit("ACGTACGTACGT", "2024-01-01", tmp_path)
         record_hit_observation(
             hit.hit_key,
@@ -1105,8 +1058,6 @@ class TestHitsCommands:
         """hits lookup --json outputs valid JSON."""
         monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
         runner.invoke(app, ["state", "init"])
-
-        from py_nvd.hits import record_hit_observation, register_hit
 
         hit, _ = register_hit("ACGTACGTACGT", "2024-01-01", tmp_path)
         record_hit_observation(
@@ -1130,8 +1081,6 @@ class TestHitsCommands:
         """hits lookup shows all observations."""
         monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
         runner.invoke(app, ["state", "init"])
-
-        from py_nvd.hits import record_hit_observation, register_hit
 
         hit, _ = register_hit("ACGTACGTACGT", "2024-01-01", tmp_path)
         record_hit_observation(
@@ -1200,8 +1149,6 @@ class TestHitsCommands:
         monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
         runner.invoke(app, ["state", "init"])
 
-        from py_nvd.hits import record_hit_observation, register_hit
-
         seq = "ACGTACGTACGT"
         hit, _ = register_hit(seq, "2024-01-01", tmp_path)
         record_hit_observation(
@@ -1222,8 +1169,6 @@ class TestHitsCommands:
         """hits trace --json includes full sequence."""
         monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
         runner.invoke(app, ["state", "init"])
-
-        from py_nvd.hits import record_hit_observation, register_hit
 
         seq = "ACGTACGTACGT"
         hit, _ = register_hit(seq, "2024-01-01", tmp_path)
@@ -1248,8 +1193,6 @@ class TestHitsCommands:
         """hits trace shows all observations."""
         monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
         runner.invoke(app, ["state", "init"])
-
-        from py_nvd.hits import record_hit_observation, register_hit
 
         hit, _ = register_hit("ACGTACGTACGT", "2024-01-01", tmp_path)
         record_hit_observation(
@@ -1303,8 +1246,6 @@ class TestHitsCommands:
         monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
         runner.invoke(app, ["state", "init"])
 
-        from py_nvd.hits import record_hit_observation, register_hit
-
         hit, _ = register_hit("ACGTACGTACGT", "2024-01-15", tmp_path)
         record_hit_observation(
             hit.hit_key,
@@ -1325,8 +1266,6 @@ class TestHitsCommands:
         """hits timeline fills gaps between periods."""
         monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
         runner.invoke(app, ["state", "init"])
-
-        from py_nvd.hits import record_hit_observation, register_hit
 
         # Hit in January
         hit1, _ = register_hit("ACGTACGTACGT", "2024-01-15", tmp_path)
@@ -1360,8 +1299,6 @@ class TestHitsCommands:
         monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
         runner.invoke(app, ["state", "init"])
 
-        from py_nvd.hits import record_hit_observation, register_hit
-
         hit, _ = register_hit("ACGTACGTACGT", "2024-01-15", tmp_path)
         record_hit_observation(
             hit.hit_key,
@@ -1385,8 +1322,6 @@ class TestHitsCommands:
         """hits timeline --json does not fill gaps (sparse data)."""
         monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
         runner.invoke(app, ["state", "init"])
-
-        from py_nvd.hits import record_hit_observation, register_hit
 
         # Hit in January and March (skip February)
         hit1, _ = register_hit("ACGTACGTACGT", "2024-01-15", tmp_path)
@@ -1441,8 +1376,6 @@ class TestHitsCommands:
         monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
         runner.invoke(app, ["state", "init"])
 
-        from py_nvd.hits import record_hit_observation, register_hit
-
         hit, _ = register_hit("ACGTACGTACGT", "2024-01-01", tmp_path)
         record_hit_observation(
             hit.hit_key,
@@ -1460,8 +1393,6 @@ class TestHitsCommands:
         """hits recur finds hits in multiple samples."""
         monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
         runner.invoke(app, ["state", "init"])
-
-        from py_nvd.hits import record_hit_observation, register_hit
 
         hit, _ = register_hit("ACGTACGTACGT", "2024-01-01", tmp_path)
         record_hit_observation(
@@ -1487,8 +1418,6 @@ class TestHitsCommands:
         """hits recur --json outputs valid JSON."""
         monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
         runner.invoke(app, ["state", "init"])
-
-        from py_nvd.hits import record_hit_observation, register_hit
 
         hit, _ = register_hit("ACGTACGTACGT", "2024-01-01", tmp_path)
         record_hit_observation(
@@ -1519,8 +1448,6 @@ class TestHitsCommands:
         """hits recur --min-samples filters correctly."""
         monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
         runner.invoke(app, ["state", "init"])
-
-        from py_nvd.hits import record_hit_observation, register_hit
 
         hit, _ = register_hit("ACGTACGTACGT", "2024-01-01", tmp_path)
         # Only 2 samples
@@ -1555,37 +1482,27 @@ class TestResumeFile:
 
     def test_resume_file_constant(self):
         """RESUME_FILE is correctly defined."""
-        from py_nvd.cli.utils import RESUME_FILE
-
         assert RESUME_FILE.name == ".nfresume"
 
     def test_get_editor_fallback(self, monkeypatch):
         """get_editor falls back to vi when env vars not set."""
-        from py_nvd.cli.utils import get_editor
-
         monkeypatch.delenv("VISUAL", raising=False)
         monkeypatch.delenv("EDITOR", raising=False)
         assert get_editor() == "vi"
 
     def test_get_editor_visual(self, monkeypatch):
         """get_editor prefers $VISUAL."""
-        from py_nvd.cli.utils import get_editor
-
         monkeypatch.setenv("VISUAL", "code")
         monkeypatch.setenv("EDITOR", "nano")
         assert get_editor() == "code"
 
     def test_get_editor_editor(self, monkeypatch):
         """get_editor uses $EDITOR when $VISUAL not set."""
-        from py_nvd.cli.utils import get_editor
-
         monkeypatch.delenv("VISUAL", raising=False)
         monkeypatch.setenv("EDITOR", "nano")
         assert get_editor() == "nano"
 
     def test_editor_min_duration_constant(self):
         """EDITOR_MIN_DURATION_SECONDS is defined for fast-exit detection."""
-        from py_nvd.cli.commands.resume import EDITOR_MIN_DURATION_SECONDS
-
         assert EDITOR_MIN_DURATION_SECONDS > 0
         assert EDITOR_MIN_DURATION_SECONDS <= 2  # Reasonable threshold

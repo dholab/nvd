@@ -8,6 +8,8 @@ for the year, Spotify Wrapped style.
 
 from __future__ import annotations
 
+import calendar
+from collections import Counter
 from datetime import datetime
 from typing import Annotated
 
@@ -17,7 +19,7 @@ from rich.panel import Panel
 from rich.text import Text
 
 from py_nvd.cli.utils import console, info
-from py_nvd.db import get_state_db_path
+from py_nvd.db import connect, get_state_db_path
 
 
 def _format_duration(seconds: float) -> str:
@@ -65,8 +67,6 @@ def wrapped(
         # Show 2024's wrapped
         nvd wrapped --year 2024
     """
-    from py_nvd.db import connect
-
     db_path = get_state_db_path()
     if not db_path.exists():
         info("No pipeline data yet - run some samples and come back!")
@@ -112,11 +112,11 @@ def wrapped(
                     pass
 
         # Find busiest month
-        month_counts: dict[int, int] = {}
+        month_counts: Counter[int] = Counter()
         for run in runs:
             try:
                 month = datetime.fromisoformat(run["started_at"]).month
-                month_counts[month] = month_counts.get(month, 0) + 1
+                month_counts[month] += 1
             except ValueError:
                 pass
 
@@ -125,22 +125,6 @@ def wrapped(
         if month_counts:
             busiest_month = max(month_counts, key=lambda m: month_counts[m])
             busiest_month_count = month_counts[busiest_month]
-
-        month_names = [
-            "",
-            "January",
-            "February",
-            "March",
-            "April",
-            "May",
-            "June",
-            "July",
-            "August",
-            "September",
-            "October",
-            "November",
-            "December",
-        ]
 
         # Get sample stats
         samples = conn.execute(
@@ -154,9 +138,7 @@ def wrapped(
         unique_samples = len({s["sample_id"] for s in samples})
 
         # Find top sample
-        sample_counts: dict[str, int] = {}
-        for s in samples:
-            sample_counts[s["sample_id"]] = sample_counts.get(s["sample_id"], 0) + 1
+        sample_counts: Counter[str] = Counter(s["sample_id"] for s in samples)
 
         top_sample = None
         top_sample_count = 0
@@ -165,18 +147,6 @@ def wrapped(
             top_sample_count = sample_counts[top_sample]
 
         # Get upload stats
-        uploads = conn.execute(
-            """SELECT u.* FROM uploads u
-               JOIN runs r ON u.sample_set_id = (
-                   SELECT sample_set_id FROM processed_samples 
-                   WHERE sample_id = u.sample_id AND sample_set_id = u.sample_set_id
-                   LIMIT 1
-               )
-               WHERE u.uploaded_at >= ? AND u.uploaded_at <= ?""",
-            (year_start, year_end),
-        ).fetchall()
-
-        # Simpler upload query - just count by date
         uploads = conn.execute(
             """SELECT * FROM uploads
                WHERE uploaded_at >= ? AND uploaded_at <= ?""",
@@ -204,7 +174,7 @@ def wrapped(
         unique_samples=unique_samples,
         top_sample=top_sample,
         top_sample_count=top_sample_count,
-        busiest_month=month_names[busiest_month] if busiest_month else None,
+        busiest_month=calendar.month_name[busiest_month] if busiest_month else None,
         busiest_month_count=busiest_month_count,
         longest_run=longest_run,
         longest_duration=longest_duration,

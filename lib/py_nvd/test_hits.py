@@ -9,9 +9,6 @@ These tests verify:
 - Hit queries
 """
 
-import tempfile
-from pathlib import Path
-
 import pytest
 
 from py_nvd.hits import (
@@ -38,11 +35,6 @@ from py_nvd.hits import (
     register_hit,
     reverse_complement,
 )
-
-
-# =============================================================================
-# Sequence Operations Tests
-# =============================================================================
 
 
 class TestReverseComplement:
@@ -245,19 +237,8 @@ class TestGCContent:
         assert calculate_gc_content(seq) == 0.2
 
 
-# =============================================================================
-# State Management Tests
-# =============================================================================
-
-
 class TestRegisterHit:
     """Tests for register_hit()."""
-
-    @pytest.fixture
-    def temp_state_dir(self):
-        """Create a temporary directory for state database."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            yield Path(tmpdir)
 
     def test_register_new_hit(self, temp_state_dir):
         """Registering a new hit succeeds and returns is_new=True."""
@@ -306,12 +287,6 @@ class TestRegisterHit:
 
 class TestRecordHitObservation:
     """Tests for record_hit_observation()."""
-
-    @pytest.fixture
-    def temp_state_dir(self):
-        """Create a temporary directory for state database."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            yield Path(tmpdir)
 
     def test_record_new_observation(self, temp_state_dir):
         """Recording a new observation succeeds."""
@@ -384,12 +359,6 @@ class TestRecordHitObservation:
 class TestGetHit:
     """Tests for get_hit()."""
 
-    @pytest.fixture
-    def temp_state_dir(self):
-        """Create a temporary directory for state database."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            yield Path(tmpdir)
-
     def test_get_existing_hit(self, temp_state_dir):
         """Getting an existing hit returns it."""
         seq = "ACGTACGTACGT"
@@ -409,12 +378,6 @@ class TestGetHit:
 
 class TestListHits:
     """Tests for list_hits()."""
-
-    @pytest.fixture
-    def temp_state_dir(self):
-        """Create a temporary directory for state database."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            yield Path(tmpdir)
 
     def test_list_empty(self, temp_state_dir):
         """Listing hits from empty database returns empty list."""
@@ -460,12 +423,6 @@ class TestListHits:
 
 class TestListHitObservations:
     """Tests for list_hit_observations()."""
-
-    @pytest.fixture
-    def temp_state_dir(self):
-        """Create a temporary directory for state database."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            yield Path(tmpdir)
 
     def test_list_empty(self, temp_state_dir):
         """Listing observations from empty database returns empty list."""
@@ -587,12 +544,6 @@ class TestListHitObservations:
 class TestCountFunctions:
     """Tests for count_hits() and count_hit_observations()."""
 
-    @pytest.fixture
-    def temp_state_dir(self):
-        """Create a temporary directory for state database."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            yield Path(tmpdir)
-
     def test_count_hits_empty(self, temp_state_dir):
         """Counting hits in empty database returns 0."""
         assert count_hits(temp_state_dir) == 0
@@ -635,12 +586,6 @@ class TestCountFunctions:
 class TestGetHitSequence:
     """Tests for get_hit_sequence()."""
 
-    @pytest.fixture
-    def temp_state_dir(self):
-        """Create a temporary directory for state database."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            yield Path(tmpdir)
-
     def test_get_sequence_simple(self, temp_state_dir):
         """Getting sequence from hit returns original sequence."""
         seq = "ACGTACGTACGT"
@@ -671,12 +616,6 @@ class TestGetHitSequence:
 
 class TestListHitsWithObservations:
     """Tests for list_hits_with_observations()."""
-
-    @pytest.fixture
-    def temp_state_dir(self):
-        """Create a temporary directory for state database."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            yield Path(tmpdir)
 
     def test_empty_database(self, temp_state_dir):
         """Empty database returns empty list."""
@@ -758,12 +697,6 @@ class TestListHitsWithObservations:
 class TestDeleteObservationsForSampleSet:
     """Tests for delete_observations_for_sample_set()."""
 
-    @pytest.fixture
-    def temp_state_dir(self):
-        """Create a temporary directory for state database."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            yield Path(tmpdir)
-
     def test_deletes_observations(self, temp_state_dir):
         """Deletes all observations for the sample set."""
         hit, _ = register_hit("AAACCC", "2024-01-01T00:00:00Z", temp_state_dir)
@@ -819,12 +752,6 @@ class TestDeleteObservationsForSampleSet:
 class TestDeleteOrphanedHits:
     """Tests for delete_orphaned_hits()."""
 
-    @pytest.fixture
-    def temp_state_dir(self):
-        """Create a temporary directory for state database."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            yield Path(tmpdir)
-
     def test_deletes_orphaned_hits(self, temp_state_dir):
         """Deletes hits with no observations."""
         hit, _ = register_hit("AAACCC", "2024-01-01T00:00:00Z", temp_state_dir)
@@ -864,12 +791,6 @@ class TestDeleteOrphanedHits:
 
 class TestPruneHitsForSampleSet:
     """Tests for prune_hits_for_sample_set()."""
-
-    @pytest.fixture
-    def temp_state_dir(self):
-        """Create a temporary directory for state database."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            yield Path(tmpdir)
 
     def test_deletes_observations_and_orphaned_hits(self, temp_state_dir):
         """Deletes observations and cleans up orphaned hits atomically."""
@@ -950,19 +871,8 @@ class TestPruneHitsForSampleSet:
         assert count_hits(temp_state_dir) == 1
 
 
-# =============================================================================
-# Statistics / Aggregation Tests
-# =============================================================================
-
-
 class TestGetHitStats:
     """Tests for get_hit_stats()."""
-
-    @pytest.fixture
-    def temp_state_dir(self):
-        """Create a temporary directory for state database."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            yield Path(tmpdir)
 
     def test_empty_database(self, temp_state_dir):
         """Empty database returns zero counts and None for distributions."""
@@ -1099,12 +1009,6 @@ class TestGetHitStats:
 
 class TestGetRecurringHits:
     """Tests for get_recurring_hits()."""
-
-    @pytest.fixture
-    def temp_state_dir(self):
-        """Create a temporary directory for state database."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            yield Path(tmpdir)
 
     def test_empty_database(self, temp_state_dir):
         """Empty database returns empty list."""
@@ -1291,12 +1195,6 @@ class TestGetRecurringHits:
 class TestGetDiscoveryTimeline:
     """Tests for get_discovery_timeline()."""
 
-    @pytest.fixture
-    def temp_state_dir(self):
-        """Create a temporary directory for state database."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            yield Path(tmpdir)
-
     def test_empty_database(self, temp_state_dir):
         """Empty database returns empty list."""
         result = get_discovery_timeline(state_dir=temp_state_dir)
@@ -1399,12 +1297,6 @@ class TestGetDiscoveryTimeline:
 
 class TestLookupHit:
     """Tests for lookup_hit()."""
-
-    @pytest.fixture
-    def temp_state_dir(self):
-        """Create a temporary directory for state database."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            yield Path(tmpdir)
 
     def test_lookup_by_key(self, temp_state_dir):
         """Lookup by hit key returns the hit."""
