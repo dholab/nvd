@@ -202,9 +202,10 @@ def _get_fastq_files(directory: Path) -> list[Path]:
         directory: Directory to search
 
     Returns:
-        List of Path objects for FASTQ files, sorted alphabetically
+        List of absolute Path objects for FASTQ files, sorted alphabetically
     """
     fastq_files: list[Path] = []
+    directory = directory.resolve()
 
     for ext in FASTQ_EXTENSIONS:
         # Handle double extensions like .fastq.gz
@@ -735,7 +736,7 @@ def generate(  # noqa: PLR0912, PLR0913, C901
         try:
             if not confirm_with_timeout(
                 console,
-                f"Write samplesheet to [cyan]{output}[/cyan]?",
+                f"Write samplesheet to {output}?",
                 default=True,
                 timeout_seconds=PROMPT_TIMEOUT_SECONDS,
             ):
