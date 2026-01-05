@@ -95,7 +95,7 @@ process TRIM_ADAPTERS {
 	/* Trim Illumina adapters using bbduk */
 
 	tag "${sample_id}"
-	label "medium"
+	label "high"
 
 	errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
 	maxRetries 2
@@ -129,7 +129,7 @@ process FILTER_READS {
 	/* Filter reads by quality and length */
 
 	tag "${sample_id}"
-	label "medium"
+	label "high"
 
 	errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
 	maxRetries 2
@@ -177,11 +177,18 @@ process MASK_LOW_COMPLEXITY {
 
 	script:
 	"""
-	bbmask.sh -Xmx8g \
-    in=${contigs} \
-    out=${sample_id}.masked.fasta \
-    entropy=${params.entropy} \
-	-eoom
+	# Check if input has any sequences (BBMask crashes on empty input)
+	if [ ! -s ${contigs} ] || ! grep -q "^>" ${contigs}; then
+	    # Empty or no sequences - create empty output
+	    touch ${sample_id}.masked.fasta
+	else
+	    bbmask.sh -Xmx8g \
+	        in=${contigs} \
+	        out=${sample_id}.masked.fasta \
+	        entropy=${params.entropy} \
+	        threads=${task.cpus} \
+	        -eoom
+	fi
 	"""
 }
 
