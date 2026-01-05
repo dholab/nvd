@@ -142,7 +142,10 @@ process IDENTIFY_HUMAN_VIRUS_FAMILY_CONTIGS {
     tuple val(sample_id), path("${sample_id}.report")
 
     script:
-    def virus_families = params.human_virus_families.join(" ")
+    // Handle both list (from config) and comma-separated string (from CLI)
+    def virus_families = params.human_virus_families instanceof List
+        ? params.human_virus_families.join(" ")
+        : params.human_virus_families.toString().split(",").collect { it.trim() }.join(" ")
     """
     extract_taxa_spots.py \
     --hits_file ${secondpass_file} \
