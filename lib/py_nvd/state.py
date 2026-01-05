@@ -532,7 +532,7 @@ def resolve_database_versions(
     return resolution
 
 
-def register_processed_sample(
+def mark_sample_completed(
     sample_id: str,
     sample_set_id: str,
     run_id: str,
@@ -542,18 +542,32 @@ def register_processed_sample(
     state_dir: Path | str | None = None,
 ) -> ProcessedSample:
     """
-    Register a sample as being processed.
+    Mark a sample as completed (REGISTER_HITS finished).
 
-    Call this when processing starts for a sample. The sample is initially
-    marked as 'processing' and should be updated to 'completed' or 'failed'
-    when processing finishes.
+    Call this after REGISTER_HITS succeeds. The sample is marked 'completed',
+    indicating results exist and are ready for upload.
+
+    This is an INSERT operation - the sample should not already exist in the
+    processed_samples table.
+
+    Args:
+        sample_id: The sample identifier
+        sample_set_id: The sample set this sample belongs to
+        run_id: The run identifier (workflow.runName)
+        blast_db_version: BLAST database version for provenance
+        stat_db_version: STAT database version for provenance
+        taxonomy_hash: Taxonomy database hash for provenance
+        state_dir: Optional state directory override
+
+    Returns:
+        The created ProcessedSample record
     """
     with connect(state_dir) as conn:
         conn.execute(
             """INSERT INTO processed_samples
                (sample_id, sample_set_id, run_id, processed_at, blast_db_version,
                 stat_db_version, taxonomy_hash, status)
-               VALUES (?, ?, ?, datetime('now'), ?, ?, ?, 'processing')""",
+               VALUES (?, ?, ?, datetime('now'), ?, ?, ?, 'completed')""",
             (
                 sample_id,
                 sample_set_id,
@@ -567,6 +581,10 @@ def register_processed_sample(
         result = get_processed_sample(sample_id, sample_set_id, state_dir)
         assert result is not None  # We just inserted it
         return result
+
+
+# Backward compatibility alias
+register_processed_sample = mark_sample_completed
 
 
 def get_processed_sample(
@@ -609,7 +627,7 @@ def list_samples(
 
     Args:
         run_id: Filter to samples from a specific run
-        status: Filter by processing status ('processing', 'completed', 'failed')
+        status: Filter by processing status ('completed', 'uploaded', 'failed')
         limit: Maximum number of samples to return
         state_dir: Optional state directory override
 
@@ -680,6 +698,61 @@ def was_sample_ever_processed(
         return row is not None
 
 
+def get_samples_needing_upload(
+    sample_set_id: str,
+    state_dir: Path | str | None = None,
+) -> list[ProcessedSample]:
+    """
+    Get samples that are completed but not yet uploaded.
+
+    These are samples ready for LabKey upload.
+
+    Args:
+        sample_set_id: The sample set to query
+        state_dir: Optional state directory override
+
+    Returns:
+        List of ProcessedSample objects with status='completed'
+    """
+    with connect(state_dir) as conn:
+        rows = conn.execute(
+            "SELECT * FROM processed_samples "
+            "WHERE sample_set_id = ? AND status = 'completed' "
+            "ORDER BY sample_id",
+            (sample_set_id,),
+        ).fetchall()
+        return [ProcessedSample.from_row(row) for row in rows]
+
+
+def get_uploaded_sample_ids(
+    sample_ids: list[str],
+    state_dir: Path | str | None = None,
+) -> set[str]:
+    """
+    Check which of the given sample IDs have been uploaded (in any sample set).
+
+    Used at run start to warn about/filter already-uploaded samples.
+
+    Args:
+        sample_ids: List of sample IDs to check
+        state_dir: Optional state directory override
+
+    Returns:
+        Set of sample IDs that have status='uploaded'
+    """
+    if not sample_ids:
+        return set()
+
+    placeholders = ",".join("?" * len(sample_ids))
+    with connect(state_dir) as conn:
+        rows = conn.execute(
+            f"SELECT DISTINCT sample_id FROM processed_samples "  # noqa: S608
+            f"WHERE sample_id IN ({placeholders}) AND status = 'uploaded'",
+            sample_ids,
+        ).fetchall()
+        return {row["sample_id"] for row in rows}
+
+
 def complete_sample(
     sample_id: str,
     sample_set_id: str,
@@ -716,6 +789,35 @@ def complete_sample(
                 raise SampleNotFoundError(sample_id, sample_set_id)
             return False
         return True
+
+
+def mark_sample_uploaded(
+    sample_id: str,
+    sample_set_id: str,
+    state_dir: Path | str | None = None,
+) -> bool:
+    """
+    Mark a sample as uploaded to LabKey.
+
+    This is the terminal state for samples in LabKey-enabled runs.
+    Should be called AFTER record_upload() succeeds.
+
+    Args:
+        sample_id: The sample identifier
+        sample_set_id: The sample set this sample belongs to
+        state_dir: Optional state directory override
+
+    Returns:
+        True if updated, False if sample not found
+    """
+    with connect(state_dir) as conn:
+        cursor = conn.execute(
+            "UPDATE processed_samples SET status = 'uploaded' "
+            "WHERE sample_id = ? AND sample_set_id = ?",
+            (sample_id, sample_set_id),
+        )
+        conn.commit()
+        return cursor.rowcount > 0
 
 
 def record_upload(

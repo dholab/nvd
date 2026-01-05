@@ -20,7 +20,8 @@ are handled by the py_nvd.hits module.
 
 Usage:
     register_hits.py --contigs contigs.fasta --blast-results merged.tsv \\
-        --state-dir /path/to/state --sample-set-id abc123 --sample-id sample_a
+        --state-dir /path/to/state --sample-set-id abc123 --sample-id sample_a \\
+        --run-id my_run_2024
 
 Exit codes:
     0: Success
@@ -36,8 +37,8 @@ from pathlib import Path
 import polars as pl
 from Bio import SeqIO
 from loguru import logger
-
-from py_nvd.hits import register_hit, record_hit_observation
+from py_nvd.hits import record_hit_observation, register_hit
+from py_nvd.state import mark_sample_completed
 
 
 @dataclass(frozen=True)
@@ -225,6 +226,24 @@ def main() -> None:
         help="Run date in ISO8601 format (default: now)",
     )
     parser.add_argument(
+        "--run-id",
+        type=str,
+        required=True,
+        help="Run identifier (workflow.runName) for state tracking",
+    )
+    parser.add_argument(
+        "--blast-db-version",
+        type=str,
+        default=None,
+        help="BLAST database version for provenance tracking",
+    )
+    parser.add_argument(
+        "--stat-db-version",
+        type=str,
+        default=None,
+        help="STAT database version for provenance tracking",
+    )
+    parser.add_argument(
         "-v",
         "--verbose",
         action="count",
@@ -271,20 +290,36 @@ def main() -> None:
 
     if not contig_ids_with_hits:
         logger.info("No hits to register")
-        logger.info(f"Registered 0 new hits, 0 observations for {context.sample_id}")
-        return
-
-    # Register hits
-    logger.info(f"Registering hits in {context.state_dir}")
-    new_hits, observations = register_hits_from_contigs(
-        contigs=contigs,
-        contig_ids_with_hits=contig_ids_with_hits,
-        context=context,
-    )
+        new_hits, observations = 0, 0
+    else:
+        # Register hits
+        logger.info(f"Registering hits in {context.state_dir}")
+        new_hits, observations = register_hits_from_contigs(
+            contigs=contigs,
+            contig_ids_with_hits=contig_ids_with_hits,
+            context=context,
+        )
 
     logger.info(
         f"Registered {new_hits} new hits, {observations} observations for {context.sample_id}",
     )
+
+    # Mark sample as completed in state database
+    # This enables per-sample resume and upload gating
+    try:
+        mark_sample_completed(
+            sample_id=context.sample_id,
+            sample_set_id=context.sample_set_id,
+            run_id=args.run_id,
+            blast_db_version=args.blast_db_version,
+            stat_db_version=args.stat_db_version,
+            state_dir=str(context.state_dir),
+        )
+        logger.info(f"Marked sample {context.sample_id} as completed in state database")
+    except Exception as e:
+        # Log but don't fail - hits are registered, that's the critical part
+        # State tracking is for resume/upload gating, not data integrity
+        logger.warning(f"Failed to mark sample completed (non-fatal): {e}")
 
 
 if __name__ == "__main__":

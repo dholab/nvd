@@ -89,7 +89,7 @@ def _validate_path_for_sql(path: Path) -> Path:
     if "'" in path_str:
         raise ValueError(
             f"Path contains single quote which cannot be safely used in SQL: {path_str}\n"
-            "Please rename the file to remove the quote."
+            "Please rename the file to remove the quote.",
         )
     return resolved
 
@@ -142,7 +142,7 @@ def state_path(
                     "path": str(taxdump_dir),
                     "exists": taxdump_exists,
                 },
-            }
+            },
         )
         return
 
@@ -223,7 +223,7 @@ def state_init(
         console.print(f"  export {ENV_VAR}={state_dir}")
         console.print()
         console.print(
-            "[dim]Add this to your shell profile (.bashrc, .zshrc, etc.)[/dim]"
+            "[dim]Add this to your shell profile (.bashrc, .zshrc, etc.)[/dim]",
         )
         console.print()
 
@@ -253,22 +253,22 @@ def state_info(
         # Get counts
         runs_count = conn.execute("SELECT COUNT(*) FROM runs").fetchone()[0]
         samples_count = conn.execute(
-            "SELECT COUNT(*) FROM processed_samples"
+            "SELECT COUNT(*) FROM processed_samples",
         ).fetchone()[0]
         uploads_count = conn.execute("SELECT COUNT(*) FROM uploads").fetchone()[0]
         databases_count = conn.execute("SELECT COUNT(*) FROM databases").fetchone()[0]
         presets_count = conn.execute("SELECT COUNT(*) FROM presets").fetchone()[0]
         taxonomy_count = conn.execute(
-            "SELECT COUNT(*) FROM taxonomy_versions"
+            "SELECT COUNT(*) FROM taxonomy_versions",
         ).fetchone()[0]
         hits_count = conn.execute("SELECT COUNT(*) FROM hits").fetchone()[0]
         hit_observations_count = conn.execute(
-            "SELECT COUNT(*) FROM hit_observations"
+            "SELECT COUNT(*) FROM hit_observations",
         ).fetchone()[0]
 
         # Get recent activity
         latest_run = conn.execute(
-            "SELECT run_id, started_at FROM runs ORDER BY started_at DESC LIMIT 1"
+            "SELECT run_id, started_at FROM runs ORDER BY started_at DESC LIMIT 1",
         ).fetchone()
 
     # Check taxdump
@@ -304,7 +304,7 @@ def state_info(
                     "exists": taxdump_exists,
                     "file_count": len(taxdump_files),
                 },
-            }
+            },
         )
         return
 
@@ -369,7 +369,7 @@ def _parse_since(value: str) -> date | datetime:
         return date.fromisoformat(value)
     except ValueError:
         raise typer.BadParameter(
-            f"Invalid date format: {value!r}. Use ISO format: YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS"
+            f"Invalid date format: {value!r}. Use ISO format: YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS",
         )
 
 
@@ -437,7 +437,7 @@ def state_runs(
     if status is not None:
         if status not in _STATUS_VALUES:
             error(
-                f"Invalid status: {status!r}. Must be one of: {', '.join(_STATUS_VALUES)}"
+                f"Invalid status: {status!r}. Must be one of: {', '.join(_STATUS_VALUES)}",
             )
             raise typer.Exit(1)
         status_filter = status  # type: ignore[assignment]
@@ -461,7 +461,7 @@ def state_runs(
                     "experiment_id": r.experiment_id,
                 }
                 for r in runs
-            ]
+            ],
         )
         return
 
@@ -570,7 +570,7 @@ def state_run(
                 }
                 if taxonomy
                 else None,
-            }
+            },
         )
         return
 
@@ -643,7 +643,7 @@ def state_run(
 
 
 # Sample status values for CLI validation
-_SAMPLE_STATUS_VALUES = ["processing", "completed", "failed"]
+_SAMPLE_STATUS_VALUES = ["completed", "uploaded", "failed"]
 
 
 @state_app.command("samples")
@@ -707,7 +707,7 @@ def state_samples(
     if status is not None:
         if status not in _SAMPLE_STATUS_VALUES:
             error(
-                f"Invalid status: {status!r}. Must be one of: {', '.join(_SAMPLE_STATUS_VALUES)}"
+                f"Invalid status: {status!r}. Must be one of: {', '.join(_SAMPLE_STATUS_VALUES)}",
             )
             raise typer.Exit(1)
         status_filter = status  # type: ignore[assignment]
@@ -727,7 +727,7 @@ def state_samples(
                     "taxonomy_hash": s.taxonomy_hash,
                 }
                 for s in samples
-            ]
+            ],
         )
         return
 
@@ -830,7 +830,7 @@ def state_sample(
                     }
                     for u in upload_history
                 ],
-            }
+            },
         )
         return
 
@@ -978,7 +978,7 @@ def state_uploads(
     if upload_type is not None:
         if upload_type not in _UPLOAD_TYPE_VALUES:
             error(
-                f"Invalid upload type: {upload_type!r}. Must be one of: {', '.join(_UPLOAD_TYPE_VALUES)}"
+                f"Invalid upload type: {upload_type!r}. Must be one of: {', '.join(_UPLOAD_TYPE_VALUES)}",
             )
             raise typer.Exit(1)
         type_filter = upload_type  # type: ignore[assignment]
@@ -1002,7 +1002,7 @@ def state_uploads(
                     "target_metadata": u.target_metadata,
                 }
                 for u in uploads
-            ]
+            ],
         )
         return
 
@@ -1069,7 +1069,7 @@ def database_list(
                     "path_exists": Path(db.path).exists(),
                 }
                 for db in databases
-            ]
+            ],
         )
         return
 
@@ -1079,7 +1079,9 @@ def database_list(
         return
 
     table = Table(
-        title="Registered Databases", show_header=True, header_style="bold cyan"
+        title="Registered Databases",
+        show_header=True,
+        header_style="bold cyan",
     )
     table.add_column("Type", style="cyan")
     table.add_column("Version")
@@ -1146,11 +1148,11 @@ def database_show(
                 {
                     "error": f"Invalid database type: {db_type}",
                     "valid_types": valid_types,
-                }
+                },
             )
             raise typer.Exit(1)
         error(
-            f"Invalid database type: {db_type!r}. Must be one of: {', '.join(valid_types)}"
+            f"Invalid database type: {db_type!r}. Must be one of: {', '.join(valid_types)}",
         )
 
     db = state.get_database_by_version(db_type, version)  # type: ignore[arg-type]
@@ -1158,7 +1160,7 @@ def database_show(
     if db is None:
         if json_output:
             _output_json(
-                {"error": "Database not found", "db_type": db_type, "version": version}
+                {"error": "Database not found", "db_type": db_type, "version": version},
             )
             raise typer.Exit(1)
         if version:
@@ -1176,7 +1178,7 @@ def database_show(
                 "path": db.path,
                 "registered_at": db.registered_at,
                 "path_exists": path_exists,
-            }
+            },
         )
         return
 
@@ -1234,11 +1236,11 @@ def database_register(
                 {
                     "error": f"Invalid database type: {db_type}",
                     "valid_types": valid_types,
-                }
+                },
             )
             raise typer.Exit(1)
         error(
-            f"Invalid database type: {db_type!r}. Must be one of: {', '.join(valid_types)}"
+            f"Invalid database type: {db_type!r}. Must be one of: {', '.join(valid_types)}",
         )
         raise typer.Exit(1)
 
@@ -1247,7 +1249,7 @@ def database_register(
         if not json_output:
             warning(f"Path does not exist: {path}")
             warning(
-                "Registering anyway - ensure path is correct before running pipeline"
+                "Registering anyway - ensure path is correct before running pipeline",
             )
 
     # Register the database (path is canonicalized by register_database)
@@ -1265,7 +1267,7 @@ def database_register(
                 "version": db.version,
                 "path": db.path,
                 "registered_at": db.registered_at,
-            }
+            },
         )
         return
 
@@ -1312,11 +1314,11 @@ def database_unregister(
                 {
                     "error": f"Invalid database type: {db_type}",
                     "valid_types": valid_types,
-                }
+                },
             )
             raise typer.Exit(1)
         error(
-            f"Invalid database type: {db_type!r}. Must be one of: {', '.join(valid_types)}"
+            f"Invalid database type: {db_type!r}. Must be one of: {', '.join(valid_types)}",
         )
         raise typer.Exit(1)
 
@@ -1325,14 +1327,14 @@ def database_unregister(
     if db is None:
         if json_output:
             _output_json(
-                {"error": "Database not found", "db_type": db_type, "version": version}
+                {"error": "Database not found", "db_type": db_type, "version": version},
             )
             raise typer.Exit(1)
         error(f"Database not found: {db_type} version {version}")
 
     # Confirm unless --yes
     if not yes and not json_output:
-        console.print(f"\n[bold]Database to unregister:[/bold]")
+        console.print("\n[bold]Database to unregister:[/bold]")
         console.print(f"  Type: {db.db_type}")
         console.print(f"  Version: {db.version}")
         console.print(f"  Path: {db.path}")
@@ -1409,7 +1411,7 @@ def state_taxonomy(
                     "size_bytes": taxonomy_db_size,
                 },
                 "dmp_files": dmp_files,
-            }
+            },
         )
         return
 
@@ -1462,7 +1464,7 @@ def _parse_duration(value: str) -> int:
     match = re.match(r"^(\d+)([dwm])$", value.lower())
     if not match:
         raise typer.BadParameter(
-            f"Invalid duration format: {value!r}. Use format like '30d', '12w', or '6m'"
+            f"Invalid duration format: {value!r}. Use format like '30d', '12w', or '6m'",
         )
 
     amount = int(match.group(1))
@@ -1470,12 +1472,11 @@ def _parse_duration(value: str) -> int:
 
     if unit == "d":
         return amount
-    elif unit == "w":
+    if unit == "w":
         return amount * 7
-    elif unit == "m":
+    if unit == "m":
         return amount * 30  # Approximate
-    else:
-        raise typer.BadParameter(f"Unknown duration unit: {unit}")
+    raise typer.BadParameter(f"Unknown duration unit: {unit}")
 
 
 @state_app.command("prune")
@@ -1572,11 +1573,11 @@ def state_prune(
                     {
                         "error": f"Invalid status: {status}",
                         "valid_statuses": valid_statuses,
-                    }
+                    },
                 )
                 raise typer.Exit(1)
             error(
-                f"Invalid status: {status!r}. Must be one of: {', '.join(valid_statuses)}"
+                f"Invalid status: {status!r}. Must be one of: {', '.join(valid_statuses)}",
             )
             raise typer.Exit(1)
 
@@ -1608,7 +1609,7 @@ def state_prune(
                         "cutoff_date": cutoff_str,
                         "status_filter": status,
                         "include_running": include_running,
-                    }
+                    },
                 )
                 return
             info("No runs match the criteria")
@@ -1662,7 +1663,7 @@ def state_prune(
                     "upload_count": upload_count,
                     "observation_count": observation_count,
                     "has_taxonomy": has_taxonomy,
-                }
+                },
             )
 
             total_samples += sample_count
@@ -1687,7 +1688,7 @@ def state_prune(
                         "taxonomy_versions": total_taxonomy,
                         "hit_observations": total_observations,
                     },
-                }
+                },
             )
             if dry_run:
                 return
@@ -1699,7 +1700,7 @@ def state_prune(
         if not json_output:
             console.print()
             console.print(
-                f"[bold]Runs older than {older_than}[/bold] (before {cutoff.strftime('%Y-%m-%d')}):"
+                f"[bold]Runs older than {older_than}[/bold] (before {cutoff.strftime('%Y-%m-%d')}):",
             )
             console.print()
 
@@ -1798,7 +1799,7 @@ def state_prune(
         success(
             f"Pruned {len(prune_details)} run(s), {total_samples} sample(s), "
             f"{total_uploads} upload(s), {total_taxonomy} taxonomy version(s), "
-            f"{total_observations} hit observation(s), {total_orphaned_hits} orphaned hit(s)"
+            f"{total_observations} hit observation(s), {total_orphaned_hits} orphaned hit(s)",
         )
 
 
@@ -1807,18 +1808,18 @@ def _get_table_counts(conn) -> dict[str, int]:
     return {
         "runs": conn.execute("SELECT COUNT(*) FROM runs").fetchone()[0],
         "processed_samples": conn.execute(
-            "SELECT COUNT(*) FROM processed_samples"
+            "SELECT COUNT(*) FROM processed_samples",
         ).fetchone()[0],
         "uploads": conn.execute("SELECT COUNT(*) FROM uploads").fetchone()[0],
         "databases": conn.execute("SELECT COUNT(*) FROM databases").fetchone()[0],
         "presets": conn.execute("SELECT COUNT(*) FROM presets").fetchone()[0],
         "taxonomy_versions": conn.execute(
-            "SELECT COUNT(*) FROM taxonomy_versions"
+            "SELECT COUNT(*) FROM taxonomy_versions",
         ).fetchone()[0],
         "sra_cache": conn.execute("SELECT COUNT(*) FROM sra_cache").fetchone()[0],
         "hits": conn.execute("SELECT COUNT(*) FROM hits").fetchone()[0],
         "hit_observations": conn.execute(
-            "SELECT COUNT(*) FROM hit_observations"
+            "SELECT COUNT(*) FROM hit_observations",
         ).fetchone()[0],
     }
 
@@ -1844,7 +1845,7 @@ def state_export(
     path: Annotated[
         Path | None,
         typer.Argument(
-            help="Output path for the archive (auto-appends .nvd-state if needed)"
+            help="Output path for the archive (auto-appends .nvd-state if needed)",
         ),
     ] = None,
     force: Annotated[
@@ -2028,7 +2029,7 @@ def _validate_archive(archive_path: Path) -> tuple[dict, Path]:
                 "error": "Merge aborted due to conflicts",
                 "conflicts": conflicts,
                 "conflict_count": sum(len(v) for v in conflicts.values()),
-            }
+            },
         )
         return
 
@@ -2036,13 +2037,13 @@ def _validate_archive(archive_path: Path) -> tuple[dict, Path]:
     # Don't use error() here as it calls sys.exit()
     console.print(
         f"[red]✗ Error:[/red] Merge aborted due to {total} conflict(s) "
-        f"in {len(conflicts)} table(s)"
+        f"in {len(conflicts)} table(s)",
     )
     console.print()
 
     for table_name, table_conflicts in conflicts.items():
         console.print(
-            f"[bold]{table_name}[/bold] ({len(table_conflicts)} conflict(s)):"
+            f"[bold]{table_name}[/bold] ({len(table_conflicts)} conflict(s)):",
         )
 
         for conflict in table_conflicts:
@@ -2212,7 +2213,7 @@ def state_import(
                         "error": "Schema version mismatch",
                         "incoming_version": incoming_version,
                         "current_version": EXPECTED_VERSION,
-                    }
+                    },
                 )
             else:
                 # Don't use error() here as it calls sys.exit()
@@ -2223,12 +2224,12 @@ def state_import(
                 if incoming_version is not None and incoming_version < EXPECTED_VERSION:
                     info(
                         "The archive is from an older NVD version. "
-                        "Export from a newer version to upgrade."
+                        "Export from a newer version to upgrade.",
                     )
                 else:
                     info(
                         "The archive is from a newer NVD version. "
-                        "Upgrade NVD to import this archive."
+                        "Upgrade NVD to import this archive.",
                     )
             raise typer.Exit(1)
 
@@ -2242,12 +2243,12 @@ def state_import(
                         "error": "Database not found",
                         "path": str(db_path),
                         "hint": "Use --replace to create from archive, or run 'nvd state init' first",
-                    }
+                    },
                 )
             else:
                 error(f"Database not found: {db_path}")
                 info(
-                    "Use --replace to create from archive, or run 'nvd state init' first"
+                    "Use --replace to create from archive, or run 'nvd state init' first",
                 )
             raise typer.Exit(1)
 
@@ -2269,13 +2270,13 @@ def state_import(
                             "current_counts": current_counts,
                             "incoming_counts": incoming_counts,
                             "requires_confirmation": True,
-                        }
+                        },
                     )
                     raise typer.Exit(0)
             else:
                 console.print()
                 console.print(
-                    "[bold]Replace mode[/bold] — current state will be discarded"
+                    "[bold]Replace mode[/bold] — current state will be discarded",
                 )
                 console.print()
 
@@ -2319,13 +2320,13 @@ def state_import(
                         "mode": "replace",
                         "success": True,
                         "imported_counts": incoming_counts,
-                    }
+                    },
                 )
             else:
                 success("State replaced from archive")
                 console.print(f"  Source: {path}")
                 console.print(
-                    f"  Exported at: {manifest.get('exported_at', 'unknown')}"
+                    f"  Exported at: {manifest.get('exported_at', 'unknown')}",
                 )
                 console.print(f"  From host: {manifest.get('hostname', 'unknown')}")
                 console.print()
@@ -2346,7 +2347,7 @@ def state_import(
                 if not json_output:
                     console.print()
                     console.print(
-                        "[bold]Merge mode[/bold] — adding non-conflicting records"
+                        "[bold]Merge mode[/bold] — adding non-conflicting records",
                     )
                     console.print()
 
@@ -2390,7 +2391,7 @@ def state_import(
                         "success": True,
                         "imported": imported,
                         "total_imported": sum(imported.values()),
-                    }
+                    },
                 )
             else:
                 total = sum(imported.values())
@@ -2467,7 +2468,7 @@ def state_reset(
                     "total": total,
                     "requires_confirmation": True,
                     "hint": "Use --yes-i-really-mean-it to confirm",
-                }
+                },
             )
             raise typer.Exit(0)
     else:
@@ -2493,7 +2494,8 @@ def state_reset(
             info("Consider running 'nvd state export' first to create a backup.")
             console.print()
             confirm = typer.confirm(
-                "Are you sure you want to delete all state data?", default=False
+                "Are you sure you want to delete all state data?",
+                default=False,
             )
             if not confirm:
                 info("Aborted")
@@ -2514,7 +2516,7 @@ def state_reset(
                 "success": True,
                 "deleted": deleted,
                 "total_deleted": sum(deleted.values()),
-            }
+            },
         )
     else:
         total_deleted = sum(deleted.values())

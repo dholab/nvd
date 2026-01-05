@@ -5495,7 +5495,7 @@ packages:
 - pypi: ./
   name: nvd
   version: 2.3.0
-  sha256: 89acc85159e94e3af4aa764ca1e301d38011cfa102b25c81c421d4693e247dd2
+  sha256: afaf5927487d846f89b7f5f7ca438daf6692ff913d79cf22c5523db6f7ad87da
   requires_dist:
   - biopython>=1.85
   - blake3>=1.0.8

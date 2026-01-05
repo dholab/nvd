@@ -22,13 +22,16 @@ from py_nvd.state import (
     get_run_by_sample_set,
     get_sample_history,
     get_samples_for_run,
+    get_samples_needing_upload,
     get_taxonomy_version,
     get_upload,
+    get_uploaded_sample_ids,
     get_uploads_for_sample,
     hash_upload_content,
     list_runs,
     list_samples,
     list_uploads,
+    mark_sample_uploaded,
     record_taxonomy_version,
     record_upload,
     register_database,
@@ -342,7 +345,12 @@ class TestProcessedSamples:
         )
 
     def test_register_processed_sample(self, registered_run: RunContext):
-        """Registering a processed sample succeeds."""
+        """Registering a processed sample succeeds with 'completed' status.
+
+        Note: register_processed_sample is an alias for mark_sample_completed.
+        Samples are now inserted as 'completed' (not 'processing') because
+        this is called after REGISTER_HITS succeeds.
+        """
         ctx = registered_run
 
         sample = register_processed_sample(
@@ -358,7 +366,7 @@ class TestProcessedSamples:
         assert sample.sample_id == "s1"
         assert sample.sample_set_id == ctx.sample_set_id
         assert sample.run_id == "run_001"
-        assert sample.status == "processing"
+        assert sample.status == "completed"  # Now starts as completed
         assert sample.blast_db_version == "core-nt_2025-01-01"
         assert sample.stat_db_version == "v1.0"
 
@@ -424,7 +432,12 @@ class TestProcessedSamples:
         assert was_sample_ever_processed("s2", state_dir=ctx.state_dir) is False
 
     def test_complete_sample(self, registered_run: RunContext):
-        """complete_sample updates the sample status."""
+        """complete_sample can transition sample to 'uploaded' status.
+
+        Note: Samples now start as 'completed' (after REGISTER_HITS).
+        The complete_sample function is used to transition to 'uploaded'
+        after LabKey upload succeeds.
+        """
         ctx = registered_run
 
         register_processed_sample(
@@ -434,19 +447,19 @@ class TestProcessedSamples:
             state_dir=ctx.state_dir,
         )
 
-        # Initially processing
+        # Initially completed (after REGISTER_HITS)
         sample = get_processed_sample("s1", ctx.sample_set_id, state_dir=ctx.state_dir)
         assert sample is not None
-        assert sample.status == "processing"
+        assert sample.status == "completed"
 
-        # Mark as completed
+        # Mark as uploaded (after LabKey upload)
         complete_sample(
-            "s1", ctx.sample_set_id, status="completed", state_dir=ctx.state_dir
+            "s1", ctx.sample_set_id, status="uploaded", state_dir=ctx.state_dir
         )
 
         sample = get_processed_sample("s1", ctx.sample_set_id, state_dir=ctx.state_dir)
         assert sample is not None
-        assert sample.status == "completed"
+        assert sample.status == "uploaded"
 
     def test_complete_sample_failed(self, registered_run: RunContext):
         """complete_sample can mark a sample as failed."""
@@ -506,7 +519,11 @@ class TestProcessedSamples:
         assert sample_ids == {"s1", "s2"}
 
     def test_list_samples_filter_by_status(self, temp_state_dir):
-        """list_samples filters by status."""
+        """list_samples filters by status.
+
+        Note: Samples now start as 'completed' (not 'processing').
+        Valid statuses are: completed, uploaded, failed.
+        """
         set1 = compute_sample_set_id(["s1", "s2", "s3"])
         run = register_run("run_001", set1, state_dir=temp_state_dir)
         assert run is not None
@@ -515,21 +532,22 @@ class TestProcessedSamples:
         register_processed_sample("s2", set1, run.run_id, state_dir=temp_state_dir)
         register_processed_sample("s3", set1, run.run_id, state_dir=temp_state_dir)
 
-        complete_sample("s1", set1, status="completed", state_dir=temp_state_dir)
+        # All start as 'completed', transition some to other states
+        complete_sample("s1", set1, status="uploaded", state_dir=temp_state_dir)
         complete_sample("s2", set1, status="failed", state_dir=temp_state_dir)
-        # s3 remains "processing"
+        # s3 remains "completed"
 
-        completed = list_samples(status="completed", state_dir=temp_state_dir)
-        assert len(completed) == 1
-        assert completed[0].sample_id == "s1"
+        uploaded = list_samples(status="uploaded", state_dir=temp_state_dir)
+        assert len(uploaded) == 1
+        assert uploaded[0].sample_id == "s1"
 
         failed = list_samples(status="failed", state_dir=temp_state_dir)
         assert len(failed) == 1
         assert failed[0].sample_id == "s2"
 
-        processing = list_samples(status="processing", state_dir=temp_state_dir)
-        assert len(processing) == 1
-        assert processing[0].sample_id == "s3"
+        completed = list_samples(status="completed", state_dir=temp_state_dir)
+        assert len(completed) == 1
+        assert completed[0].sample_id == "s3"
 
     def test_list_samples_filter_by_limit(self, temp_state_dir):
         """list_samples respects limit parameter."""
@@ -544,7 +562,11 @@ class TestProcessedSamples:
         assert len(samples) == 3
 
     def test_list_samples_combined_filters(self, temp_state_dir):
-        """list_samples combines multiple filters."""
+        """list_samples combines multiple filters.
+
+        Note: Samples now start as 'completed'. We transition some to
+        'uploaded' to test filtering.
+        """
         set1 = compute_sample_set_id(["s1", "s2"])
         set2 = compute_sample_set_id(["s3", "s4"])
 
@@ -558,12 +580,13 @@ class TestProcessedSamples:
         register_processed_sample("s3", set2, run2.run_id, state_dir=temp_state_dir)
         register_processed_sample("s4", set2, run2.run_id, state_dir=temp_state_dir)
 
-        complete_sample("s1", set1, status="completed", state_dir=temp_state_dir)
-        complete_sample("s3", set2, status="completed", state_dir=temp_state_dir)
+        # Transition some to 'uploaded'
+        complete_sample("s1", set1, status="uploaded", state_dir=temp_state_dir)
+        complete_sample("s3", set2, status="uploaded", state_dir=temp_state_dir)
 
-        # Completed samples from run_001
+        # Uploaded samples from run_001
         samples = list_samples(
-            run_id="run_001", status="completed", state_dir=temp_state_dir
+            run_id="run_001", status="uploaded", state_dir=temp_state_dir
         )
         assert len(samples) == 1
         assert samples[0].sample_id == "s1"
@@ -599,6 +622,174 @@ class TestProcessedSamples:
         """get_sample_history returns empty list for unknown sample."""
         history = get_sample_history("nonexistent", state_dir=temp_state_dir)
         assert history == []
+
+
+class TestPerSampleStateTracking:
+    """Tests for per-sample state tracking functions (mark_sample_uploaded, get_samples_needing_upload, get_uploaded_sample_ids).
+
+    These functions support the per-sample resume feature, enabling:
+    - Marking samples as 'uploaded' after LabKey upload succeeds
+    - Querying which samples need upload (status='completed')
+    - Checking which samples have already been uploaded (for run-start gating)
+    """
+
+    @pytest.fixture
+    def temp_state_dir(self):
+        """Create a temporary directory for state database."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            yield Path(tmpdir)
+
+    def test_mark_sample_uploaded_success(self, temp_state_dir):
+        """mark_sample_uploaded transitions sample from completed to uploaded."""
+        from py_nvd.state import mark_sample_uploaded
+
+        set1 = compute_sample_set_id(["s1"])
+        run = register_run("run_001", set1, state_dir=temp_state_dir)
+        assert run is not None
+
+        # Register sample (starts as 'completed')
+        register_processed_sample("s1", set1, run.run_id, state_dir=temp_state_dir)
+        sample = get_processed_sample("s1", set1, state_dir=temp_state_dir)
+        assert sample is not None
+        assert sample.status == "completed"
+
+        # Mark as uploaded
+        result = mark_sample_uploaded("s1", set1, state_dir=temp_state_dir)
+        assert result is True
+
+        # Verify status changed
+        sample = get_processed_sample("s1", set1, state_dir=temp_state_dir)
+        assert sample is not None
+        assert sample.status == "uploaded"
+
+    def test_mark_sample_uploaded_not_found(self, temp_state_dir):
+        """mark_sample_uploaded returns False for non-existent sample."""
+        from py_nvd.state import mark_sample_uploaded
+
+        result = mark_sample_uploaded(
+            "nonexistent", "fake_set", state_dir=temp_state_dir
+        )
+        assert result is False
+
+    def test_get_samples_needing_upload(self, temp_state_dir):
+        """get_samples_needing_upload returns only samples with status='completed'."""
+        from py_nvd.state import get_samples_needing_upload, mark_sample_uploaded
+
+        set1 = compute_sample_set_id(["s1", "s2", "s3"])
+        run = register_run("run_001", set1, state_dir=temp_state_dir)
+        assert run is not None
+
+        # Register three samples (all start as 'completed')
+        register_processed_sample("s1", set1, run.run_id, state_dir=temp_state_dir)
+        register_processed_sample("s2", set1, run.run_id, state_dir=temp_state_dir)
+        register_processed_sample("s3", set1, run.run_id, state_dir=temp_state_dir)
+
+        # All three should need upload initially
+        needing_upload = get_samples_needing_upload(set1, state_dir=temp_state_dir)
+        assert len(needing_upload) == 3
+        assert {s.sample_id for s in needing_upload} == {"s1", "s2", "s3"}
+
+        # Mark s1 as uploaded
+        mark_sample_uploaded("s1", set1, state_dir=temp_state_dir)
+
+        # Now only s2 and s3 should need upload
+        needing_upload = get_samples_needing_upload(set1, state_dir=temp_state_dir)
+        assert len(needing_upload) == 2
+        assert {s.sample_id for s in needing_upload} == {"s2", "s3"}
+
+        # Mark s2 as failed
+        complete_sample("s2", set1, status="failed", state_dir=temp_state_dir)
+
+        # Now only s3 should need upload (failed samples don't need upload)
+        needing_upload = get_samples_needing_upload(set1, state_dir=temp_state_dir)
+        assert len(needing_upload) == 1
+        assert needing_upload[0].sample_id == "s3"
+
+    def test_get_samples_needing_upload_empty_set(self, temp_state_dir):
+        """get_samples_needing_upload returns empty list for unknown sample set."""
+        from py_nvd.state import get_samples_needing_upload
+
+        needing_upload = get_samples_needing_upload(
+            "nonexistent_set", state_dir=temp_state_dir
+        )
+        assert needing_upload == []
+
+    def test_get_uploaded_sample_ids(self, temp_state_dir):
+        """get_uploaded_sample_ids returns IDs of samples with status='uploaded'."""
+        from py_nvd.state import get_uploaded_sample_ids, mark_sample_uploaded
+
+        set1 = compute_sample_set_id(["s1", "s2"])
+        set2 = compute_sample_set_id(["s3", "s4"])
+
+        run1 = register_run("run_001", set1, state_dir=temp_state_dir)
+        run2 = register_run("run_002", set2, state_dir=temp_state_dir)
+        assert run1 is not None
+        assert run2 is not None
+
+        # Register samples in two different sample sets
+        register_processed_sample("s1", set1, run1.run_id, state_dir=temp_state_dir)
+        register_processed_sample("s2", set1, run1.run_id, state_dir=temp_state_dir)
+        register_processed_sample("s3", set2, run2.run_id, state_dir=temp_state_dir)
+        register_processed_sample("s4", set2, run2.run_id, state_dir=temp_state_dir)
+
+        # Initially none are uploaded
+        uploaded = get_uploaded_sample_ids(
+            ["s1", "s2", "s3", "s4"], state_dir=temp_state_dir
+        )
+        assert uploaded == set()
+
+        # Mark s1 and s3 as uploaded
+        mark_sample_uploaded("s1", set1, state_dir=temp_state_dir)
+        mark_sample_uploaded("s3", set2, state_dir=temp_state_dir)
+
+        # Check uploaded samples
+        uploaded = get_uploaded_sample_ids(
+            ["s1", "s2", "s3", "s4"], state_dir=temp_state_dir
+        )
+        assert uploaded == {"s1", "s3"}
+
+        # Check subset of samples
+        uploaded = get_uploaded_sample_ids(["s1", "s2"], state_dir=temp_state_dir)
+        assert uploaded == {"s1"}
+
+        # Check samples not in query
+        uploaded = get_uploaded_sample_ids(["s5", "s6"], state_dir=temp_state_dir)
+        assert uploaded == set()
+
+    def test_get_uploaded_sample_ids_empty_list(self, temp_state_dir):
+        """get_uploaded_sample_ids returns empty set for empty input."""
+        from py_nvd.state import get_uploaded_sample_ids
+
+        uploaded = get_uploaded_sample_ids([], state_dir=temp_state_dir)
+        assert uploaded == set()
+
+    def test_get_uploaded_sample_ids_cross_sample_set(self, temp_state_dir):
+        """get_uploaded_sample_ids finds uploads across different sample sets.
+
+        This is important for the run-start check: if a sample was uploaded
+        in a previous run (different sample_set_id), we should still detect it.
+        """
+        from py_nvd.state import get_uploaded_sample_ids, mark_sample_uploaded
+
+        # Same sample in two different sample sets (reprocessed)
+        set1 = compute_sample_set_id(["s1", "s2"])
+        set2 = compute_sample_set_id(["s1", "s3"])  # s1 appears in both
+
+        run1 = register_run("run_001", set1, state_dir=temp_state_dir)
+        run2 = register_run("run_002", set2, state_dir=temp_state_dir)
+        assert run1 is not None
+        assert run2 is not None
+
+        # Register s1 in first run and mark uploaded
+        register_processed_sample("s1", set1, run1.run_id, state_dir=temp_state_dir)
+        mark_sample_uploaded("s1", set1, state_dir=temp_state_dir)
+
+        # Register s1 in second run (completed, not uploaded yet)
+        register_processed_sample("s1", set2, run2.run_id, state_dir=temp_state_dir)
+
+        # Query should find s1 as uploaded (from first run)
+        uploaded = get_uploaded_sample_ids(["s1"], state_dir=temp_state_dir)
+        assert uploaded == {"s1"}
 
 
 class TestUploads:

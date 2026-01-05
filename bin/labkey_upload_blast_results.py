@@ -397,23 +397,18 @@ def main():
                                     },
                                     state_dir=args.state_dir,
                                 )
+                                # Mark sample as uploaded (terminal state for LabKey runs)
+                                nvd_state.mark_sample_uploaded(
+                                    sample_id=str(sample_id),
+                                    sample_set_id=args.sample_set_id,
+                                    state_dir=args.state_dir,
+                                )
                             log_entries.append(
                                 f"  Recorded uploads for {len(uploaded_samples)} samples in state database",
                             )
                         except ImportError:
                             log_entries.append(
                                 "  WARNING: py_nvd not available, uploads not recorded",
-                            )
-                        except Exception as e:
-                            log_entries.append(
-                                f"  WARNING: Failed to record uploads: {e!s}",
-                            )
-                            log_entries.append(
-                                f"  Recorded uploads for {len(uploaded_samples)} samples in state database",
-                            )
-                        except ImportError:
-                            log_entries.append(
-                                "  WARNING: py_nvd.state not available, uploads not recorded",
                             )
                         except Exception as e:
                             log_entries.append(

@@ -9,11 +9,20 @@
 """
 Check and register pipeline run state.
 
-This script prevents duplicate processing of the same sample set by:
+This script enables resumable runs by checking per-sample upload status:
 1. Reading sample IDs from a samplesheet CSV
 2. Computing a deterministic sample_set_id from the sorted sample list
-3. Checking if this sample set was already processed
-4. Registering the run and samples with provenance metadata
+3. Checking which samples have already been uploaded to LabKey
+4. Registering the run for provenance tracking
+
+Key behavior:
+- If ALL samples are already uploaded: exit with error (nothing to do)
+- If SOME samples are uploaded: warn and continue (Nextflow handles caching)
+- If NO samples are uploaded: proceed normally
+
+Individual samples are NOT registered here - they are marked 'completed'
+by REGISTER_HITS after processing succeeds, and 'uploaded' after LabKey
+upload succeeds.
 
 The sample_set_id is output to stdout for Nextflow to capture.
 All logging goes to stderr to avoid polluting the stdout output.
@@ -23,8 +32,8 @@ Usage:
         --state-dir /path/to/state
 
 Exit codes:
-    0: Success, run registered
-    1: Error (sample set already processed, no samples found, etc.)
+    0: Success, run registered (or some samples need processing)
+    1: Error (all samples already uploaded, no samples found, etc.)
 """
 
 import argparse
@@ -36,8 +45,7 @@ from pathlib import Path
 from loguru import logger
 from py_nvd.state import (
     compute_sample_set_id,
-    get_run_by_sample_set,
-    register_processed_sample,
+    get_uploaded_sample_ids,
     register_run,
 )
 
@@ -52,56 +60,72 @@ class RunRegistration:
         sample_ids: List of sample IDs in this run
         state_dir: Path to state directory (None for default)
         experiment_id: Optional experiment ID for tracking
-        blast_db_version: Optional BLAST database version for provenance
-        stat_db_version: Optional STAT database version for provenance
     """
 
     run_id: str
     sample_ids: list[str]
     state_dir: str | None = None
     experiment_id: int | None = None
-    blast_db_version: str | None = None
-    stat_db_version: str | None = None
 
     @property
     def sample_set_id(self) -> str:
         """Compute deterministic sample set ID from sample list."""
         return compute_sample_set_id(self.sample_ids)
 
-    def check_existing(self) -> None:
+    def check_existing(self) -> list[str]:
         """
-        Check if this sample set was already processed.
+        Check sample upload status and determine which samples need processing.
+
+        Returns:
+            List of sample IDs that need processing (not yet uploaded)
 
         Raises:
-            SystemExit: If sample set was already processed
+            SystemExit: If all samples are already uploaded
         """
-        logger.info("Checking for existing runs with this sample set...")
-        logger.debug(f"Querying state database for sample_set_id: {self.sample_set_id}")
+        logger.info("Checking for previously uploaded samples...")
 
-        existing = get_run_by_sample_set(self.sample_set_id, state_dir=self.state_dir)
+        uploaded = get_uploaded_sample_ids(self.sample_ids, state_dir=self.state_dir)
 
-        if existing:
-            logger.error("=" * 60)
-            logger.error("DUPLICATE SAMPLE SET DETECTED")
-            logger.error("=" * 60)
-            logger.error("This sample set was already processed in a previous run.")
-            logger.error(f"  Previous run ID: {existing.run_id}")
-            logger.error(f"  Sample set ID: {self.sample_set_id}")
-            logger.error(f"  Status: {existing.status}")
-            if existing.experiment_id:
-                logger.error(f"  Experiment ID: {existing.experiment_id}")
-            logger.error("=" * 60)
-            logger.error("Options:")
-            logger.error("  - Use a different sample set")
-            logger.error("  - Clear the state database if re-processing is intended")
-            logger.error("=" * 60)
-            sys.exit(1)
+        if uploaded:
+            not_uploaded = [s for s in self.sample_ids if s not in uploaded]
 
-        logger.info("No existing run found - safe to proceed")
+            if not not_uploaded:
+                # ALL samples already uploaded
+                logger.error("=" * 60)
+                logger.error("ALL SAMPLES ALREADY UPLOADED")
+                logger.error("=" * 60)
+                logger.error(f"All {len(self.sample_ids)} samples in this set were")
+                logger.error("previously uploaded to LabKey.")
+                logger.error("=" * 60)
+                logger.error("Options:")
+                logger.error("  - Use a different sample set")
+                logger.error("  - Use 'nvd state samples' to review upload status")
+                logger.error("=" * 60)
+                sys.exit(1)
+
+            # SOME samples uploaded - warn and continue
+            logger.warning("=" * 60)
+            logger.warning(
+                f"{len(uploaded)} of {len(self.sample_ids)} samples already uploaded:",
+            )
+            for sid in sorted(uploaded)[:10]:
+                logger.warning(f"  - {sid}")
+            if len(uploaded) > 10:
+                logger.warning(f"  ... and {len(uploaded) - 10} more")
+            logger.warning("These samples will be processed but NOT re-uploaded.")
+            logger.warning("=" * 60)
+
+            return not_uploaded
+
+        logger.info("No previously uploaded samples - all samples will be processed")
+        return self.sample_ids
 
     def register(self) -> None:
         """
-        Register the run and all samples in the state database.
+        Register the run in the state database.
+
+        Note: Individual samples are NOT registered here. They are marked
+        'completed' by REGISTER_HITS after processing succeeds.
 
         Raises:
             SystemExit: If run registration fails (e.g., race condition)
@@ -117,46 +141,27 @@ class RunRegistration:
         )
 
         if not run:
-            logger.error("=" * 60)
-            logger.error("RUN REGISTRATION FAILED")
-            logger.error("=" * 60)
-            logger.error(
-                f"Sample set {self.sample_set_id} may have been claimed by a concurrent run.",
+            # Run registration failed - likely sample_set_id already exists
+            # This is now a warning, not an error, since we check per-sample status
+            logger.warning(
+                f"Run registration returned None for sample_set_id {self.sample_set_id}",
             )
-            logger.error("This can happen when multiple pipelines start simultaneously")
-            logger.error("with overlapping sample sets.")
-            logger.error("=" * 60)
-            sys.exit(1)
-
-        logger.debug(f"Run registered successfully: {run}")
-
-        # Register each sample with provenance
-        logger.info(
-            f"Registering {len(self.sample_ids)} samples with provenance metadata..."
-        )
-        for i, sid in enumerate(self.sample_ids, 1):
-            logger.debug(f"  [{i}/{len(self.sample_ids)}] Registering sample: {sid}")
-            register_processed_sample(
-                sample_id=sid,
-                sample_set_id=self.sample_set_id,
-                run_id=self.run_id,
-                blast_db_version=self.blast_db_version,
-                stat_db_version=self.stat_db_version,
-                state_dir=self.state_dir,
+            logger.warning(
+                "This may indicate a concurrent run or previous incomplete run.",
             )
+            logger.warning("Proceeding anyway - per-sample status will gate uploads.")
+        else:
+            logger.debug(f"Run registered successfully: {run}")
 
-        logger.info(f"All {len(self.sample_ids)} samples registered")
         self._log_summary()
 
     def _log_summary(self) -> None:
         """Log registration summary details."""
-        logger.debug("Registration summary:")
+        logger.debug("Run registration summary:")
         logger.debug(f"  Run ID: {self.run_id}")
         logger.debug(f"  Sample set ID: {self.sample_set_id}")
         logger.debug(f"  State dir: {self.state_dir or '(default)'}")
-        logger.debug(f"  Sample count: {len(self.sample_ids)}")
-        logger.debug(f"  BLAST DB: {self.blast_db_version or '(not specified)'}")
-        logger.debug(f"  STAT DB: {self.stat_db_version or '(not specified)'}")
+        logger.debug(f"  Total samples in set: {len(self.sample_ids)}")
         if self.experiment_id:
             logger.debug(f"  Experiment ID: {self.experiment_id}")
 
@@ -231,11 +236,11 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--blast-db-version",
-        help="BLAST database version for provenance",
+        help="BLAST database version (ignored - now passed to register_hits.py)",
     )
     parser.add_argument(
         "--stat-db-version",
-        help="STAT database version for provenance",
+        help="STAT database version (ignored - now passed to register_hits.py)",
     )
     parser.add_argument(
         "-v",
@@ -254,17 +259,13 @@ def main() -> None:
 
     # Log header
     logger.info("=" * 60)
-    logger.info("RUN STATE CHECK AND REGISTRATION")
+    logger.info("RUN STATE CHECK")
     logger.info("=" * 60)
     logger.debug(f"Samplesheet: {args.samplesheet}")
     logger.debug(f"Run ID: {args.run_id}")
     logger.debug(f"State dir: {args.state_dir or '(default)'}")
     if args.experiment_id:
         logger.debug(f"Experiment ID: {args.experiment_id}")
-    if args.blast_db_version:
-        logger.debug(f"BLAST DB version: {args.blast_db_version}")
-    if args.stat_db_version:
-        logger.debug(f"STAT DB version: {args.stat_db_version}")
     logger.info("=" * 60)
 
     # Parse samplesheet
@@ -287,19 +288,23 @@ def main() -> None:
         sample_ids=sample_ids,
         state_dir=args.state_dir,
         experiment_id=args.experiment_id,
-        blast_db_version=args.blast_db_version,
-        stat_db_version=args.stat_db_version,
     )
 
     logger.debug(f"Computed sample_set_id: {registration.sample_set_id}")
 
-    # Check for existing run and register
-    registration.check_existing()
+    # Check for already-uploaded samples and register run
+    samples_to_process = registration.check_existing()
     registration.register()
 
     logger.info("=" * 60)
-    logger.info("REGISTRATION SUCCESSFUL")
+    logger.info("RUN STATE CHECK COMPLETE")
     logger.info("=" * 60)
+    logger.info(f"Samples to process: {len(samples_to_process)}")
+    if len(samples_to_process) < len(sample_ids):
+        logger.info(
+            f"Samples already uploaded (will skip upload): "
+            f"{len(sample_ids) - len(samples_to_process)}",
+        )
 
     # Output sample_set_id to stdout for Nextflow to capture
     # IMPORTANT: end="" prevents trailing newline - stdout emit captures raw text

@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS processed_samples (
     blast_db_version TEXT,
     stat_db_version TEXT,
     taxonomy_hash TEXT,
-    status TEXT NOT NULL CHECK (status IN ('processing', 'completed', 'failed')),
+    status TEXT NOT NULL CHECK (status IN ('completed', 'uploaded', 'failed')),
     PRIMARY KEY (sample_id, sample_set_id)
 );
 

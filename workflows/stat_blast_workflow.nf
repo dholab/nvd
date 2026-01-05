@@ -16,7 +16,7 @@ include { CLASSIFY_WITH_MEGABLAST } from "../subworkflows/classify_with_megablas
 include { CLASSIFY_WITH_BLASTN } from "../subworkflows/classify_with_blastn"
 include { BUNDLE_BLAST_FOR_LABKEY } from "../subworkflows/bundle_blast_for_labkey"
 include { COUNT_READS } from "../modules/count_reads"
-include { CHECK_RUN_STATE; REGISTER_HITS } from "../modules/utils"
+include { CHECK_RUN_STATE; REGISTER_HITS; COMPLETE_RUN } from "../modules/utils"
 include { VALIDATE_LK_BLAST } from "../subworkflows/validate_lk_blast_lists.nf"
 include { VALIDATE_LK_EXP_FRESH } from "../modules/validate_blast_labkey.nf"
 include { REGISTER_LK_EXPERIMENT } from "../modules/validate_blast_labkey.nf"
@@ -153,8 +153,12 @@ workflow STAT_BLAST_WORKFLOW {
         }
 
     REGISTER_HITS(ch_register_hits_input)
-    // Dead end for now - output not consumed by downstream processes.
     // Hits are registered in the state database for querying via `nvd hits export`.
+    // Collect output to gate run completion when LabKey is disabled.
+
+    // Extract state_dir from run_context for COMPLETE_RUN
+    // (run_context is a value channel: [sample_set_id, state_dir])
+    ch_state_dir = ch_run_context.map { sample_set_id, state_dir -> state_dir }
 
     if (params.labkey) {
         // Check LabKey guard list - ensures experiment_id hasn't been uploaded before
@@ -188,10 +192,26 @@ workflow STAT_BLAST_WORKFLOW {
         )
 
         labkey_log_ch = BUNDLE_BLAST_FOR_LABKEY.out.upload_log
+
+        // Gate run completion on LabKey experiment registration
+        // This ensures all uploads are complete before marking the run done
+        ch_run_complete_gate = REGISTER_LK_EXPERIMENT.out.collect()
+            .map { _logs -> true }
     } else {
         // If no labkey upload then just pass an empty channel
         labkey_log_ch = Channel.empty()
+
+        // Gate run completion on REGISTER_HITS completion (all samples)
+        ch_run_complete_gate = REGISTER_HITS.out.collect()
+            .map { _logs -> true }
     }
+
+    // Mark the run as completed in the state database
+    COMPLETE_RUN(
+        ch_run_complete_gate,
+        ch_state_dir,
+        "completed"
+    )
 
     ch_completion = merged_results_for_completion.map { _results -> "STAT+BLAST workflow complete!" }
 

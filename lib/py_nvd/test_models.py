@@ -439,7 +439,10 @@ class TestNvdParamsDefaults:
 
     def test_default_hostile_index_name(self):
         """Default hostile_index_name matches nextflow.config."""
-        assert NvdParams().hostile_index_name == "human-t2t-hla.rs-viral-202401_ml-phage-202401"
+        assert (
+            NvdParams().hostile_index_name
+            == "human-t2t-hla.rs-viral-202401_ml-phage-202401"
+        )
 
     def test_default_monoimage(self):
         """Default monoimage matches nextflow.config."""

@@ -99,6 +99,8 @@ process REGISTER_HITS {
     tuple val(sample_id), path("${sample_id}_hits_registered.log")
 
     script:
+    def blast_db_arg = params.blast_db_version ? "--blast-db-version '${params.blast_db_version}'" : ""
+    def stat_db_arg = params.stat_db_version ? "--stat-db-version '${params.stat_db_version}'" : ""
     """
     register_hits.py \\
         --contigs ${contigs} \\
@@ -106,7 +108,52 @@ process REGISTER_HITS {
         --state-dir ${state_dir} \\
         --sample-set-id '${sample_set_id}' \\
         --sample-id '${sample_id}' \\
+        --run-id '${workflow.runName}' \\
+        ${blast_db_arg} \\
+        ${stat_db_arg} \\
         -v \\
         > ${sample_id}_hits_registered.log 2>&1
+    """
+}
+
+/*
+ * Mark a pipeline run as completed or failed.
+ *
+ * This process should be called at the end of the workflow, gated on
+ * completion of all sample processing. It updates the run status in
+ * the state database.
+ *
+ * Input:
+ *   - ready: Gate signal (true when all processing is complete)
+ *   - state_dir: Path to state directory
+ *   - status: "completed" or "failed"
+ *
+ * Output:
+ *   - done: val true (can be used to gate downstream processes)
+ *
+ * Note: This process is intentionally not cached (cache false) because
+ * the run status should always be updated at the end of a workflow run.
+ */
+process COMPLETE_RUN {
+
+    tag "${workflow.runName}"
+    label "low"
+    cache false  // Always run this at workflow end
+
+    input:
+    val ready  // Gate: all processing complete
+    path state_dir
+    val status  // "completed" or "failed"
+
+    output:
+    val true, emit: done
+
+    script:
+    """
+    complete_run.py \\
+        --run-id '${workflow.runName}' \\
+        --state-dir ${state_dir} \\
+        --status '${status}' \\
+        -v
     """
 }

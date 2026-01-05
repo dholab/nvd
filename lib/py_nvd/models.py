@@ -56,7 +56,7 @@ def _from_row(cls: type[T], row: Row) -> T:
 
 # Type aliases for constrained values
 Status = Literal["running", "completed", "failed"]
-ProcessedSampleStatus = Literal["processing", "completed", "failed"]
+ProcessedSampleStatus = Literal["completed", "uploaded", "failed"]
 DbType = Literal["blast", "stat", "gottcha2", "hostile"]
 Platform = Literal["illumina", "ont", "sra"]
 UploadType = Literal["blast", "blast_fasta", "gottcha2", "gottcha2_fasta"]
@@ -81,7 +81,17 @@ class Run:
 
 @dataclass(frozen=True)
 class ProcessedSample:
-    """A sample that has been processed with provenance tracking."""
+    """
+    A sample that has been processed with provenance tracking.
+
+    Status values:
+        completed: BLAST/REGISTER_HITS finished; results exist but not uploaded
+        uploaded: Results uploaded to LabKey (terminal state)
+        failed: Processing failed (retriable in future runs)
+
+    Samples not in the database have not yet completed processing.
+    Nextflow handles retry/resume for in-flight samples.
+    """
 
     sample_id: str
     sample_set_id: str
