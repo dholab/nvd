@@ -204,7 +204,7 @@ process LABKEY_UPLOAD_BLAST {
     path csv_files        // collected list of all sample CSVs (value channel from .collect())
     val experiment_id
     val run_id
-    tuple val(sample_set_id), path(state_dir)  // run_context: bundled from CHECK_RUN_STATE
+    tuple val(sample_set_id), val(state_dir)  // run_context: bundled from CHECK_RUN_STATE
 
     output:
     path "blast_labkey_upload.log", emit: log
@@ -237,7 +237,7 @@ process LABKEY_UPLOAD_FASTA {
     path csv_files        // collected list of all sample CSVs (value channel from .collect())
     val experiment_id
     val run_id
-    tuple val(sample_set_id), path(state_dir)  // run_context: bundled from CHECK_RUN_STATE
+    tuple val(sample_set_id), val(state_dir)  // run_context: bundled from CHECK_RUN_STATE
 
     output:
     path "fasta_labkey_upload.log", emit: log

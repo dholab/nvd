@@ -78,19 +78,23 @@ workflow STAT_BLAST_WORKFLOW {
         : Channel.empty()
 
     // State directory for run tracking and upload deduplication.
-    // Using Channel.fromPath with type:'dir' ensures Nextflow stages/mounts
-    // this directory automatically in containerized environments.
+    // Resolve state_dir to an absolute path string.
+    // We use val (not path) to avoid Nextflow staging the directory, which would
+    // cause writes to go to a work directory copy instead of the shared location.
     // The directory is created if it doesn't exist (matching db.py behavior).
-    def state_dir_path = file(params.state_dir)
-    if (!state_dir_path.exists()) {
-        state_dir_path.mkdirs()
+    assert params.state_dir : "params.state_dir must be set (check nextflow.config defaults)"
+    def state_dir_file = file(params.state_dir)
+    if (!state_dir_file.exists()) {
+        state_dir_file.mkdirs()
     }
+    def state_dir_str = state_dir_file.toAbsolutePath().toString()
 
     // Combine samplesheet and state_dir into a tuple for CHECK_RUN_STATE.
     // This ensures they travel together and we get visible cross-product failures
     // if either channel unexpectedly emits multiple values.
+    // Note: state_dir is passed as a val (string), not a path, to avoid staging.
     ch_run_state_input = Channel.fromPath(params.samplesheet)
-        .combine(Channel.fromPath(params.state_dir, type: 'dir', checkIfExists: true))
+        .combine(Channel.value(state_dir_str))
 
     // Check run state upfront (prevents duplicate processing of same sample set)
     // Reads sample IDs directly from samplesheet for immediate validation

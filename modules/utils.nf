@@ -25,11 +25,11 @@ process CHECK_RUN_STATE {
     cache false  // Always run this check
 
     input:
-    tuple path(samplesheet), path(state_dir)
+    tuple path(samplesheet), val(state_dir)
 
     output:
     val true, emit: ready
-    tuple stdout, path(state_dir), emit: run_context
+    tuple stdout, val(state_dir), emit: run_context
 
     script:
     def exp_arg = params.experiment_id ? "--experiment-id ${params.experiment_id}" : ""
@@ -93,7 +93,7 @@ process REGISTER_HITS {
     maxRetries 2
 
     input:
-    tuple val(sample_id), path(contigs), path(blast_results), val(sample_set_id), path(state_dir)
+    tuple val(sample_id), path(contigs), path(blast_results), val(sample_set_id), val(state_dir)
 
     output:
     tuple val(sample_id), path("${sample_id}_hits_registered.log")
@@ -142,7 +142,7 @@ process COMPLETE_RUN {
 
     input:
     val ready  // Gate: all processing complete
-    path state_dir
+    val state_dir
     val status  // "completed" or "failed"
 
     output:
