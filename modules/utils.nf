@@ -102,6 +102,7 @@ process REGISTER_HITS {
     def blast_db_arg = params.blast_db_version ? "--blast-db-version '${params.blast_db_version}'" : ""
     def stat_db_arg = params.stat_db_version ? "--stat-db-version '${params.stat_db_version}'" : ""
     """
+    set -o pipefail
     register_hits.py \\
         --contigs ${contigs} \\
         --blast-results ${blast_results} \\
@@ -111,8 +112,7 @@ process REGISTER_HITS {
         --run-id '${workflow.runName}' \\
         ${blast_db_arg} \\
         ${stat_db_arg} \\
-        -v \\
-        > ${sample_id}_hits_registered.log 2>&1
+        -v 2>&1 | tee ${sample_id}_hits_registered.log
     """
 }
 

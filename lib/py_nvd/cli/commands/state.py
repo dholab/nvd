@@ -609,12 +609,14 @@ def state_run(
         table.add_column("STAT DB")
 
         for sample in samples:
-            if sample.status == "completed":
-                sample_status = "[green]completed[/green]"
+            if sample.status == "uploaded":
+                sample_status = "[green]uploaded[/green]"
+            elif sample.status == "completed":
+                sample_status = "[cyan]completed[/cyan]"
             elif sample.status == "failed":
                 sample_status = "[red]failed[/red]"
             else:
-                sample_status = "[yellow]processing[/yellow]"
+                sample_status = f"[yellow]{sample.status}[/yellow]"
 
             table.add_row(
                 sample.sample_id,
@@ -745,12 +747,14 @@ def state_samples(
     table.add_column("BLAST DB")
 
     for sample in samples:
-        if sample.status == "completed":
-            status_str = "[green]completed[/green]"
+        if sample.status == "uploaded":
+            status_str = "[green]uploaded[/green]"
+        elif sample.status == "completed":
+            status_str = "[cyan]completed[/cyan]"
         elif sample.status == "failed":
             status_str = "[red]failed[/red]"
         else:
-            status_str = "[yellow]processing[/yellow]"
+            status_str = f"[yellow]{sample.status}[/yellow]"
 
         table.add_row(
             sample.sample_id,
@@ -853,12 +857,14 @@ def state_sample(
         table.add_column("STAT DB")
 
         for record in processing_history:
-            if record.status == "completed":
-                status_str = "[green]completed[/green]"
+            if record.status == "uploaded":
+                status_str = "[green]uploaded[/green]"
+            elif record.status == "completed":
+                status_str = "[cyan]completed[/cyan]"
             elif record.status == "failed":
                 status_str = "[red]failed[/red]"
             else:
-                status_str = "[yellow]processing[/yellow]"
+                status_str = f"[yellow]{record.status}[/yellow]"
 
             table.add_row(
                 record.run_id,

@@ -37,7 +37,8 @@ from pathlib import Path
 import polars as pl
 from Bio import SeqIO
 from loguru import logger
-from py_nvd.hits import record_hit_observation, register_hit
+from py_nvd.db import connect
+from py_nvd.hits import calculate_gc_content, compress_sequence, compute_hit_key
 from py_nvd.state import mark_sample_completed
 
 
@@ -115,6 +116,10 @@ def register_hits_from_contigs(
     For each contig with BLAST hits, registers the hit (if new) and
     records the observation linking it to this sample/run.
 
+    This function batches all inserts into a single transaction to avoid
+    the overhead of per-row commits, which is critical for performance
+    on network filesystems.
+
     Args:
         contigs: Dict mapping contig IDs to sequences
         contig_ids_with_hits: Set of contig IDs that had BLAST hits
@@ -123,8 +128,10 @@ def register_hits_from_contigs(
     Returns:
         Tuple of (new_hits_count, total_observations_count).
     """
-    new_hits = 0
-    observations = 0
+    # Pre-compute all hit data before opening the database connection
+    # This minimizes the time we hold the database lock
+    hits_to_register: list[tuple[str, str, int, bytes, float, str]] = []
+    observations_to_record: list[tuple[str, str, str, str, str]] = []
 
     for contig_id in contig_ids_with_hits:
         if contig_id not in contigs:
@@ -136,28 +143,87 @@ def register_hits_from_contigs(
             logger.warning(f"Empty sequence for contig {contig_id}")
             continue
 
-        # Register the hit (idempotent - returns existing if already present)
-        hit, is_new = register_hit(
-            seq=seq,
-            first_seen_date=context.run_date,
-            state_dir=context.state_dir,
+        hit_key = compute_hit_key(seq)
+        compressed = compress_sequence(seq)
+        gc_content = calculate_gc_content(seq)
+
+        hits_to_register.append(
+            (
+                hit_key,
+                contig_id,  # Keep track for observation
+                len(seq),
+                compressed,
+                gc_content,
+                context.run_date,
+            )
         )
 
-        if is_new:
-            new_hits += 1
-
-        # Record the observation (idempotent - no-op if duplicate)
-        observation = record_hit_observation(
-            hit_key=hit.hit_key,
-            sample_set_id=context.sample_set_id,
-            sample_id=context.sample_id,
-            run_date=context.run_date,
-            contig_id=contig_id,
-            state_dir=context.state_dir,
+        observations_to_record.append(
+            (
+                hit_key,
+                context.sample_set_id,
+                context.sample_id,
+                context.run_date,
+                contig_id,
+            )
         )
 
-        if observation is not None:
-            observations += 1
+    if not hits_to_register:
+        return 0, 0
+
+    logger.info(
+        f"Computed {len(hits_to_register)} hit keys, inserting in single transaction"
+    )
+
+    # Single transaction for all inserts
+    new_hits = 0
+    observations = 0
+
+    with connect(context.state_dir) as conn:
+        # Use NORMAL synchronous mode for better performance on network filesystems
+        # This is safe because we're doing a single transaction - either all commits or none
+        conn.execute("PRAGMA synchronous=NORMAL")
+
+        # Insert hits (INSERT OR IGNORE for idempotency)
+        # We count new hits by checking rowcount after each insert
+        for (
+            hit_key,
+            _contig_id,
+            seq_len,
+            compressed,
+            gc_content,
+            first_seen,
+        ) in hits_to_register:
+            cursor = conn.execute(
+                """
+                INSERT OR IGNORE INTO hits (hit_key, sequence_length, sequence_compressed, gc_content, first_seen_date)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (hit_key, seq_len, compressed, gc_content, first_seen),
+            )
+            if cursor.rowcount > 0:
+                new_hits += 1
+
+        # Insert observations (INSERT OR IGNORE for idempotency)
+        for (
+            hit_key,
+            sample_set_id,
+            sample_id,
+            run_date,
+            contig_id,
+        ) in observations_to_record:
+            cursor = conn.execute(
+                """
+                INSERT OR IGNORE INTO hit_observations (hit_key, sample_set_id, sample_id, run_date, contig_id)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (hit_key, sample_set_id, sample_id, run_date, contig_id),
+            )
+            if cursor.rowcount > 0:
+                observations += 1
+
+        # Single commit for the entire batch
+        conn.commit()
 
     return new_hits, observations
 
