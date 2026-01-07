@@ -90,6 +90,7 @@ process REGISTER_HITS {
 
     tag "${sample_id}"
     label "low"
+    maxForks 1
 
     errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
     maxRetries 2
