@@ -45,17 +45,25 @@ def parse_command_line_args() -> argparse.Namespace:
     parser.add_argument("--output_file", required=True, help="Output TSV file")
     parser.add_argument("--sample_name", required=True, help="Sample name")
     parser.add_argument("--task", required=True, help="Task name")
+    parser.add_argument(
+        "--state-dir",
+        required=False,
+        default=None,
+        help="State directory containing taxonomy cache (default: NVD_STATE_DIR or ~/.nvd/)",
+    )
 
     return parser.parse_args()
 
 
 def main() -> None:
+    state_dir = None
     if "snakemake" in globals() and MODE == "snakemake":
         # sqlite_cache from snakemake is ignored - taxonomy.open() handles it
         input_file = snakemake.input.blast_results
         output_file = snakemake.output[0]
         sample_name = snakemake.params.sample
         task = snakemake.params.task
+        # snakemake mode doesn't support state_dir yet
     else:
         args = parse_command_line_args()
         # args.sqlite_cache is ignored - taxonomy.open() handles DB location
@@ -63,6 +71,7 @@ def main() -> None:
         output_file = args.output_file
         sample_name = args.sample_name
         task = args.task
+        state_dir = args.state_dir
 
     try:
         if not os.path.exists(input_file):
@@ -75,7 +84,7 @@ def main() -> None:
             return
 
         with (
-            taxonomy.open() as tax,
+            taxonomy.open(state_dir=state_dir) as tax,
             open(input_file) as infile,
             open(output_file, "w", newline="") as outfile,
         ):

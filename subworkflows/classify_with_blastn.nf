@@ -17,6 +17,7 @@ workflow CLASSIFY_WITH_BLASTN {
     ch_filtered_megablast
     ch_megablast_contigs
     ch_blast_db_files
+    ch_state_dir  // value channel: state directory path for taxonomy lookups
 
     main:
     // Static empty blastn template file - using a stable file prevents cache invalidation.
@@ -36,7 +37,8 @@ workflow CLASSIFY_WITH_BLASTN {
     SELECT_TOP_BLAST_HITS(nonEmptyBLASTNResults)
 
     ANNOTATE_BLASTN_RESULTS(
-        SELECT_TOP_BLAST_HITS.out
+        SELECT_TOP_BLAST_HITS.out,
+        ch_state_dir
     )
 
     FILTER_NON_VIRUS_BLASTN_NODES(
@@ -60,7 +62,7 @@ workflow CLASSIFY_WITH_BLASTN {
 
     MERGE_FILTERED_BLAST_RESULTS(ch_merged_input)
 
-    ANNOTATE_LEAST_COMMON_ANCESTORS(MERGE_FILTERED_BLAST_RESULTS.out)
+    ANNOTATE_LEAST_COMMON_ANCESTORS(MERGE_FILTERED_BLAST_RESULTS.out, ch_state_dir)
 
     emit:
     merged_results = ANNOTATE_LEAST_COMMON_ANCESTORS.out

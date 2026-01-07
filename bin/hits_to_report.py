@@ -416,6 +416,11 @@ def parse_arguments() -> argparse.Namespace:
     )
     parser.add_argument("input_file", nargs="?", help="Path to the input file")
     parser.add_argument("output_file", nargs="?", help="Path to the output file")
+    parser.add_argument(
+        "--state-dir",
+        default=None,
+        help="State directory containing taxonomy cache (default: NVD_STATE_DIR or ~/.nvd/)",
+    )
     return parser.parse_args()
 
 
@@ -439,8 +444,11 @@ def main() -> None:
         input_file = args.input_file
         output_file = args.output_file
 
+    # Get state_dir from args (None in snakemake mode)
+    state_dir = getattr(args, "state_dir", None)
+
     try:
-        with taxonomy.open() as tax:
+        with taxonomy.open(state_dir=state_dir) as tax:
             logger.info(f"Reading {input_file}")
             with open(input_file) as f:
                 counter = parse_input(f, tax, args)

@@ -422,6 +422,12 @@ def parse_args() -> argparse.Namespace:
         default=DEFAULT_MIN_SUPPORT,
         help=f"Minimum support fraction for dominant taxid assignment (default: {DEFAULT_MIN_SUPPORT})",
     )
+    parser.add_argument(
+        "--state-dir",
+        type=str,
+        default=None,
+        help="State directory containing taxonomy cache (default: NVD_STATE_DIR or ~/.nvd/)",
+    )
 
     return parser.parse_args()
 
@@ -464,7 +470,7 @@ def main() -> None:
         Path(args.output_file).touch()
         return
 
-    with taxonomy.open() as tax:
+    with taxonomy.open(state_dir=args.state_dir) as tax:
         tx = tax.taxopy_db
 
         logger.info("Processing BLAST results with parameters: {}", params)

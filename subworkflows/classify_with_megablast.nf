@@ -10,6 +10,7 @@ workflow CLASSIFY_WITH_MEGABLAST {
     take:
     ch_virus_contigs
     ch_blast_db_files
+    ch_state_dir  // value channel: state directory path for taxonomy lookups
 
     main:
     MEGABLAST(
@@ -23,7 +24,8 @@ workflow CLASSIFY_WITH_MEGABLAST {
     SELECT_TOP_BLAST_HITS(nonEmptyMegablastResults)
 
     ANNOTATE_MEGABLAST_RESULTS(
-        SELECT_TOP_BLAST_HITS.out
+        SELECT_TOP_BLAST_HITS.out,
+        ch_state_dir
     )
 
     // Capture this output for the LabKey table

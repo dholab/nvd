@@ -182,6 +182,12 @@ def parse_command_line_args() -> argparse.Namespace:
         action="store_true",
         help="Include child taxa in filter",
     )
+    parser.add_argument(
+        "--state-dir",
+        required=False,
+        default=None,
+        help="State directory containing taxonomy cache (default: NVD_STATE_DIR or ~/.nvd/)",
+    )
 
     return parser.parse_args()
 
@@ -192,10 +198,11 @@ def execute(
     taxa: list[str],
     stringency: float,
     include_children: bool,
+    state_dir: str | None = None,
 ) -> None:
     """Execute the taxa filtering pipeline."""
     try:
-        with taxonomy.open() as tax:
+        with taxonomy.open(state_dir=state_dir) as tax:
             resolved_taxa = resolve_taxa(taxa, tax)
             if not resolved_taxa:
                 logger.error("No valid taxa specified. Exiting.")
@@ -251,6 +258,7 @@ def main() -> None:
         taxa=args.taxa,
         stringency=args.stringency,
         include_children=args.include_children,
+        state_dir=args.state_dir,
     )
 
 

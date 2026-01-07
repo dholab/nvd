@@ -115,29 +115,36 @@ workflow STAT_BLAST_WORKFLOW {
         ch_human_virus_taxlist
     )
 
+    // Convert run_context from queue channel to value channel so it can be
+    // consumed by multiple processes (hit registration, LabKey uploads, etc.).
+    // This is safe because CHECK_RUN_STATE emits exactly once per pipeline run.
+    ch_run_context = CHECK_RUN_STATE.out.run_context.first()
+
+    // Extract state_dir from run_context for taxonomy-using processes
+    // (run_context is a value channel: [sample_set_id, state_dir])
+    ch_state_dir = ch_run_context.map { _sample_set_id, state_dir -> state_dir }
+
     EXTRACT_HUMAN_VIRUSES(
         PREPROCESS_CONTIGS.out.contigs,
         PREPROCESS_CONTIGS.out.viral_reads,
         ch_stat_index,
         ch_stat_dbss,
-        ch_stat_annotation
+        ch_stat_annotation,
+        ch_state_dir
     )
 
     CLASSIFY_WITH_MEGABLAST(
         EXTRACT_HUMAN_VIRUSES.out.contigs,
-        ch_blast_db_files
+        ch_blast_db_files,
+        ch_state_dir
     )
 
     CLASSIFY_WITH_BLASTN(
         CLASSIFY_WITH_MEGABLAST.out.filtered_megablast,
         CLASSIFY_WITH_MEGABLAST.out.megablast_contigs,
-        ch_blast_db_files
+        ch_blast_db_files,
+        ch_state_dir
     )
-
-    // Convert run_context from queue channel to value channel so it can be
-    // consumed by multiple processes (hit registration, LabKey uploads, etc.).
-    // This is safe because CHECK_RUN_STATE emits exactly once per pipeline run.
-    ch_run_context = CHECK_RUN_STATE.out.run_context.first()
 
     // Register hits with idempotent keys in the state database.
     // Join contigs with merged BLAST results, then combine with run context.
@@ -153,10 +160,6 @@ workflow STAT_BLAST_WORKFLOW {
     REGISTER_HITS(ch_register_hits_input)
     // Hits are registered in the state database for querying via `nvd hits export`.
     // Collect output to gate run completion when LabKey is disabled.
-
-    // Extract state_dir from run_context for COMPLETE_RUN
-    // (run_context is a value channel: [sample_set_id, state_dir])
-    ch_state_dir = ch_run_context.map { sample_set_id, state_dir -> state_dir }
 
     if (params.labkey) {
         // Check LabKey guard list - ensures experiment_id hasn't been uploaded before

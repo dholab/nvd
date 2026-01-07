@@ -16,6 +16,7 @@ workflow EXTRACT_HUMAN_VIRUSES {
     ch_stat_dbs
     ch_stat_dbss
     ch_stat_annotation
+    ch_state_dir  // value channel: state directory path for taxonomy lookups
 
     main:
     CLASSIFY_CONTIGS_FIRST_PASS(
@@ -39,14 +40,16 @@ workflow EXTRACT_HUMAN_VIRUSES {
         CLASSIFY_CONTIGS_SECOND_PASS.out
             .filter { _id, hits_file ->
                 hits_file.size() > 0 && hits_file.readLines().size() > 0
-            }
+            },
+        ch_state_dir
     )
 
     IDENTIFY_HUMAN_VIRUS_FAMILY_CONTIGS(
         CLASSIFY_CONTIGS_SECOND_PASS.out
             .filter { _id, hits_file ->
                 hits_file.size() > 0 && hits_file.readLines().size() > 0
-            }
+            },
+        ch_state_dir
     )
 
     EXTRACT_HUMAN_VIRUS_CONTIGS(

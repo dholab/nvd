@@ -56,13 +56,15 @@ process ANNOTATE_LEAST_COMMON_ANCESTORS {
     
     input:
     tuple val(sample_id), path(all_blast_hits)
+    val state_dir
 
     output:
     tuple val(sample_id), path("${sample_id}_blast.merged_with_lca.tsv")
 
     script:
+    def state_dir_arg = state_dir ? "--state-dir '${state_dir}'" : ""
     """
-    annotate_blast_lca.py -i ${all_blast_hits} -o ${sample_id}_blast.merged_with_lca.tsv
+    annotate_blast_lca.py -i ${all_blast_hits} -o ${sample_id}_blast.merged_with_lca.tsv ${state_dir_arg}
     """
 
 }
