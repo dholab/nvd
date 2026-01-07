@@ -168,10 +168,13 @@ workflow STAT_BLAST_WORKFLOW {
         // Bundle and upload - gates ensure both checks passed:
         // 1. CHECK_RUN_STATE.out.ready: local sample_set_id check passed
         // 2. VALIDATE_LK_EXP_FRESH.out.validated: LabKey guard list check passed
-        // We combine both gates to ensure both validations complete before uploading
+        // We combine both gates to ensure both validations complete before uploading.
+        // The .first() converts the result to a value channel so it broadcasts to all
+        // consumers instead of being consumed by the first process that reads it.
         ch_validation_gate = CHECK_RUN_STATE.out.ready
             .combine(VALIDATE_LK_EXP_FRESH.out.validated)
             .map { _ready, _validated -> true }
+            .first()
 
         BUNDLE_BLAST_FOR_LABKEY(
             CLASSIFY_WITH_BLASTN.out.merged_results,

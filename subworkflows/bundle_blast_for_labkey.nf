@@ -13,53 +13,41 @@ workflow BUNDLE_BLAST_FOR_LABKEY {
     main:
 
     // MEGA-JOIN: Combine all input queue channels into a single stream.
-    // This avoids the DSL2 limitation where queue channels passed to subworkflows
-    // via take: are consumed by the first operator and unavailable to subsequent ones.
-    // Each input channel is consumed exactly once by this join.
+    // Queue channels passed to subworkflows via take: are consumed by the first
+    // operator, so we join everything upfront and then split with multiMap.
     ch_all_sample_data = blast_results
         .join(contig_sequences, by: 0)
         .join(read_counts, by: 0)
         .join(contig_read_counts, by: 0)
     // Result: [meta, blast_csv, fasta, total_reads, mapped_counts]
 
-    // Now use .map() to extract what each downstream process needs.
-    // DSL2 auto-forks ch_all_sample_data for multiple process consumers.
-
-    // Prepare BLAST results for metagenomic_hits table
-    ch_blast_labkey = ch_all_sample_data
-        .map { meta, blast_csv, fasta, total_reads, mapped_counts ->
-            def output_file = "${meta}_blast_labkey.csv"
-            [meta, blast_csv, total_reads, mapped_counts, output_file]
+    // Use multiMap to split the joined channel into three separate streams.
+    // This consumes ch_all_sample_data exactly once and creates independent
+    // output channels that can each be consumed by their respective processes.
+    ch_all_sample_data
+        .multiMap { meta, blast_csv, fasta, total_reads, mapped_counts ->
+            def blast_output = "${meta}_blast_labkey.csv"
+            def fasta_output = "${meta}_fasta_labkey.csv"
+            blast_labkey: [meta, blast_csv, total_reads, mapped_counts, blast_output]
+            webdav_upload: [meta, blast_csv, fasta]
+            fasta_labkey: [meta, fasta, fasta_output]
         }
+        .set { ch_split }
 
     PREPARE_BLAST_LABKEY(
-        ch_blast_labkey,
+        ch_split.blast_labkey,
         experiment_id,
         run_id,
         validation_complete
     )
 
-    // Extract data for WebDAV upload
-    ch_webdav_upload = ch_all_sample_data
-        .map { meta, blast_csv, fasta, total_reads, mapped_counts ->
-            [meta, blast_csv, fasta]
-        }
-
-    // Upload BLAST CSV and fasta per sample to WebDAV
     WEBDAV_UPLOAD_BLAST(
-        ch_webdav_upload,
+        ch_split.webdav_upload,
         validation_complete
     )
 
-    // Prepare FASTA sequences for fasta_hits table
-    ch_fasta_labkey = ch_all_sample_data
-        .map { meta, blast_csv, fasta, total_reads, mapped_counts ->
-            def output_file = "${meta}_fasta_labkey.csv"
-            [meta, fasta, output_file]
-        }
-
     PREPARE_FASTA_LABKEY(
-        ch_fasta_labkey,
+        ch_split.fasta_labkey,
         experiment_id,
         run_id,
         validation_complete
