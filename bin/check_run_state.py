@@ -49,6 +49,7 @@ from py_nvd.state import (
     DEFAULT_LOCK_TTL_HOURS,
     get_uploaded_sample_ids,
     register_run,
+    update_run_id,
 )
 
 
@@ -124,15 +125,16 @@ class RunRegistration:
         logger.info("No previously uploaded samples - all samples will be processed")
         return self.sample_ids
 
-    def register(self) -> None:
+    def register(self) -> bool:
         """
         Register the run in the state database.
 
         Note: Individual samples are NOT registered here. They are marked
         'completed' by REGISTER_HITS after processing succeeds.
 
-        Raises:
-            SystemExit: If run registration fails (e.g., race condition)
+        Returns:
+            True if a new run was registered, False if sample_set_id already exists
+            (indicating a resume scenario).
         """
         logger.info(f"Registering run: {self.run_id}")
         logger.debug(f"Sample set ID: {self.sample_set_id}")
@@ -145,19 +147,18 @@ class RunRegistration:
         )
 
         if not run:
-            # Run registration failed - likely sample_set_id already exists
-            # This is now a warning, not an error, since we check per-sample status
-            logger.warning(
-                f"Run registration returned None for sample_set_id {self.sample_set_id}",
+            # Run registration failed - sample_set_id already exists
+            # This is expected on resume; we'll update the run_id after acquiring locks
+            logger.info(
+                f"Sample set {self.sample_set_id} already has a run registered.",
             )
-            logger.warning(
-                "This may indicate a concurrent run or previous incomplete run.",
-            )
-            logger.warning("Proceeding anyway - per-sample status will gate uploads.")
-        else:
-            logger.debug(f"Run registered successfully: {run}")
+            logger.info("Will update run_id after acquiring sample locks.")
+            self._log_summary()
+            return False
 
+        logger.debug(f"Run registered successfully: {run}")
         self._log_summary()
+        return True
 
     def _log_summary(self) -> None:
         """Log registration summary details."""
@@ -378,10 +379,26 @@ def main() -> None:
 
     # Check for already-uploaded samples and register run
     samples_to_process = registration.check_existing()
-    registration.register()
+    is_new_run = registration.register()
 
     # Acquire locks for samples we'll process
     locked_samples = registration.acquire_locks()
+
+    # If this is a resume (run already existed), update the run_id now that
+    # we've successfully acquired locks. This keeps the runs table in sync
+    # with the sample_locks table, which updates run_id on re-acquisition.
+    if not is_new_run and locked_samples:
+        logger.info(f"Updating run_id to '{registration.run_id}' for resumed run")
+        updated_run = update_run_id(
+            registration.sample_set_id,
+            registration.run_id,
+            state_dir=registration.state_dir,
+        )
+        if updated_run:
+            logger.debug(f"Run updated: {updated_run}")
+        else:
+            # This shouldn't happen if register() returned False
+            logger.warning("Failed to update run_id - run may not exist")
 
     # The actual samples to process are those that are:
     # 1. Not already uploaded (samples_to_process)

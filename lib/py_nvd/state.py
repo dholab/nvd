@@ -124,6 +124,38 @@ def get_run_by_sample_set(
         return None
 
 
+def update_run_id(
+    sample_set_id: str,
+    new_run_id: str,
+    state_dir: Path | str | None = None,
+) -> Run | None:
+    """
+    Update the run_id for an existing run identified by sample_set_id.
+
+    Used when resuming a run with a new Nextflow run name. The sample lock
+    system uses fingerprint (hostname + username) to allow the same user
+    on the same machine to re-acquire locks with a new run_id. This function
+    propagates that run_id update to the runs table for consistency.
+
+    Args:
+        sample_set_id: The sample set identifier (hash of sample IDs)
+        new_run_id: The new run identifier (e.g., new workflow.runName)
+        state_dir: Optional state directory override
+
+    Returns:
+        The updated Run, or None if no run exists for this sample_set_id
+    """
+    with connect(state_dir) as conn:
+        cursor = conn.execute(
+            "UPDATE runs SET run_id = ? WHERE sample_set_id = ?",
+            (new_run_id, sample_set_id),
+        )
+        conn.commit()
+        if cursor.rowcount > 0:
+            return get_run(new_run_id, state_dir)
+        return None
+
+
 def list_runs(
     status: Status | None = None,
     since: date | datetime | None = None,

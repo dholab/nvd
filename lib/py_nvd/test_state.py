@@ -38,6 +38,7 @@ from py_nvd.state import (
     register_processed_sample,
     register_run,
     resolve_database_versions,
+    update_run_id,
     was_sample_ever_processed,
     was_sample_ever_uploaded,
 )
@@ -323,6 +324,53 @@ class TestRegisterRun:
         # Should be most recent first: run_e, run_d
         assert runs[0].run_id == "run_e"
         assert runs[1].run_id == "run_d"
+
+    def test_update_run_id_success(self, temp_state_dir):
+        """update_run_id updates run_id for existing sample_set_id."""
+        sample_set_id = compute_sample_set_id(["s1", "s2"])
+        register_run("old_run_name", sample_set_id, state_dir=temp_state_dir)
+
+        # Update to new run_id (simulates resume with new Nextflow run name)
+        updated = update_run_id(sample_set_id, "new_run_name", state_dir=temp_state_dir)
+
+        assert updated is not None
+        assert updated.run_id == "new_run_name"
+        assert updated.sample_set_id == sample_set_id
+
+        # Old run_id should no longer exist
+        assert get_run("old_run_name", state_dir=temp_state_dir) is None
+
+        # New run_id should be retrievable
+        assert get_run("new_run_name", state_dir=temp_state_dir) is not None
+
+        # Lookup by sample_set_id should return updated run
+        by_set = get_run_by_sample_set(sample_set_id, state_dir=temp_state_dir)
+        assert by_set is not None
+        assert by_set.run_id == "new_run_name"
+
+    def test_update_run_id_not_found(self, temp_state_dir):
+        """update_run_id returns None when sample_set_id doesn't exist."""
+        result = update_run_id("nonexistent_set", "new_run", state_dir=temp_state_dir)
+        assert result is None
+
+    def test_update_run_id_preserves_other_fields(self, temp_state_dir):
+        """update_run_id preserves experiment_id and other fields."""
+        sample_set_id = compute_sample_set_id(["s1", "s2"])
+        original = register_run(
+            "old_run",
+            sample_set_id,
+            experiment_id=42,
+            state_dir=temp_state_dir,
+        )
+        assert original is not None  # Satisfy type checker
+
+        updated = update_run_id(sample_set_id, "new_run", state_dir=temp_state_dir)
+
+        assert updated is not None
+        assert updated.run_id == "new_run"
+        assert updated.experiment_id == 42
+        assert updated.started_at == original.started_at
+        assert updated.status == original.status
 
 
 class TestProcessedSamples:
