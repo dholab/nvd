@@ -135,7 +135,8 @@ def update_run_id(
     Used when resuming a run with a new Nextflow run name. The sample lock
     system uses fingerprint (hostname + username) to allow the same user
     on the same machine to re-acquire locks with a new run_id. This function
-    propagates that run_id update to the runs table for consistency.
+    propagates that run_id update to both the runs table and sample_locks
+    table for consistency.
 
     Args:
         sample_set_id: The sample set identifier (hash of sample IDs)
@@ -146,14 +147,31 @@ def update_run_id(
         The updated Run, or None if no run exists for this sample_set_id
     """
     with connect(state_dir) as conn:
-        cursor = conn.execute(
+        # Get the old run_id first so we can update sample_locks
+        old_run = conn.execute(
+            "SELECT run_id FROM runs WHERE sample_set_id = ?",
+            (sample_set_id,),
+        ).fetchone()
+
+        if not old_run:
+            return None
+
+        old_run_id = old_run[0]
+
+        # Update runs table
+        conn.execute(
             "UPDATE runs SET run_id = ? WHERE sample_set_id = ?",
             (new_run_id, sample_set_id),
         )
+
+        # Update sample_locks table to keep in sync
+        conn.execute(
+            "UPDATE sample_locks SET run_id = ? WHERE run_id = ?",
+            (new_run_id, old_run_id),
+        )
+
         conn.commit()
-        if cursor.rowcount > 0:
-            return get_run(new_run_id, state_dir)
-        return None
+        return get_run(new_run_id, state_dir)
 
 
 def list_runs(

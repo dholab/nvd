@@ -9,6 +9,7 @@ import pytest
 from py_nvd.db import EXPECTED_VERSION, SchemaMismatchError, connect
 from py_nvd.models import Run
 from py_nvd.state import (
+    acquire_sample_locks,
     check_taxonomy_drift,
     check_upload,
     complete_run,
@@ -17,6 +18,7 @@ from py_nvd.state import (
     get_database_by_path,
     get_database_by_version,
     get_databases_by_path,
+    get_locks_for_run,
     get_processed_sample,
     get_run,
     get_run_by_sample_set,
@@ -371,6 +373,31 @@ class TestRegisterRun:
         assert updated.experiment_id == 42
         assert updated.started_at == original.started_at
         assert updated.status == original.status
+
+    def test_update_run_id_updates_sample_locks(self, temp_state_dir):
+        """update_run_id also updates sample_locks table to keep in sync."""
+        sample_set_id = compute_sample_set_id(["s1", "s2"])
+        register_run("old_run", sample_set_id, state_dir=temp_state_dir)
+
+        # Acquire locks under the old run_id
+        acquire_sample_locks(["s1", "s2"], "old_run", state_dir=temp_state_dir)
+
+        # Verify locks exist under old run_id
+        old_locks = get_locks_for_run("old_run", state_dir=temp_state_dir)
+        assert len(old_locks) == 2
+
+        # Update run_id (simulates resume with new Nextflow run name)
+        updated = update_run_id(sample_set_id, "new_run", state_dir=temp_state_dir)
+        assert updated is not None
+
+        # Locks should now be under new run_id
+        new_locks = get_locks_for_run("new_run", state_dir=temp_state_dir)
+        assert len(new_locks) == 2
+        assert {lock.sample_id for lock in new_locks} == {"s1", "s2"}
+
+        # Old run_id should have no locks
+        old_locks_after = get_locks_for_run("old_run", state_dir=temp_state_dir)
+        assert len(old_locks_after) == 0
 
 
 class TestProcessedSamples:
