@@ -12,14 +12,11 @@ workflow BUNDLE_BLAST_FOR_LABKEY {
 
     main:
 
-    // Fork channels that are consumed multiple times.
-    // Queue channels can only be consumed once, so we use .tap() to create
-    // independent copies for each consumer.
-    blast_results_for_labkey = blast_results.tap { blast_results_for_webdav }
-    contig_sequences_for_fasta = contig_sequences.tap { contig_sequences_for_webdav }
+    // DSL2 automatically forks channels when used by multiple consumers.
+    // No explicit tap() needed - just use the channels directly.
 
     // Prepare BLAST results for metagenomic_hits table
-    ch_blast_labkey = blast_results_for_labkey
+    ch_blast_labkey = blast_results
         .join(read_counts)
         .join(contig_read_counts)
         .map { meta, csv, total_reads, contig_mapped_reads  ->
@@ -35,8 +32,8 @@ workflow BUNDLE_BLAST_FOR_LABKEY {
     )
 
     // JOIN the channels to ensure same sample_id for WebDAV upload
-    ch_webdav_upload = blast_results_for_webdav
-        .join(contig_sequences_for_webdav)  // This ensures matching sample_ids
+    ch_webdav_upload = blast_results
+        .join(contig_sequences)  // This ensures matching sample_ids
         .map { meta, blast_csv, fasta ->
             [meta, blast_csv, fasta]
         }
@@ -48,7 +45,7 @@ workflow BUNDLE_BLAST_FOR_LABKEY {
     )
 
     // Prepare FASTA sequences for fasta_hits table
-    ch_fasta_labkey = contig_sequences_for_fasta
+    ch_fasta_labkey = contig_sequences
         .map { meta, fasta ->
             def output_file = "${meta}_fasta_labkey.csv"
             [meta, fasta, output_file]

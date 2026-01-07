@@ -123,15 +123,11 @@ workflow STAT_BLAST_WORKFLOW {
         ch_stat_annotation
     )
 
-    // Fork contigs for multiple consumers.
-    // Queue channels can only be consumed once, so we use .tap() to create
-    // independent copies for each consumer.
-    contigs_for_megablast = EXTRACT_HUMAN_VIRUSES.out.contigs
-        .tap { contigs_for_register_hits }
-        .tap { contigs_for_labkey }
+    // Channel for contigs - DSL2 automatically forks when used by multiple consumers
+    ch_contigs = EXTRACT_HUMAN_VIRUSES.out.contigs
 
     CLASSIFY_WITH_MEGABLAST(
-        contigs_for_megablast,
+        ch_contigs,
         ch_blast_db_files
     )
 
@@ -141,13 +137,8 @@ workflow STAT_BLAST_WORKFLOW {
         ch_blast_db_files
     )
 
-    // Fork merged_results for multiple consumers.
-    // Without this, .first() for the trigger would consume the first sample,
-    // leaving only remaining samples for BUNDLE_BLAST_FOR_LABKEY.
-    merged_results_for_labkey = CLASSIFY_WITH_BLASTN.out.merged_results
-        .tap { merged_results_for_trigger }
-        .tap { merged_results_for_completion }
-        .tap { merged_results_for_hits }
+    // Channel for merged BLAST results - DSL2 automatically forks when used by multiple consumers
+    ch_merged_results = CLASSIFY_WITH_BLASTN.out.merged_results
 
     // Convert run_context from queue channel to value channel so it can be
     // consumed by multiple processes (hit registration, LabKey uploads, etc.).
@@ -156,8 +147,8 @@ workflow STAT_BLAST_WORKFLOW {
 
     // Register hits with idempotent keys in the state database.
     // Join contigs with merged BLAST results, then combine with run context.
-    ch_register_hits_input = contigs_for_register_hits
-        .join(merged_results_for_hits, by: 0)
+    ch_register_hits_input = ch_contigs
+        .join(ch_merged_results, by: 0)
         .combine(ch_run_context)
         .map { sample_id, contigs, blast_results, sample_set_id, state_dir ->
             tuple(sample_id, contigs, blast_results, sample_set_id, state_dir)
@@ -173,9 +164,9 @@ workflow STAT_BLAST_WORKFLOW {
 
     if (params.labkey) {
         // Check LabKey guard list - ensures experiment_id hasn't been uploaded before
-        // Uses .first() on a forked channel to get a value channel trigger
+        // Uses .first() to get a value channel trigger (DSL2 auto-forks ch_merged_results)
         VALIDATE_LK_EXP_FRESH(
-            merged_results_for_trigger.first()
+            ch_merged_results.first()
         )
 
         // Bundle and upload - gates ensure both checks passed:
@@ -187,8 +178,8 @@ workflow STAT_BLAST_WORKFLOW {
             .map { _ready, _validated -> true }
 
         BUNDLE_BLAST_FOR_LABKEY(
-            merged_results_for_labkey,
-            contigs_for_labkey,
+            ch_merged_results,
+            ch_contigs,
             COUNT_READS.out.counts,
             params.experiment_id,
             workflow.runName,
@@ -224,7 +215,7 @@ workflow STAT_BLAST_WORKFLOW {
         "completed"
     )
 
-    ch_completion = merged_results_for_completion.map { _results -> "STAT+BLAST workflow complete!" }
+    ch_completion = ch_merged_results.map { _results -> "STAT+BLAST workflow complete!" }
 
     emit:
     completion = ch_completion
