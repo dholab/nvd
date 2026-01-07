@@ -19,6 +19,11 @@ workflow CLASSIFY_WITH_BLASTN {
     ch_blast_db_files
 
     main:
+    // Static empty blastn template file - using a stable file prevents cache invalidation.
+    // Previously, dynamically creating files in the .map block caused MERGE_FILTERED_BLAST_RESULTS
+    // to never resume because the file got a new timestamp on each run.
+    def emptyBlastnTemplate = file("${projectDir}/assets/empty_blastn.tsv")
+
     BLASTN_CLASSIFY(
         ch_megablast_contigs.combine(ch_blast_db_files)
     )
@@ -44,17 +49,13 @@ workflow CLASSIFY_WITH_BLASTN {
             hits_file.size() > 0 && hits_file.readLines().size() > 0
         }
 
-    // JOIN by sample_id with remainder:true to keep samples that only have megablast hits
+    // JOIN by sample_id with remainder:true to keep samples that only have megablast hits.
+    // For samples without blastn hits, use the static empty template file instead of
+    // dynamically creating one (which would break caching).
     ch_merged_input = ch_filtered_megablast
         .join(ch_blastn_virus_hits, by: 0, remainder: true)
         .map { sample_id, megablast_file, blastn_file ->
-            if (blastn_file) {
-                tuple(sample_id, megablast_file, blastn_file)
-            } else {
-                def emptyFile = file("${workflow.workDir}/empty_blastn_${sample_id}.tsv")
-                emptyFile.text = "task\tsample\tqseqid\tqlen\tsseqid\tstitle\tlength\tpident\tevalue\tbitscore\tsscinames\tstaxids\trank\n"
-                tuple(sample_id, megablast_file, emptyFile)
-            }
+            tuple(sample_id, megablast_file, blastn_file ?: emptyBlastnTemplate)
         }
 
     MERGE_FILTERED_BLAST_RESULTS(ch_merged_input)

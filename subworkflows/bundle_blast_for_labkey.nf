@@ -12,16 +12,24 @@ workflow BUNDLE_BLAST_FOR_LABKEY {
 
     main:
 
-    // DSL2 automatically forks channels when used by multiple consumers.
-    // No explicit tap() needed - just use the channels directly.
+    // MEGA-JOIN: Combine all input queue channels into a single stream.
+    // This avoids the DSL2 limitation where queue channels passed to subworkflows
+    // via take: are consumed by the first operator and unavailable to subsequent ones.
+    // Each input channel is consumed exactly once by this join.
+    ch_all_sample_data = blast_results
+        .join(contig_sequences, by: 0)
+        .join(read_counts, by: 0)
+        .join(contig_read_counts, by: 0)
+    // Result: [meta, blast_csv, fasta, total_reads, mapped_counts]
+
+    // Now use .map() to extract what each downstream process needs.
+    // DSL2 auto-forks ch_all_sample_data for multiple process consumers.
 
     // Prepare BLAST results for metagenomic_hits table
-    ch_blast_labkey = blast_results
-        .join(read_counts)
-        .join(contig_read_counts)
-        .map { meta, csv, total_reads, contig_mapped_reads  ->
+    ch_blast_labkey = ch_all_sample_data
+        .map { meta, blast_csv, fasta, total_reads, mapped_counts ->
             def output_file = "${meta}_blast_labkey.csv"
-            [meta, csv, total_reads, contig_mapped_reads, output_file]
+            [meta, blast_csv, total_reads, mapped_counts, output_file]
         }
 
     PREPARE_BLAST_LABKEY(
@@ -31,10 +39,9 @@ workflow BUNDLE_BLAST_FOR_LABKEY {
         validation_complete
     )
 
-    // JOIN the channels to ensure same sample_id for WebDAV upload
-    ch_webdav_upload = blast_results
-        .join(contig_sequences)  // This ensures matching sample_ids
-        .map { meta, blast_csv, fasta ->
+    // Extract data for WebDAV upload
+    ch_webdav_upload = ch_all_sample_data
+        .map { meta, blast_csv, fasta, total_reads, mapped_counts ->
             [meta, blast_csv, fasta]
         }
 
@@ -45,8 +52,8 @@ workflow BUNDLE_BLAST_FOR_LABKEY {
     )
 
     // Prepare FASTA sequences for fasta_hits table
-    ch_fasta_labkey = contig_sequences
-        .map { meta, fasta ->
+    ch_fasta_labkey = ch_all_sample_data
+        .map { meta, blast_csv, fasta, total_reads, mapped_counts ->
             def output_file = "${meta}_fasta_labkey.csv"
             [meta, fasta, output_file]
         }
