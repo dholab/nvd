@@ -123,8 +123,15 @@ workflow STAT_BLAST_WORKFLOW {
         ch_stat_annotation
     )
 
+    // Fork contigs for multiple consumers.
+    // Queue channels can only be consumed once, so we use .tap() to create
+    // independent copies for each consumer.
+    contigs_for_megablast = EXTRACT_HUMAN_VIRUSES.out.contigs
+        .tap { contigs_for_register_hits }
+        .tap { contigs_for_labkey }
+
     CLASSIFY_WITH_MEGABLAST(
-        EXTRACT_HUMAN_VIRUSES.out.contigs,
+        contigs_for_megablast,
         ch_blast_db_files
     )
 
@@ -149,7 +156,7 @@ workflow STAT_BLAST_WORKFLOW {
 
     // Register hits with idempotent keys in the state database.
     // Join contigs with merged BLAST results, then combine with run context.
-    ch_register_hits_input = EXTRACT_HUMAN_VIRUSES.out.contigs
+    ch_register_hits_input = contigs_for_register_hits
         .join(merged_results_for_hits, by: 0)
         .combine(ch_run_context)
         .map { sample_id, contigs, blast_results, sample_set_id, state_dir ->
@@ -181,7 +188,7 @@ workflow STAT_BLAST_WORKFLOW {
 
         BUNDLE_BLAST_FOR_LABKEY(
             merged_results_for_labkey,
-            EXTRACT_HUMAN_VIRUSES.out.contigs,
+            contigs_for_labkey,
             COUNT_READS.out.counts,
             params.experiment_id,
             workflow.runName,
