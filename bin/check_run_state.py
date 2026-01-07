@@ -43,6 +43,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from loguru import logger
+from py_nvd.db import get_taxdump_dir
 from py_nvd.state import (
     acquire_sample_locks,
     compute_sample_set_id,
@@ -51,6 +52,7 @@ from py_nvd.state import (
     register_run,
     update_run_id,
 )
+from py_nvd.taxonomy import ensure_taxonomy_available
 
 
 @dataclass
@@ -365,6 +367,19 @@ def main() -> None:
 
     logger.info(f"Found {len(sample_ids)} unique samples")
     logger.debug(f"Sample IDs: {sample_ids}")
+
+    # Ensure taxonomy database is available before workers start
+    # This downloads from NCBI if needed (once, on submit node) so workers
+    # don't all race to download simultaneously
+    logger.info("Ensuring taxonomy database is available...")
+    taxdump_dir = get_taxdump_dir(args.state_dir)
+    if (taxdump_dir / "taxonomy.sqlite").exists():
+        logger.info(f"Taxonomy database found: {taxdump_dir}")
+    else:
+        logger.info("Taxonomy database not found, downloading from NCBI...")
+        logger.info("(This may take a few minutes on first run)")
+        ensure_taxonomy_available(args.state_dir)
+        logger.info(f"Taxonomy database ready: {taxdump_dir}")
 
     # Create registration object
     registration = RunRegistration(

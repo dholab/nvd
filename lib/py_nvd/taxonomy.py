@@ -194,6 +194,28 @@ def _ensure_taxdump(state_dir: Path | str | None = None) -> Path:
     return taxdump_dir
 
 
+def ensure_taxonomy_available(state_dir: Path | str | None = None) -> Path:
+    """
+    Ensure taxonomy database is downloaded and ready for use.
+
+    Downloads NCBI taxdump if not present or stale (>30 days old),
+    extracts required .dmp files, and builds the SQLite database.
+
+    This is the public API for pre-downloading taxonomy data before
+    distributed workers need it. Call this once on the submit node
+    (e.g., in CHECK_RUN_STATE) to avoid multiple workers racing to
+    download simultaneously.
+
+    Args:
+        state_dir: Optional state directory override. If None, uses
+                   NVD_STATE_DIR env var or ~/.nvd/
+
+    Returns:
+        Path to the taxdump directory containing taxonomy.sqlite
+    """
+    return _ensure_taxdump(state_dir)
+
+
 class TaxonomyDB:
     """
     Helper class for taxonomy lookups.
