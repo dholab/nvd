@@ -2160,27 +2160,43 @@ class TestSampleLocks:
         assert lock.run_id == ctx.run.run_id
         assert not lock.is_expired
 
-    def test_acquire_sample_lock_blocked_by_another_run(self, temp_state_dir):
-        """Lock acquisition fails when blocked by another run's active lock."""
+    def test_acquire_sample_lock_blocked_by_different_user(self, temp_state_dir):
+        """Lock acquisition fails when blocked by a different user's active lock."""
+        from datetime import datetime, timedelta, timezone
+
         from py_nvd.state import acquire_sample_lock
 
-        # Register two runs
+        # Register a run
         set1 = compute_sample_set_id(["s1"])
-        set2 = compute_sample_set_id(["s2"])
         run1 = register_run("run_001", set1, state_dir=temp_state_dir)
-        run2 = register_run("run_002", set2, state_dir=temp_state_dir)
         assert run1 is not None
-        assert run2 is not None
 
-        # Run 1 acquires lock
-        result1 = acquire_sample_lock("s1", "run_001", state_dir=temp_state_dir)
-        assert result1 is None  # Success
+        # Insert a lock with different fingerprint (simulating another user)
+        now = datetime.now(timezone.utc)
+        expires = now + timedelta(hours=72)
+        with connect(temp_state_dir) as conn:
+            conn.execute(
+                """INSERT INTO sample_locks 
+                   (sample_id, run_id, hostname, username, locked_at, expires_at)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (
+                    "s1",
+                    "run_001",
+                    "other_host",
+                    "other_user",
+                    now.isoformat(),
+                    expires.isoformat(),
+                ),
+            )
+            conn.commit()
 
-        # Run 2 tries to acquire same sample - should be blocked
-        result2 = acquire_sample_lock("s1", "run_002", state_dir=temp_state_dir)
-        assert result2 is not None  # Returns blocking lock
-        assert result2.run_id == "run_001"
-        assert result2.sample_id == "s1"
+        # Different user tries to acquire - should be blocked
+        result = acquire_sample_lock("s1", "run_002", state_dir=temp_state_dir)
+        assert result is not None  # Returns blocking lock
+        assert result.run_id == "run_001"
+        assert result.sample_id == "s1"
+        assert result.hostname == "other_host"
+        assert result.username == "other_user"
 
     def test_acquire_sample_lock_overwrites_expired(self, temp_state_dir):
         """Lock acquisition succeeds when existing lock is expired."""
@@ -2250,6 +2266,41 @@ class TestSampleLocks:
         assert lock2 is not None
         # TTL should be refreshed (expires_at should be later)
         assert lock2.expires_at >= expires1
+
+    def test_acquire_sample_lock_different_run_same_fingerprint_allows_resume(
+        self, registered_run: RunContext
+    ):
+        """Different run_id + same fingerprint = allowed (Nextflow -resume scenario).
+
+        Nextflow generates a new run name on every invocation, even with -resume.
+        The same user on the same host should be able to re-acquire their own locks
+        with a new run_id.
+        """
+        from py_nvd.state import acquire_sample_lock, get_lock
+
+        ctx = registered_run
+
+        # First run acquires lock
+        result1 = acquire_sample_lock("s1", ctx.run.run_id, state_dir=ctx.state_dir)
+        assert result1 is None  # Success
+
+        lock1 = get_lock("s1", state_dir=ctx.state_dir)
+        assert lock1 is not None
+        assert lock1.run_id == ctx.run.run_id
+
+        # Register a second run (simulating Nextflow -resume with new run name)
+        set2 = compute_sample_set_id(["s1"])
+        run2 = register_run("new_run_name", set2, state_dir=ctx.state_dir)
+        assert run2 is not None
+
+        # Same user/host with different run_id - should succeed
+        result2 = acquire_sample_lock("s1", "new_run_name", state_dir=ctx.state_dir)
+        assert result2 is None  # Success (same fingerprint allows re-acquisition)
+
+        # Lock should now be owned by the new run
+        lock2 = get_lock("s1", state_dir=ctx.state_dir)
+        assert lock2 is not None
+        assert lock2.run_id == "new_run_name"
 
     def test_acquire_sample_lock_same_run_different_fingerprint_active_conflict(
         self, temp_state_dir

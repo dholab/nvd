@@ -1324,13 +1324,12 @@ def acquire_sample_lock(
     """
     Attempt to acquire a lock for a single sample.
 
-    Lock acquisition logic:
-    - No existing lock or expired lock → acquire
-    - Existing lock, same run_id, same fingerprint → refresh TTL (resume)
-    - Existing lock, same run_id, different fingerprint, expired → acquire (crash recovery)
-    - Existing lock, same run_id, different fingerprint, active → conflict
-    - Existing lock, different run_id, expired → acquire (steal expired)
-    - Existing lock, different run_id, active → blocked
+    Lock acquisition logic (fingerprint = hostname + username):
+    - No existing lock → acquire
+    - Existing lock, same fingerprint → acquire (same user can always re-acquire,
+      handles Nextflow -resume which generates new run_id each time)
+    - Existing lock, different fingerprint, expired → acquire (steal expired)
+    - Existing lock, different fingerprint, active → blocked
 
     Args:
         sample_id: The sample to lock
@@ -1367,46 +1366,33 @@ def acquire_sample_lock(
 
         existing_lock = SampleLock.from_row(existing)
 
-        if existing_lock.run_id != run_id:
-            # Different run
-            if existing_lock.is_expired:
-                # Expired - steal it
-                conn.execute(
-                    """UPDATE sample_locks 
-                       SET run_id = ?, hostname = ?, username = ?, locked_at = ?, expires_at = ?
-                       WHERE sample_id = ?""",
-                    (run_id, hostname, username, now_str, expires_str, sample_id),
-                )
-                conn.commit()
-                return None
-            else:
-                # Active lock by another run - blocked
-                return existing_lock
-
-        # Same run_id
+        # Check fingerprint first - same user on same host can always re-acquire
+        # This handles Nextflow -resume which generates a new run_id each time
         if existing_lock.fingerprint == (hostname, username):
-            # Same fingerprint - legitimate resume, refresh TTL
+            # Same user/host - allow acquisition, update run_id and refresh TTL
             conn.execute(
-                "UPDATE sample_locks SET expires_at = ? WHERE sample_id = ?",
-                (expires_str, sample_id),
+                """UPDATE sample_locks 
+                   SET run_id = ?, locked_at = ?, expires_at = ?
+                   WHERE sample_id = ?""",
+                (run_id, now_str, expires_str, sample_id),
+            )
+            conn.commit()
+            return None
+
+        # Different fingerprint - check if we can steal
+        if existing_lock.is_expired:
+            # Expired lock from another user - steal it
+            conn.execute(
+                """UPDATE sample_locks 
+                   SET run_id = ?, hostname = ?, username = ?, locked_at = ?, expires_at = ?
+                   WHERE sample_id = ?""",
+                (run_id, hostname, username, now_str, expires_str, sample_id),
             )
             conn.commit()
             return None
         else:
-            # Different fingerprint
-            if existing_lock.is_expired:
-                # Expired - crash recovery, acquire
-                conn.execute(
-                    """UPDATE sample_locks 
-                       SET hostname = ?, username = ?, locked_at = ?, expires_at = ?
-                       WHERE sample_id = ?""",
-                    (hostname, username, now_str, expires_str, sample_id),
-                )
-                conn.commit()
-                return None
-            else:
-                # Active lock, same run_id but different machine - conflict!
-                return existing_lock
+            # Active lock held by different user/host - blocked
+            return existing_lock
 
 
 def acquire_sample_locks(
