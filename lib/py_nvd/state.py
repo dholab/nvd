@@ -23,6 +23,7 @@ from py_nvd.models import (
     ProcessedSample,
     ProcessedSampleStatus,
     Run,
+    SampleLock,
     Status,
     TaxonomyVersion,
     Upload,
@@ -1197,3 +1198,412 @@ def delete_preset(name: str, state_dir: Path | str | None = None) -> bool:
         cursor = conn.execute("DELETE FROM presets WHERE name = ?", (name,))
         conn.commit()
         return cursor.rowcount > 0
+
+
+# =============================================================================
+# Sample Locks
+# =============================================================================
+
+DEFAULT_LOCK_TTL_HOURS = 72
+
+
+def get_machine_fingerprint() -> tuple[str, str]:
+    """
+    Return (hostname, username) for lock ownership.
+
+    Used to detect when the same run_id is resumed from different machines,
+    which would indicate a conflict (two users resuming the same run).
+    """
+    import os
+    import socket
+
+    hostname = socket.gethostname()
+    username = os.environ.get("USER") or os.getlogin()
+    return (hostname, username)
+
+
+def get_lock(
+    sample_id: str,
+    state_dir: Path | str | None = None,
+    *,
+    include_expired: bool = False,
+) -> SampleLock | None:
+    """
+    Get lock info for a sample.
+
+    Args:
+        sample_id: The sample to check
+        state_dir: Optional state directory override
+        include_expired: If True, return expired locks too
+
+    Returns:
+        SampleLock if locked (and not expired, unless include_expired=True), else None
+    """
+    with connect(state_dir) as conn:
+        row = conn.execute(
+            "SELECT * FROM sample_locks WHERE sample_id = ?",
+            (sample_id,),
+        ).fetchone()
+
+        if row is None:
+            return None
+
+        lock = SampleLock.from_row(row)
+
+        if not include_expired and lock.is_expired:
+            return None
+
+        return lock
+
+
+def get_locks_for_run(
+    run_id: str,
+    state_dir: Path | str | None = None,
+    *,
+    include_expired: bool = False,
+) -> list[SampleLock]:
+    """
+    Get all locks held by a run.
+
+    Args:
+        run_id: The run to query
+        state_dir: Optional state directory override
+        include_expired: If True, include expired locks
+
+    Returns:
+        List of SampleLock objects for this run
+    """
+    with connect(state_dir) as conn:
+        rows = conn.execute(
+            "SELECT * FROM sample_locks WHERE run_id = ? ORDER BY sample_id",
+            (run_id,),
+        ).fetchall()
+
+        locks = [SampleLock.from_row(row) for row in rows]
+
+        if not include_expired:
+            locks = [lock for lock in locks if not lock.is_expired]
+
+        return locks
+
+
+def list_locks(
+    state_dir: Path | str | None = None,
+    *,
+    include_expired: bool = False,
+) -> list[SampleLock]:
+    """
+    List all sample locks.
+
+    Args:
+        state_dir: Optional state directory override
+        include_expired: If True, include expired locks
+
+    Returns:
+        List of all SampleLock objects
+    """
+    with connect(state_dir) as conn:
+        rows = conn.execute(
+            "SELECT * FROM sample_locks ORDER BY locked_at DESC"
+        ).fetchall()
+
+        locks = [SampleLock.from_row(row) for row in rows]
+
+        if not include_expired:
+            locks = [lock for lock in locks if not lock.is_expired]
+
+        return locks
+
+
+def acquire_sample_lock(
+    sample_id: str,
+    run_id: str,
+    ttl_hours: int = DEFAULT_LOCK_TTL_HOURS,
+    state_dir: Path | str | None = None,
+) -> SampleLock | None:
+    """
+    Attempt to acquire a lock for a single sample.
+
+    Lock acquisition logic:
+    - No existing lock or expired lock → acquire
+    - Existing lock, same run_id, same fingerprint → refresh TTL (resume)
+    - Existing lock, same run_id, different fingerprint, expired → acquire (crash recovery)
+    - Existing lock, same run_id, different fingerprint, active → conflict
+    - Existing lock, different run_id, expired → acquire (steal expired)
+    - Existing lock, different run_id, active → blocked
+
+    Args:
+        sample_id: The sample to lock
+        run_id: The run acquiring the lock
+        ttl_hours: Lock TTL in hours (default 72)
+        state_dir: Optional state directory override
+
+    Returns:
+        None if acquired successfully, or the blocking SampleLock if blocked
+    """
+    hostname, username = get_machine_fingerprint()
+    now = datetime.now().astimezone()
+    expires = now + __import__("datetime").timedelta(hours=ttl_hours)
+
+    now_str = now.isoformat()
+    expires_str = expires.isoformat()
+
+    with connect(state_dir) as conn:
+        existing = conn.execute(
+            "SELECT * FROM sample_locks WHERE sample_id = ?",
+            (sample_id,),
+        ).fetchone()
+
+        if existing is None:
+            # No lock - acquire
+            conn.execute(
+                """INSERT INTO sample_locks 
+                   (sample_id, run_id, hostname, username, locked_at, expires_at)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (sample_id, run_id, hostname, username, now_str, expires_str),
+            )
+            conn.commit()
+            return None
+
+        existing_lock = SampleLock.from_row(existing)
+
+        if existing_lock.run_id != run_id:
+            # Different run
+            if existing_lock.is_expired:
+                # Expired - steal it
+                conn.execute(
+                    """UPDATE sample_locks 
+                       SET run_id = ?, hostname = ?, username = ?, locked_at = ?, expires_at = ?
+                       WHERE sample_id = ?""",
+                    (run_id, hostname, username, now_str, expires_str, sample_id),
+                )
+                conn.commit()
+                return None
+            else:
+                # Active lock by another run - blocked
+                return existing_lock
+
+        # Same run_id
+        if existing_lock.fingerprint == (hostname, username):
+            # Same fingerprint - legitimate resume, refresh TTL
+            conn.execute(
+                "UPDATE sample_locks SET expires_at = ? WHERE sample_id = ?",
+                (expires_str, sample_id),
+            )
+            conn.commit()
+            return None
+        else:
+            # Different fingerprint
+            if existing_lock.is_expired:
+                # Expired - crash recovery, acquire
+                conn.execute(
+                    """UPDATE sample_locks 
+                       SET hostname = ?, username = ?, locked_at = ?, expires_at = ?
+                       WHERE sample_id = ?""",
+                    (hostname, username, now_str, expires_str, sample_id),
+                )
+                conn.commit()
+                return None
+            else:
+                # Active lock, same run_id but different machine - conflict!
+                return existing_lock
+
+
+def acquire_sample_locks(
+    sample_ids: list[str],
+    run_id: str,
+    ttl_hours: int = DEFAULT_LOCK_TTL_HOURS,
+    state_dir: Path | str | None = None,
+) -> tuple[list[str], list[SampleLock]]:
+    """
+    Attempt to acquire locks for multiple samples.
+
+    Args:
+        sample_ids: List of samples to lock
+        run_id: The run acquiring the locks
+        ttl_hours: Lock TTL in hours (default 72)
+        state_dir: Optional state directory override
+
+    Returns:
+        Tuple of (acquired, conflicts) where:
+        - acquired: list of sample_ids successfully locked
+        - conflicts: list of SampleLock objects for blocked samples
+    """
+    acquired: list[str] = []
+    conflicts: list[SampleLock] = []
+
+    for sample_id in sample_ids:
+        result = acquire_sample_lock(sample_id, run_id, ttl_hours, state_dir)
+        if result is None:
+            acquired.append(sample_id)
+        else:
+            conflicts.append(result)
+
+    return acquired, conflicts
+
+
+def release_sample_lock(
+    sample_id: str,
+    run_id: str,
+    state_dir: Path | str | None = None,
+) -> bool:
+    """
+    Release a lock for a single sample if held by this run.
+
+    Args:
+        sample_id: The sample to unlock
+        run_id: The run releasing the lock
+        state_dir: Optional state directory override
+
+    Returns:
+        True if released, False if not held by this run
+    """
+    with connect(state_dir) as conn:
+        cursor = conn.execute(
+            "DELETE FROM sample_locks WHERE sample_id = ? AND run_id = ?",
+            (sample_id, run_id),
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+
+
+def release_sample_locks(
+    sample_ids: list[str],
+    run_id: str,
+    state_dir: Path | str | None = None,
+) -> int:
+    """
+    Release locks for multiple samples held by this run.
+
+    Args:
+        sample_ids: List of samples to unlock
+        run_id: The run releasing the locks
+        state_dir: Optional state directory override
+
+    Returns:
+        Count of locks released
+    """
+    if not sample_ids:
+        return 0
+
+    placeholders = ",".join("?" * len(sample_ids))
+    with connect(state_dir) as conn:
+        cursor = conn.execute(
+            f"DELETE FROM sample_locks WHERE sample_id IN ({placeholders}) AND run_id = ?",  # noqa: S608
+            [*sample_ids, run_id],
+        )
+        conn.commit()
+        return cursor.rowcount
+
+
+def release_all_locks_for_run(
+    run_id: str,
+    state_dir: Path | str | None = None,
+) -> int:
+    """
+    Release all locks held by a run.
+
+    Args:
+        run_id: The run to release locks for
+        state_dir: Optional state directory override
+
+    Returns:
+        Count of locks released
+    """
+    with connect(state_dir) as conn:
+        cursor = conn.execute(
+            "DELETE FROM sample_locks WHERE run_id = ?",
+            (run_id,),
+        )
+        conn.commit()
+        return cursor.rowcount
+
+
+def cleanup_expired_locks(state_dir: Path | str | None = None) -> int:
+    """
+    Remove all expired locks.
+
+    Args:
+        state_dir: Optional state directory override
+
+    Returns:
+        Count of locks removed
+    """
+    now = datetime.now().astimezone().isoformat()
+    with connect(state_dir) as conn:
+        cursor = conn.execute(
+            "DELETE FROM sample_locks WHERE expires_at < ?",
+            (now,),
+        )
+        conn.commit()
+        return cursor.rowcount
+
+
+# =============================================================================
+# Run Status (with TTL-based failure detection)
+# =============================================================================
+
+
+def get_effective_run_status(
+    run: Run,
+    ttl_hours: int = DEFAULT_LOCK_TTL_HOURS,
+) -> Status:
+    """
+    Get the effective status of a run, treating stale 'running' as 'failed'.
+
+    A run that has been 'running' for longer than the TTL is considered
+    effectively failed (crashed/interrupted without cleanup).
+
+    Args:
+        run: The Run to check
+        ttl_hours: Hours after which a 'running' run is considered failed
+
+    Returns:
+        Effective status: 'running', 'completed', or 'failed'
+    """
+    if run.status != "running":
+        return run.status
+
+    started = datetime.fromisoformat(run.started_at.replace("Z", "+00:00"))
+    if started.tzinfo is None:
+        started = started.replace(tzinfo=__import__("datetime").timezone.utc)
+
+    now = datetime.now(__import__("datetime").timezone.utc)
+    age_hours = (now - started).total_seconds() / 3600
+
+    if age_hours > ttl_hours:
+        return "failed"
+
+    return "running"
+
+
+def mark_stale_runs_failed(
+    ttl_hours: int = DEFAULT_LOCK_TTL_HOURS,
+    state_dir: Path | str | None = None,
+) -> int:
+    """
+    Update 'running' runs older than TTL to 'failed'.
+
+    This persists the derived status to the database for clarity.
+    Called by `nvd state cleanup` to clean up stale runs.
+
+    Args:
+        ttl_hours: Hours after which a 'running' run is considered failed
+        state_dir: Optional state directory override
+
+    Returns:
+        Count of runs updated
+    """
+    cutoff = datetime.now(__import__("datetime").timezone.utc) - __import__(
+        "datetime"
+    ).timedelta(hours=ttl_hours)
+    cutoff_str = cutoff.isoformat()
+
+    with connect(state_dir) as conn:
+        cursor = conn.execute(
+            """UPDATE runs SET status = 'failed', completed_at = datetime('now')
+               WHERE status = 'running' AND started_at < ?""",
+            (cutoff_str,),
+        )
+        conn.commit()
+        return cursor.rowcount

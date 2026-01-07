@@ -2116,3 +2116,519 @@ class TestResolveDatabaseVersions:
         # Warns about multiple versions
         assert len(resolution.warnings) == 1
         assert "Multiple versions" in resolution.warnings[0]
+
+
+class TestSampleLocks:
+    """Tests for sample lock functions.
+
+    Sample locks prevent duplicate processing across concurrent runs.
+    They use TTL-based expiration and machine fingerprinting.
+    """
+
+    @pytest.fixture
+    def temp_state_dir(self):
+        """Create a temporary directory for state database."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            yield Path(tmpdir)
+
+    @pytest.fixture
+    def registered_run(self, temp_state_dir) -> RunContext:
+        """Register a run and return RunContext."""
+        sample_set_id = compute_sample_set_id(["s1", "s2", "s3"])
+        run = register_run("run_001", sample_set_id, state_dir=temp_state_dir)
+        assert run is not None
+        return RunContext(
+            run=run, sample_set_id=sample_set_id, state_dir=temp_state_dir
+        )
+
+    def test_acquire_sample_lock_basic(self, registered_run: RunContext):
+        """Basic lock acquisition succeeds and returns None."""
+        from py_nvd.state import acquire_sample_lock, get_lock
+
+        ctx = registered_run
+
+        # Acquire lock
+        result = acquire_sample_lock("s1", ctx.run.run_id, state_dir=ctx.state_dir)
+
+        # None means success (no blocking lock)
+        assert result is None
+
+        # Lock should exist
+        lock = get_lock("s1", state_dir=ctx.state_dir)
+        assert lock is not None
+        assert lock.sample_id == "s1"
+        assert lock.run_id == ctx.run.run_id
+        assert not lock.is_expired
+
+    def test_acquire_sample_lock_blocked_by_another_run(self, temp_state_dir):
+        """Lock acquisition fails when blocked by another run's active lock."""
+        from py_nvd.state import acquire_sample_lock
+
+        # Register two runs
+        set1 = compute_sample_set_id(["s1"])
+        set2 = compute_sample_set_id(["s2"])
+        run1 = register_run("run_001", set1, state_dir=temp_state_dir)
+        run2 = register_run("run_002", set2, state_dir=temp_state_dir)
+        assert run1 is not None
+        assert run2 is not None
+
+        # Run 1 acquires lock
+        result1 = acquire_sample_lock("s1", "run_001", state_dir=temp_state_dir)
+        assert result1 is None  # Success
+
+        # Run 2 tries to acquire same sample - should be blocked
+        result2 = acquire_sample_lock("s1", "run_002", state_dir=temp_state_dir)
+        assert result2 is not None  # Returns blocking lock
+        assert result2.run_id == "run_001"
+        assert result2.sample_id == "s1"
+
+    def test_acquire_sample_lock_overwrites_expired(self, temp_state_dir):
+        """Lock acquisition succeeds when existing lock is expired."""
+        from datetime import datetime, timedelta, timezone
+
+        from py_nvd.state import acquire_sample_lock, get_lock
+
+        # Register a run
+        set1 = compute_sample_set_id(["s1"])
+        run = register_run("run_001", set1, state_dir=temp_state_dir)
+        assert run is not None
+
+        # Insert an expired lock directly
+        now = datetime.now(timezone.utc)
+        expired = now - timedelta(hours=1)
+        with connect(temp_state_dir) as conn:
+            conn.execute(
+                """INSERT INTO sample_locks 
+                   (sample_id, run_id, hostname, username, locked_at, expires_at)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (
+                    "s1",
+                    "old_run",
+                    "old_host",
+                    "old_user",
+                    now.isoformat(),
+                    expired.isoformat(),
+                ),
+            )
+            conn.commit()
+
+        # New run should be able to acquire (steal expired lock)
+        result = acquire_sample_lock("s1", "run_001", state_dir=temp_state_dir)
+        assert result is None  # Success
+
+        # Lock should now be owned by run_001
+        lock = get_lock("s1", state_dir=temp_state_dir)
+        assert lock is not None
+        assert lock.run_id == "run_001"
+
+    def test_acquire_sample_lock_same_run_same_fingerprint_refreshes(
+        self, registered_run: RunContext
+    ):
+        """Same run + same fingerprint refreshes TTL (legitimate resume)."""
+        from py_nvd.state import acquire_sample_lock, get_lock
+
+        ctx = registered_run
+
+        # First acquisition
+        result1 = acquire_sample_lock("s1", ctx.run.run_id, state_dir=ctx.state_dir)
+        assert result1 is None
+
+        lock1 = get_lock("s1", state_dir=ctx.state_dir)
+        assert lock1 is not None
+        expires1 = lock1.expires_at
+
+        # Small delay to ensure different timestamp
+        import time
+
+        time.sleep(0.1)
+
+        # Second acquisition (same run, same machine) - should refresh TTL
+        result2 = acquire_sample_lock("s1", ctx.run.run_id, state_dir=ctx.state_dir)
+        assert result2 is None  # Success (refresh)
+
+        lock2 = get_lock("s1", state_dir=ctx.state_dir)
+        assert lock2 is not None
+        # TTL should be refreshed (expires_at should be later)
+        assert lock2.expires_at >= expires1
+
+    def test_acquire_sample_lock_same_run_different_fingerprint_active_conflict(
+        self, temp_state_dir
+    ):
+        """Same run + different fingerprint + active lock = conflict."""
+        from datetime import datetime, timedelta, timezone
+
+        from py_nvd.state import acquire_sample_lock
+
+        # Register a run
+        set1 = compute_sample_set_id(["s1"])
+        run = register_run("run_001", set1, state_dir=temp_state_dir)
+        assert run is not None
+
+        # Insert a lock with different fingerprint (simulating another machine)
+        now = datetime.now(timezone.utc)
+        expires = now + timedelta(hours=72)
+        with connect(temp_state_dir) as conn:
+            conn.execute(
+                """INSERT INTO sample_locks 
+                   (sample_id, run_id, hostname, username, locked_at, expires_at)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (
+                    "s1",
+                    "run_001",
+                    "other_host",
+                    "other_user",
+                    now.isoformat(),
+                    expires.isoformat(),
+                ),
+            )
+            conn.commit()
+
+        # Same run_id but different machine - should conflict
+        result = acquire_sample_lock("s1", "run_001", state_dir=temp_state_dir)
+        assert result is not None  # Conflict
+        assert result.run_id == "run_001"
+        assert result.hostname == "other_host"
+        assert result.username == "other_user"
+
+    def test_acquire_sample_lock_same_run_different_fingerprint_expired_acquires(
+        self, temp_state_dir
+    ):
+        """Same run + different fingerprint + expired = crash recovery."""
+        from datetime import datetime, timedelta, timezone
+
+        from py_nvd.state import acquire_sample_lock, get_lock
+
+        # Register a run
+        set1 = compute_sample_set_id(["s1"])
+        run = register_run("run_001", set1, state_dir=temp_state_dir)
+        assert run is not None
+
+        # Insert an expired lock with different fingerprint
+        now = datetime.now(timezone.utc)
+        expired = now - timedelta(hours=1)
+        with connect(temp_state_dir) as conn:
+            conn.execute(
+                """INSERT INTO sample_locks 
+                   (sample_id, run_id, hostname, username, locked_at, expires_at)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (
+                    "s1",
+                    "run_001",
+                    "crashed_host",
+                    "crashed_user",
+                    now.isoformat(),
+                    expired.isoformat(),
+                ),
+            )
+            conn.commit()
+
+        # Same run_id, different machine, but expired - should acquire (crash recovery)
+        result = acquire_sample_lock("s1", "run_001", state_dir=temp_state_dir)
+        assert result is None  # Success
+
+        # Lock should now have current machine's fingerprint
+        lock = get_lock("s1", state_dir=temp_state_dir)
+        assert lock is not None
+        assert lock.run_id == "run_001"
+        # Fingerprint should be updated to current machine
+        assert lock.hostname != "crashed_host"
+
+    def test_acquire_sample_locks_batch_mixed_results(self, temp_state_dir):
+        """Batch acquisition returns acquired and conflicts separately."""
+        from datetime import datetime, timedelta, timezone
+
+        from py_nvd.state import acquire_sample_locks
+
+        # Register two runs
+        set1 = compute_sample_set_id(["s1", "s2", "s3"])
+        set2 = compute_sample_set_id(["s4"])
+        run1 = register_run("run_001", set1, state_dir=temp_state_dir)
+        run2 = register_run("run_002", set2, state_dir=temp_state_dir)
+        assert run1 is not None
+        assert run2 is not None
+
+        # Run 1 locks s1 and s2
+        now = datetime.now(timezone.utc)
+        expires = now + timedelta(hours=72)
+        with connect(temp_state_dir) as conn:
+            for sample_id in ["s1", "s2"]:
+                conn.execute(
+                    """INSERT INTO sample_locks 
+                       (sample_id, run_id, hostname, username, locked_at, expires_at)
+                       VALUES (?, ?, ?, ?, ?, ?)""",
+                    (
+                        sample_id,
+                        "run_001",
+                        "host1",
+                        "user1",
+                        now.isoformat(),
+                        expires.isoformat(),
+                    ),
+                )
+            conn.commit()
+
+        # Run 2 tries to acquire s1, s2, s3 (s1, s2 blocked, s3 available)
+        acquired, conflicts = acquire_sample_locks(
+            ["s1", "s2", "s3"], "run_002", state_dir=temp_state_dir
+        )
+
+        assert acquired == ["s3"]
+        assert len(conflicts) == 2
+        conflict_samples = {c.sample_id for c in conflicts}
+        assert conflict_samples == {"s1", "s2"}
+
+    def test_release_sample_lock_releases_own(self, registered_run: RunContext):
+        """release_sample_lock releases lock held by this run."""
+        from py_nvd.state import acquire_sample_lock, get_lock, release_sample_lock
+
+        ctx = registered_run
+
+        # Acquire lock
+        acquire_sample_lock("s1", ctx.run.run_id, state_dir=ctx.state_dir)
+        assert get_lock("s1", state_dir=ctx.state_dir) is not None
+
+        # Release lock
+        released = release_sample_lock("s1", ctx.run.run_id, state_dir=ctx.state_dir)
+        assert released is True
+
+        # Lock should be gone
+        assert get_lock("s1", state_dir=ctx.state_dir) is None
+
+    def test_release_sample_lock_wont_release_others(self, temp_state_dir):
+        """release_sample_lock won't release another run's lock."""
+        from py_nvd.state import acquire_sample_lock, get_lock, release_sample_lock
+
+        # Register two runs
+        set1 = compute_sample_set_id(["s1"])
+        set2 = compute_sample_set_id(["s2"])
+        run1 = register_run("run_001", set1, state_dir=temp_state_dir)
+        run2 = register_run("run_002", set2, state_dir=temp_state_dir)
+        assert run1 is not None
+        assert run2 is not None
+
+        # Run 1 acquires lock
+        acquire_sample_lock("s1", "run_001", state_dir=temp_state_dir)
+
+        # Run 2 tries to release - should fail
+        released = release_sample_lock("s1", "run_002", state_dir=temp_state_dir)
+        assert released is False
+
+        # Lock should still exist
+        lock = get_lock("s1", state_dir=temp_state_dir)
+        assert lock is not None
+        assert lock.run_id == "run_001"
+
+    def test_release_all_locks_for_run(self, registered_run: RunContext):
+        """release_all_locks_for_run releases all locks for a run."""
+        from py_nvd.state import (
+            acquire_sample_lock,
+            get_locks_for_run,
+            release_all_locks_for_run,
+        )
+
+        ctx = registered_run
+
+        # Acquire multiple locks
+        for sample_id in ["s1", "s2", "s3"]:
+            acquire_sample_lock(sample_id, ctx.run.run_id, state_dir=ctx.state_dir)
+
+        assert len(get_locks_for_run(ctx.run.run_id, state_dir=ctx.state_dir)) == 3
+
+        # Release all
+        count = release_all_locks_for_run(ctx.run.run_id, state_dir=ctx.state_dir)
+        assert count == 3
+
+        # All locks should be gone
+        assert len(get_locks_for_run(ctx.run.run_id, state_dir=ctx.state_dir)) == 0
+
+    def test_get_lock_returns_none_for_expired(self, temp_state_dir):
+        """get_lock returns None for expired locks by default."""
+        from datetime import datetime, timedelta, timezone
+
+        from py_nvd.state import get_lock
+
+        # Register a run
+        set1 = compute_sample_set_id(["s1"])
+        run = register_run("run_001", set1, state_dir=temp_state_dir)
+        assert run is not None
+
+        # Insert an expired lock
+        now = datetime.now(timezone.utc)
+        expired = now - timedelta(hours=1)
+        with connect(temp_state_dir) as conn:
+            conn.execute(
+                """INSERT INTO sample_locks 
+                   (sample_id, run_id, hostname, username, locked_at, expires_at)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                ("s1", "run_001", "host", "user", now.isoformat(), expired.isoformat()),
+            )
+            conn.commit()
+
+        # Default: expired locks are not returned
+        assert get_lock("s1", state_dir=temp_state_dir) is None
+
+        # With include_expired: expired locks are returned
+        lock = get_lock("s1", state_dir=temp_state_dir, include_expired=True)
+        assert lock is not None
+        assert lock.is_expired
+
+    def test_cleanup_expired_locks_removes_only_expired(self, temp_state_dir):
+        """cleanup_expired_locks removes only expired locks."""
+        from datetime import datetime, timedelta
+
+        from py_nvd.state import cleanup_expired_locks, list_locks
+
+        # Register a run
+        set1 = compute_sample_set_id(["s1", "s2"])
+        run = register_run("run_001", set1, state_dir=temp_state_dir)
+        assert run is not None
+
+        # Use local timezone to match cleanup_expired_locks implementation
+        now = datetime.now().astimezone()
+        expired = now - timedelta(hours=1)
+        active = now + timedelta(hours=72)
+
+        # Insert one expired and one active lock
+        with connect(temp_state_dir) as conn:
+            conn.execute(
+                """INSERT INTO sample_locks 
+                   (sample_id, run_id, hostname, username, locked_at, expires_at)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                ("s1", "run_001", "host", "user", now.isoformat(), expired.isoformat()),
+            )
+            conn.execute(
+                """INSERT INTO sample_locks 
+                   (sample_id, run_id, hostname, username, locked_at, expires_at)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                ("s2", "run_001", "host", "user", now.isoformat(), active.isoformat()),
+            )
+            conn.commit()
+
+        # Both locks exist (including expired)
+        all_locks = list_locks(state_dir=temp_state_dir, include_expired=True)
+        assert len(all_locks) == 2
+
+        # Cleanup
+        removed = cleanup_expired_locks(state_dir=temp_state_dir)
+        assert removed == 1
+
+        # Only active lock remains
+        remaining = list_locks(state_dir=temp_state_dir, include_expired=True)
+        assert len(remaining) == 1
+        assert remaining[0].sample_id == "s2"
+
+
+class TestEffectiveRunStatus:
+    """Tests for run status with TTL-based failure detection."""
+
+    @pytest.fixture
+    def temp_state_dir(self):
+        """Create a temporary directory for state database."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            yield Path(tmpdir)
+
+    def test_get_effective_run_status_returns_failed_for_stale(self, temp_state_dir):
+        """get_effective_run_status returns 'failed' for stale 'running' runs."""
+        from py_nvd.state import get_effective_run_status
+
+        # Insert a run that started long ago
+        with connect(temp_state_dir) as conn:
+            conn.execute(
+                """INSERT INTO runs (run_id, sample_set_id, started_at, status)
+                   VALUES (?, ?, ?, ?)""",
+                ("old_run", "set123", "2020-01-01T00:00:00", "running"),
+            )
+            conn.commit()
+
+        run = get_run("old_run", state_dir=temp_state_dir)
+        assert run is not None
+        assert run.status == "running"
+
+        # Effective status should be 'failed' (way past TTL)
+        effective = get_effective_run_status(run, ttl_hours=72)
+        assert effective == "failed"
+
+    def test_get_effective_run_status_returns_running_for_fresh(self, temp_state_dir):
+        """get_effective_run_status returns 'running' for fresh runs."""
+        from py_nvd.state import get_effective_run_status
+
+        set1 = compute_sample_set_id(["s1"])
+        run = register_run("fresh_run", set1, state_dir=temp_state_dir)
+        assert run is not None
+        assert run.status == "running"
+
+        # Effective status should still be 'running' (just started)
+        effective = get_effective_run_status(run, ttl_hours=72)
+        assert effective == "running"
+
+    def test_get_effective_run_status_returns_actual_for_completed(
+        self, temp_state_dir
+    ):
+        """get_effective_run_status returns actual status for non-running runs."""
+        from py_nvd.state import get_effective_run_status
+
+        set1 = compute_sample_set_id(["s1"])
+        run = register_run("completed_run", set1, state_dir=temp_state_dir)
+        assert run is not None
+
+        # Mark as completed
+        complete_run("completed_run", status="completed", state_dir=temp_state_dir)
+
+        run = get_run("completed_run", state_dir=temp_state_dir)
+        assert run is not None
+        assert run.status == "completed"
+
+        # Effective status should be 'completed' (not affected by TTL)
+        effective = get_effective_run_status(run, ttl_hours=72)
+        assert effective == "completed"
+
+    def test_mark_stale_runs_failed_updates_only_stale(self, temp_state_dir):
+        """mark_stale_runs_failed updates only stale 'running' runs."""
+        from datetime import datetime
+
+        from py_nvd.state import mark_stale_runs_failed
+
+        # Insert runs with different ages
+        with connect(temp_state_dir) as conn:
+            # Very old run (should be marked failed)
+            conn.execute(
+                """INSERT INTO runs (run_id, sample_set_id, started_at, status)
+                   VALUES (?, ?, ?, ?)""",
+                ("old_run", "set1", "2020-01-01T00:00:00", "running"),
+            )
+            # Fresh run (should stay running)
+            conn.execute(
+                """INSERT INTO runs (run_id, sample_set_id, started_at, status)
+                   VALUES (?, ?, ?, ?)""",
+                ("fresh_run", "set2", datetime.now().isoformat(), "running"),
+            )
+            # Already completed (should stay completed)
+            conn.execute(
+                """INSERT INTO runs (run_id, sample_set_id, started_at, completed_at, status)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (
+                    "done_run",
+                    "set3",
+                    "2020-01-01T00:00:00",
+                    "2020-01-02T00:00:00",
+                    "completed",
+                ),
+            )
+            conn.commit()
+
+        # Mark stale runs as failed
+        count = mark_stale_runs_failed(ttl_hours=72, state_dir=temp_state_dir)
+        assert count == 1  # Only old_run
+
+        # Verify statuses
+        old = get_run("old_run", state_dir=temp_state_dir)
+        assert old is not None
+        assert old.status == "failed"
+
+        fresh = get_run("fresh_run", state_dir=temp_state_dir)
+        assert fresh is not None
+        assert fresh.status == "running"
+
+        done = get_run("done_run", state_dir=temp_state_dir)
+        assert done is not None
+        assert done.status == "completed"

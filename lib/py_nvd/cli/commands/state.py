@@ -266,6 +266,20 @@ def state_info(
             "SELECT COUNT(*) FROM hit_observations",
         ).fetchone()[0]
 
+        # Get lock counts (handle case where table doesn't exist yet)
+        try:
+            locks_count = conn.execute("SELECT COUNT(*) FROM sample_locks").fetchone()[
+                0
+            ]
+            expired_locks_count = conn.execute(
+                "SELECT COUNT(*) FROM sample_locks WHERE expires_at < datetime('now')",
+            ).fetchone()[0]
+            active_locks_count = locks_count - expired_locks_count
+        except Exception:
+            locks_count = 0
+            expired_locks_count = 0
+            active_locks_count = 0
+
         # Get recent activity
         latest_run = conn.execute(
             "SELECT run_id, started_at FROM runs ORDER BY started_at DESC LIMIT 1",
@@ -294,6 +308,8 @@ def state_info(
                     "taxonomy_versions": taxonomy_count,
                     "hits": hits_count,
                     "hit_observations": hit_observations_count,
+                    "locks_active": active_locks_count,
+                    "locks_expired": expired_locks_count,
                 },
                 "latest_run": {
                     "run_id": latest_run["run_id"] if latest_run else None,
@@ -330,6 +346,11 @@ def state_info(
     table.add_row("Taxonomy Versions", str(taxonomy_count))
     table.add_row("Hits", str(hits_count))
     table.add_row("Hit Observations", str(hit_observations_count))
+    if active_locks_count > 0 or expired_locks_count > 0:
+        lock_str = str(active_locks_count)
+        if expired_locks_count > 0:
+            lock_str += f" [dim](+{expired_locks_count} expired)[/dim]"
+        table.add_row("Sample Locks", lock_str)
 
     console.print(table)
     console.print()
@@ -2530,4 +2551,442 @@ def state_reset(
         for table_name, count in deleted.items():
             if count > 0:
                 console.print(f"  {table_name}: {count}")
+        console.print()
+
+
+# =============================================================================
+# Sample Lock Commands
+# =============================================================================
+
+
+def _format_time_remaining(expires_at: str) -> str:
+    """Format time remaining until lock expires."""
+    from datetime import timezone
+
+    try:
+        expires = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+        if expires.tzinfo is None:
+            expires = expires.replace(tzinfo=timezone.utc)
+        now = datetime.now(timezone.utc)
+        remaining = expires - now
+
+        if remaining.total_seconds() <= 0:
+            return "[red]expired[/red]"
+
+        hours = int(remaining.total_seconds() // 3600)
+        minutes = int((remaining.total_seconds() % 3600) // 60)
+
+        if hours > 24:
+            days = hours // 24
+            hours = hours % 24
+            return f"{days}d {hours}h"
+        elif hours > 0:
+            return f"{hours}h {minutes}m"
+        else:
+            return f"{minutes}m"
+    except (ValueError, TypeError):
+        return "unknown"
+
+
+@state_app.command("locks")
+def state_locks(
+    run_id: Annotated[
+        str | None,
+        typer.Option(
+            "--run-id",
+            "-r",
+            help="Filter by run ID",
+        ),
+    ] = None,
+    include_expired: Annotated[
+        bool,
+        typer.Option(
+            "--expired",
+            "-e",
+            help="Include expired locks",
+        ),
+    ] = False,
+    json_output: Annotated[
+        bool,
+        typer.Option(
+            "--json",
+            help="Output as JSON",
+        ),
+    ] = False,
+) -> None:
+    """
+    List current sample locks.
+
+    Shows samples that are currently locked for processing, preventing
+    duplicate work across concurrent runs.
+
+    Examples:
+
+        # List all active locks
+        nvd state locks
+
+        # List locks for a specific run
+        nvd state locks --run-id happy_volta
+
+        # Include expired locks
+        nvd state locks --expired
+
+        # JSON output for scripting
+        nvd state locks --json
+    """
+    ensure_db_exists(json_output)
+
+    if run_id:
+        locks = state.get_locks_for_run(run_id, include_expired=include_expired)
+    else:
+        locks = state.list_locks(include_expired=include_expired)
+
+    if json_output:
+        _output_json(
+            [
+                {
+                    "sample_id": lock.sample_id,
+                    "run_id": lock.run_id,
+                    "hostname": lock.hostname,
+                    "username": lock.username,
+                    "locked_at": lock.locked_at,
+                    "expires_at": lock.expires_at,
+                    "is_expired": lock.is_expired,
+                }
+                for lock in locks
+            ]
+        )
+        return
+
+    if not locks:
+        if run_id:
+            info(f"No locks found for run '{run_id}'")
+        else:
+            info("No active locks")
+        return
+
+    console.print()
+    table = Table(show_header=True, header_style="bold cyan")
+    table.add_column("Sample ID")
+    table.add_column("Run ID")
+    table.add_column("Host")
+    table.add_column("User")
+    table.add_column("Locked At")
+    table.add_column("Expires In")
+
+    for lock in locks:
+        time_remaining = _format_time_remaining(lock.expires_at)
+        table.add_row(
+            lock.sample_id,
+            lock.run_id,
+            lock.hostname,
+            lock.username,
+            lock.locked_at[:19],  # Trim to datetime without timezone
+            time_remaining,
+        )
+
+    console.print(table)
+    console.print()
+    console.print(f"[bold]Total: {len(locks)} lock(s)[/bold]")
+    console.print()
+
+
+@state_app.command("unlock")
+def state_unlock(
+    sample_id: Annotated[
+        str | None,
+        typer.Option(
+            "--sample-id",
+            "-s",
+            help="Unlock specific sample",
+        ),
+    ] = None,
+    run_id: Annotated[
+        str | None,
+        typer.Option(
+            "--run-id",
+            "-r",
+            help="Unlock all samples for a run",
+        ),
+    ] = None,
+    force: Annotated[
+        bool,
+        typer.Option(
+            "--force",
+            "-f",
+            help="Skip confirmation prompt",
+        ),
+    ] = False,
+    steal: Annotated[
+        bool,
+        typer.Option(
+            "--steal",
+            help="Steal locks even if held by another run (requires --force)",
+        ),
+    ] = False,
+    json_output: Annotated[
+        bool,
+        typer.Option(
+            "--json",
+            help="Output as JSON",
+        ),
+    ] = False,
+) -> None:
+    """
+    Manually release sample locks.
+
+    Use this to unlock samples that are blocking a run due to a crashed
+    or abandoned previous run.
+
+    Examples:
+
+        # Unlock a specific sample (with confirmation)
+        nvd state unlock --sample-id sample_A
+
+        # Unlock all samples for a run
+        nvd state unlock --run-id happy_volta
+
+        # Force unlock without confirmation
+        nvd state unlock --run-id happy_volta --force
+
+        # Steal a lock held by another run
+        nvd state unlock --sample-id sample_A --steal --force
+    """
+    ensure_db_exists(json_output)
+
+    if not sample_id and not run_id:
+        if json_output:
+            _output_json({"error": "Must specify --sample-id or --run-id"})
+            raise typer.Exit(1)
+        error("Must specify --sample-id or --run-id")
+        raise typer.Exit(1)
+
+    if steal and not force:
+        if json_output:
+            _output_json({"error": "--steal requires --force"})
+            raise typer.Exit(1)
+        error("--steal requires --force")
+        raise typer.Exit(1)
+
+    # Collect locks to release
+    locks_to_release: list[state.SampleLock] = []
+
+    if sample_id:
+        lock = state.get_lock(sample_id, include_expired=True)
+        if lock:
+            locks_to_release.append(lock)
+        else:
+            if json_output:
+                _output_json({"message": f"No lock found for sample '{sample_id}'"})
+                return
+            info(f"No lock found for sample '{sample_id}'")
+            return
+
+    if run_id:
+        run_locks = state.get_locks_for_run(run_id, include_expired=True)
+        locks_to_release.extend(run_locks)
+
+    if not locks_to_release:
+        if json_output:
+            _output_json({"message": "No locks to release"})
+            return
+        info("No locks to release")
+        return
+
+    # Deduplicate by sample_id
+    seen = set()
+    unique_locks = []
+    for lock in locks_to_release:
+        if lock.sample_id not in seen:
+            seen.add(lock.sample_id)
+            unique_locks.append(lock)
+    locks_to_release = unique_locks
+
+    # Show what will be unlocked
+    if not json_output and not force:
+        console.print()
+        console.print(
+            f"[bold yellow]Warning:[/bold yellow] About to release {len(locks_to_release)} lock(s):"
+        )
+        console.print()
+
+        table = Table(show_header=True, header_style="bold cyan")
+        table.add_column("Sample ID")
+        table.add_column("Run ID")
+        table.add_column("Host")
+        table.add_column("User")
+
+        for lock in locks_to_release:
+            table.add_row(
+                lock.sample_id,
+                lock.run_id,
+                lock.hostname,
+                lock.username,
+            )
+
+        console.print(table)
+        console.print()
+
+        confirm = typer.confirm("Release these locks?", default=False)
+        if not confirm:
+            info("Aborted")
+            raise typer.Exit(0)
+
+    # Release locks
+    released_count = 0
+    with connect() as conn:
+        for lock in locks_to_release:
+            if steal:
+                # Delete regardless of run_id
+                cursor = conn.execute(
+                    "DELETE FROM sample_locks WHERE sample_id = ?",
+                    (lock.sample_id,),
+                )
+            else:
+                # Only delete if we "own" it (same run_id as specified, or any if only sample_id given)
+                if run_id:
+                    cursor = conn.execute(
+                        "DELETE FROM sample_locks WHERE sample_id = ? AND run_id = ?",
+                        (lock.sample_id, run_id),
+                    )
+                else:
+                    cursor = conn.execute(
+                        "DELETE FROM sample_locks WHERE sample_id = ?",
+                        (lock.sample_id,),
+                    )
+            released_count += cursor.rowcount
+        conn.commit()
+
+    if json_output:
+        _output_json(
+            {
+                "success": True,
+                "released_count": released_count,
+                "samples": [lock.sample_id for lock in locks_to_release],
+            }
+        )
+    else:
+        success(f"Released {released_count} lock(s)")
+
+
+@state_app.command("cleanup")
+def state_cleanup(
+    stale_after: Annotated[
+        int,
+        typer.Option(
+            "--stale-after",
+            help="Hours after which locks/runs are considered stale",
+        ),
+    ] = state.DEFAULT_LOCK_TTL_HOURS,
+    mark_failed: Annotated[
+        bool,
+        typer.Option(
+            "--mark-failed/--no-mark-failed",
+            help="Mark stale 'running' runs as 'failed'",
+        ),
+    ] = True,
+    dry_run: Annotated[
+        bool,
+        typer.Option(
+            "--dry-run",
+            "-n",
+            help="Show what would be cleaned without doing it",
+        ),
+    ] = False,
+    json_output: Annotated[
+        bool,
+        typer.Option(
+            "--json",
+            help="Output as JSON",
+        ),
+    ] = False,
+) -> None:
+    """
+    Clean up expired locks and stale runs.
+
+    Removes expired sample locks and optionally marks runs that have been
+    'running' for longer than the TTL as 'failed'.
+
+    Examples:
+
+        # Clean up with default TTL (72 hours)
+        nvd state cleanup
+
+        # Use custom stale threshold
+        nvd state cleanup --stale-after 24
+
+        # Dry run - show what would be cleaned
+        nvd state cleanup --dry-run
+
+        # Only clean locks, don't mark runs as failed
+        nvd state cleanup --no-mark-failed
+    """
+    ensure_db_exists(json_output)
+
+    results = {
+        "expired_locks_removed": 0,
+        "stale_runs_marked_failed": 0,
+    }
+
+    if dry_run:
+        # Count what would be cleaned
+        locks = state.list_locks(include_expired=True)
+        expired_locks = [lock for lock in locks if lock.is_expired]
+        results["expired_locks_removed"] = len(expired_locks)
+
+        if mark_failed:
+            # Count stale running runs
+            from datetime import timedelta, timezone
+
+            cutoff = datetime.now(timezone.utc) - timedelta(hours=stale_after)
+            runs = state.list_runs(status="running")
+            stale_runs = []
+            for run in runs:
+                started = datetime.fromisoformat(run.started_at.replace("Z", "+00:00"))
+                if started.tzinfo is None:
+                    started = started.replace(tzinfo=timezone.utc)
+                if started < cutoff:
+                    stale_runs.append(run)
+            results["stale_runs_marked_failed"] = len(stale_runs)
+
+        if json_output:
+            _output_json({"dry_run": True, **results})
+        else:
+            console.print()
+            info("Dry run - no changes made")
+            console.print()
+            console.print(
+                f"  Expired locks that would be removed: {results['expired_locks_removed']}"
+            )
+            if mark_failed:
+                console.print(
+                    f"  Stale runs that would be marked failed: {results['stale_runs_marked_failed']}"
+                )
+            console.print()
+        return
+
+    # Actually clean up
+    results["expired_locks_removed"] = state.cleanup_expired_locks()
+
+    if mark_failed:
+        results["stale_runs_marked_failed"] = state.mark_stale_runs_failed(
+            ttl_hours=stale_after
+        )
+
+    if json_output:
+        _output_json({"success": True, **results})
+    else:
+        total = sum(results.values())
+        if total == 0:
+            info("Nothing to clean up")
+        else:
+            success("Cleanup complete")
+            if results["expired_locks_removed"] > 0:
+                console.print(
+                    f"  Expired locks removed: {results['expired_locks_removed']}"
+                )
+            if results["stale_runs_marked_failed"] > 0:
+                console.print(
+                    f"  Stale runs marked failed: {results['stale_runs_marked_failed']}"
+                )
         console.print()

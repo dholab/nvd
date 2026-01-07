@@ -27,7 +27,7 @@ import sys
 from pathlib import Path
 
 from loguru import logger
-from py_nvd.state import complete_run
+from py_nvd.state import complete_run, release_all_locks_for_run
 
 
 def configure_logging(verbosity: int) -> None:
@@ -100,6 +100,16 @@ def main() -> None:
             # Could happen if CHECK_RUN_STATE failed to register the run
             logger.warning(f"Run {args.run_id} not found in state database")
             print(f"Warning: Run {args.run_id} not found in state database")
+
+        # Release any remaining locks for this run (safety net)
+        # Should be 0 if all samples released properly, but catches edge cases
+        locks_released = release_all_locks_for_run(
+            run_id=args.run_id,
+            state_dir=args.state_dir,
+        )
+        if locks_released > 0:
+            logger.info(f"Released {locks_released} remaining sample lock(s)")
+            print(f"Released {locks_released} remaining sample lock(s)")
 
     except Exception as e:
         logger.error(f"Failed to complete run: {e}")

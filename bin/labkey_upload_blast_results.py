@@ -403,6 +403,13 @@ def main():
                                     sample_set_id=args.sample_set_id,
                                     state_dir=args.state_dir,
                                 )
+                                # Release sample lock after successful upload
+                                if args.run_id:
+                                    nvd_state.release_sample_lock(
+                                        sample_id=str(sample_id),
+                                        run_id=args.run_id,
+                                        state_dir=args.state_dir,
+                                    )
                             log_entries.append(
                                 f"  Recorded uploads for {len(uploaded_samples)} samples in state database",
                             )

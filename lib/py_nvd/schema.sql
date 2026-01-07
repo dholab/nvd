@@ -143,3 +143,24 @@ CREATE INDEX IF NOT EXISTS idx_hit_observations_sample
     ON hit_observations(sample_id);
 CREATE INDEX IF NOT EXISTS idx_hit_observations_hit_key 
     ON hit_observations(hit_key);
+
+-- Sample-level processing locks to prevent duplicate work across concurrent runs.
+-- Locks are acquired at run start and released on completion/upload.
+-- TTL-based expiration handles crashed runs (default 72 hours).
+-- Machine fingerprint (hostname + username) enables:
+--   - Legitimate resume: same run_id + same fingerprint → refresh TTL
+--   - Conflict detection: same run_id + different fingerprint + active → error
+--   - Crash recovery: same run_id + different fingerprint + expired → allow
+CREATE TABLE IF NOT EXISTS sample_locks (
+    sample_id TEXT PRIMARY KEY,
+    run_id TEXT NOT NULL REFERENCES runs(run_id),
+    hostname TEXT NOT NULL,
+    username TEXT NOT NULL,
+    locked_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_sample_locks_run_id 
+    ON sample_locks(run_id);
+CREATE INDEX IF NOT EXISTS idx_sample_locks_expires_at 
+    ON sample_locks(expires_at);

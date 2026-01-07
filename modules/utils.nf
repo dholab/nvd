@@ -101,6 +101,7 @@ process REGISTER_HITS {
     script:
     def blast_db_arg = params.blast_db_version ? "--blast-db-version '${params.blast_db_version}'" : ""
     def stat_db_arg = params.stat_db_version ? "--stat-db-version '${params.stat_db_version}'" : ""
+    def labkey_arg = params.labkey ? "--labkey" : ""
     """
     set -o pipefail
     register_hits.py \\
@@ -112,6 +113,7 @@ process REGISTER_HITS {
         --run-id '${workflow.runName}' \\
         ${blast_db_arg} \\
         ${stat_db_arg} \\
+        ${labkey_arg} \\
         -v 2>&1 | tee ${sample_id}_hits_registered.log
     """
 }

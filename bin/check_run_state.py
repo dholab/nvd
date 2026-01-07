@@ -44,7 +44,9 @@ from pathlib import Path
 
 from loguru import logger
 from py_nvd.state import (
+    acquire_sample_locks,
     compute_sample_set_id,
+    DEFAULT_LOCK_TTL_HOURS,
     get_uploaded_sample_ids,
     register_run,
 )
@@ -60,12 +62,14 @@ class RunRegistration:
         sample_ids: List of sample IDs in this run
         state_dir: Path to state directory (None for default)
         experiment_id: Optional experiment ID for tracking
+        lock_ttl_hours: Lock TTL in hours (default: 72)
     """
 
     run_id: str
     sample_ids: list[str]
     state_dir: str | None = None
     experiment_id: int | None = None
+    lock_ttl_hours: int = DEFAULT_LOCK_TTL_HOURS
 
     @property
     def sample_set_id(self) -> str:
@@ -165,6 +169,79 @@ class RunRegistration:
         if self.experiment_id:
             logger.debug(f"  Experiment ID: {self.experiment_id}")
 
+    def acquire_locks(self) -> list[str]:
+        """
+        Acquire sample locks to prevent duplicate processing.
+
+        Returns:
+            List of sample IDs that were successfully locked
+
+        Raises:
+            SystemExit: If ALL samples are locked by other runs
+        """
+        logger.info("Acquiring sample locks...")
+
+        acquired, conflicts = acquire_sample_locks(
+            self.sample_ids,
+            self.run_id,
+            ttl_hours=self.lock_ttl_hours,
+            state_dir=self.state_dir,
+        )
+
+        if conflicts:
+            # Group conflicts by run_id for cleaner logging
+            by_run: dict[str, list[str]] = {}
+            for lock in conflicts:
+                by_run.setdefault(lock.run_id, []).append(lock.sample_id)
+
+            # Check if this is a fingerprint conflict (same run_id, different machine)
+            same_run_conflicts = [c for c in conflicts if c.run_id == self.run_id]
+            if same_run_conflicts:
+                lock = same_run_conflicts[0]
+                logger.error("=" * 60)
+                logger.error("RUN CONFLICT DETECTED")
+                logger.error("=" * 60)
+                logger.error(
+                    f"Run '{self.run_id}' is already active on another machine!"
+                )
+                logger.error(f"  Hostname: {lock.hostname}")
+                logger.error(f"  Username: {lock.username}")
+                logger.error(f"  Locked at: {lock.locked_at}")
+                logger.error(f"  Expires at: {lock.expires_at}")
+                logger.error("=" * 60)
+                logger.error("This run_id cannot be resumed from this machine.")
+                logger.error("If the other run crashed, wait for lock expiry or use:")
+                logger.error(f"  nvd state unlock --run-id {self.run_id} --force")
+                logger.error("=" * 60)
+                sys.exit(1)
+
+            # Different runs hold the locks
+            logger.warning("=" * 60)
+            logger.warning(f"{len(conflicts)} samples locked by other runs:")
+            for run_id, samples in by_run.items():
+                logger.warning(f"  Run '{run_id}': {len(samples)} samples")
+                for sid in samples[:5]:
+                    logger.warning(f"    - {sid}")
+                if len(samples) > 5:
+                    logger.warning(f"    ... and {len(samples) - 5} more")
+            logger.warning("These samples will be SKIPPED in this run.")
+            logger.warning("=" * 60)
+
+        if not acquired:
+            logger.error("=" * 60)
+            logger.error("ALL SAMPLES LOCKED")
+            logger.error("=" * 60)
+            logger.error("All samples are currently being processed by other runs.")
+            logger.error("No samples available to process.")
+            logger.error("=" * 60)
+            sys.exit(1)
+
+        logger.info(f"Acquired locks for {len(acquired)} samples")
+        if conflicts:
+            logger.info(f"Skipping {len(conflicts)} samples (locked by other runs)")
+
+        return acquired
+
 
 def configure_logging(verbose: bool = False) -> None:  # noqa: FBT001, FBT002
     """Configure loguru to write to stderr only."""
@@ -243,6 +320,12 @@ def parse_args() -> argparse.Namespace:
         help="STAT database version (ignored - now passed to register_hits.py)",
     )
     parser.add_argument(
+        "--lock-ttl",
+        type=int,
+        default=DEFAULT_LOCK_TTL_HOURS,
+        help=f"Lock TTL in hours (default: {DEFAULT_LOCK_TTL_HOURS})",
+    )
+    parser.add_argument(
         "-v",
         "--verbose",
         action="store_true",
@@ -288,6 +371,7 @@ def main() -> None:
         sample_ids=sample_ids,
         state_dir=args.state_dir,
         experiment_id=args.experiment_id,
+        lock_ttl_hours=args.lock_ttl,
     )
 
     logger.debug(f"Computed sample_set_id: {registration.sample_set_id}")
@@ -296,15 +380,27 @@ def main() -> None:
     samples_to_process = registration.check_existing()
     registration.register()
 
+    # Acquire locks for samples we'll process
+    locked_samples = registration.acquire_locks()
+
+    # The actual samples to process are those that are:
+    # 1. Not already uploaded (samples_to_process)
+    # 2. Successfully locked (locked_samples)
+    final_samples = [s for s in samples_to_process if s in locked_samples]
+
     logger.info("=" * 60)
     logger.info("RUN STATE CHECK COMPLETE")
     logger.info("=" * 60)
-    logger.info(f"Samples to process: {len(samples_to_process)}")
-    if len(samples_to_process) < len(sample_ids):
-        logger.info(
-            f"Samples already uploaded (will skip upload): "
-            f"{len(sample_ids) - len(samples_to_process)}",
-        )
+    logger.info(f"Samples to process: {len(final_samples)}")
+    if len(final_samples) < len(sample_ids):
+        skipped_uploaded = len(sample_ids) - len(samples_to_process)
+        skipped_locked = len(samples_to_process) - len(final_samples)
+        if skipped_uploaded > 0:
+            logger.info(
+                f"Samples already uploaded (will skip upload): {skipped_uploaded}"
+            )
+        if skipped_locked > 0:
+            logger.info(f"Samples locked by other runs (skipped): {skipped_locked}")
 
     # Output sample_set_id to stdout for Nextflow to capture
     # IMPORTANT: end="" prevents trailing newline - stdout emit captures raw text

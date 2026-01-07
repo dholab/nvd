@@ -216,6 +216,46 @@ class SraDownload:
 
 
 @dataclass(frozen=True)
+class SampleLock:
+    """
+    A processing lock on a sample to prevent duplicate work.
+
+    Locks are acquired at run start and released on completion/upload.
+    TTL-based expiration handles crashed runs. Machine fingerprint
+    (hostname + username) enables conflict detection when the same
+    run_id is resumed from different machines.
+    """
+
+    sample_id: str
+    run_id: str
+    hostname: str
+    username: str
+    locked_at: str  # ISO8601
+    expires_at: str  # ISO8601
+
+    @property
+    def is_expired(self) -> bool:
+        """Check if this lock has expired."""
+        from datetime import datetime, timezone
+
+        expires = datetime.fromisoformat(self.expires_at.replace("Z", "+00:00"))
+        # Handle naive datetimes by assuming UTC
+        if expires.tzinfo is None:
+            expires = expires.replace(tzinfo=timezone.utc)
+        return datetime.now(timezone.utc) > expires
+
+    @property
+    def fingerprint(self) -> tuple[str, str]:
+        """Return (hostname, username) tuple for ownership comparison."""
+        return (self.hostname, self.username)
+
+    @classmethod
+    def from_row(cls, row: Row) -> Self:
+        """Construct a SampleLock from a sqlite3.Row."""
+        return _from_row(cls, row)
+
+
+@dataclass(frozen=True)
 class Preset:
     """A named collection of run parameters."""
 

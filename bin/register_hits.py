@@ -39,7 +39,7 @@ from Bio import SeqIO
 from loguru import logger
 from py_nvd.db import connect
 from py_nvd.hits import calculate_gc_content, compress_sequence, compute_hit_key
-from py_nvd.state import mark_sample_completed
+from py_nvd.state import mark_sample_completed, release_sample_lock
 
 
 @dataclass(frozen=True)
@@ -310,6 +310,12 @@ def main() -> None:
         help="STAT database version for provenance tracking",
     )
     parser.add_argument(
+        "--labkey",
+        action="store_true",
+        default=False,
+        help="LabKey integration is enabled (lock released after upload, not here)",
+    )
+    parser.add_argument(
         "-v",
         "--verbose",
         action="count",
@@ -386,6 +392,22 @@ def main() -> None:
         # Log but don't fail - hits are registered, that's the critical part
         # State tracking is for resume/upload gating, not data integrity
         logger.warning(f"Failed to mark sample completed (non-fatal): {e}")
+
+    # Release sample lock if LabKey is disabled
+    # When LabKey is enabled, locks are released after successful upload
+    if not args.labkey:
+        try:
+            released = release_sample_lock(
+                sample_id=context.sample_id,
+                run_id=args.run_id,
+                state_dir=str(context.state_dir),
+            )
+            if released:
+                logger.info(f"Released lock for sample {context.sample_id}")
+            else:
+                logger.debug(f"No lock to release for sample {context.sample_id}")
+        except Exception as e:
+            logger.warning(f"Failed to release sample lock (non-fatal): {e}")
 
 
 if __name__ == "__main__":
