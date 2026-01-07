@@ -1848,6 +1848,9 @@ def _get_table_counts(conn) -> dict[str, int]:
         "hit_observations": conn.execute(
             "SELECT COUNT(*) FROM hit_observations",
         ).fetchone()[0],
+        "sample_locks": conn.execute(
+            "SELECT COUNT(*) FROM sample_locks",
+        ).fetchone()[0],
     }
 
 
@@ -2002,6 +2005,9 @@ _IMPORT_TABLES = [
     ("presets", ["name"], ["created_at"]),
     ("taxonomy_versions", ["run_id"], ["file_hash", "recorded_at"]),
     ("sra_cache", ["srr_accession"], ["download_path", "downloaded_at"]),
+    ("hits", ["hit_key"], ["sequence_length", "first_seen_date"]),
+    ("hit_observations", ["id"], ["hit_key", "sample_id", "run_date"]),
+    ("sample_locks", ["sample_id"], ["run_id", "locked_at", "expires_at"]),
 ]
 
 
