@@ -123,11 +123,8 @@ workflow STAT_BLAST_WORKFLOW {
         ch_stat_annotation
     )
 
-    // Channel for contigs - DSL2 automatically forks when used by multiple consumers
-    ch_contigs = EXTRACT_HUMAN_VIRUSES.out.contigs
-
     CLASSIFY_WITH_MEGABLAST(
-        ch_contigs,
+        EXTRACT_HUMAN_VIRUSES.out.contigs,
         ch_blast_db_files
     )
 
@@ -137,9 +134,6 @@ workflow STAT_BLAST_WORKFLOW {
         ch_blast_db_files
     )
 
-    // Channel for merged BLAST results - DSL2 automatically forks when used by multiple consumers
-    ch_merged_results = CLASSIFY_WITH_BLASTN.out.merged_results
-
     // Convert run_context from queue channel to value channel so it can be
     // consumed by multiple processes (hit registration, LabKey uploads, etc.).
     // This is safe because CHECK_RUN_STATE emits exactly once per pipeline run.
@@ -147,8 +141,10 @@ workflow STAT_BLAST_WORKFLOW {
 
     // Register hits with idempotent keys in the state database.
     // Join contigs with merged BLAST results, then combine with run context.
-    ch_register_hits_input = ch_contigs
-        .join(ch_merged_results, by: 0)
+    // DSL2 automatically forks EXTRACT_HUMAN_VIRUSES.out.contigs and 
+    // CLASSIFY_WITH_BLASTN.out.merged_results for multiple consumers.
+    ch_register_hits_input = EXTRACT_HUMAN_VIRUSES.out.contigs
+        .join(CLASSIFY_WITH_BLASTN.out.merged_results, by: 0)
         .combine(ch_run_context)
         .map { sample_id, contigs, blast_results, sample_set_id, state_dir ->
             tuple(sample_id, contigs, blast_results, sample_set_id, state_dir)
@@ -164,9 +160,9 @@ workflow STAT_BLAST_WORKFLOW {
 
     if (params.labkey) {
         // Check LabKey guard list - ensures experiment_id hasn't been uploaded before
-        // Uses .first() to get a value channel trigger (DSL2 auto-forks ch_merged_results)
+        // Uses .first() to get a value channel trigger
         VALIDATE_LK_EXP_FRESH(
-            ch_merged_results.first()
+            CLASSIFY_WITH_BLASTN.out.merged_results.first()
         )
 
         // Bundle and upload - gates ensure both checks passed:
@@ -178,8 +174,8 @@ workflow STAT_BLAST_WORKFLOW {
             .map { _ready, _validated -> true }
 
         BUNDLE_BLAST_FOR_LABKEY(
-            ch_merged_results,
-            ch_contigs,
+            CLASSIFY_WITH_BLASTN.out.merged_results,
+            EXTRACT_HUMAN_VIRUSES.out.contigs,
             COUNT_READS.out.counts,
             params.experiment_id,
             workflow.runName,
@@ -215,7 +211,7 @@ workflow STAT_BLAST_WORKFLOW {
         "completed"
     )
 
-    ch_completion = ch_merged_results.map { _results -> "STAT+BLAST workflow complete!" }
+    ch_completion = CLASSIFY_WITH_BLASTN.out.merged_results.map { _results -> "STAT+BLAST workflow complete!" }
 
     emit:
     completion = ch_completion
