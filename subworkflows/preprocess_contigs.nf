@@ -19,7 +19,7 @@ workflow PREPROCESS_CONTIGS {
     RUN_SPADES(
         EXTRACT_HUMAN_VIRUS_READS.out
             .map { id, platform, read_structure, fq -> tuple(id, platform, read_structure, fq, file(fq).countFastq()) }
-            .filter { _id, _platform, _read_structure, _fq, count -> count > 0 }
+            .filter { _id, _platform, _read_structure, _fq, count -> count >= 100 }
             .map { id, platform, read_structure, fq, _count -> tuple(id, platform, read_structure, file(fq)) }
     )
 
