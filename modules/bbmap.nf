@@ -79,12 +79,14 @@ process DEDUP_WITH_CLUMPIFY {
 	tuple val(sample_id), val(platform), val(read_structure), path("${sample_id}.dedup.fastq.gz")
 
 	script:
+	def int_flag = read_structure == "interleaved" ? "int=t" : ""
 	"""
 	clumpify.sh \\
 	in=${reads} \\
 	out="${sample_id}.dedup.fastq.gz" \\
 	dedupe=2 \\
 	reorder=p \\
+	${int_flag} \\
 	threads=${task.cpus} -eoom
 	"""
 
