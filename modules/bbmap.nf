@@ -1,6 +1,6 @@
 process MERGE_PAIRS {
 
-	/* */
+	/* Merge overlapping paired-end reads into single longer reads */
 
 	tag "${sample_id}"
 	label "medium"
@@ -11,10 +11,10 @@ process MERGE_PAIRS {
 	cpus 4
 
 	input:
-	tuple val(sample_id), path(reads1), path(reads2)
+	tuple val(sample_id), val(platform), path(reads1), path(reads2)
 
 	output:
-	tuple val(sample_id), val("illumina"), path("${sample_id}.merged.fastq.gz")
+	tuple val(sample_id), val(platform), val("merged"), path("${sample_id}.merged.fastq.gz")
 
 	script:
 	"""
@@ -30,7 +30,7 @@ process MERGE_PAIRS {
 
 process INTERLEAVE_PAIRS {
 
-	/* */
+	/* Interleave paired-end reads into a single file */
 
 	tag "${sample_id}"
 	label "medium"
@@ -44,7 +44,7 @@ process INTERLEAVE_PAIRS {
 	tuple val(sample_id), val(platform), path(reads1), path(reads2)
 
 	output:
-	tuple val(sample_id), val(platform), path("${sample_id}.interleaved.fastq.gz")
+	tuple val(sample_id), val(platform), val("interleaved"), path("${sample_id}.interleaved.fastq.gz")
 
 	when:
 	params.tools
@@ -62,7 +62,7 @@ process INTERLEAVE_PAIRS {
 
 process DEDUP_WITH_CLUMPIFY {
 
-    /* */
+    /* Deduplicate reads using clumpify */
 
 	tag "${sample_id}"
 	label "ludicrous"
@@ -73,10 +73,10 @@ process DEDUP_WITH_CLUMPIFY {
 	cpus 4
 
 	input:
-	tuple val(sample_id), val(platform), path(reads)
+	tuple val(sample_id), val(platform), val(read_structure), path(reads)
 
 	output:
-	tuple val(sample_id), val(platform), path("${sample_id}.dedup.fastq.gz")
+	tuple val(sample_id), val(platform), val(read_structure), path("${sample_id}.dedup.fastq.gz")
 
 	script:
 	"""
@@ -103,10 +103,10 @@ process TRIM_ADAPTERS {
 	cpus 4
 
 	input:
-	tuple val(sample_id), val(platform), path(reads)
+	tuple val(sample_id), val(platform), val(read_structure), path(reads)
 
 	output:
-	tuple val(sample_id), val(platform), path("${sample_id}.trimmed.fastq.gz")
+	tuple val(sample_id), val(platform), val(read_structure), path("${sample_id}.trimmed.fastq.gz")
 
 	script:
 	"""
@@ -126,7 +126,7 @@ process TRIM_ADAPTERS {
 
 process FILTER_READS {
 
-	/* Filter reads by quality and length */
+	/* Filter reads by quality and length (pair-aware for interleaved reads) */
 
 	tag "${sample_id}"
 	label "high"
@@ -137,17 +137,19 @@ process FILTER_READS {
 	cpus 4
 
 	input:
-	tuple val(sample_id), val(platform), path(reads), val(min_quality)
+	tuple val(sample_id), val(platform), val(read_structure), path(reads), val(min_quality)
 
 	output:
-	tuple val(sample_id), val(platform), path("${sample_id}.filtered.fastq.gz")
+	tuple val(sample_id), val(platform), val(read_structure), path("${sample_id}.filtered.fastq.gz")
 
 	script:
 	def max_len_arg = params.max_read_length ? "maxlength=${params.max_read_length}" : ""
+	def interleaved_arg = read_structure == "interleaved" ? "int=t" : ""
 	"""
 	reformat.sh \\
 		in=${reads} \\
 		out=${sample_id}.filtered.fastq.gz \\
+		${interleaved_arg} \\
 		minavgquality=${min_quality} \\
 		minlength=${params.min_read_length} \\
 		${max_len_arg} \\
@@ -156,9 +158,39 @@ process FILTER_READS {
 	"""
 }
 
+process REPAIR_PAIRS {
+
+	/* Repair interleaved paired-end reads, discarding orphans */
+
+	tag "${sample_id}"
+	label "medium"
+
+	errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
+	maxRetries 2
+
+	cpus 4
+
+	input:
+	tuple val(sample_id), val(platform), val(read_structure), path(reads)
+
+	output:
+	tuple val(sample_id), val(platform), val(read_structure), path("${sample_id}.repaired.fastq.gz")
+
+	script:
+	"""
+	repair.sh \\
+		in=${reads} \\
+		out=${sample_id}.repaired.fastq.gz \\
+		outs=${sample_id}.singletons.fastq.gz \\
+		repair=t \\
+		threads=${task.cpus} \\
+		-eoom
+	"""
+}
+
 process MASK_LOW_COMPLEXITY {
 
-	/* */
+	/* Mask low-complexity regions in contigs */
 
 	tag "${sample_id}"
 	label "medium"
@@ -170,10 +202,10 @@ process MASK_LOW_COMPLEXITY {
 	memory 8.GB
 
 	input:
-	tuple val(sample_id), val(platform), path(contigs)
+	tuple val(sample_id), val(platform), val(read_structure), path(contigs)
 
 	output:
-	tuple val(sample_id), val(platform), path("${sample_id}.masked.fasta")
+	tuple val(sample_id), val(platform), val(read_structure), path("${sample_id}.masked.fasta")
 
 	script:
 	"""
@@ -194,7 +226,7 @@ process MASK_LOW_COMPLEXITY {
 
 process FILTER_SHORT_CONTIGS {
 
-	/* */
+	/* Filter out short contigs */
 
 	tag "${sample_id}"
 	label "medium"
@@ -206,10 +238,10 @@ process FILTER_SHORT_CONTIGS {
 	memory 8.GB
 
 	input:
-	tuple val(sample_id), val(platform), path(masked_contigs)
+	tuple val(sample_id), val(platform), val(read_structure), path(masked_contigs)
 
 	output:
-	tuple val(sample_id), val(platform), path("${sample_id}.short_filtered.fasta")
+	tuple val(sample_id), val(platform), val(read_structure), path("${sample_id}.short_filtered.fasta")
 
 	script:
 	"""

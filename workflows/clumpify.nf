@@ -3,7 +3,7 @@ include { SCRUB_HUMAN_READS } from "../modules/stat"
 
 workflow CLUMPIFY_WORKFLOW {
     take:
-    ch_gathered_reads
+    ch_gathered_reads  // tuple(sample_id, platform, read_structure, fastq)
     ch_start_gate
 
     main:
@@ -13,7 +13,7 @@ workflow CLUMPIFY_WORKFLOW {
 
     // Add human read scrubbing step for public posting of clumpified data to SRA
     CLUMP_READS(
-        gated_reads.map { id, _platform, reads -> tuple(id, file(reads)) }
+        gated_reads.map { id, _platform, _read_structure, reads -> tuple(id, file(reads)) }
     )
 
     // Resolve human database path, supporting deprecated human_read_scrub param

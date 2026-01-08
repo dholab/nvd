@@ -7,10 +7,10 @@ process EXTRACT_HUMAN_VIRUS_READS {
 	maxRetries 2
 
     input:
-    tuple val(sample_id), val(sample_type), path(fastq), path(stat_dbss), path(stat_annotation), path(human_virus_taxlist)
+    tuple val(sample_id), val(platform), val(read_structure), path(fastq), path(stat_dbss), path(stat_annotation), path(human_virus_taxlist)
 
     output:
-    tuple val(sample_id), val(sample_type), path("*.f*q.gz")
+    tuple val(sample_id), val(platform), val(read_structure), path("*.f*q.gz")
 
     when:
     params.tools && (params.tools.contains("nvd") || params.tools.contains("stat") || params.tools.contains("blast") || params.tools.contains("stat_blast") || params.tools.contains("stast") || params.tools.contains("all"))
@@ -42,7 +42,7 @@ process CLASSIFY_CONTIGS_FIRST_PASS {
 	maxRetries 2
 
     input:
-    tuple val(sample_id), val(platform), path(filtered_contigs), path(stat_index)
+    tuple val(sample_id), val(platform), val(read_structure), path(filtered_contigs), path(stat_index)
 
     output:
     tuple val(sample_id), path(filtered_contigs), path("${sample_id}.firstpass.txt")

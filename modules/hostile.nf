@@ -11,10 +11,10 @@ process SCRUB_HOST_READS {
 	cpus 4
 
 	input:
-	tuple val(sample_id), val(platform), path(reads)
+	tuple val(sample_id), val(platform), val(read_structure), path(reads)
 
 	output:
-	tuple val(sample_id), val(platform), path("${sample_id}.scrubbed.fastq.gz")
+	tuple val(sample_id), val(platform), val(read_structure), path("${sample_id}.scrubbed.fastq.gz")
 
 	script:
 	def aligner = platform == "illumina" ? "bowtie2" : "minimap2"

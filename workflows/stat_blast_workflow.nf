@@ -24,7 +24,7 @@ include { REGISTER_LK_EXPERIMENT } from "../modules/validate_blast_labkey.nf"
 
 workflow STAT_BLAST_WORKFLOW {
     take:
-    ch_sample_fastqs // Queue channel of sample IDs, platforms, and (interleaved) FASTQ files: tuple val(sample_id), val(platform), path(fastq)
+    ch_sample_fastqs // Queue channel: tuple val(sample_id), val(platform), val(read_structure), path(fastq)
 
     main:
     // Check if STAT+BLAST workflow should run

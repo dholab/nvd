@@ -1,15 +1,15 @@
 process COUNT_READS {
-    tag "${meta}"
+    tag "${sample_id}"
     label 'low'
 
 	errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
 	maxRetries 2
 
     input:
-    tuple val(meta), val(library), path(fastq)
+    tuple val(sample_id), val(platform), val(read_structure), path(fastq)
 
     output:
-    tuple val(meta), env(total_reads), emit: counts
+    tuple val(sample_id), env(total_reads), emit: counts
 
     when:
     params.tools && (params.tools.contains("nvd") || params.tools.contains("stat") || params.tools.contains("blast") || params.tools.contains("stat_blast") || params.tools.contains("stast") || params.tools.contains("all"))

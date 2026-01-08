@@ -11,8 +11,8 @@ include { COUNT_MAPPED_READS                  } from "../modules/samtools"
 
 workflow EXTRACT_HUMAN_VIRUSES {
     take:
-    ch_filtered_reads
-    ch_viral_reads
+    ch_filtered_contigs  // tuple(sample_id, platform, read_structure, fasta) from PREPROCESS_CONTIGS
+    ch_viral_reads       // tuple(sample_id, platform, read_structure, fastq) from EXTRACT_HUMAN_VIRUS_READS
     ch_stat_dbs
     ch_stat_dbss
     ch_stat_annotation
@@ -20,7 +20,7 @@ workflow EXTRACT_HUMAN_VIRUSES {
 
     main:
     CLASSIFY_CONTIGS_FIRST_PASS(
-        ch_filtered_reads.combine(ch_stat_dbs)
+        ch_filtered_contigs.combine(ch_stat_dbs)
     )
 
     GENERATE_CONTIGS_TAXA_LIST(
@@ -58,17 +58,17 @@ workflow EXTRACT_HUMAN_VIRUSES {
                 hits_file.size() > 0 && hits_file.readLines().size() > 0
             }
             .join(
-                ch_filtered_reads
-                .map { id, _platform, reads -> tuple(id, file(reads)) },
+                ch_filtered_contigs
+                .map { id, _platform, _read_structure, contigs -> tuple(id, file(contigs)) },
                 by: 0
             )
     )
 
-    // pass through the extracted_virus_reads from STAT and align them to the assembled and QC checked
-    // SPADES contigs that have been identified as human infecting virus family members
+    // Pass through the extracted virus reads from STAT and align them to the assembled and QC-checked
+    // SPAdes contigs that have been identified as human-infecting virus family members.
     // Join viral reads with extracted contigs by sample_id
     ch_reads_with_contigs = ch_viral_reads
-        .map { sample_id, platform, reads -> tuple(sample_id, platform, reads) }
+        .map { sample_id, platform, _read_structure, reads -> tuple(sample_id, platform, reads) }
         .join(
             EXTRACT_HUMAN_VIRUS_CONTIGS.out.map { sample_id, contigs -> tuple(sample_id, contigs) },
             by: 0

@@ -1,9 +1,9 @@
-include { DEDUP_WITH_CLUMPIFY ; TRIM_ADAPTERS ; FILTER_READS } from "../modules/bbmap"
+include { DEDUP_WITH_CLUMPIFY ; TRIM_ADAPTERS ; FILTER_READS ; REPAIR_PAIRS } from "../modules/bbmap"
 include { SCRUB_HOST_READS } from "../modules/hostile"
 
 workflow PREPROCESS_READS {
     take:
-    ch_fastq_tuple
+    ch_fastq_tuple  // tuple(sample_id, platform, read_structure, reads)
 
     main:
     // Resolve optional step flags: explicit param wins, otherwise fall back to master switch
@@ -18,7 +18,7 @@ workflow PREPROCESS_READS {
         : ch_fastq_tuple
 
     // 2. Adapter trim (Illumina only)
-    ch_branched_for_trim = ch_after_dedup.branch { _id, platform, _reads ->
+    ch_branched_for_trim = ch_after_dedup.branch { _id, platform, _read_structure, _reads ->
         illumina: platform == "illumina"
         other: true
     }
@@ -35,16 +35,25 @@ workflow PREPROCESS_READS {
         : ch_after_trim
 
     // 4. Quality/length filter (with platform-specific quality threshold)
-    ch_with_quality_threshold = ch_after_scrub.map { sample_id, platform, reads ->
+    ch_with_quality_threshold = ch_after_scrub.map { sample_id, platform, read_structure, reads ->
         def min_qual = platform == "illumina"
             ? params.min_read_quality_illumina
             : params.min_read_quality_nanopore
-        tuple(sample_id, platform, reads, min_qual)
+        tuple(sample_id, platform, read_structure, reads, min_qual)
     }
 
-    ch_preprocessed = should_filter
+    ch_after_filter = should_filter
         ? FILTER_READS(ch_with_quality_threshold)
         : ch_after_scrub
+
+    // 5. Repair pairs (interleaved reads only) - fixes orphans from upstream steps
+    ch_branched_for_repair = ch_after_filter.branch { _id, _platform, read_structure, _reads ->
+        interleaved: read_structure == "interleaved"
+        other: true
+    }
+
+    ch_repaired = REPAIR_PAIRS(ch_branched_for_repair.interleaved)
+    ch_preprocessed = ch_repaired.mix(ch_branched_for_repair.other)
 
     emit:
     ch_preprocessed

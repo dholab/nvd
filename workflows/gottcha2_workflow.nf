@@ -14,7 +14,7 @@ include { REMOVE_MULTIMAPS } from "../modules/bbmap"
 
 workflow GOTTCHA2_WORKFLOW {
     take:
-    ch_sample_fastqs // Queue channel of sample IDs, platforms, and (interleaved) FASTQ files: tuple val(sample_id), val(platform), path(fastq)
+    ch_sample_fastqs // Queue channel: tuple val(sample_id), val(platform), val(read_structure), path(fastq)
 
     main:
     // Check if GOTTCHA2 workflow should run
@@ -45,13 +45,13 @@ workflow GOTTCHA2_WORKFLOW {
     }
 
     ch_nanopore_fastqs = ch_sample_fastqs
-        .filter { _sample_id, platform, _fastq -> platform == "nanopore" || platform == "ont" }
-        .map { sample_id, _platform, fastq -> tuple(sample_id, file(fastq)) }
+        .filter { _sample_id, platform, _read_structure, _fastq -> platform == "nanopore" || platform == "ont" }
+        .map { sample_id, _platform, _read_structure, fastq -> tuple(sample_id, file(fastq)) }
         .filter { _id, fastq -> file(fastq).countFastq() >= params.min_gottcha_reads }
 
     ch_illumina_fastqs = ch_sample_fastqs
-        .filter { _sample_id, platform, _fastq -> platform == "illumina" }
-        .map { sample_id, _platform, fastq -> tuple(sample_id, file(fastq)) }
+        .filter { _sample_id, platform, _read_structure, _fastq -> platform == "illumina" }
+        .map { sample_id, _platform, _read_structure, fastq -> tuple(sample_id, file(fastq)) }
         .filter { _id, fastq -> file(fastq).countFastq() >= params.min_gottcha_reads }
 
     GOTTCHA2_PROFILE_NANOPORE(

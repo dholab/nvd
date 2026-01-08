@@ -27,7 +27,7 @@ workflow GATHER_READS {
             .filter { _id, srr, _platform, fastq1, fastq2 ->
                 (srr == null || srr == "") && fastq1 != null && fastq1 != "" && (fastq2 == null || fastq2 == "")
             }
-            .map { id, _srr, platform, fastq1, _fastq2 -> tuple( id, platform, file(fastq1))}
+            .map { id, _srr, platform, fastq1, _fastq2 -> tuple(id, platform, "single", file(fastq1))}
 
         FETCH_FASTQ(ch_sra_accessions)
 
@@ -38,7 +38,7 @@ workflow GATHER_READS {
 
                 // If there's just one FASTQ, "unpack" it from the array returned by the glob
                 single: fastq_files.size() == 1
-                    return tuple(sample_id, platform, file(fastq_files[0]))
+                    return tuple(sample_id, platform, "single", file(fastq_files[0]))
 
                 // If there are two FASTQs, expect that the alphanumeric first will end with ".1.fastq" and the second with ".2.fastq",
                 // which is a (mostly) reliable SRA convention

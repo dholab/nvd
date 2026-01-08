@@ -4,23 +4,23 @@ include { RUN_SPADES                } from "../modules/spades"
 
 workflow PREPROCESS_CONTIGS {
     take:
-    ch_sample_fastqs
+    ch_sample_fastqs  // tuple(sample_id, platform, read_structure, fastq)
     ch_stat_dbss
     ch_stat_annotation
     ch_human_virus_taxlist
 
     main:
     
-    // Uses STAT to get on fastq records that map to specific virus infecting virueses
+    // Uses STAT to get fastq records that map to specific human-infecting viruses
     EXTRACT_HUMAN_VIRUS_READS(
         ch_sample_fastqs.combine(ch_stat_dbss).combine(ch_stat_annotation).combine(ch_human_virus_taxlist)
     )
 
     RUN_SPADES(
         EXTRACT_HUMAN_VIRUS_READS.out
-            .map { id, platform, fq -> tuple(id, platform, fq, file(fq).countFastq()) }
-            .filter { _id, _platform, _fq, count -> count > 0 }
-            .map { id, platform, fq, _count -> tuple(id, platform, file(fq)) }
+            .map { id, platform, read_structure, fq -> tuple(id, platform, read_structure, fq, file(fq).countFastq()) }
+            .filter { _id, _platform, _read_structure, _fq, count -> count > 0 }
+            .map { id, platform, read_structure, fq, _count -> tuple(id, platform, read_structure, file(fq)) }
     )
 
     MASK_LOW_COMPLEXITY(
@@ -32,13 +32,12 @@ workflow PREPROCESS_CONTIGS {
     )
 
     ch_filtered_contigs = FILTER_SHORT_CONTIGS.out
-        .filter { _id, _platform, fasta ->
+        .filter { _id, _platform, _read_structure, fasta ->
             def recordCount = fasta.countFasta()
             recordCount > 0
-
         }
 
     emit:
-    contigs = ch_filtered_contigs
-    viral_reads = EXTRACT_HUMAN_VIRUS_READS.out
+    contigs = ch_filtered_contigs  // tuple(sample_id, platform, read_structure, fasta)
+    viral_reads = EXTRACT_HUMAN_VIRUS_READS.out  // tuple(sample_id, platform, read_structure, fastq)
 }
