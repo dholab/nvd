@@ -314,7 +314,7 @@ def get_database_by_version(
     Get database info by version.
 
     Args:
-        db_type: Type of database (blast, stat, gottcha2, hostile)
+        db_type: Type of database (blast, stat, gottcha2)
         version: Version string. If None, returns most recently registered.
         state_dir: Optional state directory override
 
@@ -349,7 +349,7 @@ def get_database_by_path(
     most recently registered version and includes a warning.
 
     Args:
-        db_type: Type of database (blast, stat, gottcha2, hostile)
+        db_type: Type of database (blast, stat, gottcha2)
         path: Path to the database (will be canonicalized)
         state_dir: Optional state directory override
 
@@ -400,7 +400,7 @@ def get_databases_by_path(
     Useful for debugging when multiple versions are registered at the same path.
 
     Args:
-        db_type: Type of database (blast, stat, gottcha2, hostile)
+        db_type: Type of database (blast, stat, gottcha2)
         path: Path to the database (will be canonicalized)
         state_dir: Optional state directory override
 

@@ -437,13 +437,6 @@ class TestNvdParamsDefaults:
         # Verify it's a copy, not the same object
         assert p.human_virus_families is not DEFAULT_HUMAN_VIRUS_FAMILIES
 
-    def test_default_hostile_index_name(self):
-        """Default hostile_index_name matches nextflow.config."""
-        assert (
-            NvdParams().hostile_index_name
-            == "human-t2t-hla.rs-viral-202401_ml-phage-202401"
-        )
-
     def test_default_monoimage(self):
         """Default monoimage matches nextflow.config."""
         assert NvdParams().monoimage == "nrminor/nvd:v2.4.0"

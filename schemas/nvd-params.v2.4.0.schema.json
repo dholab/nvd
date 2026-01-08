@@ -154,22 +154,12 @@
     },
     "scrub_host_reads": {
       "type": "boolean",
-      "description": "Remove host (human) reads using hostile"
-    },
-    "hostile_index": {
-      "type": "string",
-      "format": "path",
-      "description": "Path to local hostile index for offline use; if null, hostile will auto-download"
-    },
-    "hostile_index_name": {
-      "type": "string",
-      "default": "human-t2t-hla.rs-viral-202401_ml-phage-202401",
-      "description": "Standard hostile index name to use when hostile_index is null. Masked against viral + phage genomes to maximize viral read retention"
+      "description": "Remove host (human) reads using STAT. Requires sra_human_db to be set."
     },
     "sra_human_db": {
       "type": "string",
       "format": "path",
-      "description": "Path to human reads database for SRA submission scrubbing (clumpify workflow)"
+      "description": "Path to human reads STAT database for host scrubbing and SRA submission prep"
     },
     "human_read_scrub": {
       "type": "string",

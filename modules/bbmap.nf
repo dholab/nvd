@@ -95,7 +95,7 @@ process TRIM_ADAPTERS {
 	/* Trim Illumina adapters using bbduk */
 
 	tag "${sample_id}"
-	label "high"
+	label "ludicrous"
 
 	errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
 	maxRetries 2
@@ -129,7 +129,7 @@ process FILTER_READS {
 	/* Filter reads by quality and length (pair-aware for interleaved reads) */
 
 	tag "${sample_id}"
-	label "high"
+	label "ludicrous"
 
 	errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
 	maxRetries 2
@@ -163,7 +163,7 @@ process REPAIR_PAIRS {
 	/* Repair interleaved paired-end reads, discarding orphans */
 
 	tag "${sample_id}"
-	label "medium"
+	label "high"
 
 	errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
 	maxRetries 2
@@ -182,6 +182,7 @@ process REPAIR_PAIRS {
 		in=${reads} \\
 		out=${sample_id}.repaired.fastq.gz \\
 		outs=${sample_id}.singletons.fastq.gz \\
+		interleaved=t \\
 		repair=t \\
 		threads=${task.cpus} \\
 		-eoom
@@ -193,7 +194,7 @@ process MASK_LOW_COMPLEXITY {
 	/* Mask low-complexity regions in contigs */
 
 	tag "${sample_id}"
-	label "medium"
+	label "high"
 
 	errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
 	maxRetries 2
@@ -258,7 +259,7 @@ process CLUMP_READS {
     /* */
 
 	tag "${sample_id}"
-	label "high"
+	label "ludicrous"
 
 	errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
 	maxRetries 2
@@ -310,3 +311,4 @@ process REMOVE_MULTIMAPS {
 	threads=${task.cpus} -eoom
 	"""
 }
+

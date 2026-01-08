@@ -334,19 +334,7 @@ def run(  # noqa: PLR0913, PLR0912, PLR0915, C901
     scrub_host_reads: bool | None = typer.Option(
         None,
         "--scrub-host-reads/--no-scrub-host-reads",
-        help="Remove host reads with hostile (default: follows --preprocess)",
-        rich_help_panel=PANEL_PREPROCESSING,
-    ),
-    hostile_index: Path | None = typer.Option(
-        None,
-        "--hostile-index",
-        help="Path to local hostile index (for offline use)",
-        rich_help_panel=PANEL_PREPROCESSING,
-    ),
-    hostile_index_name: str | None = typer.Option(
-        None,
-        "--hostile-index-name",
-        help="Standard hostile index name (default: human-t2t-hla.rs-viral-202401_ml-phage-202401)",
+        help="Remove host reads with STAT (requires --sra-human-db; default: follows --preprocess)",
         rich_help_panel=PANEL_PREPROCESSING,
     ),
     filter_reads: bool | None = typer.Option(
@@ -607,8 +595,6 @@ def run(  # noqa: PLR0913, PLR0912, PLR0915, C901
         "dedup": dedup,
         "trim_adapters": trim_adapters,
         "scrub_host_reads": scrub_host_reads,
-        "hostile_index": hostile_index,
-        "hostile_index_name": hostile_index_name,
         "filter_reads": filter_reads,
         "min_read_quality_illumina": min_read_quality_illumina,
         "min_read_quality_nanopore": min_read_quality_nanopore,

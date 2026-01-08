@@ -162,7 +162,13 @@ process IDENTIFY_HUMAN_VIRUS_FAMILY_CONTIGS {
     """
 }
 
-process SCRUB_HUMAN_READS {
+process SCRUB_HOST_READS {
+    /*
+     * Remove host (human) reads using STAT's aligns_to + seqkit grep.
+     * This approach preserves original FASTQ headers (including Casava 1.8+ metadata),
+     * which is required for downstream pair repair.
+     */
+
     tag "${sample_id}"
     label "high"
 
@@ -170,28 +176,70 @@ process SCRUB_HUMAN_READS {
     maxRetries 2
 
     input:
-    tuple val(sample_id), path(fastq), path(human_reads)
+    tuple val(sample_id), val(platform), val(read_structure), path(fastq), path(human_db)
+
+    output:
+    tuple val(sample_id), val(platform), val(read_structure), path("${sample_id}.scrubbed.fastq.gz")
+
+    script:
+    """
+    # Convert to FASTA for STAT alignment
+    seqkit fq2fa --threads 1 ${fastq} -o ${sample_id}.all_reads.fasta
+    
+    # Get human-aligned read IDs
+    aligns_to \\
+        -db ${human_db} \\
+        -num_threads ${task.cpus} \\
+        ${sample_id}.all_reads.fasta \\
+        | cut -f1 > human_read_ids.txt
+    
+    # Remove human reads (inverse grep), preserving original FASTQ headers
+    seqkit grep -v -f human_read_ids.txt ${fastq} \\
+        -o ${sample_id}.scrubbed.fastq.gz
+    
+    # Cleanup intermediate file
+    rm ${sample_id}.all_reads.fasta
+    """
+}
+
+process SCRUB_HUMAN_READS {
+    /*
+     * Simplified host scrubbing for clumpify/SRA submission workflow.
+     * Uses same STAT approach but with simpler tuple structure.
+     */
+
+    tag "${sample_id}"
+    label "high"
+
+    errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
+    maxRetries 2
+
+    input:
+    tuple val(sample_id), path(fastq), path(human_db)
 
     output:
     tuple val(sample_id), path("${sample_id}.scrubbed.fastq.gz")
 
     when:
-	params.tools && (params.tools.contains("clump") || params.tools.contains("all"))
+    params.tools && (params.tools.contains("clump") || params.tools.contains("all"))
 
     script:
     """
-    # Convert to FASTA
+    # Convert to FASTA for STAT alignment
     seqkit fq2fa --threads 1 ${fastq} -o ${sample_id}.all_reads.fasta
     
-    # Get human-aligned reads (tabular output like the virus example)
-    aligns_to \
-        -db ${human_reads} \
-        -num_threads ${task.cpus} \
-        ${sample_id}.all_reads.fasta \
+    # Get human-aligned read IDs
+    aligns_to \\
+        -db ${human_db} \\
+        -num_threads ${task.cpus} \\
+        ${sample_id}.all_reads.fasta \\
         | cut -f1 > human_read_ids.txt
     
-    # Remove human reads (inverse grep with -v)
-    seqkit grep -v -f human_read_ids.txt ${fastq} \
+    # Remove human reads (inverse grep), preserving original FASTQ headers
+    seqkit grep -v -f human_read_ids.txt ${fastq} \\
         -o ${sample_id}.scrubbed.fastq.gz
+    
+    # Cleanup intermediate file
+    rm ${sample_id}.all_reads.fasta
     """
 }

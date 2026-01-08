@@ -57,7 +57,7 @@ def _from_row(cls: type[T], row: Row) -> T:
 # Type aliases for constrained values
 Status = Literal["running", "completed", "failed"]
 ProcessedSampleStatus = Literal["completed", "uploaded", "failed"]
-DbType = Literal["blast", "stat", "gottcha2", "hostile"]
+DbType = Literal["blast", "stat", "gottcha2"]
 Platform = Literal["illumina", "ont", "sra"]
 UploadType = Literal["blast", "blast_fasta", "gottcha2", "gottcha2_fasta"]
 
@@ -562,22 +562,12 @@ class NvdParams(BaseModel):
     )
     scrub_host_reads: bool | None = Field(
         None,
-        description="Remove host reads with hostile",
-        json_schema_extra={"category": "Preprocessing"},
-    )
-    hostile_index: Path | None = Field(
-        None,
-        description="Path to local hostile index (for offline use)",
-        json_schema_extra={"category": "Preprocessing"},
-    )
-    hostile_index_name: str = Field(
-        "human-t2t-hla.rs-viral-202401_ml-phage-202401",
-        description="Standard hostile index name",
+        description="Remove host reads with STAT (requires sra_human_db)",
         json_schema_extra={"category": "Preprocessing"},
     )
     sra_human_db: Path | None = Field(
         None,
-        description="Path to human reads database for SRA submission scrubbing",
+        description="Path to human reads STAT database for host scrubbing and SRA submission prep",
         json_schema_extra={"category": "Preprocessing"},
     )
     human_read_scrub: Path | None = Field(

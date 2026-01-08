@@ -1,5 +1,5 @@
 include { DEDUP_WITH_CLUMPIFY ; TRIM_ADAPTERS ; FILTER_READS ; REPAIR_PAIRS } from "../modules/bbmap"
-include { SCRUB_HOST_READS } from "../modules/hostile"
+include { SCRUB_HOST_READS } from "../modules/stat"
 
 workflow PREPROCESS_READS {
     take:
@@ -29,9 +29,13 @@ workflow PREPROCESS_READS {
 
     ch_after_trim = ch_trimmed_illumina.mix(ch_branched_for_trim.other)
 
-    // 3. Host scrub
-    ch_after_scrub = should_scrub
-        ? SCRUB_HOST_READS(ch_after_trim)
+    // 3. Host scrub (requires sra_human_db to be set)
+    ch_human_db = params.sra_human_db
+        ? Channel.fromPath(params.sra_human_db)
+        : Channel.empty()
+
+    ch_after_scrub = (should_scrub && params.sra_human_db)
+        ? SCRUB_HOST_READS(ch_after_trim.combine(ch_human_db))
         : ch_after_trim
 
     // 4. Quality/length filter (with platform-specific quality threshold)
