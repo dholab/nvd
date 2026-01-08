@@ -399,6 +399,48 @@ class TestRegisterRun:
         old_locks_after = get_locks_for_run("old_run", state_dir=temp_state_dir)
         assert len(old_locks_after) == 0
 
+    def test_update_run_id_updates_all_referencing_tables(self, temp_state_dir):
+        """update_run_id updates all tables that reference runs.run_id."""
+        sample_set_id = compute_sample_set_id(["s1", "s2"])
+        register_run("old_run", sample_set_id, state_dir=temp_state_dir)
+
+        # Create records in all referencing tables
+        acquire_sample_locks(["s1", "s2"], "old_run", state_dir=temp_state_dir)
+        register_processed_sample(
+            "s1", sample_set_id, "old_run", state_dir=temp_state_dir
+        )
+        record_taxonomy_version(
+            "old_run",
+            file_hash="abc123",
+            ncbi_rebuild_timestamp="2024-01-01",
+            file_size=1000,
+            downloaded_at="2024-01-01T00:00:00",
+            state_dir=temp_state_dir,
+        )
+
+        # Update run_id
+        updated = update_run_id(sample_set_id, "new_run", state_dir=temp_state_dir)
+        assert updated is not None
+
+        # Verify sample_locks updated
+        new_locks = get_locks_for_run("new_run", state_dir=temp_state_dir)
+        assert len(new_locks) == 2
+
+        # Verify processed_samples updated
+        samples = get_samples_for_run("new_run", state_dir=temp_state_dir)
+        assert len(samples) == 1
+        assert samples[0].sample_id == "s1"
+
+        # Verify taxonomy_versions updated
+        tax_version = get_taxonomy_version("new_run", state_dir=temp_state_dir)
+        assert tax_version is not None
+        assert tax_version.file_hash == "abc123"
+
+        # Verify old run_id has no records
+        assert len(get_locks_for_run("old_run", state_dir=temp_state_dir)) == 0
+        assert len(get_samples_for_run("old_run", state_dir=temp_state_dir)) == 0
+        assert get_taxonomy_version("old_run", state_dir=temp_state_dir) is None
+
 
 class TestProcessedSamples:
     """Tests for processed sample tracking functions."""

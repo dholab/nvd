@@ -147,7 +147,7 @@ def update_run_id(
         The updated Run, or None if no run exists for this sample_set_id
     """
     with connect(state_dir) as conn:
-        # Get the old run_id first so we can update sample_locks
+        # Get the old run_id first so we can update referencing tables
         old_run = conn.execute(
             "SELECT run_id FROM runs WHERE sample_set_id = ?",
             (sample_set_id,),
@@ -158,15 +158,23 @@ def update_run_id(
 
         old_run_id = old_run[0]
 
-        # Update runs table
+        # Update runs table (primary key change)
         conn.execute(
             "UPDATE runs SET run_id = ? WHERE sample_set_id = ?",
             (new_run_id, sample_set_id),
         )
 
-        # Update sample_locks table to keep in sync
+        # Update all tables that reference runs.run_id to keep foreign keys valid
         conn.execute(
             "UPDATE sample_locks SET run_id = ? WHERE run_id = ?",
+            (new_run_id, old_run_id),
+        )
+        conn.execute(
+            "UPDATE processed_samples SET run_id = ? WHERE run_id = ?",
+            (new_run_id, old_run_id),
+        )
+        conn.execute(
+            "UPDATE taxonomy_versions SET run_id = ? WHERE run_id = ?",
             (new_run_id, old_run_id),
         )
 
