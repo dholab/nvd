@@ -53,8 +53,20 @@ workflow BUNDLE_BLAST_FOR_LABKEY {
         validation_complete
     )
 
-    // Upload BLAST results
-    // run_context tuple [sample_set_id, state_dir] is passed intact and destructured in the process
+    // Concatenate all sample BLAST results into single file
+    CONCAT_ALL_SAMPLE_BLAST_RESULTS(
+        PREPARE_BLAST_LABKEY.out.csv.collect(),
+        experiment_id,
+        validation_complete
+    )
+
+    // Upload concatenated BLAST results to experiment root via WebDAV
+    WEBDAV_UPLOAD_CONCATENATED(
+        CONCAT_ALL_SAMPLE_BLAST_RESULTS.out.concatenated_csv,
+        validation_complete
+    )
+
+    // Upload BLAST results to LabKey
     LABKEY_UPLOAD_BLAST(
         PREPARE_BLAST_LABKEY.out.csv.map { _meta, path -> path }.collect(),
         experiment_id,
@@ -62,8 +74,7 @@ workflow BUNDLE_BLAST_FOR_LABKEY {
         run_context
     )
 
-    // Upload FASTA results
-    // run_context tuple [sample_set_id, state_dir] is passed intact and destructured in the process
+    // Upload FASTA results to LabKey
     LABKEY_UPLOAD_FASTA(
         PREPARE_FASTA_LABKEY.out.csv.map { _meta, path -> path }.collect(),
         experiment_id,
@@ -74,20 +85,21 @@ workflow BUNDLE_BLAST_FOR_LABKEY {
     emit:
     blast_csv = PREPARE_BLAST_LABKEY.out.csv
     fasta_csv = PREPARE_FASTA_LABKEY.out.csv
+    blast_concatenated_csv = CONCAT_ALL_SAMPLE_BLAST_RESULTS.out.concatenated_csv
+    blast_concatenated_uploaded = WEBDAV_UPLOAD_CONCATENATED.out.done
     blast_upload_log = LABKEY_UPLOAD_BLAST.out.log
     fasta_upload_log = LABKEY_UPLOAD_FASTA.out.log
     upload_log = LABKEY_UPLOAD_BLAST.out.log.mix(LABKEY_UPLOAD_FASTA.out.log)
 }
 
 process WEBDAV_UPLOAD_BLAST {
-
     tag "${sample_id}"
 
     secret 'LABKEY_API_KEY'
 
     input:
     tuple val(sample_id), path(blast_csv), path(fasta)
-    val validation_complete  // Ensures validation passed before uploading
+    val validation_complete
 
     output:
     val(sample_id)
@@ -97,17 +109,38 @@ process WEBDAV_UPLOAD_BLAST {
     gzip -c ${fasta} > ${fasta}.gz
     gzip -c ${blast_csv} > ${blast_csv}.gz
 
-    # Upload tabular Gottcha2 report
     webdav_CLIent.py \
         --password \$LABKEY_API_KEY \
         --server ${params.labkey_webdav} \
         upload ${blast_csv}.gz ${params.experiment_id}/${sample_id}/nvd/${blast_csv}.gz
 
-    # Upload fasta file
     webdav_CLIent.py \
         --password \$LABKEY_API_KEY \
         --server ${params.labkey_webdav} \
         upload ${fasta}.gz ${params.experiment_id}/${sample_id}/nvd/${fasta}.gz
+    """
+}
+
+process WEBDAV_UPLOAD_CONCATENATED {
+    label 'low'
+
+    secret 'LABKEY_API_KEY'
+
+    input:
+    path concatenated_csv
+    val _validation_complete  // Gate: ensures validation passed
+
+    output:
+    val true, emit: done
+
+    script:
+    """
+    gzip -c ${concatenated_csv} > ${concatenated_csv}.gz
+
+    webdav_CLIent.py \
+        --password \$LABKEY_API_KEY \
+        --server ${params.labkey_webdav} \
+        upload ${concatenated_csv}.gz ${params.experiment_id}/${concatenated_csv}.gz
     """
 }
 
@@ -136,6 +169,33 @@ process PREPARE_BLAST_LABKEY {
         --total-reads ${total_reads} \\
         --blast-db-version '${params.blast_db_version}' \\
         --stat-db-version '${params.stat_db_version}'
+    """
+}
+
+process CONCAT_ALL_SAMPLE_BLAST_RESULTS {
+    label 'low'
+
+    input:
+    path "blast_results/*.csv"
+    val experiment_id
+    val _validation_complete  // Gate: ensures validation passed
+
+    output:
+    path "${experiment_id}_blast_concatenated.csv", emit: concatenated_csv
+
+    script:
+    """
+    #!/usr/bin/env python3
+    import polars as pl
+    from pathlib import Path
+
+    files = sorted(Path("blast_results").glob("*.csv"))
+
+    if not files:
+        # No samples to concatenate - create empty file
+        Path("${experiment_id}_blast_concatenated.csv").touch()
+    else:
+        pl.concat([pl.scan_csv(f) for f in files]).sink_csv("${experiment_id}_blast_concatenated.csv")
     """
 }
 
