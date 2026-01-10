@@ -216,6 +216,30 @@ def _create_backup(db_path: Path) -> Path:
     return backup_path
 
 
+def create_backup(state_dir: Path | str | None = None) -> Path:
+    """
+    Create a timestamped backup of the state database.
+
+    This is the public API for creating backups, intended for use after
+    successful pipeline runs to preserve a known-good state.
+
+    Args:
+        state_dir: Optional explicit state directory. If None, resolves
+                   via NVD_STATE_DIR env var, then ~/.nvd/
+
+    Returns:
+        Path to the backup file.
+
+    Raises:
+        FileNotFoundError: If the database doesn't exist.
+    """
+    db_path = get_state_db_path(state_dir)
+    if not db_path.exists():
+        msg = f"Database not found: {db_path}"
+        raise FileNotFoundError(msg)
+    return _create_backup(db_path)
+
+
 def _get_db_stats(db_path: Path) -> dict:
     """
     Get statistics about the database for display to user.

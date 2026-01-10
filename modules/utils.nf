@@ -154,11 +154,13 @@ process COMPLETE_RUN {
     val true, emit: done
 
     script:
+    def backup_arg = status == "completed" ? "--backup" : ""
     """
     complete_run.py \\
         --run-id '${workflow.runName}' \\
         --state-dir ${state_dir} \\
         --status '${status}' \\
+        ${backup_arg} \\
         -v
     """
 }

@@ -27,6 +27,7 @@ import sys
 from pathlib import Path
 
 from loguru import logger
+from py_nvd.db import create_backup
 from py_nvd.state import complete_run, release_all_locks_for_run
 
 
@@ -72,6 +73,12 @@ def main() -> None:
         help="Status to set (default: completed)",
     )
     parser.add_argument(
+        "--backup",
+        action="store_true",
+        default=False,
+        help="Create a timestamped backup of the state database after completion",
+    )
+    parser.add_argument(
         "-v",
         "--verbose",
         action="count",
@@ -110,6 +117,18 @@ def main() -> None:
         if locks_released > 0:
             logger.info(f"Released {locks_released} remaining sample lock(s)")
             print(f"Released {locks_released} remaining sample lock(s)")
+
+        # Create backup if requested (typically on successful completion)
+        if args.backup:
+            try:
+                backup_path = create_backup(state_dir=args.state_dir)
+                logger.info(f"Created backup: {backup_path}")
+                print(f"Created backup: {backup_path}")
+            except FileNotFoundError as e:
+                logger.warning(f"Could not create backup: {e}")
+            except Exception as e:
+                # Backup failure is non-fatal - the run completed successfully
+                logger.warning(f"Backup failed (non-fatal): {e}")
 
     except Exception as e:
         logger.error(f"Failed to complete run: {e}")
