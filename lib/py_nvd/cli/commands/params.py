@@ -119,6 +119,11 @@ def params_check(
         "-d",
         help="Show parameters using default values",
     ),
+    check_paths: bool = typer.Option(
+        True,
+        "--check-paths/--no-check-paths",
+        help="Check that path parameters point to existing files/directories",
+    ),
 ) -> None:
     """
     Validate a params file and show merged result with sources.
@@ -126,6 +131,10 @@ def params_check(
     Validates parameter types and values using the NvdParams model.
     When --preset is specified, shows the merged result with annotations
     indicating where each value came from.
+
+    By default, also checks that path parameters point to existing files or
+    directories on the local system. Use --no-check-paths to skip this check
+    (useful when paths are valid on a remote system like a cluster).
 
     Precedence (highest to lowest):
         1. Params file values
@@ -142,6 +151,9 @@ def params_check(
 
         # Show all params including defaults
         nvd params check my-params.yaml --show-defaults
+
+        # Skip path existence checks (for remote paths)
+        nvd params check my-params.yaml --no-check-paths
     """
     from pydantic import ValidationError
 
@@ -227,8 +239,18 @@ def params_check(
 
         table.add_row("", "", "")  # Spacer between categories
 
+    # Check path existence if requested
+    missing_paths: list[tuple[str, Path]] = []
+    if check_paths:
+        missing_paths = _check_path_existence(traced.params)
+
     # Summary line
-    summary = f"[green]✓ Valid[/green] ({non_default_count} params set"
+    if missing_paths:
+        summary = (
+            f"[yellow]⚠ Valid with warnings[/yellow] ({non_default_count} params set"
+        )
+    else:
+        summary = f"[green]✓ Valid[/green] ({non_default_count} params set"
     if traced.defaults_used > 0:
         summary += f", {traced.defaults_used} defaults"
     summary += ")"
@@ -238,12 +260,24 @@ def params_check(
         table,
         title=f"[bold]{title}[/bold]",
         subtitle=summary,
-        border_style="blue",
+        border_style="yellow" if missing_paths else "blue",
         padding=(1, 2),
     )
 
     console.print()
     console.print(panel)
+
+    # Show missing paths warning
+    if missing_paths:
+        console.print()
+        warning(f"{len(missing_paths)} path(s) not found on this system:")
+        for field, p in missing_paths:
+            console.print(f"  • [cyan]{field}[/cyan]: {p}")
+        console.print()
+        console.print(
+            "[dim]Note: Paths may be valid on the target system (e.g., cluster).[/dim]"
+        )
+
     console.print()
 
 
@@ -273,6 +307,30 @@ def _categorize_sources(
         categories[category].append(src)
 
     return categories
+
+
+def _check_path_existence(params) -> list[tuple[str, Path]]:
+    """
+    Check that Path-typed parameters point to existing files/directories.
+
+    Returns a list of (field_name, path) tuples for paths that don't exist.
+    """
+    missing: list[tuple[str, Path]] = []
+
+    # Get all fields from the model class (not instance) to avoid deprecation warning
+    for field_name in type(params).model_fields:
+        value = getattr(params, field_name)
+
+        # Skip None values
+        if value is None:
+            continue
+
+        # Check if this is a Path field
+        if isinstance(value, Path):
+            if not value.exists():
+                missing.append((field_name, value))
+
+    return missing
 
 
 def _format_value(value) -> str:
