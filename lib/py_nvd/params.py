@@ -22,7 +22,7 @@ import yaml
 SCHEMA_FILENAME = "nvd-params.latest.schema.json"
 
 # GitHub raw URL for schema (fallback and for generated templates)
-SCHEMA_URL = "https://raw.githubusercontent.com/dhoconno/nvd/state-management/schemas/nvd-params.v2.3.0.schema.json"
+SCHEMA_URL = "https://raw.githubusercontent.com/dhoconno/nvd/state-management/schemas/nvd-params.v2.4.0.schema.json"
 
 
 def _find_schema_path() -> Path:
@@ -194,6 +194,22 @@ def _format_yaml_value(value: Any) -> str:
     return str(value)
 
 
+def _format_commented_param(name: str, prop: dict) -> str:
+    """Format a commented-out parameter line.
+
+    For params with defaults, shows the default value.
+    For params without defaults, shows just the param name (user must provide value).
+    """
+    desc = prop.get("description", "")
+    default = prop.get("default")
+
+    if default is not None:
+        return f"# {name}: {_format_yaml_value(default)}  # {desc}"
+    else:
+        # No default - just show the param name, user must fill in
+        return f"# {name}:  # {desc}"
+
+
 def _generate_yaml_template(path: Path, schema: dict, schema_url: str) -> None:
     """Generate YAML template with comments."""
     lines = [
@@ -214,15 +230,29 @@ def _generate_yaml_template(path: Path, schema: dict, schema_url: str) -> None:
 
     properties = schema.get("properties", {})
 
-    # Required/common params first
+    # Required/common params first - use placeholder values that are valid strings
+    # but obviously need to be replaced
     lines.append("# === Required Parameters ===")
-    common = ["samplesheet", "experiment_id", "tools", "results"]
-    for name in common:
+    lines.append("# Uncomment and fill in these values before running the pipeline.")
+    lines.append("")
+    required_examples = {
+        "samplesheet": (
+            "path/to/samplesheet.csv",
+            "Path to samplesheet CSV with columns: sample_id, srr, platform, fastq1, fastq2",
+        ),
+        "experiment_id": (
+            "12345",
+            "Experiment identifier for tracking and LabKey integration",
+        ),
+        "tools": (
+            "all",
+            "Options: stat_blast, nvd, stat, blast, gottcha, all, clumpify (comma-separated for multiple)",
+        ),
+        "results": ("results", "Directory for pipeline output files"),
+    }
+    for name, (example, desc) in required_examples.items():
         if name in properties:
-            prop = properties[name]
-            desc = prop.get("description", "")
-            # These are required, so show as null (user must fill in)
-            lines.append(f"{name}: null  # {desc}")
+            lines.append(f"# {name}: {example}  # {desc}")
     lines.append("")
 
     # Analysis settings (with defaults)
@@ -249,15 +279,14 @@ def _generate_yaml_template(path: Path, schema: dict, schema_url: str) -> None:
     for name in preprocess_params:
         if name in properties:
             prop = properties[name]
-            default = prop.get("default")
-            desc = prop.get("description", "")
-            value = _format_yaml_value(default)
             if name == "preprocess":
                 # Show preprocess uncommented since it's the main toggle
-                lines.append(f"{name}: {value}  # {desc}")
+                default = prop.get("default")
+                desc = prop.get("description", "")
+                lines.append(f"{name}: {_format_yaml_value(default)}  # {desc}")
             else:
                 # Comment out individual preprocessing options
-                lines.append(f"# {name}: {value}  # {desc}")
+                lines.append(_format_commented_param(name, prop))
     lines.append("")
 
     # LabKey integration (commented out - optional)
@@ -278,11 +307,7 @@ def _generate_yaml_template(path: Path, schema: dict, schema_url: str) -> None:
     ]
     for name in labkey_params:
         if name in properties:
-            prop = properties[name]
-            default = prop.get("default")
-            desc = prop.get("description", "")
-            value = _format_yaml_value(default)
-            lines.append(f"# {name}: {value}  # {desc}")
+            lines.append(_format_commented_param(name, properties[name]))
     lines.append("")
 
     # Database paths (commented out - environment specific)
@@ -302,9 +327,7 @@ def _generate_yaml_template(path: Path, schema: dict, schema_url: str) -> None:
     ]
     for name in databases:
         if name in properties:
-            prop = properties[name]
-            desc = prop.get("description", "")
-            lines.append(f"# {name}: null  # {desc}")
+            lines.append(_format_commented_param(name, properties[name]))
     lines.append("")
 
     # Read quality/length filtering (commented out)
@@ -317,11 +340,7 @@ def _generate_yaml_template(path: Path, schema: dict, schema_url: str) -> None:
     ]
     for name in filtering:
         if name in properties:
-            prop = properties[name]
-            default = prop.get("default")
-            desc = prop.get("description", "")
-            value = _format_yaml_value(default)
-            lines.append(f"# {name}: {value}  # {desc}")
+            lines.append(_format_commented_param(name, properties[name]))
     lines.append("")
 
     # Tool-specific settings (commented out)
@@ -336,25 +355,23 @@ def _generate_yaml_template(path: Path, schema: dict, schema_url: str) -> None:
     ]
     for name in tool_specific:
         if name in properties:
-            prop = properties[name]
-            default = prop.get("default")
-            desc = prop.get("description", "")
-            value = _format_yaml_value(default)
-            lines.append(f"# {name}: {value}  # {desc}")
+            lines.append(_format_commented_param(name, properties[name]))
 
     with open(path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
 
 
 def _generate_json_template(path: Path, schema: dict, schema_url: str) -> None:
-    """Generate JSON template."""
+    """Generate JSON template.
+
+    Note: JSON doesn't support comments, so we include only parameters with
+    sensible defaults. Users should refer to the schema for documentation
+    or use YAML format for a more guided experience.
+    """
     # Include commonly-used parameters with sensible defaults
+    # Omit required fields entirely - JSON can't have comments explaining them
     template = {
         "$schema": schema_url,
-        "samplesheet": None,
-        "experiment_id": None,
-        "tools": None,
-        "results": None,
         "cutoff_percent": 0.001,
         "entropy": 0.9,
         "tax_stringency": 0.7,
