@@ -180,9 +180,10 @@ def register_hits_from_contigs(
     observations = 0
 
     with connect(context.state_dir) as conn:
-        # Use NORMAL synchronous mode for better performance on network filesystems
-        # This is safe because we're doing a single transaction - either all commits or none
-        conn.execute("PRAGMA synchronous=NORMAL")
+        # Use FULL synchronous mode for safety on network filesystems.
+        # This ensures data is fully fsynced before commit returns.
+        # Slower, but prevents corruption from interrupted writes.
+        conn.execute("PRAGMA synchronous=FULL")
 
         # Insert hits (INSERT OR IGNORE for idempotency)
         # We count new hits by checking rowcount after each insert

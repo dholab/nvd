@@ -193,8 +193,14 @@ def _check_version(conn: sqlite3.Connection) -> bool:
 
 
 def _configure_connection(conn: sqlite3.Connection) -> None:
-    """Apply standard connection configuration."""
-    conn.execute("PRAGMA journal_mode=WAL")
+    """Apply standard connection configuration.
+
+    Uses DELETE journal mode instead of WAL for network filesystem compatibility.
+    WAL mode requires shared memory (mmap) which doesn't work reliably on NFS,
+    GPFS, Lustre, and similar network filesystems. DELETE mode uses a traditional
+    rollback journal that is slower but works correctly over the network.
+    """
+    conn.execute("PRAGMA journal_mode=DELETE")
     conn.execute("PRAGMA busy_timeout=30000")
     conn.row_factory = sqlite3.Row
 

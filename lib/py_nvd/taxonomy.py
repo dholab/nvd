@@ -103,7 +103,9 @@ def _build_sqlite_from_dmp(taxdump_dir: Path) -> Path:
         sqlite_path.unlink()
 
     conn = sqlite3.connect(sqlite_path)
-    conn.execute("PRAGMA journal_mode=WAL")
+    # Use DELETE journal mode for network filesystem compatibility.
+    # WAL mode requires shared memory (mmap) which doesn't work on NFS/GPFS/Lustre.
+    conn.execute("PRAGMA journal_mode=DELETE")
 
     # Create schema (matches gettax.sqlite + merged table)
     conn.executescript("""

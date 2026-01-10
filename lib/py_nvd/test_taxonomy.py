@@ -558,7 +558,7 @@ class TestContextManagers:
 
         with taxonomy.open() as tax:
             result = tax._conn.execute("PRAGMA journal_mode;").fetchone()
-            assert result[0] == "wal"
+            assert result[0] == "delete"
 
 
 class TestConcurrentAccess:
