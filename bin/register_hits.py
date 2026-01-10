@@ -2,21 +2,23 @@
 # /// script
 # requires-python = ">=3.11"
 # dependencies = [
+#     "biopython",
 #     "blake3",
 #     "loguru",
+#     "polars",
 # ]
 # ///
 
 """
-Register BLAST hits with idempotent keys in the state database.
+Register BLAST hits to parquet files for crash-safe storage.
 
 This script is a thin wrapper around py_nvd.hits that:
 1. Parses CLI arguments
 2. Reads FASTA and BLAST result files (I/O)
-3. Calls py_nvd.hits API for hit registration
+3. Computes hit keys and metadata
+4. Writes hits atomically to a per-sample parquet file
 
-The actual hit key computation, sequence compression, and database operations
-are handled by the py_nvd.hits module.
+Each sample's hits are stored in: {state_dir}/hits/{sample_set_id}/{sample_id}.parquet
 
 Usage:
     register_hits.py --contigs contigs.fasta --blast-results merged.tsv \\
@@ -25,7 +27,7 @@ Usage:
 
 Exit codes:
     0: Success
-    1: Error (missing files, database errors, etc.)
+    1: Error (missing files, write errors, etc.)
 """
 
 import argparse
@@ -37,8 +39,13 @@ from pathlib import Path
 import polars as pl
 from Bio import SeqIO
 from loguru import logger
-from py_nvd.db import connect
-from py_nvd.hits import calculate_gc_content, compress_sequence, compute_hit_key
+from py_nvd.hits import (
+    HitRecord,
+    calculate_gc_content,
+    compress_sequence,
+    compute_hit_key,
+    write_hits_parquet,
+)
 from py_nvd.state import mark_sample_completed, release_sample_lock
 
 
@@ -105,20 +112,13 @@ def parse_blast_contig_ids(blast_results_path: Path) -> set[str]:
     return set(df[QSEQID_COLUMN].unique().to_list())
 
 
-def register_hits_from_contigs(
+def build_hit_records(
     contigs: dict[str, str],
     contig_ids_with_hits: set[str],
     context: HitRegistrationContext,
-) -> tuple[int, int]:
+) -> list[HitRecord]:
     """
-    Register hits for contigs that had BLAST results.
-
-    For each contig with BLAST hits, registers the hit (if new) and
-    records the observation linking it to this sample/run.
-
-    This function batches all inserts into a single transaction to avoid
-    the overhead of per-row commits, which is critical for performance
-    on network filesystems.
+    Build HitRecord objects for contigs that had BLAST results.
 
     Args:
         contigs: Dict mapping contig IDs to sequences
@@ -126,12 +126,9 @@ def register_hits_from_contigs(
         context: Registration context with sample/run metadata
 
     Returns:
-        Tuple of (new_hits_count, total_observations_count).
+        List of HitRecord objects ready to be written.
     """
-    # Pre-compute all hit data before opening the database connection
-    # This minimizes the time we hold the database lock
-    hits_to_register: list[tuple[str, str, int, bytes, float, str]] = []
-    observations_to_record: list[tuple[str, str, str, str, str]] = []
+    hit_records: list[HitRecord] = []
 
     for contig_id in contig_ids_with_hits:
         if contig_id not in contigs:
@@ -147,86 +144,76 @@ def register_hits_from_contigs(
         compressed = compress_sequence(seq)
         gc_content = calculate_gc_content(seq)
 
-        hits_to_register.append(
-            (
-                hit_key,
-                contig_id,  # Keep track for observation
-                len(seq),
-                compressed,
-                gc_content,
-                context.run_date,
+        hit_records.append(
+            HitRecord(
+                hit_key=hit_key,
+                sequence_length=len(seq),
+                sequence_compressed=compressed,
+                gc_content=gc_content,
+                sample_set_id=context.sample_set_id,
+                sample_id=context.sample_id,
+                run_date=context.run_date,
+                contig_id=contig_id,
             )
         )
 
-        observations_to_record.append(
-            (
-                hit_key,
-                context.sample_set_id,
-                context.sample_id,
-                context.run_date,
-                contig_id,
-            )
+    return hit_records
+
+
+def write_hits_to_path(hits: list[HitRecord], output_path: Path) -> Path:
+    """
+    Write hit records to a specific parquet file path.
+
+    Uses atomic write (temp file + rename) for crash safety.
+
+    Args:
+        hits: List of HitRecord objects to write
+        output_path: Destination path for the parquet file
+
+    Returns:
+        Path to the written parquet file
+    """
+    # Convert to polars DataFrame
+    if not hits:
+        # Create empty DataFrame with correct schema
+        df = pl.DataFrame(
+            schema={
+                "hit_key": pl.Utf8,
+                "sequence_length": pl.Int64,
+                "sequence_compressed": pl.Binary,
+                "gc_content": pl.Float64,
+                "sample_set_id": pl.Utf8,
+                "sample_id": pl.Utf8,
+                "run_date": pl.Utf8,
+                "contig_id": pl.Utf8,
+            }
+        )
+    else:
+        df = pl.DataFrame(
+            [
+                {
+                    "hit_key": h.hit_key,
+                    "sequence_length": h.sequence_length,
+                    "sequence_compressed": h.sequence_compressed,
+                    "gc_content": h.gc_content,
+                    "sample_set_id": h.sample_set_id,
+                    "sample_id": h.sample_id,
+                    "run_date": h.run_date,
+                    "contig_id": h.contig_id,
+                }
+                for h in hits
+            ]
         )
 
-    if not hits_to_register:
-        return 0, 0
+    # Ensure parent directory exists
+    output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    logger.info(
-        f"Computed {len(hits_to_register)} hit keys, inserting in single transaction"
-    )
+    # Atomic write: write to temp file, then rename
+    tmp_path = output_path.with_suffix(".parquet.tmp")
+    df.write_parquet(tmp_path)
+    tmp_path.rename(output_path)
 
-    # Single transaction for all inserts
-    new_hits = 0
-    observations = 0
-
-    with connect(context.state_dir) as conn:
-        # Use FULL synchronous mode for safety on network filesystems.
-        # This ensures data is fully fsynced before commit returns.
-        # Slower, but prevents corruption from interrupted writes.
-        conn.execute("PRAGMA synchronous=FULL")
-
-        # Insert hits (INSERT OR IGNORE for idempotency)
-        # We count new hits by checking rowcount after each insert
-        for (
-            hit_key,
-            _contig_id,
-            seq_len,
-            compressed,
-            gc_content,
-            first_seen,
-        ) in hits_to_register:
-            cursor = conn.execute(
-                """
-                INSERT OR IGNORE INTO hits (hit_key, sequence_length, sequence_compressed, gc_content, first_seen_date)
-                VALUES (?, ?, ?, ?, ?)
-                """,
-                (hit_key, seq_len, compressed, gc_content, first_seen),
-            )
-            if cursor.rowcount > 0:
-                new_hits += 1
-
-        # Insert observations (INSERT OR IGNORE for idempotency)
-        for (
-            hit_key,
-            sample_set_id,
-            sample_id,
-            run_date,
-            contig_id,
-        ) in observations_to_record:
-            cursor = conn.execute(
-                """
-                INSERT OR IGNORE INTO hit_observations (hit_key, sample_set_id, sample_id, run_date, contig_id)
-                VALUES (?, ?, ?, ?, ?)
-                """,
-                (hit_key, sample_set_id, sample_id, run_date, contig_id),
-            )
-            if cursor.rowcount > 0:
-                observations += 1
-
-        # Single commit for the entire batch
-        conn.commit()
-
-    return new_hits, observations
+    return output_path
 
 
 def configure_logging(verbosity: int) -> None:
@@ -317,6 +304,12 @@ def main() -> None:
         help="LabKey integration is enabled (lock released after upload, not here)",
     )
     parser.add_argument(
+        "--output",
+        type=Path,
+        default=None,
+        help="Write parquet to this path instead of state directory (for Nextflow publishDir)",
+    )
+    parser.add_argument(
         "-v",
         "--verbose",
         action="count",
@@ -361,21 +354,28 @@ def main() -> None:
     contig_ids_with_hits = parse_blast_contig_ids(args.blast_results)
     logger.info(f"Found {len(contig_ids_with_hits)} contigs with hits")
 
-    if not contig_ids_with_hits:
-        logger.info("No hits to register")
-        new_hits, observations = 0, 0
-    else:
-        # Register hits
-        logger.info(f"Registering hits in {context.state_dir}")
-        new_hits, observations = register_hits_from_contigs(
-            contigs=contigs,
-            contig_ids_with_hits=contig_ids_with_hits,
-            context=context,
-        )
-
-    logger.info(
-        f"Registered {new_hits} new hits, {observations} observations for {context.sample_id}",
+    # Build hit records
+    hit_records = build_hit_records(
+        contigs=contigs,
+        contig_ids_with_hits=contig_ids_with_hits,
+        context=context,
     )
+    logger.info(f"Computed {len(hit_records)} hit records")
+
+    # Write parquet file
+    if args.output:
+        # Write to explicit output path (for Nextflow publishDir)
+        parquet_path = write_hits_to_path(hit_records, args.output)
+        logger.info(f"Wrote {len(hit_records)} hits to {parquet_path}")
+    else:
+        # Write to state directory (legacy behavior)
+        parquet_path = write_hits_parquet(
+            hits=hit_records,
+            sample_id=context.sample_id,
+            sample_set_id=context.sample_set_id,
+            state_dir=context.state_dir,
+        )
+        logger.info(f"Wrote {len(hit_records)} hits to {parquet_path}")
 
     # Mark sample as completed in state database
     # This enables per-sample resume and upload gating

@@ -35,7 +35,12 @@ from py_nvd.db import (
     get_state_dir,
     get_taxdump_dir,
 )
-from py_nvd.hits import prune_hits_for_sample_set
+from py_nvd.hits import (
+    count_hit_observations,
+    count_hits,
+    count_sample_set_observations,
+    delete_sample_set_hits,
+)
 from py_nvd.models import ProcessedSampleStatus, Status, UploadType
 
 state_app = typer.Typer(
@@ -261,10 +266,6 @@ def state_info(
         taxonomy_count = conn.execute(
             "SELECT COUNT(*) FROM taxonomy_versions",
         ).fetchone()[0]
-        hits_count = conn.execute("SELECT COUNT(*) FROM hits").fetchone()[0]
-        hit_observations_count = conn.execute(
-            "SELECT COUNT(*) FROM hit_observations",
-        ).fetchone()[0]
 
         # Get lock counts (handle case where table doesn't exist yet)
         try:
@@ -284,6 +285,10 @@ def state_info(
         latest_run = conn.execute(
             "SELECT run_id, started_at FROM runs ORDER BY started_at DESC LIMIT 1",
         ).fetchone()
+
+    # Get hits counts from parquet files (not SQLite)
+    hits_count = count_hits()
+    hit_observations_count = count_hit_observations()
 
     # Check taxdump
     taxdump_dir = get_taxdump_dir()
@@ -1666,11 +1671,8 @@ def state_prune(
                 (sample_set_id,),
             ).fetchone()[0]
 
-            # Count hit observations for this sample_set
-            observation_count = conn.execute(
-                "SELECT COUNT(*) FROM hit_observations WHERE sample_set_id = ?",
-                (sample_set_id,),
-            ).fetchone()[0]
+            # Count hit observations for this sample_set (from parquet files)
+            observation_count = count_sample_set_observations(sample_set_id)
 
             # Check for taxonomy version
             has_taxonomy = (
@@ -1816,17 +1818,16 @@ def state_prune(
 
         conn.commit()
 
-    # Prune hit observations and orphaned hits (separate transactions, idempotent)
-    total_orphaned_hits = 0
+    # Delete parquet hit files for pruned sample sets
+    total_hit_files_deleted = 0
     for sample_set_id in sample_set_ids_to_prune:
-        _, orphaned = prune_hits_for_sample_set(sample_set_id)
-        total_orphaned_hits += orphaned
+        total_hit_files_deleted += delete_sample_set_hits(sample_set_id)
 
     if not json_output:
         success(
             f"Pruned {len(prune_details)} run(s), {total_samples} sample(s), "
             f"{total_uploads} upload(s), {total_taxonomy} taxonomy version(s), "
-            f"{total_observations} hit observation(s), {total_orphaned_hits} orphaned hit(s)",
+            f"{total_hit_files_deleted} hit file(s)",
         )
 
 
@@ -1844,10 +1845,6 @@ def _get_table_counts(conn) -> dict[str, int]:
             "SELECT COUNT(*) FROM taxonomy_versions",
         ).fetchone()[0],
         "sra_cache": conn.execute("SELECT COUNT(*) FROM sra_cache").fetchone()[0],
-        "hits": conn.execute("SELECT COUNT(*) FROM hits").fetchone()[0],
-        "hit_observations": conn.execute(
-            "SELECT COUNT(*) FROM hit_observations",
-        ).fetchone()[0],
         "sample_locks": conn.execute(
             "SELECT COUNT(*) FROM sample_locks",
         ).fetchone()[0],
@@ -2005,8 +2002,6 @@ _IMPORT_TABLES = [
     ("presets", ["name"], ["created_at"]),
     ("taxonomy_versions", ["run_id"], ["file_hash", "recorded_at"]),
     ("sra_cache", ["srr_accession"], ["download_path", "downloaded_at"]),
-    ("hits", ["hit_key"], ["sequence_length", "first_seen_date"]),
-    ("hit_observations", ["id"], ["hit_key", "sample_id", "run_date"]),
     ("sample_locks", ["sample_id"], ["run_id", "locked_at", "expires_at"]),
 ]
 

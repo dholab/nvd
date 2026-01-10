@@ -176,6 +176,27 @@ def get_taxonomy_db_path(state_dir: Path | str | None = None) -> Path:
     return get_taxdump_dir(state_dir) / "taxonomy.sqlite"
 
 
+def get_hits_dir(state_dir: Path | str | None = None) -> Path:
+    """
+    Get path to the hits directory containing parquet files.
+
+    The hits directory stores per-sample parquet files organized by sample_set_id:
+        {state_dir}/hits/{sample_set_id}/{sample_id}.parquet
+
+    The directory is created if it doesn't exist.
+
+    Args:
+        state_dir: Optional explicit state directory. If None, resolves
+                   via NVD_STATE_DIR env var, then ~/.nvd/
+
+    Returns:
+        Path to the hits directory
+    """
+    hits_dir = get_state_dir(state_dir) / "hits"
+    hits_dir.mkdir(parents=True, exist_ok=True)
+    return hits_dir
+
+
 def _init_schema(conn: sqlite3.Connection) -> None:
     """Initialize database schema from schema.sql."""
     schema = files("py_nvd").joinpath("schema.sql").read_text()

@@ -8,10 +8,13 @@ from py_nvd.cli.commands.resume import EDITOR_MIN_DURATION_SECONDS
 from py_nvd.cli.utils import PIPELINE_ROOT, RESUME_FILE, get_editor
 from py_nvd.db import connect
 from py_nvd.hits import (
+    HitRecord,
+    calculate_gc_content,
+    compress_sequence,
+    compute_hit_key,
     count_hit_observations,
     count_hits,
-    record_hit_observation,
-    register_hit,
+    write_hits_parquet,
 )
 from py_nvd.state import (
     complete_run,
@@ -22,6 +25,26 @@ from py_nvd.state import (
 )
 
 runner = CliRunner()
+
+
+def make_hit_record(
+    seq: str,
+    sample_set_id: str,
+    sample_id: str,
+    run_date: str,
+    contig_id: str | None = None,
+) -> HitRecord:
+    """Helper to create a HitRecord from a sequence."""
+    return HitRecord(
+        hit_key=compute_hit_key(seq),
+        sequence_length=len(seq),
+        sequence_compressed=compress_sequence(seq),
+        gc_content=calculate_gc_content(seq),
+        sample_set_id=sample_set_id,
+        sample_id=sample_id,
+        run_date=run_date,
+        contig_id=contig_id,
+    )
 
 
 class TestCLIHelp:
@@ -164,14 +187,10 @@ class TestStateCommands:
         monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
         runner.invoke(app, ["state", "init"])
 
-        hit, _ = register_hit("ACGTACGT", "2024-01-01T00:00:00Z", tmp_path)
-        record_hit_observation(
-            hit.hit_key,
-            "set_001",
-            "sample_a",
-            "2024-01-01T00:00:00Z",
-            state_dir=tmp_path,
+        record = make_hit_record(
+            "ACGTACGT", "set_001", "sample_a", "2024-01-01T00:00:00Z"
         )
+        write_hits_parquet([record], "sample_a", "set_001", tmp_path)
 
         result = runner.invoke(app, ["state", "info", "--json"])
         assert result.exit_code == 0
@@ -179,7 +198,7 @@ class TestStateCommands:
         assert '"hit_observations": 1' in result.stdout
 
     def test_state_prune_cascades_to_hit_observations(self, tmp_path, monkeypatch):
-        """Pruning a run deletes its hit observations."""
+        """Pruning a run deletes its hit observations (parquet files)."""
         from datetime import datetime, timedelta
 
         monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
@@ -197,11 +216,9 @@ class TestStateCommands:
             )
             conn.commit()
 
-        # Register hit and observation for this run
-        hit, _ = register_hit("ACGTACGT", old_date, tmp_path)
-        record_hit_observation(
-            hit.hit_key, "old_set", "sample_a", old_date, state_dir=tmp_path
-        )
+        # Write hit parquet file for this run
+        record = make_hit_record("ACGTACGT", "old_set", "sample_a", old_date)
+        write_hits_parquet([record], "sample_a", "old_set", tmp_path)
 
         assert count_hit_observations(tmp_path) == 1
 
@@ -210,11 +227,11 @@ class TestStateCommands:
         assert result.exit_code == 0
         assert "hit observation" in result.stdout
 
-        # Observation should be deleted
+        # Observation should be deleted (parquet file removed)
         assert count_hit_observations(tmp_path) == 0
 
-    def test_state_prune_garbage_collects_orphaned_hits(self, tmp_path, monkeypatch):
-        """Hits with no observations are deleted after prune."""
+    def test_state_prune_deletes_sample_set_hits(self, tmp_path, monkeypatch):
+        """Pruning a run deletes all hits for that sample set."""
         from datetime import datetime, timedelta
 
         monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
@@ -230,24 +247,21 @@ class TestStateCommands:
             )
             conn.commit()
 
-        # Register hit with single observation
-        hit, _ = register_hit("ACGTACGT", old_date, tmp_path)
-        record_hit_observation(
-            hit.hit_key, "old_set", "sample_a", old_date, state_dir=tmp_path
-        )
+        # Write hits for this sample set
+        record = make_hit_record("ACGTACGT", "old_set", "sample_a", old_date)
+        write_hits_parquet([record], "sample_a", "old_set", tmp_path)
 
         assert count_hits(tmp_path) == 1
 
         # Prune
         result = runner.invoke(app, ["state", "prune", "--older-than", "90d", "--yes"])
         assert result.exit_code == 0
-        assert "orphaned hit" in result.stdout
 
-        # Hit should be garbage collected
+        # Hits should be deleted with the sample set
         assert count_hits(tmp_path) == 0
 
-    def test_state_prune_preserves_shared_hits(self, tmp_path, monkeypatch):
-        """Hits observed in multiple runs survive partial prune."""
+    def test_state_prune_preserves_other_sample_sets(self, tmp_path, monkeypatch):
+        """Pruning one run preserves hits from other runs."""
         from datetime import datetime, timedelta
 
         monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
@@ -268,23 +282,24 @@ class TestStateCommands:
             )
             conn.commit()
 
-        # Same hit observed in both runs
-        hit, _ = register_hit("ACGTACGT", old_date, tmp_path)
-        record_hit_observation(
-            hit.hit_key, "old_set", "sample_a", old_date, state_dir=tmp_path
-        )
-        record_hit_observation(
-            hit.hit_key, "new_set", "sample_b", new_date, state_dir=tmp_path
-        )
+        # Same sequence in both sample sets (stored separately in parquet)
+        old_record = make_hit_record("ACGTACGT", "old_set", "sample_a", old_date)
+        write_hits_parquet([old_record], "sample_a", "old_set", tmp_path)
 
-        assert count_hits(tmp_path) == 1
+        new_record = make_hit_record("ACGTACGT", "new_set", "sample_b", new_date)
+        write_hits_parquet([new_record], "sample_b", "new_set", tmp_path)
+
+        # Both have the same hit key, but stored in separate parquet files
+        assert count_hits(tmp_path) == 1  # Unique hit count
+        assert count_hit_observations(tmp_path) == 2  # Two observations
 
         # Prune old run only
         result = runner.invoke(app, ["state", "prune", "--older-than", "90d", "--yes"])
         assert result.exit_code == 0
 
-        # Hit should still exist (has observation from new run)
+        # Hit still exists in new_set
         assert count_hits(tmp_path) == 1
+        assert count_hit_observations(tmp_path) == 1
 
 
 class TestValidateCommands:
@@ -747,36 +762,27 @@ class TestHitsCommands:
         monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
         runner.invoke(app, ["state", "init"])
 
-        # Register a hit
-        hit, _ = register_hit("ACGTACGTACGT", "2024-01-01T00:00:00Z", tmp_path)
-        record_hit_observation(
-            hit.hit_key,
-            "set_001",
-            "sample_a",
-            "2024-01-01T00:00:00Z",
-            contig_id="NODE_1",
-            state_dir=tmp_path,
+        # Write a hit parquet file
+        record = make_hit_record(
+            "ACGTACGTACGT", "set_001", "sample_a", "2024-01-01T00:00:00Z", "NODE_1"
         )
+        write_hits_parquet([record], "sample_a", "set_001", tmp_path)
 
         result = runner.invoke(app, ["hits", "export", "--format", "tsv"])
         assert result.exit_code == 0
         assert "hit_key" in result.stdout
         assert "sample_a" in result.stdout
-        assert hit.hit_key in result.stdout
+        assert record.hit_key in result.stdout
 
     def test_hits_export_csv(self, tmp_path, monkeypatch):
         """hits export outputs CSV format."""
         monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
         runner.invoke(app, ["state", "init"])
 
-        hit, _ = register_hit("ACGTACGTACGT", "2024-01-01T00:00:00Z", tmp_path)
-        record_hit_observation(
-            hit.hit_key,
-            "set_001",
-            "sample_a",
-            "2024-01-01T00:00:00Z",
-            state_dir=tmp_path,
+        record = make_hit_record(
+            "ACGTACGTACGT", "set_001", "sample_a", "2024-01-01T00:00:00Z"
         )
+        write_hits_parquet([record], "sample_a", "set_001", tmp_path)
 
         result = runner.invoke(app, ["hits", "export", "--format", "csv"])
         assert result.exit_code == 0
@@ -787,18 +793,14 @@ class TestHitsCommands:
         monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
         runner.invoke(app, ["state", "init"])
 
-        hit, _ = register_hit("ACGTACGTACGT", "2024-01-01T00:00:00Z", tmp_path)
-        record_hit_observation(
-            hit.hit_key,
-            "set_001",
-            "sample_a",
-            "2024-01-01T00:00:00Z",
-            state_dir=tmp_path,
+        record = make_hit_record(
+            "ACGTACGTACGT", "set_001", "sample_a", "2024-01-01T00:00:00Z"
         )
+        write_hits_parquet([record], "sample_a", "set_001", tmp_path)
 
         result = runner.invoke(app, ["hits", "export", "--format", "fasta"])
         assert result.exit_code == 0
-        assert f">{hit.hit_key}" in result.stdout
+        assert f">{record.hit_key}" in result.stdout
         assert "ACGTACGTACGT" in result.stdout
 
     def test_hits_export_parquet_requires_output(self, tmp_path, monkeypatch):
@@ -815,14 +817,10 @@ class TestHitsCommands:
         monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
         runner.invoke(app, ["state", "init"])
 
-        hit, _ = register_hit("ACGTACGTACGT", "2024-01-01T00:00:00Z", tmp_path)
-        record_hit_observation(
-            hit.hit_key,
-            "set_001",
-            "sample_a",
-            "2024-01-01T00:00:00Z",
-            state_dir=tmp_path,
+        record = make_hit_record(
+            "ACGTACGTACGT", "set_001", "sample_a", "2024-01-01T00:00:00Z"
         )
+        write_hits_parquet([record], "sample_a", "set_001", tmp_path)
 
         output_file = tmp_path / "hits.parquet"
         result = runner.invoke(
@@ -836,14 +834,10 @@ class TestHitsCommands:
         monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
         runner.invoke(app, ["state", "init"])
 
-        hit, _ = register_hit("ACGTACGTACGT", "2024-01-01T00:00:00Z", tmp_path)
-        record_hit_observation(
-            hit.hit_key,
-            "set_001",
-            "sample_a",
-            "2024-01-01T00:00:00Z",
-            state_dir=tmp_path,
+        record = make_hit_record(
+            "ACGTACGTACGT", "set_001", "sample_a", "2024-01-01T00:00:00Z"
         )
+        write_hits_parquet([record], "sample_a", "set_001", tmp_path)
 
         result = runner.invoke(app, ["hits", "export", "--include-sequence"])
         assert result.exit_code == 0
@@ -855,14 +849,10 @@ class TestHitsCommands:
         monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
         runner.invoke(app, ["state", "init"])
 
-        hit, _ = register_hit("ACGTACGTACGT", "2024-01-01T00:00:00Z", tmp_path)
-        record_hit_observation(
-            hit.hit_key,
-            "set_001",
-            "sample_a",
-            "2024-01-01T00:00:00Z",
-            state_dir=tmp_path,
+        record = make_hit_record(
+            "ACGTACGTACGT", "set_001", "sample_a", "2024-01-01T00:00:00Z"
         )
+        write_hits_parquet([record], "sample_a", "set_001", tmp_path)
 
         output_file = tmp_path / "hits.tsv"
         result = runner.invoke(app, ["hits", "export", "--output", str(output_file)])
@@ -872,7 +862,7 @@ class TestHitsCommands:
 
         content = output_file.read_text()
         assert "hit_key" in content
-        assert hit.hit_key in content
+        assert record.hit_key in content
 
     def test_hits_stats_help(self):
         """hits stats --help shows options."""
@@ -906,14 +896,10 @@ class TestHitsCommands:
         monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
         runner.invoke(app, ["state", "init"])
 
-        hit, _ = register_hit("ACGTACGTACGT", "2024-01-01", tmp_path)
-        record_hit_observation(
-            hit.hit_key,
-            "set_001",
-            "sample_a",
-            "2024-01-01",
-            state_dir=tmp_path,
+        record = make_hit_record(
+            "ACGTACGTACGT", "set_001", "sample_a", "2024-01-01T00:00:00Z"
         )
+        write_hits_parquet([record], "sample_a", "set_001", tmp_path)
 
         result = runner.invoke(app, ["hits", "stats"])
         assert result.exit_code == 0
@@ -925,14 +911,10 @@ class TestHitsCommands:
         monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
         runner.invoke(app, ["state", "init"])
 
-        hit, _ = register_hit("ACGTACGTACGT", "2024-01-01", tmp_path)
-        record_hit_observation(
-            hit.hit_key,
-            "set_001",
-            "sample_a",
-            "2024-01-01",
-            state_dir=tmp_path,
+        record = make_hit_record(
+            "ACGTACGTACGT", "set_001", "sample_a", "2024-01-01T00:00:00Z"
         )
+        write_hits_parquet([record], "sample_a", "set_001", tmp_path)
 
         result = runner.invoke(app, ["hits", "stats", "--json"])
         assert result.exit_code == 0
@@ -948,41 +930,31 @@ class TestHitsCommands:
         monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
         runner.invoke(app, ["state", "init"])
 
-        hit, _ = register_hit("ACGTACGTACGT", "2024-01-01", tmp_path)
         # Same hit in two samples
-        record_hit_observation(
-            hit.hit_key,
-            "set_001",
-            "sample_a",
-            "2024-01-01",
-            state_dir=tmp_path,
-        )
-        record_hit_observation(
-            hit.hit_key,
-            "set_001",
-            "sample_b",
-            "2024-01-01",
-            state_dir=tmp_path,
-        )
+        records = [
+            make_hit_record(
+                "ACGTACGTACGT", "set_001", "sample_a", "2024-01-01T00:00:00Z"
+            ),
+            make_hit_record(
+                "ACGTACGTACGT", "set_001", "sample_b", "2024-01-01T00:00:00Z"
+            ),
+        ]
+        write_hits_parquet(records, "sample_a", "set_001", tmp_path)
 
         result = runner.invoke(app, ["hits", "stats"])
         assert result.exit_code == 0
-        assert hit.hit_key[:16] in result.stdout  # Truncated key shown
+        assert records[0].hit_key[:16] in result.stdout  # Truncated key shown
 
     def test_hits_stats_no_recurring(self, tmp_path, monkeypatch):
         """hits stats shows message when no recurring hits."""
         monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
         runner.invoke(app, ["state", "init"])
 
-        hit, _ = register_hit("ACGTACGTACGT", "2024-01-01", tmp_path)
         # Only one sample
-        record_hit_observation(
-            hit.hit_key,
-            "set_001",
-            "sample_a",
-            "2024-01-01",
-            state_dir=tmp_path,
+        record = make_hit_record(
+            "ACGTACGTACGT", "set_001", "sample_a", "2024-01-01T00:00:00Z"
         )
+        write_hits_parquet([record], "sample_a", "set_001", tmp_path)
 
         result = runner.invoke(app, ["hits", "stats"])
         assert result.exit_code == 0
@@ -1022,35 +994,25 @@ class TestHitsCommands:
         runner.invoke(app, ["state", "init"])
 
         seq = "ACGTACGTACGT"
-        hit, _ = register_hit(seq, "2024-01-01", tmp_path)
-        record_hit_observation(
-            hit.hit_key,
-            "set_001",
-            "sample_a",
-            "2024-01-01",
-            state_dir=tmp_path,
-        )
+        record = make_hit_record(seq, "set_001", "sample_a", "2024-01-01T00:00:00Z")
+        write_hits_parquet([record], "sample_a", "set_001", tmp_path)
 
         result = runner.invoke(app, ["hits", "lookup", seq])
         assert result.exit_code == 0
         assert "Hit found" in result.stdout
-        assert hit.hit_key in result.stdout
+        assert record.hit_key in result.stdout
 
     def test_hits_lookup_by_key(self, tmp_path, monkeypatch):
         """hits lookup finds hit by key."""
         monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
         runner.invoke(app, ["state", "init"])
 
-        hit, _ = register_hit("ACGTACGTACGT", "2024-01-01", tmp_path)
-        record_hit_observation(
-            hit.hit_key,
-            "set_001",
-            "sample_a",
-            "2024-01-01",
-            state_dir=tmp_path,
+        record = make_hit_record(
+            "ACGTACGTACGT", "set_001", "sample_a", "2024-01-01T00:00:00Z"
         )
+        write_hits_parquet([record], "sample_a", "set_001", tmp_path)
 
-        result = runner.invoke(app, ["hits", "lookup", hit.hit_key])
+        result = runner.invoke(app, ["hits", "lookup", record.hit_key])
         assert result.exit_code == 0
         assert "Hit found" in result.stdout
 
@@ -1059,22 +1021,18 @@ class TestHitsCommands:
         monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
         runner.invoke(app, ["state", "init"])
 
-        hit, _ = register_hit("ACGTACGTACGT", "2024-01-01", tmp_path)
-        record_hit_observation(
-            hit.hit_key,
-            "set_001",
-            "sample_a",
-            "2024-01-01",
-            state_dir=tmp_path,
+        record = make_hit_record(
+            "ACGTACGTACGT", "set_001", "sample_a", "2024-01-01T00:00:00Z"
         )
+        write_hits_parquet([record], "sample_a", "set_001", tmp_path)
 
-        result = runner.invoke(app, ["hits", "lookup", hit.hit_key, "--json"])
+        result = runner.invoke(app, ["hits", "lookup", record.hit_key, "--json"])
         assert result.exit_code == 0
         import json
 
         data = json.loads(result.stdout)
         assert data["found"] is True
-        assert data["hit"]["hit_key"] == hit.hit_key
+        assert data["hit"]["hit_key"] == record.hit_key
         assert len(data["observations"]) == 1
 
     def test_hits_lookup_shows_observations(self, tmp_path, monkeypatch):
@@ -1082,23 +1040,17 @@ class TestHitsCommands:
         monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
         runner.invoke(app, ["state", "init"])
 
-        hit, _ = register_hit("ACGTACGTACGT", "2024-01-01", tmp_path)
-        record_hit_observation(
-            hit.hit_key,
-            "set_001",
-            "sample_a",
-            "2024-01-01",
-            state_dir=tmp_path,
-        )
-        record_hit_observation(
-            hit.hit_key,
-            "set_001",
-            "sample_b",
-            "2024-01-02",
-            state_dir=tmp_path,
-        )
+        records = [
+            make_hit_record(
+                "ACGTACGTACGT", "set_001", "sample_a", "2024-01-01T00:00:00Z"
+            ),
+            make_hit_record(
+                "ACGTACGTACGT", "set_001", "sample_b", "2024-01-02T00:00:00Z"
+            ),
+        ]
+        write_hits_parquet(records, "sample_a", "set_001", tmp_path)
 
-        result = runner.invoke(app, ["hits", "lookup", hit.hit_key])
+        result = runner.invoke(app, ["hits", "lookup", records[0].hit_key])
         assert result.exit_code == 0
         assert "sample_a" in result.stdout
         assert "sample_b" in result.stdout
@@ -1150,16 +1102,10 @@ class TestHitsCommands:
         runner.invoke(app, ["state", "init"])
 
         seq = "ACGTACGTACGT"
-        hit, _ = register_hit(seq, "2024-01-01", tmp_path)
-        record_hit_observation(
-            hit.hit_key,
-            "set_001",
-            "sample_a",
-            "2024-01-01",
-            state_dir=tmp_path,
-        )
+        record = make_hit_record(seq, "set_001", "sample_a", "2024-01-01T00:00:00Z")
+        write_hits_parquet([record], "sample_a", "set_001", tmp_path)
 
-        result = runner.invoke(app, ["hits", "trace", hit.hit_key])
+        result = runner.invoke(app, ["hits", "trace", record.hit_key])
         assert result.exit_code == 0
         assert "Hit found" in result.stdout
         assert "Sequence:" in result.stdout
@@ -1171,16 +1117,10 @@ class TestHitsCommands:
         runner.invoke(app, ["state", "init"])
 
         seq = "ACGTACGTACGT"
-        hit, _ = register_hit(seq, "2024-01-01", tmp_path)
-        record_hit_observation(
-            hit.hit_key,
-            "set_001",
-            "sample_a",
-            "2024-01-01",
-            state_dir=tmp_path,
-        )
+        record = make_hit_record(seq, "set_001", "sample_a", "2024-01-01T00:00:00Z")
+        write_hits_parquet([record], "sample_a", "set_001", tmp_path)
 
-        result = runner.invoke(app, ["hits", "trace", hit.hit_key, "--json"])
+        result = runner.invoke(app, ["hits", "trace", record.hit_key, "--json"])
         assert result.exit_code == 0
         import json
 
@@ -1194,23 +1134,17 @@ class TestHitsCommands:
         monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
         runner.invoke(app, ["state", "init"])
 
-        hit, _ = register_hit("ACGTACGTACGT", "2024-01-01", tmp_path)
-        record_hit_observation(
-            hit.hit_key,
-            "set_001",
-            "sample_a",
-            "2024-01-01",
-            state_dir=tmp_path,
-        )
-        record_hit_observation(
-            hit.hit_key,
-            "set_001",
-            "sample_b",
-            "2024-01-02",
-            state_dir=tmp_path,
-        )
+        records = [
+            make_hit_record(
+                "ACGTACGTACGT", "set_001", "sample_a", "2024-01-01T00:00:00Z"
+            ),
+            make_hit_record(
+                "ACGTACGTACGT", "set_001", "sample_b", "2024-01-02T00:00:00Z"
+            ),
+        ]
+        write_hits_parquet(records, "sample_a", "set_001", tmp_path)
 
-        result = runner.invoke(app, ["hits", "trace", hit.hit_key])
+        result = runner.invoke(app, ["hits", "trace", records[0].hit_key])
         assert result.exit_code == 0
         assert "sample_a" in result.stdout
         assert "sample_b" in result.stdout
@@ -1246,14 +1180,10 @@ class TestHitsCommands:
         monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
         runner.invoke(app, ["state", "init"])
 
-        hit, _ = register_hit("ACGTACGTACGT", "2024-01-15", tmp_path)
-        record_hit_observation(
-            hit.hit_key,
-            "set_001",
-            "sample_a",
-            "2024-01-15",
-            state_dir=tmp_path,
+        record = make_hit_record(
+            "ACGTACGTACGT", "set_001", "sample_a", "2024-01-15T00:00:00Z"
         )
+        write_hits_parquet([record], "sample_a", "set_001", tmp_path)
 
         result = runner.invoke(app, ["hits", "timeline"])
         assert result.exit_code == 0
@@ -1267,24 +1197,16 @@ class TestHitsCommands:
         monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
         runner.invoke(app, ["state", "init"])
 
-        # Hit in January
-        hit1, _ = register_hit("ACGTACGTACGT", "2024-01-15", tmp_path)
-        record_hit_observation(
-            hit1.hit_key,
-            "set_001",
-            "sample_a",
-            "2024-01-15",
-            state_dir=tmp_path,
-        )
-        # Hit in March (skip February)
-        hit2, _ = register_hit("GGGGCCCCAAAA", "2024-03-15", tmp_path)
-        record_hit_observation(
-            hit2.hit_key,
-            "set_001",
-            "sample_b",
-            "2024-03-15",
-            state_dir=tmp_path,
-        )
+        # Hit in January and March (skip February)
+        records = [
+            make_hit_record(
+                "ACGTACGTACGT", "set_001", "sample_a", "2024-01-15T00:00:00Z"
+            ),
+            make_hit_record(
+                "GGGGCCCCAAAA", "set_001", "sample_b", "2024-03-15T00:00:00Z"
+            ),
+        ]
+        write_hits_parquet(records, "sample_a", "set_001", tmp_path)
 
         result = runner.invoke(app, ["hits", "timeline"])
         assert result.exit_code == 0
@@ -1299,14 +1221,10 @@ class TestHitsCommands:
         monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
         runner.invoke(app, ["state", "init"])
 
-        hit, _ = register_hit("ACGTACGTACGT", "2024-01-15", tmp_path)
-        record_hit_observation(
-            hit.hit_key,
-            "set_001",
-            "sample_a",
-            "2024-01-15",
-            state_dir=tmp_path,
+        record = make_hit_record(
+            "ACGTACGTACGT", "set_001", "sample_a", "2024-01-15T00:00:00Z"
         )
+        write_hits_parquet([record], "sample_a", "set_001", tmp_path)
 
         result = runner.invoke(app, ["hits", "timeline", "--json"])
         assert result.exit_code == 0
@@ -1324,22 +1242,15 @@ class TestHitsCommands:
         runner.invoke(app, ["state", "init"])
 
         # Hit in January and March (skip February)
-        hit1, _ = register_hit("ACGTACGTACGT", "2024-01-15", tmp_path)
-        record_hit_observation(
-            hit1.hit_key,
-            "set_001",
-            "sample_a",
-            "2024-01-15",
-            state_dir=tmp_path,
-        )
-        hit2, _ = register_hit("GGGGCCCCAAAA", "2024-03-15", tmp_path)
-        record_hit_observation(
-            hit2.hit_key,
-            "set_001",
-            "sample_b",
-            "2024-03-15",
-            state_dir=tmp_path,
-        )
+        records = [
+            make_hit_record(
+                "ACGTACGTACGT", "set_001", "sample_a", "2024-01-15T00:00:00Z"
+            ),
+            make_hit_record(
+                "GGGGCCCCAAAA", "set_001", "sample_b", "2024-03-15T00:00:00Z"
+            ),
+        ]
+        write_hits_parquet(records, "sample_a", "set_001", tmp_path)
 
         result = runner.invoke(app, ["hits", "timeline", "--json"])
         assert result.exit_code == 0
@@ -1376,14 +1287,11 @@ class TestHitsCommands:
         monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
         runner.invoke(app, ["state", "init"])
 
-        hit, _ = register_hit("ACGTACGTACGT", "2024-01-01", tmp_path)
-        record_hit_observation(
-            hit.hit_key,
-            "set_001",
-            "sample_a",
-            "2024-01-01",
-            state_dir=tmp_path,
+        # Only one sample, so no recurring hits
+        record = make_hit_record(
+            "ACGTACGTACGT", "set_001", "sample_a", "2024-01-01T00:00:00Z"
         )
+        write_hits_parquet([record], "sample_a", "set_001", tmp_path)
 
         result = runner.invoke(app, ["hits", "recur"])
         assert result.exit_code == 0
@@ -1394,21 +1302,16 @@ class TestHitsCommands:
         monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
         runner.invoke(app, ["state", "init"])
 
-        hit, _ = register_hit("ACGTACGTACGT", "2024-01-01", tmp_path)
-        record_hit_observation(
-            hit.hit_key,
-            "set_001",
-            "sample_a",
-            "2024-01-01",
-            state_dir=tmp_path,
-        )
-        record_hit_observation(
-            hit.hit_key,
-            "set_001",
-            "sample_b",
-            "2024-01-01",
-            state_dir=tmp_path,
-        )
+        # Same hit in two samples
+        records = [
+            make_hit_record(
+                "ACGTACGTACGT", "set_001", "sample_a", "2024-01-01T00:00:00Z"
+            ),
+            make_hit_record(
+                "ACGTACGTACGT", "set_001", "sample_b", "2024-01-01T00:00:00Z"
+            ),
+        ]
+        write_hits_parquet(records, "sample_a", "set_001", tmp_path)
 
         result = runner.invoke(app, ["hits", "recur"])
         assert result.exit_code == 0
@@ -1419,21 +1322,16 @@ class TestHitsCommands:
         monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
         runner.invoke(app, ["state", "init"])
 
-        hit, _ = register_hit("ACGTACGTACGT", "2024-01-01", tmp_path)
-        record_hit_observation(
-            hit.hit_key,
-            "set_001",
-            "sample_a",
-            "2024-01-01",
-            state_dir=tmp_path,
-        )
-        record_hit_observation(
-            hit.hit_key,
-            "set_001",
-            "sample_b",
-            "2024-01-01",
-            state_dir=tmp_path,
-        )
+        # Same hit in two samples
+        records = [
+            make_hit_record(
+                "ACGTACGTACGT", "set_001", "sample_a", "2024-01-01T00:00:00Z"
+            ),
+            make_hit_record(
+                "ACGTACGTACGT", "set_001", "sample_b", "2024-01-01T00:00:00Z"
+            ),
+        ]
+        write_hits_parquet(records, "sample_a", "set_001", tmp_path)
 
         result = runner.invoke(app, ["hits", "recur", "--json"])
         assert result.exit_code == 0
@@ -1441,7 +1339,7 @@ class TestHitsCommands:
 
         data = json.loads(result.stdout)
         assert len(data) == 1
-        assert data[0]["hit_key"] == hit.hit_key
+        assert data[0]["hit_key"] == records[0].hit_key
         assert data[0]["sample_count"] == 2
 
     def test_hits_recur_min_samples_filter(self, tmp_path, monkeypatch):
@@ -1449,22 +1347,16 @@ class TestHitsCommands:
         monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
         runner.invoke(app, ["state", "init"])
 
-        hit, _ = register_hit("ACGTACGTACGT", "2024-01-01", tmp_path)
         # Only 2 samples
-        record_hit_observation(
-            hit.hit_key,
-            "set_001",
-            "sample_a",
-            "2024-01-01",
-            state_dir=tmp_path,
-        )
-        record_hit_observation(
-            hit.hit_key,
-            "set_001",
-            "sample_b",
-            "2024-01-01",
-            state_dir=tmp_path,
-        )
+        records = [
+            make_hit_record(
+                "ACGTACGTACGT", "set_001", "sample_a", "2024-01-01T00:00:00Z"
+            ),
+            make_hit_record(
+                "ACGTACGTACGT", "set_001", "sample_b", "2024-01-01T00:00:00Z"
+            ),
+        ]
+        write_hits_parquet(records, "sample_a", "set_001", tmp_path)
 
         # Should find with min-samples=2
         result = runner.invoke(app, ["hits", "recur", "--min-samples", "2"])

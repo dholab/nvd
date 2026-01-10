@@ -12,8 +12,10 @@ import pytest
 
 from register_hits import (
     HitRegistrationContext,
+    build_hit_records,
     parse_blast_contig_ids,
     parse_fasta,
+    write_hits_to_path,
 )
 
 
@@ -150,3 +152,142 @@ class TestParseBlastContigIds:
             assert contig_ids == set()
         finally:
             tsv_path.unlink()
+
+
+class TestBuildHitRecords:
+    """Tests for build_hit_records()."""
+
+    def test_builds_records_for_matching_contigs(self):
+        """Builds HitRecords for contigs that have BLAST hits."""
+        contigs = {"NODE_1": "ACGTACGT", "NODE_2": "GGGGCCCC", "NODE_3": "AAAATTTT"}
+        contig_ids_with_hits = {"NODE_1", "NODE_3"}
+        context = HitRegistrationContext(
+            state_dir=Path("/tmp"),
+            sample_set_id="set_001",
+            sample_id="sample_a",
+            run_date="2024-01-01T00:00:00Z",
+        )
+
+        records = build_hit_records(contigs, contig_ids_with_hits, context)
+
+        assert len(records) == 2
+        contig_ids = {r.contig_id for r in records}
+        assert contig_ids == {"NODE_1", "NODE_3"}
+
+    def test_skips_missing_contigs(self):
+        """Skips contig IDs that aren't in the FASTA."""
+        contigs = {"NODE_1": "ACGTACGT"}
+        contig_ids_with_hits = {"NODE_1", "NODE_MISSING"}
+        context = HitRegistrationContext(
+            state_dir=Path("/tmp"),
+            sample_set_id="set_001",
+            sample_id="sample_a",
+            run_date="2024-01-01T00:00:00Z",
+        )
+
+        records = build_hit_records(contigs, contig_ids_with_hits, context)
+
+        assert len(records) == 1
+        assert records[0].contig_id == "NODE_1"
+
+    def test_empty_hits_returns_empty_list(self):
+        """Returns empty list when no contigs have hits."""
+        contigs = {"NODE_1": "ACGTACGT"}
+        contig_ids_with_hits: set[str] = set()
+        context = HitRegistrationContext(
+            state_dir=Path("/tmp"),
+            sample_set_id="set_001",
+            sample_id="sample_a",
+            run_date="2024-01-01T00:00:00Z",
+        )
+
+        records = build_hit_records(contigs, contig_ids_with_hits, context)
+
+        assert records == []
+
+    def test_populates_metadata_correctly(self):
+        """HitRecords have correct metadata from context."""
+        contigs = {"NODE_1": "ACGTACGT"}
+        contig_ids_with_hits = {"NODE_1"}
+        context = HitRegistrationContext(
+            state_dir=Path("/tmp"),
+            sample_set_id="set_001",
+            sample_id="sample_a",
+            run_date="2024-01-01T00:00:00Z",
+        )
+
+        records = build_hit_records(contigs, contig_ids_with_hits, context)
+
+        assert len(records) == 1
+        record = records[0]
+        assert record.sample_set_id == "set_001"
+        assert record.sample_id == "sample_a"
+        assert record.run_date == "2024-01-01T00:00:00Z"
+        assert record.sequence_length == 8
+        assert len(record.hit_key) == 32
+
+
+class TestWriteHitsToPath:
+    """Tests for write_hits_to_path()."""
+
+    def test_writes_parquet_to_specified_path(self):
+        """Writes parquet file to the specified output path."""
+        import polars as pl
+
+        contigs = {"NODE_1": "ACGTACGT"}
+        contig_ids_with_hits = {"NODE_1"}
+        context = HitRegistrationContext(
+            state_dir=Path("/tmp"),
+            sample_set_id="set_001",
+            sample_id="sample_a",
+            run_date="2024-01-01T00:00:00Z",
+        )
+        records = build_hit_records(contigs, contig_ids_with_hits, context)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / "output.parquet"
+            result_path = write_hits_to_path(records, output_path)
+
+            assert result_path == output_path
+            assert output_path.exists()
+
+            # Verify contents
+            df = pl.read_parquet(output_path)
+            assert len(df) == 1
+            assert df["sample_id"][0] == "sample_a"
+
+    def test_creates_parent_directories(self):
+        """Creates parent directories if they don't exist."""
+        contigs = {"NODE_1": "ACGTACGT"}
+        contig_ids_with_hits = {"NODE_1"}
+        context = HitRegistrationContext(
+            state_dir=Path("/tmp"),
+            sample_set_id="set_001",
+            sample_id="sample_a",
+            run_date="2024-01-01T00:00:00Z",
+        )
+        records = build_hit_records(contigs, contig_ids_with_hits, context)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / "nested" / "dir" / "output.parquet"
+            result_path = write_hits_to_path(records, output_path)
+
+            assert result_path == output_path
+            assert output_path.exists()
+
+    def test_writes_empty_parquet_with_schema(self):
+        """Writes valid parquet file even with empty records list."""
+        import polars as pl
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / "empty.parquet"
+            result_path = write_hits_to_path([], output_path)
+
+            assert result_path == output_path
+            assert output_path.exists()
+
+            # Verify it's a valid parquet with correct schema
+            df = pl.read_parquet(output_path)
+            assert len(df) == 0
+            assert "hit_key" in df.columns
+            assert "sample_id" in df.columns
