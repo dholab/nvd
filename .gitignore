@@ -49,6 +49,7 @@
 !/conf
 !/conf/results.config
 !/conf/user-settings.mkfg
+!/conf/chtc-template.config
 
 # schemas
 !/schemas

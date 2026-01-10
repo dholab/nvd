@@ -28,6 +28,7 @@ from py_nvd.cli.commands.resume import resume
 from py_nvd.cli.commands.run import run
 from py_nvd.cli.commands.samplesheet import samplesheet_app
 from py_nvd.cli.commands.secrets import secrets_app
+from py_nvd.cli.commands.setup import setup_app
 from py_nvd.cli.commands.state import state_app
 from py_nvd.cli.commands.validate import validate_app
 from py_nvd.cli.commands.version import version
@@ -87,6 +88,9 @@ app.add_typer(samplesheet_app, name="ss", hidden=True)  # Short alias
 
 # Secrets commands
 app.add_typer(secrets_app, name="secrets")
+
+# Setup commands
+app.add_typer(setup_app, name="setup")
 
 # Wrapped command (seasonal easter egg - Dec 15 to Jan 15)
 _today = datetime.now()
