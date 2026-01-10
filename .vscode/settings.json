@@ -1,0 +1,32 @@
+{
+  "yaml.schemas": {
+    "./schemas/nvd-params.latest.schema.json": [
+      "**/params*.yaml",
+      "**/params*.yml",
+      "**/*-params.yaml",
+      "**/*-params.yml"
+    ]
+  },
+
+  "[python]": {
+    "editor.formatOnSave": true,
+    "editor.defaultFormatter": "charliermarsh.ruff",
+    "editor.codeActionsOnSave": {
+      "source.fixAll.ruff": "explicit",
+      "source.organizeImports.ruff": "explicit"
+    }
+  },
+
+  "[yaml]": {
+    "editor.defaultFormatter": "redhat.vscode-yaml",
+    "editor.tabSize": 2
+  },
+
+  "[json]": {
+    "editor.tabSize": 2
+  },
+
+  "[nextflow]": {
+    "editor.tabSize": 4
+  }
+}

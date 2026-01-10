@@ -1,0 +1,10 @@
+{
+  "recommendations": [
+    "redhat.vscode-yaml",
+    "nextflow.nextflow",
+    "ms-python.python",
+    "charliermarsh.ruff",
+    "astral-sh.ty",
+    "tamasfe.even-better-toml"
+  ]
+}

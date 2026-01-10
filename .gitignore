@@ -82,3 +82,8 @@
 !/.github/workflows/*.yml
 !/.github/workflows/*.yaml
 
+# vscode workspace config
+!/.vscode
+!/.vscode/extensions.json
+!/.vscode/settings.json
+
