@@ -1532,6 +1532,7 @@ source = { editable = "." }
 dependencies = [
     { name = "biopython" },
     { name = "blake3" },
+    { name = "duckdb" },
     { name = "jsonschema" },
     { name = "labkey" },
     { name = "loguru" },
@@ -1565,6 +1566,7 @@ dev = [
 requires-dist = [
     { name = "biopython", specifier = ">=1.85" },
     { name = "blake3", specifier = ">=1.0.8" },
+    { name = "duckdb", specifier = ">=1.2.2" },
     { name = "jsonschema", specifier = ">=4.23.0" },
     { name = "labkey", specifier = ">=3.4.0" },
     { name = "loguru", specifier = ">=0.7.3" },
