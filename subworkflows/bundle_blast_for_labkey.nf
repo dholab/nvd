@@ -55,7 +55,7 @@ workflow BUNDLE_BLAST_FOR_LABKEY {
 
     // Concatenate all sample BLAST results into single file
     CONCAT_ALL_SAMPLE_BLAST_RESULTS(
-        PREPARE_BLAST_LABKEY.out.csv.collect(),
+        PREPARE_BLAST_LABKEY.out.csv.map { _meta, path -> path }.collect(),
         experiment_id,
         validation_complete
     )
