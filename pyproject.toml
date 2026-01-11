@@ -23,6 +23,7 @@ dependencies = [
   "pysam>=0.23.0",
   "pyyaml>=6.0.2",
   "rich>=14.0.0",
+  "slack-sdk>=3.39.0",
   "snakemake>=9.3.1",
   "taxopy>=0.14.0",
   "typer>=0.15.2",

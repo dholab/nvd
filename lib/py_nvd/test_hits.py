@@ -10,9 +10,9 @@ These tests verify:
 
 import pytest
 
-from py_nvd.models import DeleteResult
 from py_nvd.hits import (
     HitRecord,
+    SampleSetStats,
     calculate_gc_content,
     canonical_sequence,
     compact_hits,
@@ -30,6 +30,7 @@ from py_nvd.hits import (
     get_hit_stats,
     get_recurring_hits,
     get_sample_parquet_path,
+    get_stats_for_sample_set,
     is_valid_hit_key,
     list_hit_observations,
     list_hits,
@@ -40,6 +41,7 @@ from py_nvd.hits import (
     sample_hits_exist,
     write_hits_parquet,
 )
+from py_nvd.models import DeleteResult
 
 
 def make_hit_record(
@@ -511,7 +513,10 @@ class TestListHitsWithObservations:
     def test_returns_joined_data(self, temp_state_dir):
         """Returns hits joined with their observations."""
         record = make_hit_record(
-            "AAACCC", "set_001", "sample_a", "2024-01-01T00:00:00Z"
+            "AAACCC",
+            "set_001",
+            "sample_a",
+            "2024-01-01T00:00:00Z",
         )
         write_hits_parquet([record], "sample_a", "set_001", temp_state_dir)
 
@@ -556,7 +561,10 @@ class TestDeleteSampleHits:
     def test_deletes_sample_file(self, temp_state_dir):
         """Deletes the parquet file for a sample."""
         record = make_hit_record(
-            "AAACCC", "set_001", "sample_a", "2024-01-01T00:00:00Z"
+            "AAACCC",
+            "set_001",
+            "sample_a",
+            "2024-01-01T00:00:00Z",
         )
         write_hits_parquet([record], "sample_a", "set_001", temp_state_dir)
 
@@ -596,7 +604,8 @@ class TestDeleteSampleSetHits:
         result = delete_sample_set_hits("set_001", temp_state_dir)
 
         assert result == DeleteResult(
-            uncompacted_files_deleted=2, compacted_months_rewritten=0
+            uncompacted_files_deleted=2,
+            compacted_months_rewritten=0,
         )
         assert count_hits(temp_state_dir) == 0
 
@@ -618,7 +627,8 @@ class TestDeleteSampleSetHits:
         result = delete_sample_set_hits("set_001", temp_state_dir)
 
         assert result == DeleteResult(
-            uncompacted_files_deleted=1, compacted_months_rewritten=0
+            uncompacted_files_deleted=1,
+            compacted_months_rewritten=0,
         )
         assert count_hits(temp_state_dir) == 1
 
@@ -626,7 +636,8 @@ class TestDeleteSampleSetHits:
         """Returns zeros when sample set doesn't exist."""
         result = delete_sample_set_hits("nonexistent", temp_state_dir)
         assert result == DeleteResult(
-            uncompacted_files_deleted=0, compacted_months_rewritten=0
+            uncompacted_files_deleted=0,
+            compacted_months_rewritten=0,
         )
 
     def test_deletes_compacted_data(self, temp_state_dir):
@@ -650,7 +661,8 @@ class TestDeleteSampleSetHits:
         result = delete_sample_set_hits("set_001", temp_state_dir)
 
         assert result == DeleteResult(
-            uncompacted_files_deleted=0, compacted_months_rewritten=1
+            uncompacted_files_deleted=0,
+            compacted_months_rewritten=1,
         )
         assert count_hits(temp_state_dir) == 1
 
@@ -685,7 +697,8 @@ class TestDeleteSampleSetHits:
         result = delete_sample_set_hits("set_001", temp_state_dir)
 
         assert result == DeleteResult(
-            uncompacted_files_deleted=0, compacted_months_rewritten=2
+            uncompacted_files_deleted=0,
+            compacted_months_rewritten=2,
         )
         assert count_hits(temp_state_dir) == 1
 
@@ -712,7 +725,8 @@ class TestDeleteSampleSetHits:
         result = delete_sample_set_hits("set_001", temp_state_dir)
 
         assert result == DeleteResult(
-            uncompacted_files_deleted=1, compacted_months_rewritten=1
+            uncompacted_files_deleted=1,
+            compacted_months_rewritten=1,
         )
         assert count_hits(temp_state_dir) == 0
 
@@ -763,7 +777,10 @@ class TestGetHitStats:
     def test_single_hit(self, temp_state_dir):
         """Single hit returns correct stats."""
         record = make_hit_record(
-            "ACGTACGT", "run_001", "sample_a", "2024-01-15T00:00:00Z"
+            "ACGTACGT",
+            "run_001",
+            "sample_a",
+            "2024-01-15T00:00:00Z",
         )
         write_hits_parquet([record], "sample_a", "run_001", temp_state_dir)
 
@@ -785,10 +802,16 @@ class TestGetHitStats:
         records = [
             make_hit_record("ACGTACGT", "run_001", "sample_a", "2024-01-01T00:00:00Z"),
             make_hit_record(
-                "ACGTACGTACGT", "run_001", "sample_a", "2024-01-02T00:00:00Z"
+                "ACGTACGTACGT",
+                "run_001",
+                "sample_a",
+                "2024-01-02T00:00:00Z",
             ),
             make_hit_record(
-                "ACGTACGTACGTACGT", "run_001", "sample_a", "2024-01-03T00:00:00Z"
+                "ACGTACGTACGTACGT",
+                "run_001",
+                "sample_a",
+                "2024-01-03T00:00:00Z",
             ),
         ]
         write_hits_parquet(records, "sample_a", "run_001", temp_state_dir)
@@ -838,10 +861,16 @@ class TestGetHitStats:
         write_hits_parquet(
             [
                 make_hit_record(
-                    "AAACCC", "run_001", "sample_a", "2024-01-01T00:00:00Z"
+                    "AAACCC",
+                    "run_001",
+                    "sample_a",
+                    "2024-01-01T00:00:00Z",
                 ),
                 make_hit_record(
-                    "AAACCC", "run_001", "sample_b", "2024-01-01T00:00:00Z"
+                    "AAACCC",
+                    "run_001",
+                    "sample_b",
+                    "2024-01-01T00:00:00Z",
                 ),
             ],
             "sample_a",
@@ -874,13 +903,22 @@ class TestGetHitStats:
         records = [
             make_hit_record("ACGTACGT", "run_001", "sample_a", "2024-01-01T00:00:00Z"),
             make_hit_record(
-                "ACGTACGTACGT", "run_001", "sample_a", "2024-01-02T00:00:00Z"
+                "ACGTACGTACGT",
+                "run_001",
+                "sample_a",
+                "2024-01-02T00:00:00Z",
             ),
             make_hit_record(
-                "ACGTACGTACGTACGT", "run_001", "sample_a", "2024-01-03T00:00:00Z"
+                "ACGTACGTACGTACGT",
+                "run_001",
+                "sample_a",
+                "2024-01-03T00:00:00Z",
             ),
             make_hit_record(
-                "ACGTACGTACGTACGTACGT", "run_001", "sample_a", "2024-01-04T00:00:00Z"
+                "ACGTACGTACGTACGTACGT",
+                "run_001",
+                "sample_a",
+                "2024-01-04T00:00:00Z",
             ),
         ]
         write_hits_parquet(records, "sample_a", "run_001", temp_state_dir)
@@ -1027,7 +1065,10 @@ class TestGetRecurringHits:
         """Returned RecurringHit has correct hit metadata."""
         records = [
             make_hit_record(
-                "GCGCGCGC", "run_001", "sample_a", "2024-01-01T00:00:00Z"
+                "GCGCGCGC",
+                "run_001",
+                "sample_a",
+                "2024-01-01T00:00:00Z",
             ),  # 100% GC, 8 bp
             make_hit_record("GCGCGCGC", "run_001", "sample_b", "2024-01-01T00:00:00Z"),
         ]
@@ -1051,7 +1092,10 @@ class TestGetDiscoveryTimeline:
     def test_single_hit(self, temp_state_dir):
         """Single hit returns one bucket."""
         record = make_hit_record(
-            "AAACCC", "run_001", "sample_a", "2024-01-15T00:00:00Z"
+            "AAACCC",
+            "run_001",
+            "sample_a",
+            "2024-01-15T00:00:00Z",
         )
         write_hits_parquet([record], "sample_a", "run_001", temp_state_dir)
 
@@ -1348,7 +1392,10 @@ class TestSampleHitsExist:
     def test_exists_after_write(self, temp_state_dir):
         """Returns True after writing parquet file."""
         record = make_hit_record(
-            "ACGTACGT", "set_001", "sample_a", "2024-01-01T00:00:00Z"
+            "ACGTACGT",
+            "set_001",
+            "sample_a",
+            "2024-01-01T00:00:00Z",
         )
         write_hits_parquet([record], "sample_a", "set_001", temp_state_dir)
 
@@ -1361,7 +1408,10 @@ class TestSampleHitsExist:
     def test_not_exists_wrong_sample(self, temp_state_dir):
         """Returns False for different sample_id."""
         record = make_hit_record(
-            "ACGTACGT", "set_001", "sample_a", "2024-01-01T00:00:00Z"
+            "ACGTACGT",
+            "set_001",
+            "sample_a",
+            "2024-01-01T00:00:00Z",
         )
         write_hits_parquet([record], "sample_a", "set_001", temp_state_dir)
 
@@ -1370,7 +1420,10 @@ class TestSampleHitsExist:
     def test_not_exists_wrong_set(self, temp_state_dir):
         """Returns False for different sample_set_id."""
         record = make_hit_record(
-            "ACGTACGT", "set_001", "sample_a", "2024-01-01T00:00:00Z"
+            "ACGTACGT",
+            "set_001",
+            "sample_a",
+            "2024-01-01T00:00:00Z",
         )
         write_hits_parquet([record], "sample_a", "set_001", temp_state_dir)
 
@@ -1379,7 +1432,10 @@ class TestSampleHitsExist:
     def test_false_after_delete(self, temp_state_dir):
         """Returns False after deleting the parquet file."""
         record = make_hit_record(
-            "ACGTACGT", "set_001", "sample_a", "2024-01-01T00:00:00Z"
+            "ACGTACGT",
+            "set_001",
+            "sample_a",
+            "2024-01-01T00:00:00Z",
         )
         write_hits_parquet([record], "sample_a", "set_001", temp_state_dir)
 
@@ -1542,10 +1598,16 @@ class TestCompactHits:
     def test_compaction_groups_by_month(self, temp_state_dir):
         """Data from different months goes to different partitions."""
         jan_record = make_hit_record(
-            "AAAA", "set_001", "sample_a", "2024-01-15T00:00:00Z"
+            "AAAA",
+            "set_001",
+            "sample_a",
+            "2024-01-15T00:00:00Z",
         )
         feb_record = make_hit_record(
-            "CCCC", "set_001", "sample_b", "2024-02-15T00:00:00Z"
+            "CCCC",
+            "set_001",
+            "sample_b",
+            "2024-02-15T00:00:00Z",
         )
         write_hits_parquet([jan_record], "sample_a", "set_001", temp_state_dir)
         write_hits_parquet([feb_record], "sample_b", "set_001", temp_state_dir)
@@ -1563,10 +1625,16 @@ class TestCompactHits:
     def test_month_filter_only_compacts_specified_month(self, temp_state_dir):
         """month parameter filters compaction to a single month."""
         jan_record = make_hit_record(
-            "AAAA", "set_001", "sample_a", "2024-01-15T00:00:00Z"
+            "AAAA",
+            "set_001",
+            "sample_a",
+            "2024-01-15T00:00:00Z",
         )
         feb_record = make_hit_record(
-            "CCCC", "set_001", "sample_b", "2024-02-15T00:00:00Z"
+            "CCCC",
+            "set_001",
+            "sample_b",
+            "2024-02-15T00:00:00Z",
         )
         write_hits_parquet([jan_record], "sample_a", "set_001", temp_state_dir)
         write_hits_parquet([feb_record], "sample_b", "set_001", temp_state_dir)
@@ -1611,7 +1679,7 @@ class TestCompactHits:
         compacted_path = temp_state_dir / "hits" / "month=2024-01" / "data.parquet"
         con = duckdb.connect()
         result = con.execute(
-            f"SELECT COUNT(*) FROM read_parquet('{compacted_path}')"
+            f"SELECT COUNT(*) FROM read_parquet('{compacted_path}')",
         ).fetchone()
         assert result is not None
         assert result[0] == 2
@@ -1634,7 +1702,7 @@ class TestCompactHits:
         compacted_path = temp_state_dir / "hits" / "month=2024-01" / "data.parquet"
         con = duckdb.connect()
         hit_keys = con.execute(
-            f"SELECT hit_key FROM read_parquet('{compacted_path}')"
+            f"SELECT hit_key FROM read_parquet('{compacted_path}')",
         ).fetchall()
         hit_keys = [row[0] for row in hit_keys]
 
@@ -1650,9 +1718,210 @@ class TestCompactHits:
         # Query using the standard interface
         con = query_hits(temp_state_dir)
         result = con.execute(
-            "SELECT hit_key, month, effective_month FROM hits"
+            "SELECT hit_key, month, effective_month FROM hits",
         ).fetchone()
 
         assert result is not None
         assert result[1] == "2024-01"  # month extracted from Hive partition
         assert result[2] == "2024-01"  # effective_month matches
+
+
+class TestGetStatsForSampleSet:
+    """Tests for get_stats_for_sample_set()."""
+
+    def test_empty_database_returns_none(self, temp_state_dir):
+        """Empty database returns None."""
+        result = get_stats_for_sample_set("nonexistent", temp_state_dir)
+        assert result is None
+
+    def test_nonexistent_sample_set_returns_none(self, temp_state_dir):
+        """Sample set with no data returns None."""
+        record = make_hit_record("ACGT", "set_001", "sample_a", "2024-01-15T00:00:00Z")
+        write_hits_parquet([record], "sample_a", "set_001", temp_state_dir)
+
+        result = get_stats_for_sample_set("set_002", temp_state_dir)
+        assert result is None
+
+    def test_single_sample_single_hit(self, temp_state_dir):
+        """Single sample with single hit returns correct stats."""
+        record = make_hit_record("ACGT", "set_001", "sample_a", "2024-01-15T00:00:00Z")
+        write_hits_parquet([record], "sample_a", "set_001", temp_state_dir)
+
+        result = get_stats_for_sample_set("set_001", temp_state_dir)
+
+        assert result is not None
+        assert result.sample_set_id == "set_001"
+        assert result.total_observations == 1
+        assert result.unique_hits == 1
+        assert result.unique_samples == 1
+        assert result.date_first == "2024-01-15T00:00:00Z"
+        assert result.date_last == "2024-01-15T00:00:00Z"
+
+    def test_multiple_samples_multiple_hits(self, temp_state_dir):
+        """Multiple samples with multiple hits returns correct stats."""
+        # Use sequences that produce distinct hit keys (not reverse complements)
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "AAACCC",
+                    "set_001",
+                    "sample_a",
+                    "2024-01-10T00:00:00Z",
+                ),
+                make_hit_record(
+                    "AAAGGG",
+                    "set_001",
+                    "sample_a",
+                    "2024-01-10T00:00:00Z",
+                ),
+            ],
+            "sample_a",
+            "set_001",
+            temp_state_dir,
+        )
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "AAACCC",
+                    "set_001",
+                    "sample_b",
+                    "2024-01-15T00:00:00Z",
+                ),
+                make_hit_record(
+                    "AAATTT",
+                    "set_001",
+                    "sample_b",
+                    "2024-01-15T00:00:00Z",
+                ),
+            ],
+            "sample_b",
+            "set_001",
+            temp_state_dir,
+        )
+
+        result = get_stats_for_sample_set("set_001", temp_state_dir)
+
+        assert result is not None
+        assert result.sample_set_id == "set_001"
+        assert result.total_observations == 4
+        assert result.unique_hits == 3  # AAACCC, AAAGGG, AAATTT (AAACCC appears twice)
+        assert result.unique_samples == 2  # sample_a, sample_b
+        assert result.date_first == "2024-01-10T00:00:00Z"
+        assert result.date_last == "2024-01-15T00:00:00Z"
+
+    def test_filters_to_specified_sample_set(self, temp_state_dir):
+        """Only counts data from the specified sample set."""
+        write_hits_parquet(
+            [make_hit_record("AAACCC", "set_001", "sample_a", "2024-01-10T00:00:00Z")],
+            "sample_a",
+            "set_001",
+            temp_state_dir,
+        )
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "AAAGGG",
+                    "set_002",
+                    "sample_b",
+                    "2024-01-15T00:00:00Z",
+                ),
+                make_hit_record(
+                    "AAATTT",
+                    "set_002",
+                    "sample_b",
+                    "2024-01-15T00:00:00Z",
+                ),
+            ],
+            "sample_b",
+            "set_002",
+            temp_state_dir,
+        )
+
+        result_001 = get_stats_for_sample_set("set_001", temp_state_dir)
+        result_002 = get_stats_for_sample_set("set_002", temp_state_dir)
+
+        assert result_001 is not None
+        assert result_001.total_observations == 1
+        assert result_001.unique_hits == 1
+
+        assert result_002 is not None
+        assert result_002.total_observations == 2
+        assert result_002.unique_hits == 2
+
+    def test_same_hit_multiple_observations_same_sample(self, temp_state_dir):
+        """Same hit observed multiple times in one sample counts correctly."""
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "AAACCC",
+                    "set_001",
+                    "sample_a",
+                    "2024-01-10T00:00:00Z",
+                    "contig_1",
+                ),
+                make_hit_record(
+                    "AAACCC",
+                    "set_001",
+                    "sample_a",
+                    "2024-01-10T00:00:00Z",
+                    "contig_2",
+                ),
+            ],
+            "sample_a",
+            "set_001",
+            temp_state_dir,
+        )
+
+        result = get_stats_for_sample_set("set_001", temp_state_dir)
+
+        assert result is not None
+        assert result.total_observations == 2  # Two observations
+        assert result.unique_hits == 1  # But only one unique hit
+        assert result.unique_samples == 1  # And one sample
+
+    def test_works_with_compacted_data(self, temp_state_dir):
+        """Works correctly after compaction."""
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "AAACCC",
+                    "set_001",
+                    "sample_a",
+                    "2024-01-10T00:00:00Z",
+                ),
+                make_hit_record(
+                    "AAAGGG",
+                    "set_001",
+                    "sample_a",
+                    "2024-01-15T00:00:00Z",
+                ),
+            ],
+            "sample_a",
+            "set_001",
+            temp_state_dir,
+        )
+        compact_hits(temp_state_dir)
+
+        result = get_stats_for_sample_set("set_001", temp_state_dir)
+
+        assert result is not None
+        assert result.sample_set_id == "set_001"
+        assert result.total_observations == 2
+        assert result.unique_hits == 2
+        assert result.unique_samples == 1
+        assert result.date_first == "2024-01-10T00:00:00Z"
+        assert result.date_last == "2024-01-15T00:00:00Z"
+
+    def test_returns_sample_set_stats_type(self, temp_state_dir):
+        """Returns a SampleSetStats instance."""
+        record = make_hit_record("ACGT", "set_001", "sample_a", "2024-01-15T00:00:00Z")
+        write_hits_parquet([record], "sample_a", "set_001", temp_state_dir)
+
+        result = get_stats_for_sample_set("set_001", temp_state_dir)
+
+        assert isinstance(result, SampleSetStats)
+
+    def test_raises_on_empty_sample_set_id(self, temp_state_dir):
+        """Raises AssertionError for empty sample_set_id."""
+        with pytest.raises(AssertionError, match="cannot be empty"):
+            get_stats_for_sample_set("", temp_state_dir)

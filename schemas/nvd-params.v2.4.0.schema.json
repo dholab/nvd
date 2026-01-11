@@ -300,6 +300,16 @@
       "type": "string",
       "default": "nrminor/nvd:v2.4.0",
       "description": "Container image to use for pipeline execution"
+    },
+    "slack_enabled": {
+      "type": "boolean",
+      "default": false,
+      "description": "Enable Slack notifications for run completion (stat_blast workflow only)"
+    },
+    "slack_channel": {
+      "type": "string",
+      "pattern": "^C[A-Z0-9]+$",
+      "description": "Slack channel ID for notifications (e.g., 'C0123456789')"
     }
   },
   "additionalProperties": false

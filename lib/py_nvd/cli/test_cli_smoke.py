@@ -1,6 +1,5 @@
 """Smoke tests for CLI commands - verify they don't crash."""
 
-import pytest
 from typer.testing import CliRunner
 
 from py_nvd.cli.app import app
@@ -205,7 +204,10 @@ class TestStateCommands:
         runner.invoke(app, ["state", "init"])
 
         record = make_hit_record(
-            "ACGTACGT", "set_001", "sample_a", "2024-01-01T00:00:00Z"
+            "ACGTACGT",
+            "set_001",
+            "sample_a",
+            "2024-01-01T00:00:00Z",
         )
         write_hits_parquet([record], "sample_a", "set_001", tmp_path)
 
@@ -229,7 +231,8 @@ class TestStateCommands:
         # Manually set the started_at to be old
         with connect(tmp_path) as conn:
             conn.execute(
-                "UPDATE runs SET started_at = ? WHERE run_id = ?", (old_date, "old_run")
+                "UPDATE runs SET started_at = ? WHERE run_id = ?",
+                (old_date, "old_run"),
             )
             conn.commit()
 
@@ -260,7 +263,8 @@ class TestStateCommands:
 
         with connect(tmp_path) as conn:
             conn.execute(
-                "UPDATE runs SET started_at = ? WHERE run_id = ?", (old_date, "old_run")
+                "UPDATE runs SET started_at = ? WHERE run_id = ?",
+                (old_date, "old_run"),
             )
             conn.commit()
 
@@ -295,7 +299,8 @@ class TestStateCommands:
 
         with connect(tmp_path) as conn:
             conn.execute(
-                "UPDATE runs SET started_at = ? WHERE run_id = ?", (old_date, "old_run")
+                "UPDATE runs SET started_at = ? WHERE run_id = ?",
+                (old_date, "old_run"),
             )
             conn.commit()
 
@@ -406,7 +411,7 @@ class TestRunCommandValidation:
         samplesheet = tmp_path / "samples.csv"
         samplesheet.write_text(
             "sample_id,srr,platform,fastq1,fastq2\n"
-            "sample1,,illumina,/path/to/r1.fastq.gz,/path/to/r2.fastq.gz\n"
+            "sample1,,illumina,/path/to/r1.fastq.gz,/path/to/r2.fastq.gz\n",
         )
 
         # Create params file with samplesheet
@@ -414,7 +419,8 @@ class TestRunCommandValidation:
         params_file.write_text(f"samplesheet: {samplesheet}\ntools: blast\n")
 
         result = runner.invoke(
-            app, ["run", "--params-file", str(params_file), "--dry-run"]
+            app,
+            ["run", "--params-file", str(params_file), "--dry-run"],
         )
         # Should succeed (dry-run mode, won't actually run nextflow)
         assert result.exit_code == 0
@@ -428,7 +434,7 @@ class TestRunCommandValidation:
         samplesheet = tmp_path / "samples.csv"
         samplesheet.write_text(
             "sample_id,srr,platform,fastq1,fastq2\n"
-            "sample1,,illumina,/path/to/r1.fastq.gz,/path/to/r2.fastq.gz\n"
+            "sample1,,illumina,/path/to/r1.fastq.gz,/path/to/r2.fastq.gz\n",
         )
 
         # Create params file with tools=all
@@ -457,7 +463,8 @@ class TestRunCommandValidation:
         monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
         nonexistent = tmp_path / "nonexistent.csv"
         result = runner.invoke(
-            app, ["run", "--samplesheet", str(nonexistent), "--dry-run"]
+            app,
+            ["run", "--samplesheet", str(nonexistent), "--dry-run"],
         )
         assert result.exit_code == 1
         assert "not found" in result.stdout.lower()
@@ -470,7 +477,7 @@ class TestRunCommandValidation:
         samplesheet = tmp_path / "samples.csv"
         samplesheet.write_text(
             "sample_id,srr,platform,fastq1,fastq2\n"
-            "sample1,,illumina,/path/to/r1.fastq.gz,/path/to/r2.fastq.gz\n"
+            "sample1,,illumina,/path/to/r1.fastq.gz,/path/to/r2.fastq.gz\n",
         )
 
         result = runner.invoke(
@@ -488,6 +495,97 @@ class TestRunCommandValidation:
         # Pydantic ValidationError is raised with details about invalid tools
         assert result.exception is not None
         assert "invalid" in str(result.exception).lower()
+
+
+class TestRunSlackOptions:
+    """Tests for Slack notification CLI options."""
+
+    def test_run_help_shows_slack_options(self):
+        """run --help shows Slack options."""
+        result = runner.invoke(app, ["run", "--help"])
+        assert result.exit_code == 0
+        assert "--slack-channel" in result.stdout
+        assert "--no-slack" in result.stdout
+
+    def test_run_with_valid_slack_channel(self, tmp_path, monkeypatch):
+        """--slack-channel accepts valid channel ID."""
+        monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
+        samplesheet = tmp_path / "samples.csv"
+        samplesheet.write_text(
+            "sample_id,srr,platform,fastq1,fastq2\n"
+            "sample1,,illumina,/path/to/r1.fastq.gz,/path/to/r2.fastq.gz\n",
+        )
+        result = runner.invoke(
+            app,
+            [
+                "run",
+                "-s",
+                str(samplesheet),
+                "--slack-channel",
+                "C0123456789",
+                "--dry-run",
+            ],
+        )
+        assert result.exit_code == 0
+        assert "C0123456789" in result.stdout
+
+    def test_run_with_invalid_slack_channel(self, tmp_path, monkeypatch):
+        """--slack-channel rejects invalid channel ID."""
+        monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
+        samplesheet = tmp_path / "samples.csv"
+        samplesheet.write_text(
+            "sample_id,srr,platform,fastq1,fastq2\n"
+            "sample1,,illumina,/path/to/r1.fastq.gz,/path/to/r2.fastq.gz\n",
+        )
+        result = runner.invoke(
+            app,
+            [
+                "run",
+                "-s",
+                str(samplesheet),
+                "--slack-channel",
+                "#general",
+                "--dry-run",
+            ],
+        )
+        assert result.exit_code == 1
+        assert "Invalid Slack channel ID" in str(result.exception)
+
+    def test_run_no_slack_disables_notifications(self, tmp_path, monkeypatch):
+        """--no-slack sets slack_enabled to False in command output."""
+        monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
+        samplesheet = tmp_path / "samples.csv"
+        samplesheet.write_text(
+            "sample_id,srr,platform,fastq1,fastq2\n"
+            "sample1,,illumina,/path/to/r1.fastq.gz,/path/to/r2.fastq.gz\n",
+        )
+        result = runner.invoke(
+            app,
+            ["run", "-s", str(samplesheet), "--no-slack", "--dry-run"],
+        )
+        assert result.exit_code == 0
+        # The dry-run output should show slack_enabled = false
+        assert "slack_enabled" in result.stdout
+        assert "false" in result.stdout.lower()
+
+    def test_run_slack_channel_from_params_file(self, tmp_path, monkeypatch):
+        """--slack-channel can come from params file."""
+        monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
+        samplesheet = tmp_path / "samples.csv"
+        samplesheet.write_text(
+            "sample_id,srr,platform,fastq1,fastq2\n"
+            "sample1,,illumina,/path/to/r1.fastq.gz,/path/to/r2.fastq.gz\n",
+        )
+        params_file = tmp_path / "params.yaml"
+        params_file.write_text(
+            f"samplesheet: {samplesheet}\nslack_channel: C9876543210\n",
+        )
+        result = runner.invoke(
+            app,
+            ["run", "--params-file", str(params_file), "--dry-run"],
+        )
+        assert result.exit_code == 0
+        assert "C9876543210" in result.stdout
 
 
 class TestSamplesheetCommands:
@@ -517,7 +615,8 @@ class TestSamplesheetCommands:
     def test_samplesheet_generate_requires_input(self):
         """samplesheet generate fails without --from-dir or --from-sra."""
         result = runner.invoke(
-            app, ["samplesheet", "generate", "--platform", "illumina"]
+            app,
+            ["samplesheet", "generate", "--platform", "illumina"],
         )
         assert result.exit_code == 1
         assert "Must specify" in result.stdout
@@ -605,7 +704,7 @@ class TestSamplesheetCommands:
         # Create valid samplesheet
         samplesheet = tmp_path / "samples.csv"
         samplesheet.write_text(
-            "sample_id,srr,platform,fastq1,fastq2\nsample1,SRR123456,illumina,,\n"
+            "sample_id,srr,platform,fastq1,fastq2\nsample1,SRR123456,illumina,,\n",
         )
 
         result = runner.invoke(app, ["samplesheet", "validate", str(samplesheet)])
@@ -625,7 +724,8 @@ class TestSamplesheetCommands:
     def test_samplesheet_validate_missing_file(self, tmp_path):
         """samplesheet validate fails for missing file."""
         result = runner.invoke(
-            app, ["samplesheet", "validate", str(tmp_path / "nonexistent.csv")]
+            app,
+            ["samplesheet", "validate", str(tmp_path / "nonexistent.csv")],
         )
         assert result.exit_code == 1
 
@@ -642,7 +742,9 @@ class TestSamplesheetCommands:
         assert "generate" in result.stdout.lower()
 
     def test_samplesheet_generate_warns_previously_processed(
-        self, tmp_path, monkeypatch
+        self,
+        tmp_path,
+        monkeypatch,
     ):
         """samplesheet generate warns about previously processed samples."""
         monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
@@ -781,7 +883,11 @@ class TestHitsCommands:
 
         # Write a hit parquet file
         record = make_hit_record(
-            "ACGTACGTACGT", "set_001", "sample_a", "2024-01-01T00:00:00Z", "NODE_1"
+            "ACGTACGTACGT",
+            "set_001",
+            "sample_a",
+            "2024-01-01T00:00:00Z",
+            "NODE_1",
         )
         write_hits_parquet([record], "sample_a", "set_001", tmp_path)
 
@@ -797,7 +903,10 @@ class TestHitsCommands:
         runner.invoke(app, ["state", "init"])
 
         record = make_hit_record(
-            "ACGTACGTACGT", "set_001", "sample_a", "2024-01-01T00:00:00Z"
+            "ACGTACGTACGT",
+            "set_001",
+            "sample_a",
+            "2024-01-01T00:00:00Z",
         )
         write_hits_parquet([record], "sample_a", "set_001", tmp_path)
 
@@ -811,7 +920,10 @@ class TestHitsCommands:
         runner.invoke(app, ["state", "init"])
 
         record = make_hit_record(
-            "ACGTACGTACGT", "set_001", "sample_a", "2024-01-01T00:00:00Z"
+            "ACGTACGTACGT",
+            "set_001",
+            "sample_a",
+            "2024-01-01T00:00:00Z",
         )
         write_hits_parquet([record], "sample_a", "set_001", tmp_path)
 
@@ -835,13 +947,17 @@ class TestHitsCommands:
         runner.invoke(app, ["state", "init"])
 
         record = make_hit_record(
-            "ACGTACGTACGT", "set_001", "sample_a", "2024-01-01T00:00:00Z"
+            "ACGTACGTACGT",
+            "set_001",
+            "sample_a",
+            "2024-01-01T00:00:00Z",
         )
         write_hits_parquet([record], "sample_a", "set_001", tmp_path)
 
         output_file = tmp_path / "hits.parquet"
         result = runner.invoke(
-            app, ["hits", "export", "--format", "parquet", "--output", str(output_file)]
+            app,
+            ["hits", "export", "--format", "parquet", "--output", str(output_file)],
         )
         assert result.exit_code == 0
         assert output_file.exists()
@@ -852,7 +968,10 @@ class TestHitsCommands:
         runner.invoke(app, ["state", "init"])
 
         record = make_hit_record(
-            "ACGTACGTACGT", "set_001", "sample_a", "2024-01-01T00:00:00Z"
+            "ACGTACGTACGT",
+            "set_001",
+            "sample_a",
+            "2024-01-01T00:00:00Z",
         )
         write_hits_parquet([record], "sample_a", "set_001", tmp_path)
 
@@ -867,7 +986,10 @@ class TestHitsCommands:
         runner.invoke(app, ["state", "init"])
 
         record = make_hit_record(
-            "ACGTACGTACGT", "set_001", "sample_a", "2024-01-01T00:00:00Z"
+            "ACGTACGTACGT",
+            "set_001",
+            "sample_a",
+            "2024-01-01T00:00:00Z",
         )
         write_hits_parquet([record], "sample_a", "set_001", tmp_path)
 
@@ -914,7 +1036,10 @@ class TestHitsCommands:
         runner.invoke(app, ["state", "init"])
 
         record = make_hit_record(
-            "ACGTACGTACGT", "set_001", "sample_a", "2024-01-01T00:00:00Z"
+            "ACGTACGTACGT",
+            "set_001",
+            "sample_a",
+            "2024-01-01T00:00:00Z",
         )
         write_hits_parquet([record], "sample_a", "set_001", tmp_path)
 
@@ -929,7 +1054,10 @@ class TestHitsCommands:
         runner.invoke(app, ["state", "init"])
 
         record = make_hit_record(
-            "ACGTACGTACGT", "set_001", "sample_a", "2024-01-01T00:00:00Z"
+            "ACGTACGTACGT",
+            "set_001",
+            "sample_a",
+            "2024-01-01T00:00:00Z",
         )
         write_hits_parquet([record], "sample_a", "set_001", tmp_path)
 
@@ -950,10 +1078,16 @@ class TestHitsCommands:
         # Same hit in two samples
         records = [
             make_hit_record(
-                "ACGTACGTACGT", "set_001", "sample_a", "2024-01-01T00:00:00Z"
+                "ACGTACGTACGT",
+                "set_001",
+                "sample_a",
+                "2024-01-01T00:00:00Z",
             ),
             make_hit_record(
-                "ACGTACGTACGT", "set_001", "sample_b", "2024-01-01T00:00:00Z"
+                "ACGTACGTACGT",
+                "set_001",
+                "sample_b",
+                "2024-01-01T00:00:00Z",
             ),
         ]
         write_hits_parquet(records, "sample_a", "set_001", tmp_path)
@@ -969,7 +1103,10 @@ class TestHitsCommands:
 
         # Only one sample
         record = make_hit_record(
-            "ACGTACGTACGT", "set_001", "sample_a", "2024-01-01T00:00:00Z"
+            "ACGTACGTACGT",
+            "set_001",
+            "sample_a",
+            "2024-01-01T00:00:00Z",
         )
         write_hits_parquet([record], "sample_a", "set_001", tmp_path)
 
@@ -1025,7 +1162,10 @@ class TestHitsCommands:
         runner.invoke(app, ["state", "init"])
 
         record = make_hit_record(
-            "ACGTACGTACGT", "set_001", "sample_a", "2024-01-01T00:00:00Z"
+            "ACGTACGTACGT",
+            "set_001",
+            "sample_a",
+            "2024-01-01T00:00:00Z",
         )
         write_hits_parquet([record], "sample_a", "set_001", tmp_path)
 
@@ -1039,7 +1179,10 @@ class TestHitsCommands:
         runner.invoke(app, ["state", "init"])
 
         record = make_hit_record(
-            "ACGTACGTACGT", "set_001", "sample_a", "2024-01-01T00:00:00Z"
+            "ACGTACGTACGT",
+            "set_001",
+            "sample_a",
+            "2024-01-01T00:00:00Z",
         )
         write_hits_parquet([record], "sample_a", "set_001", tmp_path)
 
@@ -1059,10 +1202,16 @@ class TestHitsCommands:
 
         records = [
             make_hit_record(
-                "ACGTACGTACGT", "set_001", "sample_a", "2024-01-01T00:00:00Z"
+                "ACGTACGTACGT",
+                "set_001",
+                "sample_a",
+                "2024-01-01T00:00:00Z",
             ),
             make_hit_record(
-                "ACGTACGTACGT", "set_001", "sample_b", "2024-01-02T00:00:00Z"
+                "ACGTACGTACGT",
+                "set_001",
+                "sample_b",
+                "2024-01-02T00:00:00Z",
             ),
         ]
         write_hits_parquet(records, "sample_a", "set_001", tmp_path)
@@ -1153,10 +1302,16 @@ class TestHitsCommands:
 
         records = [
             make_hit_record(
-                "ACGTACGTACGT", "set_001", "sample_a", "2024-01-01T00:00:00Z"
+                "ACGTACGTACGT",
+                "set_001",
+                "sample_a",
+                "2024-01-01T00:00:00Z",
             ),
             make_hit_record(
-                "ACGTACGTACGT", "set_001", "sample_b", "2024-01-02T00:00:00Z"
+                "ACGTACGTACGT",
+                "set_001",
+                "sample_b",
+                "2024-01-02T00:00:00Z",
             ),
         ]
         write_hits_parquet(records, "sample_a", "set_001", tmp_path)
@@ -1198,7 +1353,10 @@ class TestHitsCommands:
         runner.invoke(app, ["state", "init"])
 
         record = make_hit_record(
-            "ACGTACGTACGT", "set_001", "sample_a", "2024-01-15T00:00:00Z"
+            "ACGTACGTACGT",
+            "set_001",
+            "sample_a",
+            "2024-01-15T00:00:00Z",
         )
         write_hits_parquet([record], "sample_a", "set_001", tmp_path)
 
@@ -1217,10 +1375,16 @@ class TestHitsCommands:
         # Hit in January and March (skip February)
         records = [
             make_hit_record(
-                "ACGTACGTACGT", "set_001", "sample_a", "2024-01-15T00:00:00Z"
+                "ACGTACGTACGT",
+                "set_001",
+                "sample_a",
+                "2024-01-15T00:00:00Z",
             ),
             make_hit_record(
-                "GGGGCCCCAAAA", "set_001", "sample_b", "2024-03-15T00:00:00Z"
+                "GGGGCCCCAAAA",
+                "set_001",
+                "sample_b",
+                "2024-03-15T00:00:00Z",
             ),
         ]
         write_hits_parquet(records, "sample_a", "set_001", tmp_path)
@@ -1239,7 +1403,10 @@ class TestHitsCommands:
         runner.invoke(app, ["state", "init"])
 
         record = make_hit_record(
-            "ACGTACGTACGT", "set_001", "sample_a", "2024-01-15T00:00:00Z"
+            "ACGTACGTACGT",
+            "set_001",
+            "sample_a",
+            "2024-01-15T00:00:00Z",
         )
         write_hits_parquet([record], "sample_a", "set_001", tmp_path)
 
@@ -1261,10 +1428,16 @@ class TestHitsCommands:
         # Hit in January and March (skip February)
         records = [
             make_hit_record(
-                "ACGTACGTACGT", "set_001", "sample_a", "2024-01-15T00:00:00Z"
+                "ACGTACGTACGT",
+                "set_001",
+                "sample_a",
+                "2024-01-15T00:00:00Z",
             ),
             make_hit_record(
-                "GGGGCCCCAAAA", "set_001", "sample_b", "2024-03-15T00:00:00Z"
+                "GGGGCCCCAAAA",
+                "set_001",
+                "sample_b",
+                "2024-03-15T00:00:00Z",
             ),
         ]
         write_hits_parquet(records, "sample_a", "set_001", tmp_path)
@@ -1306,7 +1479,10 @@ class TestHitsCommands:
 
         # Only one sample, so no recurring hits
         record = make_hit_record(
-            "ACGTACGTACGT", "set_001", "sample_a", "2024-01-01T00:00:00Z"
+            "ACGTACGTACGT",
+            "set_001",
+            "sample_a",
+            "2024-01-01T00:00:00Z",
         )
         write_hits_parquet([record], "sample_a", "set_001", tmp_path)
 
@@ -1322,10 +1498,16 @@ class TestHitsCommands:
         # Same hit in two samples
         records = [
             make_hit_record(
-                "ACGTACGTACGT", "set_001", "sample_a", "2024-01-01T00:00:00Z"
+                "ACGTACGTACGT",
+                "set_001",
+                "sample_a",
+                "2024-01-01T00:00:00Z",
             ),
             make_hit_record(
-                "ACGTACGTACGT", "set_001", "sample_b", "2024-01-01T00:00:00Z"
+                "ACGTACGTACGT",
+                "set_001",
+                "sample_b",
+                "2024-01-01T00:00:00Z",
             ),
         ]
         write_hits_parquet(records, "sample_a", "set_001", tmp_path)
@@ -1342,10 +1524,16 @@ class TestHitsCommands:
         # Same hit in two samples
         records = [
             make_hit_record(
-                "ACGTACGTACGT", "set_001", "sample_a", "2024-01-01T00:00:00Z"
+                "ACGTACGTACGT",
+                "set_001",
+                "sample_a",
+                "2024-01-01T00:00:00Z",
             ),
             make_hit_record(
-                "ACGTACGTACGT", "set_001", "sample_b", "2024-01-01T00:00:00Z"
+                "ACGTACGTACGT",
+                "set_001",
+                "sample_b",
+                "2024-01-01T00:00:00Z",
             ),
         ]
         write_hits_parquet(records, "sample_a", "set_001", tmp_path)
@@ -1367,10 +1555,16 @@ class TestHitsCommands:
         # Only 2 samples
         records = [
             make_hit_record(
-                "ACGTACGTACGT", "set_001", "sample_a", "2024-01-01T00:00:00Z"
+                "ACGTACGTACGT",
+                "set_001",
+                "sample_a",
+                "2024-01-01T00:00:00Z",
             ),
             make_hit_record(
-                "ACGTACGTACGT", "set_001", "sample_b", "2024-01-01T00:00:00Z"
+                "ACGTACGTACGT",
+                "set_001",
+                "sample_b",
+                "2024-01-01T00:00:00Z",
             ),
         ]
         write_hits_parquet(records, "sample_a", "set_001", tmp_path)
@@ -1408,7 +1602,10 @@ class TestHitsCommands:
         runner.invoke(app, ["state", "init"])
 
         record = make_hit_record(
-            "ACGTACGTACGT", "set_001", "sample_a", "2024-01-15T00:00:00Z"
+            "ACGTACGTACGT",
+            "set_001",
+            "sample_a",
+            "2024-01-15T00:00:00Z",
         )
         write_hits_parquet([record], "sample_a", "set_001", tmp_path)
 
@@ -1423,7 +1620,10 @@ class TestHitsCommands:
         runner.invoke(app, ["state", "init"])
 
         record = make_hit_record(
-            "ACGTACGTACGT", "set_001", "sample_a", "2024-01-15T00:00:00Z"
+            "ACGTACGTACGT",
+            "set_001",
+            "sample_a",
+            "2024-01-15T00:00:00Z",
         )
         write_hits_parquet([record], "sample_a", "set_001", tmp_path)
 
@@ -1443,7 +1643,10 @@ class TestHitsCommands:
         runner.invoke(app, ["state", "init"])
 
         record = make_hit_record(
-            "ACGTACGTACGT", "set_001", "sample_a", "2024-01-15T00:00:00Z"
+            "ACGTACGTACGT",
+            "set_001",
+            "sample_a",
+            "2024-01-15T00:00:00Z",
         )
         write_hits_parquet([record], "sample_a", "set_001", tmp_path)
 
@@ -1461,10 +1664,16 @@ class TestHitsCommands:
         runner.invoke(app, ["state", "init"])
 
         record_jan = make_hit_record(
-            "ACGTACGTACGT", "set_001", "sample_a", "2024-01-15T00:00:00Z"
+            "ACGTACGTACGT",
+            "set_001",
+            "sample_a",
+            "2024-01-15T00:00:00Z",
         )
         record_feb = make_hit_record(
-            "GGGGCCCCAAAA", "set_001", "sample_b", "2024-02-15T00:00:00Z"
+            "GGGGCCCCAAAA",
+            "set_001",
+            "sample_b",
+            "2024-02-15T00:00:00Z",
         )
         write_hits_parquet([record_jan], "sample_a", "set_001", tmp_path)
         write_hits_parquet([record_feb], "sample_b", "set_001", tmp_path)
@@ -1527,7 +1736,7 @@ class TestDefaultProfile:
         nvd_home = tmp_path / ".nvd"
         nvd_home.mkdir()
         (nvd_home / "setup.conf").write_text(
-            "NVD_REPO=/some/path\nNVD_STATE_DIR=/some/state\n"
+            "NVD_REPO=/some/path\nNVD_STATE_DIR=/some/state\n",
         )
 
         monkeypatch.setattr("py_nvd.cli.utils.Path.home", lambda: tmp_path)
@@ -1540,7 +1749,7 @@ class TestDefaultProfile:
         nvd_home = tmp_path / ".nvd"
         nvd_home.mkdir()
         (nvd_home / "setup.conf").write_text(
-            "NVD_REPO=/some/path\n# NVD_DEFAULT_PROFILE=chtc_htc\n"
+            "NVD_REPO=/some/path\n# NVD_DEFAULT_PROFILE=chtc_htc\n",
         )
 
         monkeypatch.setattr("py_nvd.cli.utils.Path.home", lambda: tmp_path)
@@ -1553,7 +1762,7 @@ class TestDefaultProfile:
         nvd_home = tmp_path / ".nvd"
         nvd_home.mkdir()
         (nvd_home / "setup.conf").write_text(
-            "NVD_REPO=/some/path\nNVD_DEFAULT_PROFILE=chtc_htc\n"
+            "NVD_REPO=/some/path\nNVD_DEFAULT_PROFILE=chtc_htc\n",
         )
 
         monkeypatch.setattr("py_nvd.cli.utils.Path.home", lambda: tmp_path)
@@ -1653,7 +1862,8 @@ class TestStateMoveCommand:
 
         # With --keep-source should show "copy"
         result2 = runner.invoke(
-            app, ["state", "move", str(dest), "--dry-run", "--keep-source"]
+            app,
+            ["state", "move", str(dest), "--dry-run", "--keep-source"],
         )
         assert result2.exit_code == 0
         assert "Operation: copy" in result2.stdout

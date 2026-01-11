@@ -16,15 +16,13 @@ from typing import Any
 import typer
 
 from py_nvd import state
-from py_nvd.models import NvdParams
-from py_nvd.params import load_params_file
-from py_nvd.state import resolve_database_versions
 from py_nvd.cli.utils import (
     DEFAULT_CONFIG,
     PANEL_ANALYSIS,
     PANEL_CORE,
     PANEL_DATABASES,
     PANEL_LABKEY,
+    PANEL_NOTIFICATIONS,
     PANEL_PREPROCESSING,
     PANEL_SRA,
     PIPELINE_ROOT,
@@ -39,6 +37,9 @@ from py_nvd.cli.utils import (
     success,
     warning,
 )
+from py_nvd.models import NvdParams
+from py_nvd.params import load_params_file
+from py_nvd.state import resolve_database_versions
 
 
 def _format_command_for_display(cmd: list[str]) -> str:
@@ -454,6 +455,21 @@ def run(  # noqa: PLR0913, PLR0912, PLR0915, C901
         rich_help_panel=PANEL_LABKEY,
     ),
     # -------------------------------------------------------------------------
+    # Notifications
+    # -------------------------------------------------------------------------
+    slack_channel: str | None = typer.Option(
+        None,
+        "--slack-channel",
+        help="Slack channel ID for notifications (e.g., 'C0123456789')",
+        rich_help_panel=PANEL_NOTIFICATIONS,
+    ),
+    no_slack: bool = typer.Option(
+        False,
+        "--no-slack",
+        help="Disable Slack notifications for this run",
+        rich_help_panel=PANEL_NOTIFICATIONS,
+    ),
+    # -------------------------------------------------------------------------
     # Execution Control
     # -------------------------------------------------------------------------
     dry_run: bool = typer.Option(
@@ -533,7 +549,7 @@ def run(  # noqa: PLR0913, PLR0912, PLR0915, C901
             else:
                 console.print("\n[dim]No presets registered.[/dim]")
                 console.print(
-                    "[dim]Create one with: nvd preset register <name> --from-file params.yaml[/dim]"
+                    "[dim]Create one with: nvd preset register <name> --from-file params.yaml[/dim]",
                 )
             raise typer.Exit(1)
 
@@ -615,6 +631,9 @@ def run(  # noqa: PLR0913, PLR0912, PLR0915, C901
         "labkey_blast_meta_hits_list": labkey_blast_meta_hits_list,
         "labkey_blast_fasta_list": labkey_blast_fasta_list,
         "labkey_exp_id_guard_list": labkey_exp_id_guard_list,
+        # Notifications
+        "slack_enabled": False if no_slack else None,  # Only override if --no-slack
+        "slack_channel": slack_channel,
     }
 
     # Load params file if provided (we merge it ourselves, not Nextflow)
@@ -631,7 +650,7 @@ def run(  # noqa: PLR0913, PLR0912, PLR0915, C901
     # Validate samplesheet is present (required, but can come from any source)
     if params.samplesheet is None:
         error(
-            "Samplesheet is required. Provide via --samplesheet, --preset, or --params-file"
+            "Samplesheet is required. Provide via --samplesheet, --preset, or --params-file",
         )
         raise typer.Exit(1)
 

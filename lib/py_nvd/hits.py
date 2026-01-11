@@ -395,7 +395,7 @@ def write_hits_parquet(
                 "sample_id": pl.Utf8,
                 "run_date": pl.Utf8,
                 "contig_id": pl.Utf8,
-            }
+            },
         )
     else:
         # Build DataFrame from hit records
@@ -409,7 +409,7 @@ def write_hits_parquet(
                 "sample_id": [h.sample_id for h in hits],
                 "run_date": [h.run_date for h in hits],
                 "contig_id": [h.contig_id for h in hits],
-            }
+            },
         )
 
     # Write to temp file first
@@ -702,6 +702,23 @@ def get_hit_sequence(hit: Hit) -> str:
     return decompress_sequence(hit.sequence_compressed, hit.sequence_length)
 
 
+@dataclass(frozen=True)
+class SampleSetStats:
+    """
+    Summary statistics for hits within a specific sample set (run).
+
+    Used for run-specific reporting (e.g., Slack notifications) as opposed
+    to cumulative stats across all runs.
+    """
+
+    sample_set_id: str
+    total_observations: int  # Number of hit observations in this sample set
+    unique_hits: int  # Distinct hit_keys in this sample set
+    unique_samples: int  # Distinct sample_ids in this sample set
+    date_first: str | None  # Earliest run_date in this sample set
+    date_last: str | None  # Latest run_date in this sample set
+
+
 def _empty_hit_stats() -> HitStats:
     """Return HitStats with zero counts and None distributions."""
     return HitStats(
@@ -717,6 +734,67 @@ def _empty_hit_stats() -> HitStats:
         gc_median=None,
         date_first=None,
         date_last=None,
+    )
+
+
+def get_stats_for_sample_set(
+    sample_set_id: str,
+    state_dir: Path | str | None = None,
+) -> SampleSetStats | None:
+    """
+    Compute statistics for hits within a specific sample set (run).
+
+    Returns run-specific metrics useful for notifications and reporting.
+    Unlike get_hit_stats() which aggregates across all data, this focuses
+    on a single sample_set_id.
+
+    Args:
+        sample_set_id: The sample set identifier to filter by
+        state_dir: Optional state directory override
+
+    Returns:
+        SampleSetStats for the sample set, or None if no hits exist for it.
+    """
+    assert sample_set_id, "sample_set_id cannot be empty"
+
+    if not has_any_hits(state_dir):
+        return None
+
+    con = query_hits(state_dir)
+
+    # Check if this sample set has any data
+    count_result = con.execute(
+        "SELECT COUNT(*) FROM hits WHERE sample_set_id = ?",
+        [sample_set_id],
+    ).fetchone()
+    assert count_result is not None, "COUNT query should always return a row"
+
+    if count_result[0] == 0:
+        return None
+
+    # Get all stats in one query
+    stats_result = con.execute(
+        """
+        SELECT
+            COUNT(*) as total_observations,
+            COUNT(DISTINCT hit_key) as unique_hits,
+            COUNT(DISTINCT sample_id) as unique_samples,
+            MIN(run_date) as date_first,
+            MAX(run_date) as date_last
+        FROM hits
+        WHERE sample_set_id = ?
+        """,
+        [sample_set_id],
+    ).fetchone()
+    assert stats_result is not None, "aggregate query should always return a row"
+
+    return SampleSetStats(
+        sample_set_id=sample_set_id,
+        total_observations=stats_result[0],
+        unique_hits=stats_result[1],
+        unique_samples=stats_result[2],
+        date_first=stats_result[3],
+        date_last=stats_result[4],
     )
 
 
@@ -752,13 +830,13 @@ def get_hit_stats(state_dir: Path | str | None = None) -> HitStats:
     total_observations = obs_result[0]
 
     samples_result = con.execute(
-        "SELECT COUNT(DISTINCT sample_id) FROM hits"
+        "SELECT COUNT(DISTINCT sample_id) FROM hits",
     ).fetchone()
     assert samples_result is not None, "COUNT query should always return a row"
     unique_samples = samples_result[0]
 
     runs_result = con.execute(
-        "SELECT COUNT(DISTINCT sample_set_id) FROM hits"
+        "SELECT COUNT(DISTINCT sample_set_id) FROM hits",
     ).fetchone()
     assert runs_result is not None, "COUNT query should always return a row"
     unique_runs = runs_result[0]
@@ -1226,7 +1304,7 @@ def _delete_sample_set_hits_compacted(
         )
 
         row_count = con.execute(
-            f"SELECT COUNT(*) FROM read_parquet('{temp_file}')"
+            f"SELECT COUNT(*) FROM read_parquet('{temp_file}')",
         ).fetchone()[0]
 
         con.close()
@@ -1349,7 +1427,7 @@ def _inventory_uncompacted(
                 unique_hits=unique_hits,
                 sample_sets=sample_sets,
                 source_files=file_count[0] if file_count else 0,
-            )
+            ),
         )
 
     assert all(isinstance(m, MonthCompactionInfo) for m in inventory), (
@@ -1507,7 +1585,7 @@ def compact_hits(
 
         except Exception as e:
             errors.append(
-                f"Failed to compact month {target_month}: {type(e).__name__}: {e}"
+                f"Failed to compact month {target_month}: {type(e).__name__}: {e}",
             )
             # Clean up temp file if it exists
             if temp_file.exists():

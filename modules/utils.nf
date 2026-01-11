@@ -169,3 +169,62 @@ process COMPLETE_RUN {
         -v
     """
 }
+
+/*
+ * Send Slack notification for run completion.
+ *
+ * This process runs after COMPLETE_RUN and sends a summary to Slack.
+ * It is designed to never fail the pipeline - errors are logged as warnings.
+ *
+ * IMPORTANT: This process runs on the local executor (not submitted to the
+ * cluster) because it needs access to the state database and py_nvd modules
+ * in the local pixi environment. This is configured in:
+ *   - conf/chtc-template.config (for CHTC users via `nvd setup`)
+ *   - Any custom user.config for other HPC environments
+ *
+ * Requires:
+ *   - params.slack_enabled = true
+ *   - params.slack_channel set to a valid channel ID
+ *   - params.experiment_id set
+ *   - SLACK_BOT_TOKEN secret configured via `nvd secrets`
+ *
+ * Input:
+ *   - ready: Gate signal from COMPLETE_RUN
+ *   - run_context: tuple of (sample_set_id, state_dir)
+ *   - labkey_url: URL to LabKey results
+ */
+process NOTIFY_SLACK {
+
+    tag "${workflow.runName}"
+    label "low"
+    cache false  // Always run at workflow end
+
+    // Never fail the pipeline due to Slack issues
+    errorStrategy 'ignore'
+
+    // Make SLACK_BOT_TOKEN available as environment variable
+    secret 'SLACK_BOT_TOKEN'
+
+    input:
+    val ready  // Gate: COMPLETE_RUN finished
+    tuple val(sample_set_id), val(state_dir)
+    val labkey_url
+
+    output:
+    val true, emit: done
+
+    when:
+    params.slack_enabled && params.slack_channel
+
+    script:
+    """
+    notify_slack.py \\
+        --run-id '${workflow.runName}' \\
+        --experiment-id '${params.experiment_id}' \\
+        --channel '${params.slack_channel}' \\
+        --state-dir '${state_dir}' \\
+        --sample-set-id '${sample_set_id}' \\
+        --labkey-url '${labkey_url}' \\
+        -v || echo "Slack notification failed (non-fatal)"
+    """
+}

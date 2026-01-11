@@ -16,7 +16,7 @@ include { CLASSIFY_WITH_MEGABLAST } from "../subworkflows/classify_with_megablas
 include { CLASSIFY_WITH_BLASTN } from "../subworkflows/classify_with_blastn"
 include { BUNDLE_BLAST_FOR_LABKEY } from "../subworkflows/bundle_blast_for_labkey"
 include { COUNT_READS } from "../modules/count_reads"
-include { CHECK_RUN_STATE; REGISTER_HITS; COMPLETE_RUN } from "../modules/utils"
+include { CHECK_RUN_STATE; REGISTER_HITS; COMPLETE_RUN; NOTIFY_SLACK } from "../modules/utils"
 include { VALIDATE_LK_BLAST } from "../subworkflows/validate_lk_blast_lists.nf"
 include { VALIDATE_LK_EXP_FRESH } from "../modules/validate_blast_labkey.nf"
 include { REGISTER_LK_EXPERIMENT } from "../modules/validate_blast_labkey.nf"
@@ -216,6 +216,24 @@ workflow STAT_BLAST_WORKFLOW {
         ch_state_dir,
         "completed"
     )
+
+    // Send Slack notification (if enabled)
+    // Only runs when slack_enabled=true, slack_channel is set, and LabKey is enabled
+    // (we need LabKey for the results URL in the notification)
+    // Stats are queried from state database by the Python script using sample_set_id
+    if (params.slack_enabled && params.slack_channel && params.labkey) {
+        // Build LabKey URL to the hits list view
+        // Format: https://{server}/{project}/list-grid.view?name={list_name}
+        ch_labkey_url = Channel.value(
+            "https://${params.labkey_server}/${params.labkey_project_name}/list-grid.view?name=${params.labkey_blast_meta_hits_list}"
+        )
+
+        NOTIFY_SLACK(
+            COMPLETE_RUN.out.done,
+            ch_run_context,  // tuple: (sample_set_id, state_dir)
+            ch_labkey_url
+        )
+    }
 
     ch_completion = CLASSIFY_WITH_BLASTN.out.merged_results.map { _results -> "STAT+BLAST workflow complete!" }
 

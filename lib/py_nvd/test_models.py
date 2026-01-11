@@ -621,3 +621,97 @@ class TestTraceMerge:
             trace_merge(
                 ("file", {"tools": "invalid_tool"}),
             )
+
+
+class TestNvdParamsSlackChannelValidator:
+    """Tests for slack_channel field validation."""
+
+    def test_valid_channel_id(self):
+        """Valid Slack channel IDs are accepted."""
+        p = NvdParams(slack_channel="C0123456789")
+        assert p.slack_channel == "C0123456789"
+
+    def test_valid_channel_id_short(self):
+        """Short channel IDs are accepted."""
+        p = NvdParams(slack_channel="C123")
+        assert p.slack_channel == "C123"
+
+    def test_valid_channel_id_long(self):
+        """Long channel IDs are accepted."""
+        p = NvdParams(slack_channel="C0123456789ABCDEF")
+        assert p.slack_channel == "C0123456789ABCDEF"
+
+    def test_none_allowed(self):
+        """None is a valid value for slack_channel."""
+        p = NvdParams(slack_channel=None)
+        assert p.slack_channel is None
+
+    def test_invalid_missing_c_prefix(self):
+        """Channel ID without C prefix is rejected."""
+        with pytest.raises(ValidationError) as exc_info:
+            NvdParams(slack_channel="0123456789")
+        assert "Invalid Slack channel ID" in str(exc_info.value)
+
+    def test_invalid_lowercase_c(self):
+        """Channel ID with lowercase c prefix is rejected."""
+        with pytest.raises(ValidationError) as exc_info:
+            NvdParams(slack_channel="c0123456789")
+        assert "Invalid Slack channel ID" in str(exc_info.value)
+
+    def test_invalid_lowercase_letters(self):
+        """Channel ID with lowercase letters is rejected."""
+        with pytest.raises(ValidationError) as exc_info:
+            NvdParams(slack_channel="C0123abcdef")
+        assert "Invalid Slack channel ID" in str(exc_info.value)
+
+    def test_invalid_channel_name(self):
+        """Channel name (not ID) is rejected."""
+        with pytest.raises(ValidationError) as exc_info:
+            NvdParams(slack_channel="#general")
+        assert "Invalid Slack channel ID" in str(exc_info.value)
+
+    def test_invalid_empty_after_c(self):
+        """Channel ID with only C is rejected."""
+        with pytest.raises(ValidationError) as exc_info:
+            NvdParams(slack_channel="C")
+        assert "Invalid Slack channel ID" in str(exc_info.value)
+
+    def test_invalid_empty_string(self):
+        """Empty string is rejected."""
+        with pytest.raises(ValidationError) as exc_info:
+            NvdParams(slack_channel="")
+        assert "Invalid Slack channel ID" in str(exc_info.value)
+
+    def test_invalid_whitespace(self):
+        """Channel ID with whitespace is rejected."""
+        with pytest.raises(ValidationError) as exc_info:
+            NvdParams(slack_channel="C0123 456789")
+        assert "Invalid Slack channel ID" in str(exc_info.value)
+
+    def test_invalid_special_characters(self):
+        """Channel ID with special characters is rejected."""
+        with pytest.raises(ValidationError) as exc_info:
+            NvdParams(slack_channel="C0123-456789")
+        assert "Invalid Slack channel ID" in str(exc_info.value)
+
+    def test_invalid_underscore(self):
+        """Channel ID with underscore is rejected."""
+        with pytest.raises(ValidationError) as exc_info:
+            NvdParams(slack_channel="C0123_456789")
+        assert "Invalid Slack channel ID" in str(exc_info.value)
+
+    def test_invalid_hash_prefix(self):
+        """Channel name with # prefix is rejected even with valid ID after."""
+        with pytest.raises(ValidationError) as exc_info:
+            NvdParams(slack_channel="#C0123456789")
+        assert "Invalid Slack channel ID" in str(exc_info.value)
+
+    def test_slack_enabled_default(self):
+        """Default slack_enabled is False."""
+        p = NvdParams()
+        assert p.slack_enabled is False
+
+    def test_slack_enabled_true(self):
+        """slack_enabled can be set to True."""
+        p = NvdParams(slack_enabled=True)
+        assert p.slack_enabled is True

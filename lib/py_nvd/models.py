@@ -8,6 +8,7 @@ All data crossing API boundaries uses these models.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Self, TypeVar
 
@@ -760,6 +761,20 @@ class NvdParams(BaseModel):
     )
 
     # =========================================================================
+    # Slack Notifications
+    # =========================================================================
+    slack_enabled: bool = Field(
+        False,
+        description="Enable Slack notifications for run completion",
+        json_schema_extra={"category": "Notifications"},
+    )
+    slack_channel: str | None = Field(
+        None,
+        description="Slack channel ID for notifications",
+        json_schema_extra={"category": "Notifications"},
+    )
+
+    # =========================================================================
     # Internal Parameters (not user-configurable)
     # =========================================================================
     date: str | None = Field(
@@ -841,6 +856,17 @@ class NvdParams(BaseModel):
         """Validate max_read_length is positive if set."""
         if v is not None and v < 1:
             raise ValueError(f"Must be >= 1, got {v}")
+        return v
+
+    @field_validator("slack_channel")
+    @classmethod
+    def validate_slack_channel(cls, v: str | None) -> str | None:
+        """Validate Slack channel ID format."""
+        if v is not None and not re.match(r"^C[A-Z0-9]+$", v):
+            raise ValueError(
+                f"Invalid Slack channel ID: {v}. "
+                "Must match pattern C[A-Z0-9]+ (e.g., 'C0123456789')"
+            )
         return v
 
     # =========================================================================
@@ -1066,6 +1092,7 @@ PARAM_CATEGORIES = [
     "Analysis",
     "Preprocessing",
     "LabKey",
+    "Notifications",
     "Internal",
 ]
 

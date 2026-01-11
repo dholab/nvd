@@ -141,6 +141,7 @@ PANEL_DATABASES = "Database Paths"
 PANEL_ANALYSIS = "Analysis Parameters"
 PANEL_SRA = "SRA Submission"
 PANEL_LABKEY = "LabKey Integration"
+PANEL_NOTIFICATIONS = "Notifications"
 
 console = Console()
 

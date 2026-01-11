@@ -1,4 +1,3 @@
-# ruff: noqa: B008
 """
 Secrets management for the NVD CLI.
 
@@ -33,14 +32,19 @@ from py_nvd.cli.utils import console, error, info, success, warning
 # The secret name used by the pipeline for LabKey API key
 LABKEY_SECRET_NAME = "LABKEY_API_KEY"
 
+# The secret name used by the pipeline for Slack notifications
+SLACK_SECRET_NAME = "SLACK_BOT_TOKEN"
+
 # All secret names we recognize
 KNOWN_SECRETS = {
     LABKEY_SECRET_NAME: "LabKey API key for uploading results",
+    SLACK_SECRET_NAME: "Slack bot token for run notifications (xoxb-...)",
 }
 
 
 def _run_nextflow_secrets(
-    args: list[str], capture: bool = True
+    args: list[str],
+    capture: bool = True,
 ) -> subprocess.CompletedProcess[str]:
     """
     Run a nextflow secrets command.
@@ -141,7 +145,7 @@ def list_secrets(
     if not secrets:
         info("No secrets configured.")
         console.print()
-        info(f"Run [cyan]nvd secrets set[/cyan] to configure the LabKey API key.")
+        info("Run [cyan]nvd secrets set[/cyan] to configure the LabKey API key.")
         return
 
     console.print("[bold]Configured Secrets:[/bold]")
@@ -212,7 +216,7 @@ def set_secret(
     if value is None:
         if not is_interactive():
             error(
-                "Cannot prompt for secret value in non-interactive mode. Provide value as argument."
+                "Cannot prompt for secret value in non-interactive mode. Provide value as argument.",
             )
 
         console.print(f"[bold]Setting secret:[/bold] {name}")
@@ -286,7 +290,7 @@ def get_secret(
     if not is_interactive():
         error(
             "This command requires interactive confirmation and cannot be used "
-            "in scripts or non-interactive environments."
+            "in scripts or non-interactive environments.",
         )
 
     if not _secret_exists(name):
@@ -310,7 +314,7 @@ def get_secret(
         console.print()
         error(
             f"Confirmation timed out after {PROMPT_TIMEOUT_SECONDS // 60} minutes. "
-            "No secret was displayed."
+            "No secret was displayed.",
         )
     except KeyboardInterrupt:
         console.print("\n[yellow]Cancelled[/yellow]")
