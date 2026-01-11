@@ -14,26 +14,38 @@ Sequence Compression:
     zlib compression. Non-ACGT bases are coerced to N and their positions
     tracked separately for lossless recovery.
 
-Storage (Parquet-based):
-    This module uses crash-proof Parquet files instead of SQLite for hit storage.
+Storage (Parquet-based with Hive Partitioning):
+    This module uses crash-proof Parquet files with Hive-style partitioning.
     Each sample's hits are stored in a separate parquet file, enabling:
 
     - Atomic writes: temp file + rename pattern prevents partial/corrupt files
     - Isolation: one sample's failure cannot affect another sample's data
     - Concurrent reads: multiple processes can query simultaneously
     - Efficient queries: DuckDB provides fast analytical queries across all files
+    - Partition pruning: time-based queries skip irrelevant files
 
-    Storage Layout:
-        {state_dir}/hits/{sample_set_id}/{sample_id}.parquet
+    Storage Layout (Hive-partitioned by month):
+        Uncompacted (fresh from pipeline):
+            {state_dir}/hits/month=NULL/{sample_set_id}/{sample_id}/data.parquet
+
+        Compacted (after running `nvd hits compact`):
+            {state_dir}/hits/month=2026-01/data.parquet
+
+    The month=NULL partition holds uncompacted data. After compaction, data
+    moves to month=YYYY-MM partitions sorted by hit_key for better compression
+    and query performance.
 
     Write Pattern:
-        1. Write to .{sample_id}.parquet.tmp
-        2. Atomic rename to {sample_id}.parquet
+        1. Write to .data.parquet.tmp
+        2. Atomic rename to data.parquet
         3. Readers never see partial files (glob ignores .tmp files)
 
     Query Pattern:
-        DuckDB reads all parquet files via glob: hits/**/*.parquet
+        DuckDB reads all parquet files via glob with hive_partitioning=true.
+        The `month` column is extracted from the directory structure.
         The `first_seen_date` is computed at query time as MIN(run_date).
+        The `effective_month` column normalizes month for both compacted and
+        uncompacted data via COALESCE(month, strftime(run_date, '%Y-%m')).
 """
 
 from __future__ import annotations
@@ -49,7 +61,16 @@ import duckdb
 import polars as pl
 
 from py_nvd.db import get_hits_dir
-from py_nvd.models import Hit, HitObservation, HitStats, RecurringHit, TimelineBucket
+from py_nvd.models import (
+    CompactionResult,
+    DeleteResult,
+    Hit,
+    HitObservation,
+    HitStats,
+    MonthCompactionInfo,
+    RecurringHit,
+    TimelineBucket,
+)
 
 HIT_KEY_LENGTH = 32
 BASES_PER_BYTE = 4
@@ -224,14 +245,22 @@ def _get_hits_view_sql(glob_pattern: str) -> str:
     """
     Generate SQL to create a view over all parquet files.
 
+    Uses hive_partitioning=true to extract `month` from directory structure.
     Uses union_by_name=true for schema evolution compatibility.
+
+    The view adds an `effective_month` column that:
+    - Returns the Hive-extracted `month` for compacted files (e.g., month=2026-01)
+    - Computes month from `run_date` for uncompacted files (month=NULL)
     """
     assert glob_pattern, "glob_pattern cannot be empty"
     assert glob_pattern.endswith(".parquet"), "glob_pattern must end with .parquet"
 
     return f"""
         CREATE OR REPLACE VIEW hits AS
-        SELECT * FROM read_parquet('{glob_pattern}', union_by_name=true)
+        SELECT
+            *,
+            COALESCE(month, strftime(run_date::DATE, '%Y-%m')) AS effective_month
+        FROM read_parquet('{glob_pattern}', hive_partitioning=true, union_by_name=true)
     """
 
 
@@ -325,9 +354,16 @@ def write_hits_parquet(
     Uses the temp file + rename pattern to ensure readers never see partial files.
     If a file already exists for this sample, it is overwritten (last writer wins).
 
+    Files are written to a Hive-partitioned structure:
+        hits/month=NULL/{sample_set_id}/{sample_id}/data.parquet
+
+    The month=NULL partition allows DuckDB to read uncompacted and compacted files
+    together with hive_partitioning=true. After compaction, data moves to
+    month={YYYY-MM}/ partitions.
+
     Args:
         hits: List of HitRecord objects to write
-        sample_id: The sample identifier (used for filename)
+        sample_id: The sample identifier (used for subdirectory)
         sample_set_id: The sample set identifier (used for subdirectory)
         state_dir: Optional state directory override
 
@@ -341,11 +377,11 @@ def write_hits_parquet(
     assert sample_set_id, "sample_set_id cannot be empty"
 
     hits_dir = get_hits_dir(state_dir)
-    sample_set_dir = hits_dir / sample_set_id
-    sample_set_dir.mkdir(parents=True, exist_ok=True)
+    sample_dir = hits_dir / "month=NULL" / sample_set_id / sample_id
+    sample_dir.mkdir(parents=True, exist_ok=True)
 
-    final_path = sample_set_dir / f"{sample_id}.parquet"
-    temp_path = sample_set_dir / f".{sample_id}.parquet.tmp"
+    final_path = sample_dir / "data.parquet"
+    temp_path = sample_dir / ".data.parquet.tmp"
 
     if not hits:
         # Write empty parquet with correct schema
@@ -391,7 +427,10 @@ def get_sample_parquet_path(
     state_dir: Path | str | None = None,
 ) -> Path:
     """
-    Get the path where a sample's parquet file would be stored.
+    Get the path where a sample's uncompacted parquet file would be stored.
+
+    Returns the path in the month=NULL partition:
+        hits/month=NULL/{sample_set_id}/{sample_id}/data.parquet
 
     Does not check if the file exists.
     """
@@ -399,7 +438,7 @@ def get_sample_parquet_path(
     assert sample_set_id, "sample_set_id cannot be empty"
 
     hits_dir = get_hits_dir(state_dir)
-    return hits_dir / sample_set_id / f"{sample_id}.parquet"
+    return hits_dir / "month=NULL" / sample_set_id / sample_id / "data.parquet"
 
 
 def sample_hits_exist(
@@ -1026,6 +1065,9 @@ def count_sample_set_observations(
     """
     Count hit observations for a specific sample set.
 
+    Searches both uncompacted (month=NULL/{sample_set_id}/) and compacted
+    (month=*/) partitions for observations matching the sample_set_id.
+
     Args:
         sample_set_id: The sample set identifier
         state_dir: Optional state directory override
@@ -1035,20 +1077,13 @@ def count_sample_set_observations(
     """
     assert sample_set_id, "sample_set_id cannot be empty"
 
-    hits_dir = get_hits_dir(state_dir)
-    sample_set_dir = hits_dir / sample_set_id
-
-    if not sample_set_dir.exists():
+    if not has_any_hits(state_dir):
         return 0
 
-    parquet_files = list(sample_set_dir.glob("*.parquet"))
-    if not parquet_files:
-        return 0
-
-    con = duckdb.connect()
-    glob_pattern = str(sample_set_dir / "*.parquet")
+    con = query_hits(state_dir)
     result = con.execute(
-        f"SELECT COUNT(*) FROM read_parquet('{glob_pattern}')"
+        "SELECT COUNT(*) FROM hits WHERE sample_set_id = ?",
+        [sample_set_id],
     ).fetchone()
 
     assert result is not None, "COUNT query should always return a row"
@@ -1065,7 +1100,10 @@ def delete_sample_hits(
     state_dir: Path | str | None = None,
 ) -> bool:
     """
-    Delete the parquet file for a specific sample.
+    Delete the parquet file for a specific sample (uncompacted data only).
+
+    Deletes the entire sample directory:
+        hits/month=NULL/{sample_set_id}/{sample_id}/
 
     Args:
         sample_id: The sample identifier
@@ -1073,28 +1111,30 @@ def delete_sample_hits(
         state_dir: Optional state directory override
 
     Returns:
-        True if the file existed and was deleted, False if it didn't exist
+        True if the directory existed and was deleted, False if it didn't exist
     """
     assert sample_id, "sample_id cannot be empty"
     assert sample_set_id, "sample_set_id cannot be empty"
 
-    parquet_path = get_sample_parquet_path(sample_id, sample_set_id, state_dir)
+    hits_dir = get_hits_dir(state_dir)
+    sample_dir = hits_dir / "month=NULL" / sample_set_id / sample_id
 
-    if not parquet_path.exists():
+    if not sample_dir.exists():
         return False
 
-    parquet_path.unlink()
+    shutil.rmtree(sample_dir)
     return True
 
 
-def delete_sample_set_hits(
+def _delete_sample_set_hits_uncompacted(
     sample_set_id: str,
     state_dir: Path | str | None = None,
 ) -> int:
     """
-    Delete all parquet files for a sample set.
+    Delete uncompacted parquet files for a sample set.
 
-    Removes the entire sample set subdirectory under hits/.
+    Removes the sample set subdirectory under month=NULL/:
+        hits/month=NULL/{sample_set_id}/
 
     Args:
         sample_set_id: The sample set identifier
@@ -1106,12 +1146,12 @@ def delete_sample_set_hits(
     assert sample_set_id, "sample_set_id cannot be empty"
 
     hits_dir = get_hits_dir(state_dir)
-    sample_set_dir = hits_dir / sample_set_id
+    sample_set_dir = hits_dir / "month=NULL" / sample_set_id
 
     if not sample_set_dir.exists():
         return 0
 
-    parquet_files = list(sample_set_dir.glob("*.parquet"))
+    parquet_files = list(sample_set_dir.rglob("*.parquet"))
     count = len(parquet_files)
 
     assert sample_set_dir.is_dir(), f"expected {sample_set_dir} to be a directory"
@@ -1119,3 +1159,385 @@ def delete_sample_set_hits(
     shutil.rmtree(sample_set_dir)
 
     return count
+
+
+def _delete_sample_set_hits_compacted(
+    sample_set_id: str,
+    state_dir: Path | str | None = None,
+) -> int:
+    """
+    Delete compacted hits for a sample set by rewriting affected month files.
+
+    Scans month=YYYY-MM directories (skipping month=NULL) and rewrites any
+    that contain data for the given sample_set_id, excluding those rows.
+
+    Args:
+        sample_set_id: The sample set identifier
+        state_dir: Optional state directory override
+
+    Returns:
+        Number of month files that were rewritten
+    """
+    assert sample_set_id, "sample_set_id cannot be empty"
+
+    hits_dir = get_hits_dir(state_dir)
+    assert hits_dir.exists(), f"hits directory must exist: {hits_dir}"
+
+    months_rewritten = 0
+
+    for month_dir in hits_dir.glob("month=*"):
+        if month_dir.name == "month=NULL":
+            continue
+
+        data_file = month_dir / "data.parquet"
+        if not data_file.exists():
+            continue
+
+        con = duckdb.connect()
+
+        # Check if this sample_set has data in this month
+        # Note: file path must be interpolated (DuckDB limitation), but
+        # sample_set_id is parameterized to avoid injection
+        has_data = con.execute(
+            f"""
+            SELECT COUNT(*) > 0
+            FROM read_parquet('{data_file}')
+            WHERE sample_set_id = $1
+            """,
+            [sample_set_id],
+        ).fetchone()[0]
+
+        if not has_data:
+            con.close()
+            continue
+
+        temp_file = month_dir / ".data.parquet.tmp"
+        con.execute(
+            f"""
+            COPY (
+                SELECT * FROM read_parquet('{data_file}')
+                WHERE sample_set_id != $1
+                ORDER BY hit_key, run_date
+            )
+            TO '{temp_file}'
+            (FORMAT parquet, COMPRESSION zstd, ROW_GROUP_SIZE 100000)
+            """,
+            [sample_set_id],
+        )
+
+        row_count = con.execute(
+            f"SELECT COUNT(*) FROM read_parquet('{temp_file}')"
+        ).fetchone()[0]
+
+        con.close()
+
+        if row_count == 0:
+            temp_file.unlink()
+            data_file.unlink()
+            month_dir.rmdir()
+        else:
+            temp_file.rename(data_file)
+
+        months_rewritten += 1
+
+    return months_rewritten
+
+
+def delete_sample_set_hits(
+    sample_set_id: str,
+    state_dir: Path | str | None = None,
+) -> DeleteResult:
+    """
+    Delete all hits for a sample set (both uncompacted and compacted).
+
+    For uncompacted data: removes the sample set subdirectory under month=NULL/.
+    For compacted data: rewrites affected month files to exclude the sample_set_id.
+
+    Args:
+        sample_set_id: The sample set identifier
+        state_dir: Optional state directory override
+
+    Returns:
+        DeleteResult with counts of uncompacted files deleted and compacted
+        months rewritten.
+    """
+    assert sample_set_id, "sample_set_id cannot be empty"
+
+    uncompacted = _delete_sample_set_hits_uncompacted(sample_set_id, state_dir)
+    compacted = _delete_sample_set_hits_compacted(sample_set_id, state_dir)
+
+    assert uncompacted >= 0, "uncompacted count cannot be negative"
+    assert compacted >= 0, "compacted count cannot be negative"
+
+    return DeleteResult(
+        uncompacted_files_deleted=uncompacted,
+        compacted_months_rewritten=compacted,
+    )
+
+
+def _get_uncompacted_glob(state_dir: Path | str | None = None) -> str:
+    """Get glob pattern for uncompacted parquet files."""
+    hits_dir = get_hits_dir(state_dir)
+    result = str(hits_dir / "month=NULL" / "**" / "*.parquet")
+    assert "month=NULL" in result, "glob pattern must target uncompacted partition"
+    return result
+
+
+def _inventory_uncompacted(
+    state_dir: Path | str | None = None,
+    month: str | None = None,
+) -> list[MonthCompactionInfo]:
+    """
+    Inventory uncompacted data grouped by month.
+
+    Args:
+        state_dir: Optional state directory override
+        month: Optional filter to a specific month (YYYY-MM format)
+
+    Returns:
+        List of MonthCompactionInfo for each month with uncompacted data
+    """
+    assert month is None or (len(month) == 7 and month[4] == "-"), (
+        f"month must be YYYY-MM format, got {month!r}"
+    )
+
+    uncompacted_glob = _get_uncompacted_glob(state_dir)
+    hits_dir = get_hits_dir(state_dir)
+    uncompacted_dir = hits_dir / "month=NULL"
+
+    if not uncompacted_dir.exists():
+        return []
+
+    parquet_files = list(uncompacted_dir.rglob("*.parquet"))
+    if not parquet_files:
+        return []
+
+    con = duckdb.connect()
+
+    month_filter = ""
+    if month is not None:
+        month_filter = f"WHERE strftime(run_date::DATE, '%Y-%m') = '{month}'"
+
+    result = con.execute(f"""
+        SELECT
+            strftime(run_date::DATE, '%Y-%m') AS target_month,
+            COUNT(*) AS observation_count,
+            COUNT(DISTINCT hit_key) AS unique_hits,
+            COUNT(DISTINCT sample_set_id) AS sample_sets
+        FROM read_parquet('{uncompacted_glob}')
+        {month_filter}
+        GROUP BY target_month
+        ORDER BY target_month DESC
+    """).fetchall()
+
+    # Count source files per month by examining the data
+    inventory = []
+    for row in result:
+        target_month, obs_count, unique_hits, sample_sets = row
+
+        # Count files that have data for this month
+        file_count = con.execute(f"""
+            SELECT COUNT(DISTINCT filename)
+            FROM read_parquet('{uncompacted_glob}', filename=true)
+            WHERE strftime(run_date::DATE, '%Y-%m') = '{target_month}'
+        """).fetchone()
+
+        inventory.append(
+            MonthCompactionInfo(
+                month=target_month,
+                observation_count=obs_count,
+                unique_hits=unique_hits,
+                sample_sets=sample_sets,
+                source_files=file_count[0] if file_count else 0,
+            )
+        )
+
+    assert all(isinstance(m, MonthCompactionInfo) for m in inventory), (
+        "inventory must contain only MonthCompactionInfo objects"
+    )
+    return inventory
+
+
+def compact_hits(
+    state_dir: Path | str | None = None,
+    month: str | None = None,
+    dry_run: bool = False,
+    keep_source: bool = False,
+) -> CompactionResult:
+    """
+    Compact uncompacted hits into monthly partitions.
+
+    Reads data from hits/month=NULL/**, groups by month (from run_date),
+    sorts by hit_key, and writes to hits/month={YYYY-MM}/data.parquet.
+
+    If a compacted file already exists for a month, the new data is merged
+    with the existing data.
+
+    Args:
+        state_dir: Optional state directory override
+        month: Only compact data for this month (YYYY-MM format).
+               Default: compact all uncompacted data.
+        dry_run: If True, show what would be compacted without doing it.
+        keep_source: If True, keep uncompacted files after compaction.
+                     Default: delete after successful compaction.
+
+    Returns:
+        CompactionResult with details of what was (or would be) compacted.
+    """
+    assert month is None or len(month) == 7, (
+        f"month must be YYYY-MM format, got {month!r}"
+    )
+
+    hits_dir = get_hits_dir(state_dir)
+    uncompacted_glob = _get_uncompacted_glob(state_dir)
+
+    # Inventory what we have to compact
+    inventory = _inventory_uncompacted(state_dir, month)
+
+    if not inventory:
+        return CompactionResult(
+            dry_run=dry_run,
+            months=[],
+            total_observations=0,
+            total_source_files=0,
+        )
+
+    if dry_run:
+        return CompactionResult(
+            dry_run=True,
+            months=inventory,
+            total_observations=sum(m.observation_count for m in inventory),
+            total_source_files=sum(m.source_files for m in inventory),
+        )
+
+    # Perform compaction for each month
+    errors: list[str] = []
+    compacted_months: list[MonthCompactionInfo] = []
+    files_to_delete: list[Path] = []
+
+    con = duckdb.connect()
+
+    for info in inventory:
+        target_month = info.month
+        month_dir = hits_dir / f"month={target_month}"
+        month_dir.mkdir(parents=True, exist_ok=True)
+
+        existing_file = month_dir / "data.parquet"
+        temp_file = month_dir / ".data.parquet.tmp"
+
+        try:
+            # Build source list: uncompacted data for this month
+            # Plus existing compacted file if it exists
+            if existing_file.exists():
+                source_sql = f"""
+                    SELECT
+                        hit_key,
+                        sequence_length,
+                        sequence_compressed,
+                        gc_content,
+                        sample_set_id,
+                        sample_id,
+                        run_date,
+                        contig_id
+                    FROM read_parquet('{uncompacted_glob}')
+                    WHERE strftime(run_date::DATE, '%Y-%m') = '{target_month}'
+
+                    UNION ALL
+
+                    SELECT
+                        hit_key,
+                        sequence_length,
+                        sequence_compressed,
+                        gc_content,
+                        sample_set_id,
+                        sample_id,
+                        run_date,
+                        contig_id
+                    FROM read_parquet('{existing_file}')
+                """
+            else:
+                source_sql = f"""
+                    SELECT
+                        hit_key,
+                        sequence_length,
+                        sequence_compressed,
+                        gc_content,
+                        sample_set_id,
+                        sample_id,
+                        run_date,
+                        contig_id
+                    FROM read_parquet('{uncompacted_glob}')
+                    WHERE strftime(run_date::DATE, '%Y-%m') = '{target_month}'
+                """
+
+            # Write sorted, compressed parquet
+            con.execute(f"""
+                COPY (
+                    {source_sql}
+                    ORDER BY hit_key, run_date
+                )
+                TO '{temp_file}'
+                (FORMAT parquet, COMPRESSION zstd, ROW_GROUP_SIZE 100000)
+            """)
+
+            # Atomic rename
+            temp_file.rename(existing_file)
+
+            # Verify compaction succeeded
+            assert existing_file.exists(), (
+                f"compacted file should exist: {existing_file}"
+            )
+            assert not temp_file.exists(), (
+                f"temp file should be cleaned up: {temp_file}"
+            )
+
+            compacted_months.append(info)
+
+            # Track files to delete (if not keeping source)
+            if not keep_source:
+                # Find all uncompacted files that contributed to this month
+                file_result = con.execute(f"""
+                    SELECT DISTINCT filename
+                    FROM read_parquet('{uncompacted_glob}', filename=true)
+                    WHERE strftime(run_date::DATE, '%Y-%m') = '{target_month}'
+                """).fetchall()
+
+                for (filepath,) in file_result:
+                    files_to_delete.append(Path(filepath))
+
+        except Exception as e:
+            errors.append(
+                f"Failed to compact month {target_month}: {type(e).__name__}: {e}"
+            )
+            # Clean up temp file if it exists
+            if temp_file.exists():
+                temp_file.unlink()
+
+    # Delete source files after all compaction is done
+    if not keep_source and not errors:
+        deleted_dirs: set[Path] = set()
+        for filepath in files_to_delete:
+            if filepath.exists():
+                filepath.unlink()
+                # Track parent directories for cleanup
+                deleted_dirs.add(filepath.parent)
+
+        # Clean up empty directories (sample_id dirs, then sample_set_id dirs)
+        for dir_path in sorted(deleted_dirs, key=lambda p: len(p.parts), reverse=True):
+            try:
+                if dir_path.exists() and not any(dir_path.iterdir()):
+                    dir_path.rmdir()
+                    # Also try to remove parent if empty
+                    parent = dir_path.parent
+                    if parent.exists() and not any(parent.iterdir()):
+                        parent.rmdir()
+            except OSError:
+                pass  # Directory not empty or other issue, skip
+
+    return CompactionResult(
+        dry_run=False,
+        months=compacted_months,
+        total_observations=sum(m.observation_count for m in compacted_months),
+        total_source_files=sum(m.source_files for m in compacted_months),
+        errors=errors,
+    )

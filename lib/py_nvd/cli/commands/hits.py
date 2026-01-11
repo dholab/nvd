@@ -8,6 +8,7 @@ Commands:
     nvd hits trace     - Show full details for a hit including sequence
     nvd hits recur     - Find recurring hits across samples
     nvd hits timeline  - Show discovery timeline as histogram
+    nvd hits compact   - Compact uncompacted hits into monthly partitions
 """
 
 from __future__ import annotations
@@ -18,12 +19,14 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Annotated
 
+import polars as pl
 import typer
 from rich.table import Table
 
 from py_nvd.cli.utils import console, error, info
 from py_nvd.db import get_state_db_path
 from py_nvd.hits import (
+    compact_hits,
     get_discovery_timeline,
     get_hit,
     get_hit_sequence,
@@ -711,8 +714,6 @@ def _export_tabular(
     include_sequence: bool,
 ) -> None:
     """Export hits as tabular data using Polars."""
-    import polars as pl
-
     rows = list_hits_with_observations()
 
     if not rows:
@@ -794,3 +795,155 @@ def _export_fasta(output: Path | None) -> None:
         info(f"Wrote {len(hits)} sequences to {output}")
     else:
         console.print(content, end="")
+
+
+@hits_app.command("compact")
+def hits_compact(
+    month: Annotated[
+        str | None,
+        typer.Option(
+            "--month",
+            "-m",
+            help="Only compact data for this month (YYYY-MM format)",
+        ),
+    ] = None,
+    dry_run: Annotated[
+        bool,
+        typer.Option(
+            "--dry-run",
+            "-n",
+            help="Show what would be compacted without doing it",
+        ),
+    ] = False,
+    keep_source: Annotated[
+        bool,
+        typer.Option(
+            "--keep-source",
+            help="Keep uncompacted files after compaction",
+        ),
+    ] = False,
+    json_output: Annotated[
+        bool,
+        typer.Option(
+            "--json",
+            help="Output as JSON",
+        ),
+    ] = False,
+) -> None:
+    """
+    Compact uncompacted hits into monthly partitions.
+
+    Consolidates small per-sample parquet files from hits/month=NULL/ into
+    larger sorted files in hits/month=YYYY-MM/ partitions. This improves
+    query performance through:
+
+    - Fewer files to open (better for DuckDB)
+    - Sorted data (better compression, faster aggregations)
+    - Time-based partitions (enables partition pruning)
+
+    Examples:
+
+        # Show what would be compacted (dry run)
+        nvd hits compact --dry-run
+
+        # Compact all uncompacted data
+        nvd hits compact
+
+        # Compact only January 2024 data
+        nvd hits compact --month 2024-01
+
+        # Compact but keep source files (for testing)
+        nvd hits compact --keep-source
+    """
+    db_path = get_state_db_path()
+    if not db_path.exists():
+        error(f"Database not found: {db_path}\nRun 'nvd state init' to create it.")
+        raise typer.Exit(1)
+
+    # Validate month format
+    if month is not None:
+        if len(month) != 7 or month[4] != "-":
+            error(f"Invalid month format: {month!r}. Expected YYYY-MM (e.g., 2024-01)")
+            raise typer.Exit(1)
+        try:
+            year, mon = int(month[:4]), int(month[5:])
+            if not (1 <= mon <= 12):
+                raise ValueError("Month must be 1-12")
+        except ValueError as e:
+            error(f"Invalid month format: {month!r}. {e}")
+            raise typer.Exit(1)
+
+    # Run compaction
+    result = compact_hits(month=month, dry_run=dry_run, keep_source=keep_source)
+
+    # Output
+    if json_output:
+        console.print_json(data=_compact_to_dict(result))
+    else:
+        _print_compact_rich(result, dry_run, keep_source)
+
+
+def _compact_to_dict(result) -> dict:
+    """Convert compaction result to JSON-serializable dict."""
+    return {
+        "dry_run": result.dry_run,
+        "months": [
+            {
+                "month": m.month,
+                "observation_count": m.observation_count,
+                "unique_hits": m.unique_hits,
+                "sample_sets": m.sample_sets,
+                "source_files": m.source_files,
+            }
+            for m in result.months
+        ],
+        "total_observations": result.total_observations,
+        "total_source_files": result.total_source_files,
+        "errors": result.errors,
+    }
+
+
+def _print_compact_rich(result, dry_run: bool, keep_source: bool) -> None:
+    """Print compaction result with Rich formatting."""
+    if not result.months:
+        info("No uncompacted data to compact")
+        return
+
+    action = "Would compact" if dry_run else "Compacted"
+    console.print(f"\n[bold]{action} {len(result.months)} month(s)[/bold]")
+    console.print("─" * 50)
+
+    table = Table(show_header=True, header_style="bold", box=None, padding=(0, 2))
+    table.add_column("Month", style="cyan")
+    table.add_column("Observations", justify="right")
+    table.add_column("Unique Hits", justify="right")
+    table.add_column("Sample Sets", justify="right")
+    table.add_column("Source Files", justify="right")
+
+    for m in sorted(result.months, key=lambda x: x.month, reverse=True):
+        table.add_row(
+            m.month,
+            f"{m.observation_count:,}",
+            f"{m.unique_hits:,}",
+            str(m.sample_sets),
+            str(m.source_files),
+        )
+
+    console.print(table)
+
+    console.print(f"\n  Total observations: {result.total_observations:,}")
+    console.print(f"  Total source files: {result.total_source_files:,}")
+
+    if dry_run:
+        console.print("\n[yellow]Dry run - no changes made[/yellow]")
+    elif keep_source:
+        console.print("\n[dim]Source files preserved (--keep-source)[/dim]")
+    else:
+        console.print("\n[green]Source files deleted[/green]")
+
+    if result.errors:
+        console.print("\n[red bold]Errors:[/red bold]")
+        for err in result.errors:
+            console.print(f"  [red]• {err}[/red]")
+
+    console.print()

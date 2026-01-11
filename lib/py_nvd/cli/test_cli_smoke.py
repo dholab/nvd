@@ -1368,6 +1368,99 @@ class TestHitsCommands:
         assert result.exit_code == 0
         assert "No recurring hits found" in result.stdout
 
+    def test_hits_compact_help(self):
+        """hits compact --help shows options."""
+        result = runner.invoke(app, ["hits", "compact", "--help"])
+        assert result.exit_code == 0
+        assert "--dry-run" in result.stdout
+        assert "--month" in result.stdout
+        assert "--keep-source" in result.stdout
+        assert "--json" in result.stdout
+
+    def test_hits_compact_empty_database(self, tmp_path, monkeypatch):
+        """hits compact handles empty database gracefully."""
+        monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
+        runner.invoke(app, ["state", "init"])
+        result = runner.invoke(app, ["hits", "compact"])
+        assert result.exit_code == 0
+        assert "No uncompacted data" in result.stdout
+
+    def test_hits_compact_dry_run(self, tmp_path, monkeypatch):
+        """hits compact --dry-run shows what would be compacted."""
+        monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
+        runner.invoke(app, ["state", "init"])
+
+        record = make_hit_record(
+            "ACGTACGTACGT", "set_001", "sample_a", "2024-01-15T00:00:00Z"
+        )
+        write_hits_parquet([record], "sample_a", "set_001", tmp_path)
+
+        result = runner.invoke(app, ["hits", "compact", "--dry-run"])
+        assert result.exit_code == 0
+        assert "2024-01" in result.stdout
+        assert "Dry run" in result.stdout
+
+    def test_hits_compact_basic(self, tmp_path, monkeypatch):
+        """hits compact compacts uncompacted data."""
+        monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
+        runner.invoke(app, ["state", "init"])
+
+        record = make_hit_record(
+            "ACGTACGTACGT", "set_001", "sample_a", "2024-01-15T00:00:00Z"
+        )
+        write_hits_parquet([record], "sample_a", "set_001", tmp_path)
+
+        result = runner.invoke(app, ["hits", "compact"])
+        assert result.exit_code == 0
+        assert "Compacted" in result.stdout
+        assert "2024-01" in result.stdout
+
+        compacted_path = tmp_path / "hits" / "month=2024-01" / "data.parquet"
+        assert compacted_path.exists()
+
+    def test_hits_compact_json(self, tmp_path, monkeypatch):
+        """hits compact --json outputs valid JSON."""
+        import json
+
+        monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
+        runner.invoke(app, ["state", "init"])
+
+        record = make_hit_record(
+            "ACGTACGTACGT", "set_001", "sample_a", "2024-01-15T00:00:00Z"
+        )
+        write_hits_parquet([record], "sample_a", "set_001", tmp_path)
+
+        result = runner.invoke(app, ["hits", "compact", "--json"])
+        assert result.exit_code == 0
+
+        data = json.loads(result.stdout)
+        assert "months" in data
+        assert "total_observations" in data
+        assert data["total_observations"] == 1
+
+    def test_hits_compact_month_filter(self, tmp_path, monkeypatch):
+        """hits compact --month filters to specific month."""
+        monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
+        runner.invoke(app, ["state", "init"])
+
+        record_jan = make_hit_record(
+            "ACGTACGTACGT", "set_001", "sample_a", "2024-01-15T00:00:00Z"
+        )
+        record_feb = make_hit_record(
+            "GGGGCCCCAAAA", "set_001", "sample_b", "2024-02-15T00:00:00Z"
+        )
+        write_hits_parquet([record_jan], "sample_a", "set_001", tmp_path)
+        write_hits_parquet([record_feb], "sample_b", "set_001", tmp_path)
+
+        result = runner.invoke(app, ["hits", "compact", "--month", "2024-01"])
+        assert result.exit_code == 0
+        assert "2024-01" in result.stdout
+
+        jan_path = tmp_path / "hits" / "month=2024-01" / "data.parquet"
+        feb_path = tmp_path / "hits" / "month=2024-02" / "data.parquet"
+        assert jan_path.exists()
+        assert not feb_path.exists()
+
 
 class TestResumeFile:
     """Verify .nfresume file handling."""

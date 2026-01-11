@@ -180,8 +180,9 @@ def get_hits_dir(state_dir: Path | str | None = None) -> Path:
     """
     Get path to the hits directory containing parquet files.
 
-    The hits directory stores per-sample parquet files organized by sample_set_id:
-        {state_dir}/hits/{sample_set_id}/{sample_id}.parquet
+    The hits directory uses Hive-style partitioning by month:
+        Uncompacted: {state_dir}/hits/month=NULL/{sample_set_id}/{sample_id}/data.parquet
+        Compacted:   {state_dir}/hits/month=YYYY-MM/data.parquet
 
     The directory is created if it doesn't exist.
 

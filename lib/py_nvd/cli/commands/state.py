@@ -1820,14 +1820,20 @@ def state_prune(
 
     # Delete parquet hit files for pruned sample sets
     total_hit_files_deleted = 0
+    total_months_rewritten = 0
     for sample_set_id in sample_set_ids_to_prune:
-        total_hit_files_deleted += delete_sample_set_hits(sample_set_id)
+        result = delete_sample_set_hits(sample_set_id)
+        total_hit_files_deleted += result.uncompacted_files_deleted
+        total_months_rewritten += result.compacted_months_rewritten
 
     if not json_output:
+        hit_summary = f"{total_hit_files_deleted} hit file(s)"
+        if total_months_rewritten > 0:
+            hit_summary += f", {total_months_rewritten} month(s) rewritten"
         success(
             f"Pruned {len(prune_details)} run(s), {total_samples} sample(s), "
             f"{total_uploads} upload(s), {total_taxonomy} taxonomy version(s), "
-            f"{total_hit_files_deleted} hit file(s)",
+            f"{hit_summary}",
         )
 
 

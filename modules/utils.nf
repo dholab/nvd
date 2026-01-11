@@ -96,13 +96,14 @@ process REGISTER_HITS {
     maxRetries 2
 
     // Publish parquet file to state directory - runs on every resume even if task is cached
-    publishDir "${state_dir}/hits/${sample_set_id}", mode: 'copy', pattern: "*.parquet"
+    // Uses Hive-partitioned structure: hits/month=NULL/{sample_set_id}/{sample_id}/data.parquet
+    publishDir "${state_dir}/hits/month=NULL/${sample_set_id}/${sample_id}", mode: 'copy', pattern: "data.parquet"
 
     input:
     tuple val(sample_id), path(contigs), path(blast_results), val(sample_set_id), val(state_dir)
 
     output:
-    tuple val(sample_id), path("${sample_id}_hits_registered.log"), path("${sample_id}.parquet")
+    tuple val(sample_id), path("${sample_id}_hits_registered.log"), path("data.parquet")
 
     script:
     def blast_db_arg = params.blast_db_version ? "--blast-db-version '${params.blast_db_version}'" : ""
@@ -117,7 +118,7 @@ process REGISTER_HITS {
         --sample-set-id '${sample_set_id}' \\
         --sample-id '${sample_id}' \\
         --run-id '${workflow.runName}' \\
-        --output ${sample_id}.parquet \\
+        --output data.parquet \\
         ${blast_db_arg} \\
         ${stat_db_arg} \\
         ${labkey_arg} \\

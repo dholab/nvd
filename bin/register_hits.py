@@ -18,7 +18,11 @@ This script is a thin wrapper around py_nvd.hits that:
 3. Computes hit keys and metadata
 4. Writes hits atomically to a per-sample parquet file
 
-Each sample's hits are stored in: {state_dir}/hits/{sample_set_id}/{sample_id}.parquet
+Each sample's hits are stored in a Hive-partitioned structure:
+    {state_dir}/hits/month=NULL/{sample_set_id}/{sample_id}/data.parquet
+
+The month=NULL partition holds uncompacted data. After running `nvd hits compact`,
+data moves to month=YYYY-MM partitions for better query performance.
 
 Usage:
     register_hits.py --contigs contigs.fasta --blast-results merged.tsv \\

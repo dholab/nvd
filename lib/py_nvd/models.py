@@ -377,6 +377,51 @@ class TimelineBucket:
     new_hits: int
 
 
+@dataclass(frozen=True)
+class MonthCompactionInfo:
+    """
+    Information about a single month's compaction.
+
+    Used in CompactionResult to report what was compacted.
+    """
+
+    month: str  # YYYY-MM format
+    observation_count: int  # Total rows compacted
+    unique_hits: int  # Distinct hit_keys
+    sample_sets: int  # Distinct sample_set_ids
+    source_files: int  # Number of uncompacted files merged
+
+
+@dataclass(frozen=True)
+class CompactionResult:
+    """
+    Result of a hits compaction operation.
+
+    Reports what was compacted, whether it was a dry run, and any
+    months that were processed.
+    """
+
+    dry_run: bool
+    months: list[MonthCompactionInfo]
+    total_observations: int  # Sum of all observation_count
+    total_source_files: int  # Sum of all source_files
+    errors: list[str] = Field(default_factory=list)  # Any errors encountered
+
+
+@dataclass(frozen=True)
+class DeleteResult:
+    """
+    Result of deleting hits for a sample set.
+
+    Tracks both uncompacted file deletion (cheap) and compacted month
+    rewriting (more expensive). Used by delete_sample_set_hits() and
+    reported by `nvd state prune`.
+    """
+
+    uncompacted_files_deleted: int
+    compacted_months_rewritten: int
+
+
 # Valid values for constrained fields
 VALID_TOOLS = frozenset(
     {
