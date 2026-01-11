@@ -14,6 +14,7 @@ from py_nvd.cli.commands.setup import (
     SHELL_HOOK_MARKER,
     _check_pixi_installed,
     _detect_shell,
+    _generate_completions,
     _generate_setup_conf,
     _generate_wrapper_script,
     _get_rc_file,
@@ -128,7 +129,7 @@ class TestWrapperScriptGeneration:
 
         assert script.startswith("#!/bin/bash")
         assert str(nvd_repo) in script
-        assert "pixi run" in script
+        assert ".pixi/envs/default/bin" in script
         assert "nvd" in script
         assert __version__ in script
 
@@ -142,6 +143,28 @@ class TestWrapperScriptGeneration:
         assert f"NVD_REPO={nvd_repo}" in conf
         assert f"NVD_STATE_DIR={state_dir}" in conf
         assert __version__ in conf
+
+    def test_generate_completions_bash(self, tmp_path):
+        """_generate_completions creates bash completion script."""
+        with patch("py_nvd.cli.commands.setup.NVD_HOME", tmp_path):
+            path = _generate_completions("bash")
+
+        assert path.exists()
+        assert path.name == "completions.bash"
+        content = path.read_text()
+        assert "_nvd_completion" in content
+        assert "complete" in content
+
+    def test_generate_completions_zsh(self, tmp_path):
+        """_generate_completions creates zsh completion script."""
+        with patch("py_nvd.cli.commands.setup.NVD_HOME", tmp_path):
+            path = _generate_completions("zsh")
+
+        assert path.exists()
+        assert path.name == "completions.zsh"
+        content = path.read_text()
+        assert "_nvd_completion" in content
+        assert "compdef" in content
 
 
 class TestRCFileIntegration:
@@ -220,7 +243,7 @@ class TestShellHookOutput:
     """Tests for shell-hook command output."""
 
     def test_shell_hook_bash(self, monkeypatch, tmp_path):
-        """shell-hook outputs bash-compatible code."""
+        """shell-hook outputs bash-compatible code with static completions."""
         monkeypatch.setenv("SHELL", "/bin/bash")
         # Create setup.conf so state_dir is read
         nvd_home = tmp_path / ".nvd"
@@ -234,12 +257,13 @@ class TestShellHookOutput:
             result = runner.invoke(app, ["setup", "shell-hook", "--shell", "bash"])
 
         assert result.exit_code == 0
-        assert "_NVD_COMPLETE=bash_source" in result.stdout
+        assert "completions.bash" in result.stdout
+        assert "source" in result.stdout
         assert "export PATH" in result.stdout
         assert "export NVD_STATE_DIR" in result.stdout
 
     def test_shell_hook_zsh(self, monkeypatch, tmp_path):
-        """shell-hook outputs zsh-compatible code."""
+        """shell-hook outputs zsh-compatible code with static completions."""
         monkeypatch.setenv("SHELL", "/bin/zsh")
         nvd_home = tmp_path / ".nvd"
         nvd_home.mkdir()
@@ -252,7 +276,8 @@ class TestShellHookOutput:
             result = runner.invoke(app, ["setup", "shell-hook", "--shell", "zsh"])
 
         assert result.exit_code == 0
-        assert "_NVD_COMPLETE=zsh_source" in result.stdout
+        assert "completions.zsh" in result.stdout
+        assert "source" in result.stdout
 
     def test_shell_hook_unsupported_shell(self):
         """shell-hook rejects unsupported shells."""
