@@ -6688,7 +6688,7 @@ packages:
 - pypi: ./
   name: nvd
   version: 2.4.0
-  sha256: 564ca10808aae09886955eca4b9a170ed3a012a01a0d442f3f2b73af89207cf8
+  sha256: 5a918e5b2f13ce33a1025a2b68a3ce4d1ff71ad28fc71983ae8aa8d2cde8c2a9
   requires_dist:
   - biopython>=1.85
   - blake3>=1.0.8

@@ -11,6 +11,7 @@ Commands:
     nvd state info  - Show database overview
     nvd state runs  - List pipeline runs
     nvd state run   - Show details for a specific run
+    nvd state move  - Move state directory to a new location
 """
 
 from __future__ import annotations
@@ -2997,3 +2998,319 @@ def state_cleanup(
                     f"  Stale runs marked failed: {results['stale_runs_marked_failed']}"
                 )
         console.print()
+
+
+def _get_directory_stats(directory: Path) -> tuple[int, int, int]:
+    """
+    Get statistics for a directory.
+
+    Returns:
+        Tuple of (file_count, dir_count, total_size_bytes)
+    """
+    file_count = 0
+    dir_count = 0
+    total_size = 0
+
+    for item in directory.rglob("*"):
+        if item.is_file():
+            file_count += 1
+            total_size += item.stat().st_size
+        elif item.is_dir():
+            dir_count += 1
+
+    return file_count, dir_count, total_size
+
+
+def _get_file_metadata(directory: Path) -> dict[str, int]:
+    """
+    Get metadata (relative path -> size) for all files in a directory.
+
+    Returns:
+        Dict mapping relative paths to file sizes.
+    """
+    metadata = {}
+    for item in directory.rglob("*"):
+        if item.is_file():
+            rel_path = str(item.relative_to(directory))
+            metadata[rel_path] = item.stat().st_size
+    return metadata
+
+
+def _verify_copy(source: Path, dest: Path) -> tuple[bool, str]:
+    """
+    Verify that a copy operation succeeded by comparing metadata.
+
+    Compares file count, relative paths, and sizes between source and dest.
+
+    Returns:
+        Tuple of (success, message)
+    """
+    source_meta = _get_file_metadata(source)
+    dest_meta = _get_file_metadata(dest)
+
+    if len(source_meta) != len(dest_meta):
+        return False, (
+            f"File count mismatch: source has {len(source_meta)}, "
+            f"dest has {len(dest_meta)}"
+        )
+
+    missing_in_dest = set(source_meta.keys()) - set(dest_meta.keys())
+    if missing_in_dest:
+        return (
+            False,
+            f"Missing files in destination: {', '.join(sorted(missing_in_dest)[:5])}...",
+        )
+
+    extra_in_dest = set(dest_meta.keys()) - set(source_meta.keys())
+    if extra_in_dest:
+        return (
+            False,
+            f"Extra files in destination: {', '.join(sorted(extra_in_dest)[:5])}...",
+        )
+
+    size_mismatches = []
+    for path, source_size in source_meta.items():
+        dest_size = dest_meta[path]
+        if source_size != dest_size:
+            size_mismatches.append(f"{path}: {source_size} vs {dest_size}")
+
+    if size_mismatches:
+        return False, f"Size mismatches: {', '.join(size_mismatches[:5])}..."
+
+    return True, f"Verified {len(source_meta)} files"
+
+
+def _update_setup_conf(new_state_dir: Path) -> bool:
+    """
+    Update ~/.nvd/setup.conf to point to the new state directory.
+
+    Returns:
+        True if setup.conf was updated, False if it doesn't exist.
+    """
+    from py_nvd.cli.commands.setup import NVD_HOME
+
+    setup_conf = NVD_HOME / "setup.conf"
+    if not setup_conf.exists():
+        return False
+
+    lines = setup_conf.read_text().splitlines()
+    new_lines = []
+    updated = False
+
+    for line in lines:
+        if line.startswith("NVD_STATE_DIR="):
+            new_lines.append(f"NVD_STATE_DIR={new_state_dir}")
+            updated = True
+        else:
+            new_lines.append(line)
+
+    if updated:
+        setup_conf.write_text("\n".join(new_lines) + "\n")
+
+    return updated
+
+
+def _count_uncompacted_hits(state_dir: Path) -> int:
+    """Count uncompacted hit files in the state directory."""
+    hits_dir = state_dir / "hits" / "month=NULL"
+    if not hits_dir.exists():
+        return 0
+    return len(list(hits_dir.rglob("*.parquet")))
+
+
+@state_app.command("move")
+def state_move(
+    destination: Annotated[
+        Path,
+        typer.Argument(help="New location for the state directory"),
+    ],
+    force: bool = typer.Option(
+        False,
+        "--force",
+        "-f",
+        help="Overwrite destination if it exists",
+    ),
+    keep_source: bool = typer.Option(
+        False,
+        "--keep-source",
+        help="Copy instead of move (keep original)",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        "-n",
+        help="Show what would happen without doing it",
+    ),
+) -> None:
+    """
+    Move the state directory to a new location.
+
+    Copies the entire state directory to the destination, verifies the copy
+    succeeded, updates ~/.nvd/setup.conf to point to the new location, and
+    (unless --keep-source) removes the original.
+
+    Examples:
+
+        # Move to a new location
+        nvd state move /scratch/nvd-state
+
+        # Preview what would happen
+        nvd state move /scratch/nvd-state --dry-run
+
+        # Copy instead of move (keep original)
+        nvd state move /backup/nvd-state --keep-source
+
+        # Overwrite existing destination
+        nvd state move /scratch/nvd-state --force
+    """
+    import shutil
+
+    source = get_state_dir()
+    dest = destination.expanduser().resolve()
+
+    # Validation
+    if not source.exists():
+        error(f"Source state directory does not exist: {source}")
+        raise typer.Exit(1)
+
+    if source == dest:
+        error("Source and destination are the same")
+        raise typer.Exit(1)
+
+    # Check for nested paths
+    try:
+        dest.relative_to(source)
+        error("Destination cannot be inside source directory")
+        raise typer.Exit(1)
+    except ValueError:
+        pass  # Not nested, good
+
+    try:
+        source.relative_to(dest)
+        error("Source cannot be inside destination directory")
+        raise typer.Exit(1)
+    except ValueError:
+        pass  # Not nested, good
+
+    if dest.exists() and not force:
+        error(f"Destination already exists: {dest}")
+        info("Use --force to overwrite")
+        raise typer.Exit(1)
+
+    # Check destination parent exists and is writable
+    dest_parent = dest.parent
+    if not dest_parent.exists():
+        error(f"Destination parent directory does not exist: {dest_parent}")
+        raise typer.Exit(1)
+
+    if not os.access(dest_parent, os.W_OK):
+        error(f"Destination parent directory is not writable: {dest_parent}")
+        raise typer.Exit(1)
+
+    # Gather stats
+    file_count, dir_count, total_size = _get_directory_stats(source)
+    uncompacted_hits = _count_uncompacted_hits(source)
+
+    # Check for setup.conf
+    from py_nvd.cli.commands.setup import NVD_HOME
+
+    setup_conf_exists = (NVD_HOME / "setup.conf").exists()
+
+    if dry_run:
+        console.print()
+        info("Dry run - no changes will be made")
+        console.print()
+        console.print(f"  Source: {source}")
+        console.print(f"  Destination: {dest}")
+        console.print(f"  Operation: {'copy' if keep_source else 'move'}")
+        console.print()
+        console.print(f"  Files: {file_count:,}")
+        console.print(f"  Directories: {dir_count:,}")
+        console.print(f"  Total size: {_format_size(total_size)}")
+        console.print()
+
+        if uncompacted_hits > 100:
+            warning(
+                f"Found {uncompacted_hits:,} uncompacted hit files. "
+                "Consider running 'nvd hits compact' before moving to reduce transfer time."
+            )
+            console.print()
+
+        if setup_conf_exists:
+            console.print("  [green]✓[/green] ~/.nvd/setup.conf will be updated")
+        else:
+            console.print(
+                "  [yellow]![/yellow] No ~/.nvd/setup.conf found (config won't be updated)"
+            )
+
+        if dest.exists():
+            console.print(
+                "  [yellow]![/yellow] Destination exists and will be overwritten (--force)"
+            )
+
+        console.print()
+        return
+
+    # Actually perform the move
+    console.print()
+    operation = "Copying" if keep_source else "Moving"
+    console.print(f"{operation} state directory...")
+    console.print(f"  From: {source}")
+    console.print(f"  To: {dest}")
+    console.print(f"  Size: {_format_size(total_size)} ({file_count:,} files)")
+    console.print()
+
+    if uncompacted_hits > 100:
+        warning(
+            f"Found {uncompacted_hits:,} uncompacted hit files. This may take a while."
+        )
+        console.print()
+
+    # Remove existing destination if force
+    if dest.exists() and force:
+        info(f"Removing existing destination: {dest}")
+        shutil.rmtree(dest)
+
+    # Copy the directory
+    try:
+        shutil.copytree(source, dest)
+    except Exception as e:
+        error(f"Copy failed: {e}")
+        raise typer.Exit(1)
+
+    # Verify the copy
+    info("Verifying copy...")
+
+    verified, verify_msg = _verify_copy(source, dest)
+    if not verified:
+        error(f"Copy verification failed: {verify_msg}")
+        warning("Destination may be incomplete. Source was not modified.")
+        raise typer.Exit(1)
+
+    success(verify_msg)
+
+    # Update setup.conf
+    config_updated = _update_setup_conf(dest)
+    if config_updated:
+        success("Updated ~/.nvd/setup.conf")
+    else:
+        warning("No ~/.nvd/setup.conf found - config not updated")
+        console.print(f"  Set NVD_STATE_DIR={dest} in your environment")
+
+    # Remove source if not keeping
+    if not keep_source:
+        info("Removing source directory...")
+        try:
+            shutil.rmtree(source)
+            success(f"Removed: {source}")
+        except Exception as e:
+            warning(f"Could not remove source: {e}")
+            console.print("  Move completed but source remains")
+
+    console.print()
+    success("State directory moved successfully!")
+    console.print()
+    console.print("[bold]Next steps:[/bold]")
+    console.print("  1. Restart your shell or run: source ~/.bashrc (or ~/.zshrc)")
+    console.print("  2. Verify with: nvd state path")
+    console.print()

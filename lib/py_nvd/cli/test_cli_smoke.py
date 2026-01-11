@@ -82,6 +82,23 @@ class TestCLIHelp:
         result = runner.invoke(app, ["config", "--help"])
         assert result.exit_code == 0
 
+    def test_config_edit_help(self):
+        """config edit --help exits cleanly."""
+        result = runner.invoke(app, ["config", "edit", "--help"])
+        assert result.exit_code == 0
+        assert "Open configuration file" in result.stdout
+        assert "$VISUAL" in result.stdout
+
+    def test_config_edit_no_config(self, tmp_path, monkeypatch):
+        """config edit fails gracefully when no config exists."""
+        # Point to empty directory with no config
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.delenv("NVD_CONFIG", raising=False)
+
+        result = runner.invoke(app, ["config", "edit"])
+        assert result.exit_code == 1
+        assert "No config file found" in result.stdout
+
 
 class TestVersionCommand:
     """Verify version command works."""
@@ -1491,3 +1508,197 @@ class TestResumeFile:
         """EDITOR_MIN_DURATION_SECONDS is defined for fast-exit detection."""
         assert EDITOR_MIN_DURATION_SECONDS > 0
         assert EDITOR_MIN_DURATION_SECONDS <= 2  # Reasonable threshold
+
+
+class TestStateMoveCommand:
+    """Tests for nvd state move command."""
+
+    def test_state_move_help(self):
+        """state move --help exits cleanly."""
+        result = runner.invoke(app, ["state", "move", "--help"])
+        assert result.exit_code == 0
+        assert "Move the state directory" in result.stdout
+        assert "--force" in result.stdout
+        assert "--keep-source" in result.stdout
+        assert "--dry-run" in result.stdout
+
+    def test_state_move_requires_destination(self):
+        """state move requires a destination argument."""
+        result = runner.invoke(app, ["state", "move"])
+        assert result.exit_code != 0
+        assert "Missing argument" in result.stdout
+
+    def test_state_move_empty_source(self, tmp_path, monkeypatch):
+        """state move works with empty source directory."""
+        # get_state_dir creates the directory, so we test with empty dir
+        state_dir = tmp_path / "state"
+        state_dir.mkdir()
+        monkeypatch.setenv("NVD_STATE_DIR", str(state_dir))
+
+        dest = tmp_path / "dest"
+        result = runner.invoke(app, ["state", "move", str(dest)])
+
+        # Should succeed even with empty directory
+        assert result.exit_code == 0
+        assert dest.exists()
+
+    def test_state_move_same_source_dest(self, tmp_path, monkeypatch):
+        """state move fails if source and dest are the same."""
+        state_dir = tmp_path / "state"
+        state_dir.mkdir()
+        monkeypatch.setenv("NVD_STATE_DIR", str(state_dir))
+
+        result = runner.invoke(app, ["state", "move", str(state_dir)])
+
+        assert result.exit_code == 1
+        assert "same" in result.stdout.lower()
+
+    def test_state_move_dest_exists_no_force(self, tmp_path, monkeypatch):
+        """state move fails if dest exists without --force."""
+        state_dir = tmp_path / "state"
+        state_dir.mkdir()
+        (state_dir / "test.txt").write_text("test")
+        monkeypatch.setenv("NVD_STATE_DIR", str(state_dir))
+
+        dest = tmp_path / "dest"
+        dest.mkdir()
+
+        result = runner.invoke(app, ["state", "move", str(dest)])
+
+        assert result.exit_code == 1
+        assert "already exists" in result.stdout
+
+    def test_state_move_dry_run(self, tmp_path, monkeypatch):
+        """state move --dry-run shows what would happen."""
+        state_dir = tmp_path / "state"
+        state_dir.mkdir()
+        (state_dir / "test.txt").write_text("test content")
+        monkeypatch.setenv("NVD_STATE_DIR", str(state_dir))
+
+        dest = tmp_path / "dest"
+        result = runner.invoke(app, ["state", "move", str(dest), "--dry-run"])
+
+        assert result.exit_code == 0
+        assert "Dry run" in result.stdout
+        # Path may be wrapped in output, check for key parts
+        assert "state" in result.stdout
+        assert "dest" in result.stdout
+        # Source should still exist
+        assert state_dir.exists()
+        # Dest should not be created
+        assert not dest.exists()
+
+    def test_state_move_dry_run_shows_operation(self, tmp_path, monkeypatch):
+        """state move --dry-run shows operation type."""
+        state_dir = tmp_path / "state"
+        state_dir.mkdir()
+        (state_dir / "test.txt").write_text("test content")
+        monkeypatch.setenv("NVD_STATE_DIR", str(state_dir))
+
+        dest = tmp_path / "dest"
+        result = runner.invoke(app, ["state", "move", str(dest), "--dry-run"])
+
+        assert result.exit_code == 0
+        assert "Operation: move" in result.stdout
+
+        # With --keep-source should show "copy"
+        result2 = runner.invoke(
+            app, ["state", "move", str(dest), "--dry-run", "--keep-source"]
+        )
+        assert result2.exit_code == 0
+        assert "Operation: copy" in result2.stdout
+
+    def test_state_move_success(self, tmp_path, monkeypatch):
+        """state move successfully moves directory."""
+        state_dir = tmp_path / "state"
+        state_dir.mkdir()
+        (state_dir / "test.txt").write_text("test content")
+        (state_dir / "subdir").mkdir()
+        (state_dir / "subdir" / "nested.txt").write_text("nested")
+        monkeypatch.setenv("NVD_STATE_DIR", str(state_dir))
+
+        # Create setup.conf in a mock NVD_HOME
+        nvd_home = tmp_path / ".nvd"
+        nvd_home.mkdir()
+        setup_conf = nvd_home / "setup.conf"
+        setup_conf.write_text(f"NVD_STATE_DIR={state_dir}\n")
+
+        # Patch NVD_HOME in the setup module (where _update_setup_conf imports it from)
+        from unittest.mock import patch
+
+        with patch("py_nvd.cli.commands.setup.NVD_HOME", nvd_home):
+            dest = tmp_path / "dest"
+            result = runner.invoke(app, ["state", "move", str(dest)])
+
+        assert result.exit_code == 0
+        assert "successfully" in result.stdout
+
+        # Dest should exist with files
+        assert dest.exists()
+        assert (dest / "test.txt").read_text() == "test content"
+        assert (dest / "subdir" / "nested.txt").read_text() == "nested"
+
+        # Source should be removed
+        assert not state_dir.exists()
+
+        # setup.conf should be updated
+        assert f"NVD_STATE_DIR={dest}" in setup_conf.read_text()
+
+    def test_state_move_keep_source(self, tmp_path, monkeypatch):
+        """state move --keep-source copies instead of moving."""
+        state_dir = tmp_path / "state"
+        state_dir.mkdir()
+        (state_dir / "test.txt").write_text("test content")
+        monkeypatch.setenv("NVD_STATE_DIR", str(state_dir))
+
+        dest = tmp_path / "dest"
+        result = runner.invoke(app, ["state", "move", str(dest), "--keep-source"])
+
+        assert result.exit_code == 0
+
+        # Both should exist
+        assert state_dir.exists()
+        assert dest.exists()
+        assert (dest / "test.txt").read_text() == "test content"
+
+    def test_state_move_force_overwrites(self, tmp_path, monkeypatch):
+        """state move --force overwrites existing destination."""
+        state_dir = tmp_path / "state"
+        state_dir.mkdir()
+        (state_dir / "new.txt").write_text("new content")
+        monkeypatch.setenv("NVD_STATE_DIR", str(state_dir))
+
+        dest = tmp_path / "dest"
+        dest.mkdir()
+        (dest / "old.txt").write_text("old content")
+
+        result = runner.invoke(app, ["state", "move", str(dest), "--force"])
+
+        assert result.exit_code == 0
+        assert dest.exists()
+        assert (dest / "new.txt").read_text() == "new content"
+        assert not (dest / "old.txt").exists()
+
+    def test_state_move_dest_inside_source(self, tmp_path, monkeypatch):
+        """state move fails if dest is inside source."""
+        state_dir = tmp_path / "state"
+        state_dir.mkdir()
+        monkeypatch.setenv("NVD_STATE_DIR", str(state_dir))
+
+        dest = state_dir / "subdir"
+        result = runner.invoke(app, ["state", "move", str(dest)])
+
+        assert result.exit_code == 1
+        assert "inside" in result.stdout.lower()
+
+    def test_state_move_dest_parent_not_exists(self, tmp_path, monkeypatch):
+        """state move fails if dest parent doesn't exist."""
+        state_dir = tmp_path / "state"
+        state_dir.mkdir()
+        monkeypatch.setenv("NVD_STATE_DIR", str(state_dir))
+
+        dest = tmp_path / "nonexistent" / "dest"
+        result = runner.invoke(app, ["state", "move", str(dest)])
+
+        assert result.exit_code == 1
+        assert "does not exist" in result.stdout
