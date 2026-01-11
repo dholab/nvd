@@ -1510,6 +1510,56 @@ class TestResumeFile:
         assert EDITOR_MIN_DURATION_SECONDS <= 2  # Reasonable threshold
 
 
+class TestDefaultProfile:
+    """Tests for default profile configuration."""
+
+    def test_get_default_profile_no_file(self, tmp_path, monkeypatch):
+        """get_default_profile returns None when setup.conf doesn't exist."""
+        from py_nvd.cli.utils import get_default_profile
+
+        monkeypatch.setattr("py_nvd.cli.utils.Path.home", lambda: tmp_path)
+        assert get_default_profile() is None
+
+    def test_get_default_profile_not_set(self, tmp_path, monkeypatch):
+        """get_default_profile returns None when profile not configured."""
+        from py_nvd.cli.utils import get_default_profile
+
+        nvd_home = tmp_path / ".nvd"
+        nvd_home.mkdir()
+        (nvd_home / "setup.conf").write_text(
+            "NVD_REPO=/some/path\nNVD_STATE_DIR=/some/state\n"
+        )
+
+        monkeypatch.setattr("py_nvd.cli.utils.Path.home", lambda: tmp_path)
+        assert get_default_profile() is None
+
+    def test_get_default_profile_commented(self, tmp_path, monkeypatch):
+        """get_default_profile ignores commented lines."""
+        from py_nvd.cli.utils import get_default_profile
+
+        nvd_home = tmp_path / ".nvd"
+        nvd_home.mkdir()
+        (nvd_home / "setup.conf").write_text(
+            "NVD_REPO=/some/path\n# NVD_DEFAULT_PROFILE=chtc_htc\n"
+        )
+
+        monkeypatch.setattr("py_nvd.cli.utils.Path.home", lambda: tmp_path)
+        assert get_default_profile() is None
+
+    def test_get_default_profile_set(self, tmp_path, monkeypatch):
+        """get_default_profile returns configured profile."""
+        from py_nvd.cli.utils import get_default_profile
+
+        nvd_home = tmp_path / ".nvd"
+        nvd_home.mkdir()
+        (nvd_home / "setup.conf").write_text(
+            "NVD_REPO=/some/path\nNVD_DEFAULT_PROFILE=chtc_htc\n"
+        )
+
+        monkeypatch.setattr("py_nvd.cli.utils.Path.home", lambda: tmp_path)
+        assert get_default_profile() == "chtc_htc"
+
+
 class TestStateMoveCommand:
     """Tests for nvd state move command."""
 

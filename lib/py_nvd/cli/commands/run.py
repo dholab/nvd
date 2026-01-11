@@ -34,6 +34,7 @@ from py_nvd.cli.utils import (
     console,
     error,
     find_config_file,
+    get_default_profile,
     info,
     success,
     warning,
@@ -679,12 +680,19 @@ def run(  # noqa: PLR0913, PLR0912, PLR0915, C901
     # STEP 4: Handle Nextflow-native options (not pipeline params)
     # =========================================================================
 
-    # Auto-detect profile if not specified, otherwise use user's choice as-is
-    # (users may define custom profiles in their nextflow.config)
+    # Determine execution profile:
+    # 1. Command-line --profile takes precedence
+    # 2. NVD_DEFAULT_PROFILE from ~/.nvd/setup.conf
+    # 3. Auto-detect based on available container runtime
     effective_profile = profile
     if effective_profile is None:
-        effective_profile = auto_detect_profile()
-        info(f"Auto-detected execution profile: {effective_profile}")
+        default_profile = get_default_profile()
+        if default_profile:
+            effective_profile = default_profile
+            info(f"Using default profile from setup.conf: {effective_profile}")
+        else:
+            effective_profile = auto_detect_profile()
+            info(f"Auto-detected execution profile: {effective_profile}")
 
     # Find config file (user.config auto-discovery)
     effective_config = find_config_file(config)

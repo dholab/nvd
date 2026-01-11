@@ -275,6 +275,26 @@ def docker_is_running() -> bool:
         return result.returncode == 0
 
 
+def get_default_profile() -> str | None:
+    """
+    Read default profile from ~/.nvd/setup.conf if configured.
+
+    Returns:
+        The configured default profile, or None if not set.
+    """
+    setup_conf = Path.home() / ".nvd" / "setup.conf"
+    if not setup_conf.exists():
+        return None
+
+    for line in setup_conf.read_text().splitlines():
+        line = line.strip()
+        if line.startswith("NVD_DEFAULT_PROFILE="):
+            value = line.split("=", 1)[1].strip()
+            if value:
+                return value
+    return None
+
+
 def auto_detect_profile() -> str:
     """Auto-detect available execution environment."""
     if check_command_exists("docker") and docker_is_running():

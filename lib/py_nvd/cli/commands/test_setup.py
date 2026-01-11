@@ -143,6 +143,21 @@ class TestWrapperScriptGeneration:
         assert f"NVD_REPO={nvd_repo}" in conf
         assert f"NVD_STATE_DIR={state_dir}" in conf
         assert __version__ in conf
+        # Default profile should be commented out
+        assert "# NVD_DEFAULT_PROFILE=" in conf
+
+    def test_generate_setup_conf_with_profile(self, tmp_path):
+        """_generate_setup_conf includes default profile when specified."""
+        nvd_repo = tmp_path / "nvd"
+        state_dir = tmp_path / "state"
+
+        conf = _generate_setup_conf(nvd_repo, state_dir, default_profile="chtc_htc")
+
+        assert f"NVD_REPO={nvd_repo}" in conf
+        assert f"NVD_STATE_DIR={state_dir}" in conf
+        assert "NVD_DEFAULT_PROFILE=chtc_htc" in conf
+        # Should NOT have the commented version
+        assert "# NVD_DEFAULT_PROFILE=my_profile" not in conf
 
     def test_generate_completions_bash(self, tmp_path):
         """_generate_completions creates bash completion script."""

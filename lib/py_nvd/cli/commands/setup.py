@@ -209,7 +209,15 @@ SETUP_CONF_TEMPLATE = """\
 
 NVD_REPO={nvd_repo}
 NVD_STATE_DIR={state_dir}
+{default_profile_line}
 """
+
+# Profile line templates
+_PROFILE_LINE_SET = "NVD_DEFAULT_PROFILE={profile}"
+_PROFILE_LINE_COMMENT = """\
+# Default Nextflow profile for 'nvd run' (optional)
+# Uncomment and set to use a custom profile by default:
+# NVD_DEFAULT_PROFILE=my_profile"""
 
 
 def _find_nvd_repo() -> Path:
@@ -243,13 +251,23 @@ def _generate_wrapper_script(nvd_repo: Path) -> str:
     )
 
 
-def _generate_setup_conf(nvd_repo: Path, state_dir: Path) -> str:
+def _generate_setup_conf(
+    nvd_repo: Path,
+    state_dir: Path,
+    default_profile: str | None = None,
+) -> str:
     """Generate the setup.conf content."""
+    if default_profile:
+        profile_line = _PROFILE_LINE_SET.format(profile=default_profile)
+    else:
+        profile_line = _PROFILE_LINE_COMMENT
+
     return SETUP_CONF_TEMPLATE.format(
         version=__version__,
         date=datetime.now(timezone.utc).strftime("%Y-%m-%d"),
         nvd_repo=nvd_repo,
         state_dir=state_dir,
+        default_profile_line=profile_line,
     )
 
 
@@ -277,17 +295,21 @@ def _install_wrapper_script(
     return wrapper_path
 
 
-def _write_setup_conf(nvd_repo: Path, state_dir: Path) -> Path:
+def _write_setup_conf(
+    nvd_repo: Path,
+    state_dir: Path,
+    default_profile: str | None = None,
+) -> Path:
     """
     Write the setup.conf file to ~/.nvd/.
 
-    This file stores the NVD_REPO path and state directory for
-    the shell hook to read.
+    This file stores the NVD_REPO path, state directory, and optional
+    default profile for the shell hook and nvd run to read.
     """
     conf_path = NVD_HOME / "setup.conf"
     conf_path.parent.mkdir(parents=True, exist_ok=True)
 
-    conf_content = _generate_setup_conf(nvd_repo, state_dir)
+    conf_content = _generate_setup_conf(nvd_repo, state_dir, default_profile)
     conf_path.write_text(conf_content)
 
     return conf_path
@@ -694,8 +716,6 @@ def setup(
             overwrite = typer.confirm("Overwrite existing wrapper?", default=False)
             if not overwrite:
                 info("Keeping existing wrapper script")
-                # Still write setup.conf with current settings
-                _write_setup_conf(nvd_repo, effective_state_dir)
             else:
                 _install_wrapper_script(nvd_repo, DEFAULT_WRAPPER_DIR)
                 success(f"Wrapper script installed to {wrapper_path}")
@@ -703,9 +723,14 @@ def setup(
         _install_wrapper_script(nvd_repo, DEFAULT_WRAPPER_DIR)
         success(f"Wrapper script installed to {wrapper_path}")
 
+    # Determine default profile (CHTC uses chtc_htc profile from user.config)
+    default_profile = "chtc_htc" if is_chtc else None
+
     # Write setup.conf
-    conf_path = _write_setup_conf(nvd_repo, effective_state_dir)
+    conf_path = _write_setup_conf(nvd_repo, effective_state_dir, default_profile)
     success(f"Setup config written to {conf_path}")
+    if default_profile:
+        info(f"Default profile set to: {default_profile}")
 
     # Generate shell completions
     if detected_shell:
