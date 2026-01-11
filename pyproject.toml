@@ -30,7 +30,7 @@ dependencies = [
 
 [tool.pixi.workspace]
 channels = ["conda-forge", "bioconda", "anaconda"]
-platforms = ["osx-64", "linux-64", "linux-aarch64"]
+platforms = ["linux-64", "linux-aarch64", "osx-64", "osx-arm64"]
 
 [tool.pixi.dependencies]
 # Bioinformatics ToolKits
@@ -105,8 +105,8 @@ ignore = ["G004", "PTH"]
 pythonpath = ["bin", "lib"]
 testpaths = ["lib/py_nvd", "bin"]
 markers = [
-    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
-    "network: marks tests as requiring network access (deselect with '-m \"not network\"')",
+  "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+  "network: marks tests as requiring network access (deselect with '-m \"not network\"')",
 ]
 
 [tool.basedpyright]
