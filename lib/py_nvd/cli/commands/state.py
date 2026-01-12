@@ -241,12 +241,28 @@ def state_info(
         "--json",
         help="Output as JSON",
     ),
+    skip_hits: bool = typer.Option(
+        False,
+        "--skip-hits",
+        help="Skip querying hits data (faster when hits database is large)",
+    ),
 ) -> None:
     """
     Show overview of state database contents.
 
     Displays counts of runs, samples, uploads, databases, and presets,
     along with database size and schema version.
+
+    Examples:
+
+        # Show full overview
+        nvd state info
+
+        # Skip hits query for faster output
+        nvd state info --skip-hits
+
+        # JSON output
+        nvd state info --json
     """
     db_path = ensure_db_exists(json_output)
 
@@ -288,8 +304,12 @@ def state_info(
         ).fetchone()
 
     # Get hits counts from parquet files (not SQLite)
-    hits_count = count_hits()
-    hit_observations_count = count_hit_observations()
+    if skip_hits:
+        hits_count = None
+        hit_observations_count = None
+    else:
+        hits_count = count_hits()
+        hit_observations_count = count_hit_observations()
 
     # Check taxdump
     taxdump_dir = get_taxdump_dir()
@@ -350,8 +370,14 @@ def state_info(
     table.add_row("Databases", str(databases_count))
     table.add_row("Presets", str(presets_count))
     table.add_row("Taxonomy Versions", str(taxonomy_count))
-    table.add_row("Hits", str(hits_count))
-    table.add_row("Hit Observations", str(hit_observations_count))
+    hits_display = "[dim]skipped[/dim]" if hits_count is None else str(hits_count)
+    obs_display = (
+        "[dim]skipped[/dim]"
+        if hit_observations_count is None
+        else str(hit_observations_count)
+    )
+    table.add_row("Hits", hits_display)
+    table.add_row("Hit Observations", obs_display)
     if active_locks_count > 0 or expired_locks_count > 0:
         lock_str = str(active_locks_count)
         if expired_locks_count > 0:
