@@ -16,7 +16,7 @@ import socket
 import sqlite3
 import subprocess
 import tempfile
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import typer
@@ -89,8 +89,7 @@ def _get_chtc_template_path() -> Path:
     # setup.py is at lib/py_nvd/cli/commands/setup.py
     # conf/ is at repo root, so go up 5 levels
     repo_root = this_file.parent.parent.parent.parent.parent
-    template_path = repo_root / "conf" / "chtc-template.config"
-    return template_path
+    return repo_root / "conf" / "chtc-template.config"
 
 
 def _load_and_substitute_template(template_path: Path) -> str:
@@ -114,7 +113,7 @@ def _load_and_substitute_template(template_path: Path) -> str:
     substitutions = {
         "${HOSTNAME}": socket.gethostname(),
         "${USER}": getpass.getuser(),
-        "${DATE}": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+        "${DATE}": datetime.now(UTC).strftime("%Y-%m-%d"),
         "${VERSION}": __version__,
         # ${HOME} is intentionally NOT substituted - Nextflow needs it as-is
     }
@@ -238,15 +237,49 @@ def _find_nvd_repo() -> Path:
         return repo_root.resolve()
 
     raise FileNotFoundError(
-        f"Could not find NVD repository root. Expected pyproject.toml at: {pyproject}"
+        f"Could not find NVD repository root. Expected pyproject.toml at: {pyproject}",
     )
+
+
+def _get_stable_repo_path(repo_path: Path) -> Path:
+    """
+    Get a stable path to the NVD repo that survives version upgrades.
+
+    If the repo is installed in the versioned directory structure
+    (~/.nvd/v{version}/), returns ~/.nvd/latest instead of the versioned
+    path. This ensures that setup.conf and the wrapper script remain
+    valid after upgrades that rename the versioned directory.
+
+    For repos in other locations (e.g., development clones), returns
+    the original path unchanged.
+    """
+    resolved = repo_path.resolve()
+    nvd_home = (Path.home() / ".nvd").resolve()
+    latest_link = nvd_home / "latest"
+
+    is_versioned_install = resolved.parent == nvd_home and resolved.name.startswith("v")
+    if not is_versioned_install:
+        return resolved
+
+    if not latest_link.is_symlink():
+        return resolved
+
+    try:
+        latest_points_here = latest_link.resolve() == resolved
+    except OSError:
+        return resolved
+
+    if not latest_points_here:
+        return resolved
+
+    return latest_link
 
 
 def _generate_wrapper_script(nvd_repo: Path) -> str:
     """Generate the wrapper script content."""
     return WRAPPER_TEMPLATE.format(
         version=__version__,
-        date=datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+        date=datetime.now(UTC).strftime("%Y-%m-%d"),
         nvd_repo=nvd_repo,
     )
 
@@ -264,7 +297,7 @@ def _generate_setup_conf(
 
     return SETUP_CONF_TEMPLATE.format(
         version=__version__,
-        date=datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+        date=datetime.now(UTC).strftime("%Y-%m-%d"),
         nvd_repo=nvd_repo,
         state_dir=state_dir,
         default_profile_line=profile_line,
@@ -352,8 +385,8 @@ def _get_rc_file(shell_type: str) -> Path:
     """Get the RC file path for the given shell type."""
     if shell_type == "zsh":
         return Path.home() / ".zshrc"
-    else:  # bash
-        return Path.home() / ".bashrc"
+    # bash
+    return Path.home() / ".bashrc"
 
 
 def _is_hook_installed(rc_file: Path) -> bool:
@@ -486,13 +519,13 @@ def _pull_apptainer_image(version: str) -> tuple[bool, str]:
     try:
         result = subprocess.run(
             ["apptainer", "pull", "--force", str(sif_path), image_uri],
+            check=False,
             capture_output=True,
             text=True,
         )
         if result.returncode == 0:
             return True, f"Container image pulled to {sif_path}"
-        else:
-            return False, f"Apptainer pull failed: {result.stderr}"
+        return False, f"Apptainer pull failed: {result.stderr}"
     except FileNotFoundError:
         return False, "Apptainer not found. Is it installed?"
     except Exception as e:
@@ -577,7 +610,7 @@ def setup(
             "pixi not found\n\n"
             "NVD requires pixi for environment management. Install it with:\n"
             "  curl -fsSL https://pixi.sh/install.sh | bash\n\n"
-            "Then run 'nvd setup' again."
+            "Then run 'nvd setup' again.",
         )
         raise typer.Exit(1)
 
@@ -585,8 +618,7 @@ def setup(
     is_chtc = _is_oconnor_chtc()
     if is_chtc:
         console.print(
-            "[green]Detected:[/green] CHTC O'Connor Lab access point "
-            f"({socket.getfqdn()})"
+            f"[green]Detected:[/green] CHTC O'Connor Lab access point ({socket.getfqdn()})",
         )
     else:
         console.print("[green]Detected:[/green] Generic system")
@@ -657,7 +689,7 @@ def setup(
         if not non_interactive:
             console.print(
                 "[dim]On generic systems, a user.config is not required for basic "
-                "Docker/Apptainer usage.[/dim]"
+                "Docker/Apptainer usage.[/dim]",
             )
             create_config = typer.confirm(
                 "Would you like to create a user.config anyway?",
@@ -688,9 +720,7 @@ def setup(
     if not db_valid:
         warning(db_message)
         if not non_interactive:
-            proceed = typer.confirm(
-                "Continue anyway? (existing data may be lost)", default=False
-            )
+            proceed = typer.confirm("Continue anyway? (existing data may be lost)", default=False)
             if not proceed:
                 raise typer.Exit(1)
 
@@ -698,7 +728,9 @@ def setup(
     console.print()
 
     try:
-        nvd_repo = _find_nvd_repo()
+        nvd_repo_raw = _find_nvd_repo()
+        # Use stable path (latest symlink) for versioned installs
+        nvd_repo = _get_stable_repo_path(nvd_repo_raw)
     except FileNotFoundError as e:
         error(str(e))
         raise typer.Exit(1)
@@ -710,9 +742,7 @@ def setup(
             warning(f"Wrapper script already exists: {wrapper_path}")
             warning("Use --force to overwrite")
         else:
-            console.print(
-                f"[yellow]Wrapper script already exists:[/yellow] {wrapper_path}"
-            )
+            console.print(f"[yellow]Wrapper script already exists:[/yellow] {wrapper_path}")
             overwrite = typer.confirm("Overwrite existing wrapper?", default=False)
             if not overwrite:
                 info("Keeping existing wrapper script")
@@ -757,9 +787,22 @@ def setup(
 
             if _is_hook_installed(rc_file):
                 info(f"Shell hook already installed in {rc_file}")
+            elif non_interactive:
+                # Just install it
+                if _install_shell_hook(rc_file):
+                    success(f"Shell hook added to {rc_file}")
+                else:
+                    warning(f"Could not modify {rc_file} (permission denied)")
+                    console.print()
+                    console.print("Add this line manually:")
+                    console.print(f'  [cyan]eval "$({SHELL_HOOK_MARKER})"[/cyan]')
             else:
-                if non_interactive:
-                    # Just install it
+                # Ask first
+                console.print(f"Add shell hook to {rc_file}?")
+                console.print(f'  [dim]eval "$({SHELL_HOOK_MARKER})"[/dim]')
+                add_hook = typer.confirm("Proceed?", default=True)
+
+                if add_hook:
                     if _install_shell_hook(rc_file):
                         success(f"Shell hook added to {rc_file}")
                     else:
@@ -768,26 +811,10 @@ def setup(
                         console.print("Add this line manually:")
                         console.print(f'  [cyan]eval "$({SHELL_HOOK_MARKER})"[/cyan]')
                 else:
-                    # Ask first
-                    console.print(f"Add shell hook to {rc_file}?")
-                    console.print(f'  [dim]eval "$({SHELL_HOOK_MARKER})"[/dim]')
-                    add_hook = typer.confirm("Proceed?", default=True)
-
-                    if add_hook:
-                        if _install_shell_hook(rc_file):
-                            success(f"Shell hook added to {rc_file}")
-                        else:
-                            warning(f"Could not modify {rc_file} (permission denied)")
-                            console.print()
-                            console.print("Add this line manually:")
-                            console.print(
-                                f'  [cyan]eval "$({SHELL_HOOK_MARKER})"[/cyan]'
-                            )
-                    else:
-                        info("Skipping shell hook installation")
-                        console.print()
-                        console.print("To install later, add this to your RC file:")
-                        console.print(f'  [cyan]eval "$({SHELL_HOOK_MARKER})"[/cyan]')
+                    info("Skipping shell hook installation")
+                    console.print()
+                    console.print("To install later, add this to your RC file:")
+                    console.print(f'  [cyan]eval "$({SHELL_HOOK_MARKER})"[/cyan]')
 
             console.print()
     else:
@@ -804,8 +831,7 @@ def setup(
                 if repull:
                     console.print()
                     console.print(
-                        f"Pulling container image (~2GB)... "
-                        "[dim]This may take a few minutes.[/dim]"
+                        "Pulling container image (~2GB)... [dim]This may take a few minutes.[/dim]",
                     )
                     pull_success, pull_message = _pull_apptainer_image(__version__)
                     if pull_success:
@@ -816,51 +842,48 @@ def setup(
                         console.print("You can pull manually later with:")
                         console.print(
                             f"  [cyan]apptainer pull {sif_path} "
-                            f"{CONTAINER_IMAGE_URI.format(version=__version__)}[/cyan]"
+                            f"{CONTAINER_IMAGE_URI.format(version=__version__)}[/cyan]",
                         )
+        elif non_interactive:
+            # In non-interactive mode, skip container pull by default
+            info("Skipping container pull in non-interactive mode")
+            console.print()
+            console.print("Pull manually with:")
+            console.print(
+                f"  [cyan]apptainer pull {sif_path} "
+                f"{CONTAINER_IMAGE_URI.format(version=__version__)}[/cyan]",
+            )
         else:
-            if non_interactive:
-                # In non-interactive mode, skip container pull by default
-                info("Skipping container pull in non-interactive mode")
-                console.print()
-                console.print("Pull manually with:")
-                console.print(
-                    f"  [cyan]apptainer pull {sif_path} "
-                    f"{CONTAINER_IMAGE_URI.format(version=__version__)}[/cyan]"
-                )
-            else:
-                console.print()
-                console.print(
-                    f"Would you like to pull the container image now? "
-                    "[dim](~2GB download)[/dim]"
-                )
-                pull_now = typer.confirm("Proceed?", default=True)
+            console.print()
+            console.print(
+                "Would you like to pull the container image now? [dim](~2GB download)[/dim]",
+            )
+            pull_now = typer.confirm("Proceed?", default=True)
 
-                if pull_now:
-                    console.print()
-                    console.print(
-                        "Pulling container image... "
-                        "[dim]This may take a few minutes.[/dim]"
-                    )
-                    pull_success, pull_message = _pull_apptainer_image(__version__)
-                    if pull_success:
-                        success(pull_message)
-                    else:
-                        warning(pull_message)
-                        console.print()
-                        console.print("You can pull manually later with:")
-                        console.print(
-                            f"  [cyan]apptainer pull {sif_path} "
-                            f"{CONTAINER_IMAGE_URI.format(version=__version__)}[/cyan]"
-                        )
+            if pull_now:
+                console.print()
+                console.print(
+                    "Pulling container image... [dim]This may take a few minutes.[/dim]",
+                )
+                pull_success, pull_message = _pull_apptainer_image(__version__)
+                if pull_success:
+                    success(pull_message)
                 else:
-                    info("Skipping container pull")
+                    warning(pull_message)
                     console.print()
-                    console.print("Pull manually later with:")
+                    console.print("You can pull manually later with:")
                     console.print(
                         f"  [cyan]apptainer pull {sif_path} "
-                        f"{CONTAINER_IMAGE_URI.format(version=__version__)}[/cyan]"
+                        f"{CONTAINER_IMAGE_URI.format(version=__version__)}[/cyan]",
                     )
+            else:
+                info("Skipping container pull")
+                console.print()
+                console.print("Pull manually later with:")
+                console.print(
+                    f"  [cyan]apptainer pull {sif_path} "
+                    f"{CONTAINER_IMAGE_URI.format(version=__version__)}[/cyan]",
+                )
 
         console.print()
 
@@ -871,7 +894,7 @@ def setup(
         sif_path = _get_container_path(__version__)
         console.print(
             f"  [cyan]apptainer pull {sif_path} "
-            f"{CONTAINER_IMAGE_URI.format(version=__version__)}[/cyan]"
+            f"{CONTAINER_IMAGE_URI.format(version=__version__)}[/cyan]",
         )
         console.print()
 
@@ -880,7 +903,7 @@ def setup(
     if detected_shell:
         console.print(
             f"Run [cyan]source {_get_rc_file(detected_shell)}[/cyan] "
-            "or start a new shell to activate."
+            "or start a new shell to activate.",
         )
     else:
         console.print("Start a new shell to activate.")
@@ -920,8 +943,7 @@ def shell_hook(
         # Can't detect shell - print generic message to stderr,
         # but still output something usable
         stderr_console.print(
-            "[yellow]⚠[/yellow]  Could not detect shell. "
-            "Assuming bash-compatible syntax."
+            "[yellow]⚠[/yellow]  Could not detect shell. Assuming bash-compatible syntax.",
         )
         detected_shell = "bash"
 
