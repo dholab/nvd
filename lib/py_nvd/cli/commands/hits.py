@@ -163,7 +163,7 @@ def _print_stats_rich(stats, top_recurring: list) -> None:
 
         for hit in top_recurring:
             table.add_row(
-                hit.hit_key[:16] + "...",
+                hit.hit_key,
                 f"{hit.sequence_length:,} bp",
                 str(hit.sample_count),
                 str(hit.observation_count),
@@ -625,7 +625,7 @@ def _print_recur_rich(hits: list, min_samples: int, min_runs: int | None) -> Non
 
     for hit in hits:
         table.add_row(
-            hit.hit_key[:16] + "...",
+            hit.hit_key,
             f"{hit.sequence_length:,} bp",
             str(hit.sample_count),
             str(hit.run_count),
