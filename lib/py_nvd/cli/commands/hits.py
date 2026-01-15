@@ -39,6 +39,7 @@ from py_nvd.hits import (
     lookup_hit,
 )
 from py_nvd.models import TimelineBucket
+from py_nvd.state import get_run_ids_for_sample_sets
 
 hits_app = typer.Typer(
     name="hits",
@@ -272,17 +273,24 @@ def _print_lookup_rich(hit, observations: list) -> None:
     # Observations
     console.print(f"\n[bold]Observations ({len(observations)} total):[/bold]")
     if observations:
+        # Look up run_ids for all sample_set_ids
+        sample_set_ids = list({obs.sample_set_id for obs in observations})
+        run_id_map = get_run_ids_for_sample_sets(sample_set_ids)
+
         table = Table(show_header=True, header_style="bold", box=None, padding=(0, 2))
         table.add_column("Date", style="dim")
         table.add_column("Sample")
+        table.add_column("Sample Set ID")
         table.add_column("Run")
         table.add_column("Contig", style="dim")
 
         for obs in observations:
+            run_id = run_id_map.get(obs.sample_set_id, "-")
             table.add_row(
                 obs.run_date,
                 obs.sample_id,
                 obs.sample_set_id,
+                run_id,
                 obs.contig_id or "-",
             )
 
@@ -720,6 +728,10 @@ def _export_tabular(
         info("No hits found in database")
         return
 
+    # Look up run_ids for all sample_set_ids
+    sample_set_ids = list({obs.sample_set_id for _, obs in rows})
+    run_id_map = get_run_ids_for_sample_sets(sample_set_ids)
+
     # Build data for DataFrame
     data: dict[str, list] = {
         "hit_key": [],
@@ -727,6 +739,7 @@ def _export_tabular(
         "gc_content": [],
         "first_seen_date": [],
         "sample_set_id": [],
+        "run_id": [],
         "sample_id": [],
         "contig_id": [],
         "run_date": [],
@@ -741,6 +754,7 @@ def _export_tabular(
         data["gc_content"].append(hit.gc_content)
         data["first_seen_date"].append(hit.first_seen_date)
         data["sample_set_id"].append(obs.sample_set_id)
+        data["run_id"].append(run_id_map.get(obs.sample_set_id))
         data["sample_id"].append(obs.sample_id)
         data["contig_id"].append(obs.contig_id)
         data["run_date"].append(obs.run_date)

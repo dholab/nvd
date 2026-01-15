@@ -124,6 +124,33 @@ def get_run_by_sample_set(
         return None
 
 
+def get_run_ids_for_sample_sets(
+    sample_set_ids: list[str],
+    state_dir: Path | str | None = None,
+) -> dict[str, str]:
+    """
+    Look up run_ids for multiple sample_set_ids.
+
+    Args:
+        sample_set_ids: List of sample set identifiers to look up
+        state_dir: Optional state directory override
+
+    Returns:
+        Dict mapping sample_set_id -> run_id. Sample sets not found
+        in the runs table will not have entries in the returned dict.
+    """
+    if not sample_set_ids:
+        return {}
+
+    with connect(state_dir) as conn:
+        placeholders = ",".join("?" * len(sample_set_ids))
+        rows = conn.execute(
+            f"SELECT sample_set_id, run_id FROM runs WHERE sample_set_id IN ({placeholders})",
+            sample_set_ids,
+        ).fetchall()
+        return {row[0]: row[1] for row in rows}
+
+
 def update_run_id(
     sample_set_id: str,
     new_run_id: str,
