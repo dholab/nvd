@@ -40,16 +40,29 @@ workflow GOTTCHA2_WORKFLOW {
             }
         : Channel.empty()
 
+    // Gate sample channel: when gottcha2 is disabled, ch_gottcha2_enabled is empty,
+    // so the combine produces nothing and no downstream operations execute.
+    // This prevents eager evaluation of countFastq() on samples when gottcha2 isn't selected.
+    ch_gottcha2_enabled = params.gottcha2_db
+        ? Channel.value(true)
+        : Channel.empty()
+
+    ch_gated_samples = ch_gottcha2_enabled
+        .combine(ch_sample_fastqs)
+        .map { _flag, sample_id, platform, read_structure, fastq ->
+            tuple(sample_id, platform, read_structure, fastq)
+        }
+
     if (params.labkey) {
         VALIDATE_LK_GOTTCHA2()
     }
 
-    ch_nanopore_fastqs = ch_sample_fastqs
+    ch_nanopore_fastqs = ch_gated_samples
         .filter { _sample_id, platform, _read_structure, _fastq -> platform == "nanopore" || platform == "ont" }
         .map { sample_id, _platform, _read_structure, fastq -> tuple(sample_id, file(fastq)) }
         .filter { _id, fastq -> file(fastq).countFastq() >= params.min_gottcha_reads }
 
-    ch_illumina_fastqs = ch_sample_fastqs
+    ch_illumina_fastqs = ch_gated_samples
         .filter { _sample_id, platform, _read_structure, _fastq -> platform == "illumina" }
         .map { sample_id, _platform, _read_structure, fastq -> tuple(sample_id, file(fastq)) }
         .filter { _id, fastq -> file(fastq).countFastq() >= params.min_gottcha_reads }
