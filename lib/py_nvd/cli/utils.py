@@ -8,6 +8,7 @@ instance used across all CLI commands.
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import shutil
@@ -29,6 +30,10 @@ RESUME_FILE = Path(".nfresume")
 
 # Maximum directory depth to search when looking for pipeline root
 MAX_PIPELINE_ROOT_DEPTH = 10
+
+# Time constants for duration formatting
+SECONDS_PER_MINUTE = 60
+SECONDS_PER_HOUR = 3600
 
 
 def _has_pipeline_files(candidate: Path) -> bool:
@@ -165,6 +170,43 @@ def info(message: str) -> None:
 def warning(message: str) -> None:
     """Print warning message."""
     console.print(f"[yellow]⚠[/yellow]  {message}")
+
+
+def format_duration(seconds: float) -> str:
+    """
+    Format seconds as human-readable duration.
+
+    Truncates fractional seconds (no rounding). For durations >= 1 hour,
+    seconds are omitted for readability.
+
+    Examples:
+        format_duration(45) -> "45s"
+        format_duration(125) -> "2m 5s"
+        format_duration(3725) -> "1h 2m"
+        format_duration(7200) -> "2h 0m"
+
+    Args:
+        seconds: Duration in seconds (must be non-negative and finite).
+
+    Returns:
+        Human-readable duration string.
+
+    Raises:
+        AssertionError: If seconds is negative, NaN, or infinite.
+    """
+    assert not math.isnan(seconds), "duration cannot be NaN"
+    assert not math.isinf(seconds), "duration cannot be infinite"
+    assert seconds >= 0, f"duration must be non-negative, got {seconds}"
+
+    if seconds < SECONDS_PER_MINUTE:
+        return f"{int(seconds)}s"
+    if seconds < SECONDS_PER_HOUR:
+        minutes = int(seconds // SECONDS_PER_MINUTE)
+        secs = int(seconds % SECONDS_PER_MINUTE)
+        return f"{minutes}m {secs}s"
+    hours = int(seconds // SECONDS_PER_HOUR)
+    minutes = int((seconds % SECONDS_PER_HOUR) // SECONDS_PER_MINUTE)
+    return f"{hours}h {minutes}m"
 
 
 def ensure_db_exists(json_output: bool = False) -> Path:

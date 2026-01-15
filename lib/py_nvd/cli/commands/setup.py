@@ -720,7 +720,9 @@ def setup(
     if not db_valid:
         warning(db_message)
         if not non_interactive:
-            proceed = typer.confirm("Continue anyway? (existing data may be lost)", default=False)
+            proceed = typer.confirm(
+                "Continue anyway? (existing data may be lost)", default=False
+            )
             if not proceed:
                 raise typer.Exit(1)
 
@@ -742,7 +744,9 @@ def setup(
             warning(f"Wrapper script already exists: {wrapper_path}")
             warning("Use --force to overwrite")
         else:
-            console.print(f"[yellow]Wrapper script already exists:[/yellow] {wrapper_path}")
+            console.print(
+                f"[yellow]Wrapper script already exists:[/yellow] {wrapper_path}"
+            )
             overwrite = typer.confirm("Overwrite existing wrapper?", default=False)
             if not overwrite:
                 info("Keeping existing wrapper script")

@@ -1,5 +1,6 @@
 """Tests for py_nvd.models module, specifically NvdParams."""
 
+import logging
 from pathlib import Path
 
 import pytest
@@ -9,6 +10,7 @@ from py_nvd.models import (
     DEFAULT_HUMAN_VIRUS_FAMILIES,
     VALID_TOOLS,
     NvdParams,
+    Run,
     TracedParams,
     trace_merge,
 )
@@ -715,3 +717,167 @@ class TestNvdParamsSlackChannelValidator:
         """slack_enabled can be set to True."""
         p = NvdParams(slack_enabled=True)
         assert p.slack_enabled is True
+
+
+class TestRunDurationSeconds:
+    """Tests for Run.duration_seconds property."""
+
+    def _make_completed_run(self, started_at: str, completed_at: str) -> Run:
+        """Helper to create a completed Run with the given timestamps."""
+        return Run(
+            run_id="test_run",
+            sample_set_id="abc123",
+            started_at=started_at,
+            status="completed",
+            completed_at=completed_at,
+        )
+
+    def _make_running_run(self, started_at: str) -> Run:
+        """Helper to create a running Run (no completed_at)."""
+        return Run(
+            run_id="test_run",
+            sample_set_id="abc123",
+            started_at=started_at,
+            status="running",
+            completed_at=None,
+        )
+
+    def test_completed_run_returns_duration(self):
+        """Completed run with valid timestamps returns duration in seconds."""
+        run = self._make_completed_run(
+            started_at="2024-01-01T10:00:00Z",
+            completed_at="2024-01-01T10:05:00Z",
+        )
+        assert run.duration_seconds == 300.0
+
+    def test_in_progress_run_returns_none(self):
+        """Run without completed_at returns None."""
+        run = self._make_running_run(started_at="2024-01-01T10:00:00Z")
+        assert run.duration_seconds is None
+
+    def test_zero_duration(self):
+        """Same start and end time returns 0."""
+        run = self._make_completed_run(
+            started_at="2024-01-01T10:00:00Z",
+            completed_at="2024-01-01T10:00:00Z",
+        )
+        assert run.duration_seconds == 0.0
+
+    def test_z_suffix_timestamps(self):
+        """Timestamps with Z suffix are parsed correctly."""
+        run = self._make_completed_run(
+            started_at="2024-01-01T10:00:00Z",
+            completed_at="2024-01-01T11:00:00Z",
+        )
+        assert run.duration_seconds == 3600.0
+
+    def test_explicit_utc_offset(self):
+        """Timestamps with +00:00 offset are parsed correctly."""
+        run = self._make_completed_run(
+            started_at="2024-01-01T10:00:00+00:00",
+            completed_at="2024-01-01T11:00:00+00:00",
+        )
+        assert run.duration_seconds == 3600.0
+
+    def test_naive_timestamps(self):
+        """Naive timestamps (no timezone) are handled correctly."""
+        run = self._make_completed_run(
+            started_at="2024-01-01T10:00:00",
+            completed_at="2024-01-01T11:00:00",
+        )
+        assert run.duration_seconds == 3600.0
+
+    def test_mixed_timezone_awareness(self):
+        """Mixed naive and aware timestamps are handled correctly."""
+        run = self._make_completed_run(
+            started_at="2024-01-01T10:00:00Z",
+            completed_at="2024-01-01T11:00:00",  # naive
+        )
+        assert run.duration_seconds == 3600.0
+
+    def test_different_timezone_offsets(self):
+        """Different timezone offsets compute correct duration."""
+        # 10:00 UTC and 12:00+02:00 are the same instant
+        run = self._make_completed_run(
+            started_at="2024-01-01T10:00:00+00:00",
+            completed_at="2024-01-01T12:00:00+02:00",
+        )
+        assert run.duration_seconds == 0.0
+
+    def test_timestamps_with_milliseconds(self):
+        """Timestamps with milliseconds are parsed correctly."""
+        run = self._make_completed_run(
+            started_at="2024-01-01T10:00:00.000Z",
+            completed_at="2024-01-01T10:00:01.500Z",
+        )
+        assert run.duration_seconds == 1.5
+
+    def test_timestamps_with_microseconds(self):
+        """Timestamps with microseconds are parsed correctly."""
+        run = self._make_completed_run(
+            started_at="2024-01-01T10:00:00.000000+00:00",
+            completed_at="2024-01-01T10:00:00.500000+00:00",
+        )
+        assert run.duration_seconds == 0.5
+
+    def test_invalid_started_at_returns_none(self):
+        """Invalid started_at timestamp returns None."""
+        run = self._make_completed_run(
+            started_at="not-a-date",
+            completed_at="2024-01-01T10:00:00Z",
+        )
+        assert run.duration_seconds is None
+
+    def test_invalid_completed_at_returns_none(self):
+        """Invalid completed_at timestamp returns None."""
+        run = self._make_completed_run(
+            started_at="2024-01-01T10:00:00Z",
+            completed_at="not-a-date",
+        )
+        assert run.duration_seconds is None
+
+    def test_empty_started_at_returns_none(self):
+        """Empty started_at string returns None."""
+        run = self._make_completed_run(
+            started_at="",
+            completed_at="2024-01-01T10:00:00Z",
+        )
+        assert run.duration_seconds is None
+
+    def test_empty_completed_at_returns_none(self):
+        """Empty completed_at string returns None."""
+        run = self._make_completed_run(
+            started_at="2024-01-01T10:00:00Z",
+            completed_at="",
+        )
+        assert run.duration_seconds is None
+
+    def test_negative_duration_returns_none(self):
+        """Negative duration (end before start) returns None."""
+        run = self._make_completed_run(
+            started_at="2024-01-01T10:05:00Z",
+            completed_at="2024-01-01T10:00:00Z",  # Before start
+        )
+        assert run.duration_seconds is None
+
+    def test_negative_duration_logs_warning(self, caplog):
+        """Negative duration logs a warning."""
+        with caplog.at_level(logging.WARNING):
+            run = self._make_completed_run(
+                started_at="2024-01-01T10:05:00Z",
+                completed_at="2024-01-01T10:00:00Z",
+            )
+            _ = run.duration_seconds
+
+        assert "negative duration" in caplog.text.lower()
+
+    def test_invalid_timestamp_logs_warning(self, caplog):
+        """Invalid timestamp logs a warning."""
+        with caplog.at_level(logging.WARNING):
+            run = self._make_completed_run(
+                started_at="not-a-date",
+                completed_at="2024-01-01T10:00:00Z",
+            )
+            _ = run.duration_seconds
+
+        assert "failed to parse" in caplog.text.lower()

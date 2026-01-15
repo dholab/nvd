@@ -26,7 +26,15 @@ import typer
 from rich.table import Table
 
 from py_nvd import __version__, state
-from py_nvd.cli.utils import console, ensure_db_exists, error, info, success, warning
+from py_nvd.cli.utils import (
+    console,
+    ensure_db_exists,
+    error,
+    format_duration,
+    info,
+    success,
+    warning,
+)
 from py_nvd.db import (
     DEFAULT_STATE_DIR,
     ENV_VAR,
@@ -602,6 +610,7 @@ def state_run(
                     "status": run.status,
                     "started_at": run.started_at,
                     "completed_at": run.completed_at,
+                    "duration_seconds": run.duration_seconds,
                     "experiment_id": run.experiment_id,
                 },
                 "samples": [
@@ -644,6 +653,8 @@ def state_run(
     console.print(f"  Started: {run.started_at}")
     if run.completed_at:
         console.print(f"  Completed: {run.completed_at}")
+    if run.duration_seconds is not None:
+        console.print(f"  Duration: {format_duration(run.duration_seconds)}")
     if run.experiment_id:
         console.print(f"  Experiment ID: {run.experiment_id}")
     console.print()

@@ -8,7 +8,9 @@ All data crossing API boundaries uses these models.
 from __future__ import annotations
 
 import json
+import logging
 import re
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Self, TypeVar
 
@@ -18,7 +20,40 @@ from pydantic.dataclasses import dataclass
 if TYPE_CHECKING:
     from sqlite3 import Row
 
+logger = logging.getLogger(__name__)
+
 T = TypeVar("T")
+
+
+def _parse_iso8601(timestamp: str) -> datetime:
+    """
+    Parse an ISO8601 timestamp string to a timezone-aware datetime.
+
+    Handles both 'Z' suffix and explicit timezone offsets. Naive timestamps
+    (no timezone info) are assumed to be UTC.
+
+    Args:
+        timestamp: ISO8601 formatted timestamp string.
+
+    Returns:
+        Timezone-aware datetime in UTC.
+
+    Raises:
+        ValueError: If the timestamp cannot be parsed.
+    """
+    # Handle Z suffix (fromisoformat doesn't accept 'Z' directly)
+    if timestamp.endswith("Z"):
+        normalized = timestamp[:-1] + "+00:00"
+    else:
+        normalized = timestamp
+
+    dt = datetime.fromisoformat(normalized)
+
+    # Normalize naive datetimes to UTC
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+
+    return dt
 
 
 def _from_row(cls: type[T], row: Row) -> T:
@@ -73,6 +108,40 @@ class Run:
     status: Status
     experiment_id: int | None = None  # Optional LabKey linkage
     completed_at: str | None = None
+
+    @property
+    def duration_seconds(self) -> float | None:
+        """
+        Duration of the run in seconds.
+
+        Returns None if:
+        - completed_at is None (run still in progress or failed without completion)
+        - Either timestamp cannot be parsed
+        - Duration would be negative (indicates data corruption)
+
+        Returns:
+            Duration in seconds as a float, or None if unavailable.
+        """
+        if self.completed_at is None:
+            return None
+
+        try:
+            start = _parse_iso8601(self.started_at)
+            end = _parse_iso8601(self.completed_at)
+
+            duration = (end - start).total_seconds()
+
+            if duration < 0:
+                logger.warning(
+                    f"Run {self.run_id} has negative duration "
+                    f"(completed_at before started_at): {duration}s"
+                )
+                return None
+
+            return duration
+        except ValueError as e:
+            logger.warning(f"Failed to parse timestamps for run {self.run_id}: {e}")
+            return None
 
     @classmethod
     def from_row(cls, row: Row) -> Self:
@@ -237,12 +306,7 @@ class SampleLock:
     @property
     def is_expired(self) -> bool:
         """Check if this lock has expired."""
-        from datetime import datetime, timezone
-
-        expires = datetime.fromisoformat(self.expires_at.replace("Z", "+00:00"))
-        # Handle naive datetimes by assuming UTC
-        if expires.tzinfo is None:
-            expires = expires.replace(tzinfo=timezone.utc)
+        expires = _parse_iso8601(self.expires_at)
         return datetime.now(timezone.utc) > expires
 
     @property

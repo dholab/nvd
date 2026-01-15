@@ -1,4 +1,3 @@
-# ruff: noqa: B008
 """
 NVD Wrapped - Your year in metagenomics!
 
@@ -18,22 +17,8 @@ from rich.console import Group
 from rich.panel import Panel
 from rich.text import Text
 
-from py_nvd.cli.utils import console, info
+from py_nvd.cli.utils import console, format_duration, info
 from py_nvd.db import connect, get_state_db_path
-
-
-def _format_duration(seconds: float) -> str:
-    """Format seconds as human-readable duration."""
-    if seconds < 60:
-        return f"{int(seconds)}s"
-    elif seconds < 3600:
-        minutes = int(seconds // 60)
-        secs = int(seconds % 60)
-        return f"{minutes}m {secs}s"
-    else:
-        hours = int(seconds // 3600)
-        minutes = int((seconds % 3600) // 60)
-        return f"{hours}h {minutes}m"
 
 
 def _make_bar(value: int, max_value: int, width: int = 20) -> str:
@@ -292,7 +277,7 @@ def _show_wrapped(
 
     if longest_run and longest_duration > 0:
         console.print(
-            f"  \U000023f1\U0000fe0f  [bold]Longest Run:[/bold] {longest_run['run_id']} [dim]({_format_duration(longest_duration)})[/dim]"
+            f"  \U000023f1\U0000fe0f  [bold]Longest Run:[/bold] {longest_run['run_id']} [dim]({format_duration(longest_duration)})[/dim]"
         )
         console.print()
 

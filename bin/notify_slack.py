@@ -37,6 +37,8 @@ import sys
 from pathlib import Path
 
 from loguru import logger
+from py_nvd import state
+from py_nvd.cli.utils import format_duration
 from py_nvd.hits import get_hit_stats, get_stats_for_sample_set
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError, SlackClientError
@@ -130,6 +132,7 @@ def build_message(
     hits_identified: int,
     labkey_url: str,
     cumulative: dict[str, int | str],
+    duration_str: str | None = None,
 ) -> str:
     """Build the Slack mrkdwn message."""
     assert experiment_id, "experiment_id cannot be empty"
@@ -148,11 +151,14 @@ def build_message(
         f"{total_hits:,}" if isinstance(total_hits, int) else str(total_hits)
     )
 
+    # Build duration line if available
+    duration_line = f"*Duration:* {duration_str}\n" if duration_str else ""
+
     message = f"""*NVD Run Complete* :white_check_mark:
 
 *Experiment:* `{experiment_id}`
 *Run:* `{run_id}`
-*Samples analyzed:* {samples_analyzed}
+{duration_line}*Samples analyzed:* {samples_analyzed}
 *Hits identified (this run):* {hits_identified}
 
 *Results:* <{labkey_url}|View Hits on LabKey>
@@ -298,6 +304,16 @@ def main() -> int:
             "state_size": "N/A",
         }
 
+    # Get run duration from state database
+    duration_str: str | None = None
+    try:
+        run = state.get_run(args.run_id, args.state_dir)
+        if run and run.duration_seconds is not None:
+            duration_str = format_duration(run.duration_seconds)
+            logger.debug(f"Run duration: {duration_str}")
+    except Exception as e:
+        logger.warning(f"Failed to get run duration: {e}")
+
     # Build and send message
     message = build_message(
         experiment_id=args.experiment_id,
@@ -306,6 +322,7 @@ def main() -> int:
         hits_identified=run_stats["hits_identified"],
         labkey_url=args.labkey_url,
         cumulative=cumulative,
+        duration_str=duration_str,
     )
 
     logger.debug(f"Message:\n{message}")
