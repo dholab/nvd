@@ -171,6 +171,116 @@ class TestStateCommands:
         assert result.exit_code == 0
         assert "[]" in result.stdout
 
+    def test_state_runs_shows_duration_column(self, tmp_path, monkeypatch):
+        """state runs shows Duration column with completed runs."""
+        monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
+        runner.invoke(app, ["state", "init"])
+
+        # Insert a completed run with known duration (30 minutes) directly
+        sample_set_id = compute_sample_set_id(["sample_a"])
+        with connect() as conn:
+            conn.execute(
+                """INSERT INTO runs (run_id, sample_set_id, started_at, completed_at, status)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (
+                    "test_run_1",
+                    sample_set_id,
+                    "2026-01-15T10:00:00Z",
+                    "2026-01-15T10:30:00Z",
+                    "completed",
+                ),
+            )
+            conn.commit()
+
+        result = runner.invoke(app, ["state", "runs"])
+        assert result.exit_code == 0
+        assert "Duration" in result.stdout
+        assert "30m 0s" in result.stdout
+
+    def test_state_runs_json_includes_duration_seconds(self, tmp_path, monkeypatch):
+        """state runs --json includes duration_seconds field."""
+        import json
+
+        monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
+        runner.invoke(app, ["state", "init"])
+
+        # Insert a completed run with known duration (45 minutes = 2700 seconds)
+        sample_set_id = compute_sample_set_id(["sample_b"])
+        with connect() as conn:
+            conn.execute(
+                """INSERT INTO runs (run_id, sample_set_id, started_at, completed_at, status)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (
+                    "test_run_2",
+                    sample_set_id,
+                    "2026-01-15T10:00:00Z",
+                    "2026-01-15T10:45:00Z",
+                    "completed",
+                ),
+            )
+            conn.commit()
+
+        result = runner.invoke(app, ["state", "runs", "--json"])
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        assert len(data) == 1
+        assert data[0]["duration_seconds"] == 2700.0
+
+    def test_state_runs_stats_footer_with_multiple_runs(self, tmp_path, monkeypatch):
+        """state runs shows duration stats footer when >= 2 completed runs."""
+        monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
+        runner.invoke(app, ["state", "init"])
+
+        # Insert 3 completed runs with known durations: 20m, 30m, 40m
+        with connect() as conn:
+            for i, (run_id, duration_mins) in enumerate(
+                [("run_a", 20), ("run_b", 30), ("run_c", 40)]
+            ):
+                sample_set_id = compute_sample_set_id([f"sample_{i}"])
+                conn.execute(
+                    """INSERT INTO runs (run_id, sample_set_id, started_at, completed_at, status)
+                       VALUES (?, ?, ?, ?, ?)""",
+                    (
+                        run_id,
+                        sample_set_id,
+                        "2026-01-15T10:00:00Z",
+                        f"2026-01-15T10:{duration_mins:02d}:00Z",
+                        "completed",
+                    ),
+                )
+            conn.commit()
+
+        result = runner.invoke(app, ["state", "runs"])
+        assert result.exit_code == 0
+        assert "Duration stats (3 completed)" in result.stdout
+        assert "min 20m 0s" in result.stdout
+        assert "avg 30m 0s" in result.stdout
+        assert "max 40m 0s" in result.stdout
+
+    def test_state_runs_no_stats_footer_with_single_run(self, tmp_path, monkeypatch):
+        """state runs does not show stats footer with only 1 completed run."""
+        monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
+        runner.invoke(app, ["state", "init"])
+
+        sample_set_id = compute_sample_set_id(["sample_single"])
+        with connect() as conn:
+            conn.execute(
+                """INSERT INTO runs (run_id, sample_set_id, started_at, completed_at, status)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (
+                    "single_run",
+                    sample_set_id,
+                    "2026-01-15T10:00:00Z",
+                    "2026-01-15T10:30:00Z",
+                    "completed",
+                ),
+            )
+            conn.commit()
+
+        result = runner.invoke(app, ["state", "runs"])
+        assert result.exit_code == 0
+        assert "Duration stats" not in result.stdout
+
     def test_state_samples_empty(self, tmp_path, monkeypatch):
         """state samples handles empty database."""
         monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))

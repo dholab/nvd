@@ -519,6 +519,7 @@ def state_runs(
                     "status": r.status,
                     "started_at": r.started_at,
                     "completed_at": r.completed_at,
+                    "duration_seconds": r.duration_seconds,
                     "experiment_id": r.experiment_id,
                 }
                 for r in runs
@@ -537,7 +538,10 @@ def state_runs(
     table.add_column("Status")
     table.add_column("Started")
     table.add_column("Completed")
+    table.add_column("Duration", justify="right")
     table.add_column("Experiment ID", justify="right")
+
+    durations: list[float] = []
 
     for run in runs:
         # Color-code status
@@ -548,16 +552,37 @@ def state_runs(
         else:
             status_str = "[yellow]running[/yellow]"
 
+        # Format duration
+        duration_seconds = run.duration_seconds
+        if duration_seconds is not None:
+            duration_str = format_duration(duration_seconds)
+            durations.append(duration_seconds)
+        else:
+            duration_str = "-"
+
         table.add_row(
             run.run_id,
             status_str,
             run.started_at,
             run.completed_at or "-",
+            duration_str,
             str(run.experiment_id) if run.experiment_id else "-",
         )
 
     console.print()
     console.print(table)
+
+    if len(durations) >= 2:
+        min_dur = min(durations)
+        max_dur = max(durations)
+        avg_dur = sum(durations) / len(durations)
+        console.print(
+            f"\n[dim]Duration stats ({len(durations)} completed): "
+            f"min {format_duration(min_dur)} | "
+            f"avg {format_duration(avg_dur)} | "
+            f"max {format_duration(max_dur)}[/dim]"
+        )
+
     console.print(f"\n[dim]Showing {len(runs)} run(s)[/dim]")
     console.print()
 
