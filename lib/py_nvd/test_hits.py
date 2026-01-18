@@ -1725,6 +1725,73 @@ class TestCompactHits:
         assert result[1] == "2024-01"  # month extracted from Hive partition
         assert result[2] == "2024-01"  # effective_month matches
 
+    def test_incremental_compaction_handles_schema_evolution(self, temp_state_dir):
+        """Compaction merges old-schema compacted files with new-schema uncompacted files."""
+        import duckdb
+
+        # Create an "old" compacted file without classification columns
+        # (simulating data compacted before the schema change)
+        month_dir = temp_state_dir / "hits" / "month=2024-01"
+        month_dir.mkdir(parents=True)
+        old_compacted = month_dir / "data.parquet"
+
+        con = duckdb.connect()
+        con.execute(f"""
+            COPY (
+                SELECT
+                    'abc123def456abc123def456abc123de' as hit_key,
+                    100 as sequence_length,
+                    'AAAA'::BLOB as sequence_compressed,
+                    0.5 as gc_content,
+                    'set-old' as sample_set_id,
+                    'sample-old' as sample_id,
+                    '2024-01-15'::DATE as run_date,
+                    'contig-old' as contig_id
+            )
+            TO '{old_compacted}' (FORMAT parquet)
+        """)
+
+        # Write new uncompacted data WITH classification columns
+        record = HitRecord(
+            hit_key="def456abc123def456abc123def456ab",
+            sequence_length=200,
+            sequence_compressed=b"TTTT",
+            gc_content=0.6,
+            sample_set_id="set-new",
+            sample_id="sample-new",
+            run_date="2024-01-20",
+            contig_id="contig-new",
+            adjusted_taxid=12345,
+            adjusted_taxid_name="Test virus",
+            adjusted_taxid_rank="species",
+        )
+        write_hits_parquet([record], "sample-new", "set-new", temp_state_dir)
+
+        # Compact - this should merge old (no classification cols) with new (has them)
+        result = compact_hits(state_dir=temp_state_dir, month="2024-01")
+
+        assert result.total_observations == 1  # Only the new uncompacted file
+        assert len(result.months) == 1
+        assert result.errors == []
+
+        # Verify the compacted file has both records with correct schema
+        compacted = con.execute(f"""
+            SELECT hit_key, adjusted_taxid, adjusted_taxid_name, adjusted_taxid_rank
+            FROM read_parquet('{old_compacted}')
+            ORDER BY hit_key
+        """).fetchall()
+
+        assert len(compacted) == 2
+        # Old record should have NULLs for classification columns
+        assert compacted[0] == ("abc123def456abc123def456abc123de", None, None, None)
+        # New record should have the classification data
+        assert compacted[1] == (
+            "def456abc123def456abc123def456ab",
+            12345,
+            "Test virus",
+            "species",
+        )
+
 
 class TestGetStatsForSampleSet:
     """Tests for get_stats_for_sample_set()."""

@@ -311,6 +311,10 @@ class HitRecord:
 
     This is the denormalized form that combines hit data with observation metadata.
     Each row in the parquet file represents one observation of a hit in a sample.
+
+    Classification fields (adjusted_taxid, adjusted_taxid_name, adjusted_taxid_rank)
+    contain the consensus taxonomic assignment from LCA analysis. These may be None
+    for hits from older runs that predate classification tracking.
     """
 
     hit_key: str
@@ -321,6 +325,9 @@ class HitRecord:
     sample_id: str
     run_date: str
     contig_id: str | None
+    adjusted_taxid: int | None = None
+    adjusted_taxid_name: str | None = None
+    adjusted_taxid_rank: str | None = None
 
     def __post_init__(self) -> None:
         """Validate invariants after initialization."""
@@ -395,6 +402,9 @@ def write_hits_parquet(
                 "sample_id": pl.Utf8,
                 "run_date": pl.Utf8,
                 "contig_id": pl.Utf8,
+                "adjusted_taxid": pl.Int64,
+                "adjusted_taxid_name": pl.Utf8,
+                "adjusted_taxid_rank": pl.Utf8,
             },
         )
     else:
@@ -409,6 +419,9 @@ def write_hits_parquet(
                 "sample_id": [h.sample_id for h in hits],
                 "run_date": [h.run_date for h in hits],
                 "contig_id": [h.contig_id for h in hits],
+                "adjusted_taxid": [h.adjusted_taxid for h in hits],
+                "adjusted_taxid_name": [h.adjusted_taxid_name for h in hits],
+                "adjusted_taxid_rank": [h.adjusted_taxid_rank for h in hits],
             },
         )
 
@@ -1507,44 +1520,24 @@ def compact_hits(
             # Build source list: uncompacted data for this month
             # Plus existing compacted file if it exists
             if existing_file.exists():
+                # Use SELECT * with UNION ALL BY NAME for schema evolution:
+                # - Old compacted files may lack new columns (e.g., adjusted_taxid)
+                # - New uncompacted files may have columns old compacted files lack
+                # UNION ALL BY NAME fills missing columns with NULL
                 source_sql = f"""
-                    SELECT
-                        hit_key,
-                        sequence_length,
-                        sequence_compressed,
-                        gc_content,
-                        sample_set_id,
-                        sample_id,
-                        run_date,
-                        contig_id
-                    FROM read_parquet('{uncompacted_glob}')
+                    SELECT *
+                    FROM read_parquet('{uncompacted_glob}', union_by_name=true)
                     WHERE strftime(run_date::DATE, '%Y-%m') = '{target_month}'
 
-                    UNION ALL
+                    UNION ALL BY NAME
 
-                    SELECT
-                        hit_key,
-                        sequence_length,
-                        sequence_compressed,
-                        gc_content,
-                        sample_set_id,
-                        sample_id,
-                        run_date,
-                        contig_id
+                    SELECT *
                     FROM read_parquet('{existing_file}')
                 """
             else:
                 source_sql = f"""
-                    SELECT
-                        hit_key,
-                        sequence_length,
-                        sequence_compressed,
-                        gc_content,
-                        sample_set_id,
-                        sample_id,
-                        run_date,
-                        contig_id
-                    FROM read_parquet('{uncompacted_glob}')
+                    SELECT *
+                    FROM read_parquet('{uncompacted_glob}', union_by_name=true)
                     WHERE strftime(run_date::DATE, '%Y-%m') = '{target_month}'
                 """
 

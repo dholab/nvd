@@ -92,14 +92,43 @@ def parse_fasta(fasta_path: Path) -> dict[str, str]:
 QSEQID_COLUMN = "qseqid"
 
 
-def parse_blast_contig_ids(blast_results_path: Path) -> set[str]:
+@dataclass(frozen=True)
+class ContigClassification:
     """
-    Extract contig IDs (qseqid) from merged BLAST results TSV.
+    Classification data for a single contig from LCA-annotated BLAST results.
 
-    Uses Polars for robust TSV parsing with column name validation.
-    The qseqid column contains the original contig identifiers from SPAdes.
+    Each contig gets a consensus taxonomic assignment (either dominant taxid
+    or LCA of near-ties). This data is extracted from the merged BLAST results
+    after LCA annotation.
+    """
 
-    Returns set of unique contig IDs that had BLAST hits.
+    contig_id: str
+    adjusted_taxid: int | None
+    adjusted_taxid_name: str | None
+    adjusted_taxid_rank: str | None
+
+    def __post_init__(self) -> None:
+        assert self.contig_id, "contig_id cannot be empty"
+        assert isinstance(self.contig_id, str), (
+            f"contig_id must be str, got {type(self.contig_id)}"
+        )
+
+
+def parse_blast_classifications(
+    blast_results_path: Path,
+) -> dict[str, ContigClassification]:
+    """
+    Extract classification data per contig from LCA-annotated BLAST results TSV.
+
+    Uses Polars for robust TSV parsing. The input file has multiple rows per contig
+    (one per BLAST hit), but they share the same adjusted_* values from LCA analysis.
+    We take the first row per contig to get the classification.
+
+    Args:
+        blast_results_path: Path to LCA-annotated merged BLAST results TSV
+
+    Returns:
+        Dict mapping contig_id to ContigClassification
 
     Raises:
         ValueError: If the qseqid column is not found in the TSV.
@@ -113,12 +142,41 @@ def parse_blast_contig_ids(blast_results_path: Path) -> set[str]:
         )
         raise ValueError(msg)
 
-    return set(df[QSEQID_COLUMN].unique().to_list())
+    # Get one row per contig (they all have the same adjusted_* values)
+    # Use first() aggregation to pick one representative row
+    unique_contigs = df.group_by(QSEQID_COLUMN).agg(
+        pl.col("adjusted_taxid").first(),
+        pl.col("adjusted_taxid_name").first(),
+        pl.col("adjusted_taxid_rank").first(),
+    )
+
+    classifications: dict[str, ContigClassification] = {}
+    for row in unique_contigs.iter_rows(named=True):
+        contig_id = row[QSEQID_COLUMN]
+
+        # Handle type conversion for adjusted_taxid (may be float from CSV parsing)
+        raw_taxid = row["adjusted_taxid"]
+        if raw_taxid is not None:
+            try:
+                adjusted_taxid = int(raw_taxid)
+            except (ValueError, TypeError):
+                adjusted_taxid = None
+        else:
+            adjusted_taxid = None
+
+        classifications[contig_id] = ContigClassification(
+            contig_id=contig_id,
+            adjusted_taxid=adjusted_taxid,
+            adjusted_taxid_name=row["adjusted_taxid_name"],
+            adjusted_taxid_rank=row["adjusted_taxid_rank"],
+        )
+
+    return classifications
 
 
 def build_hit_records(
     contigs: dict[str, str],
-    contig_ids_with_hits: set[str],
+    classifications: dict[str, ContigClassification],
     context: HitRegistrationContext,
 ) -> list[HitRecord]:
     """
@@ -126,7 +184,7 @@ def build_hit_records(
 
     Args:
         contigs: Dict mapping contig IDs to sequences
-        contig_ids_with_hits: Set of contig IDs that had BLAST hits
+        classifications: Dict mapping contig IDs to their classification data
         context: Registration context with sample/run metadata
 
     Returns:
@@ -134,7 +192,7 @@ def build_hit_records(
     """
     hit_records: list[HitRecord] = []
 
-    for contig_id in contig_ids_with_hits:
+    for contig_id, classification in classifications.items():
         if contig_id not in contigs:
             logger.warning(f"Contig {contig_id} in BLAST results but not in FASTA")
             continue
@@ -158,6 +216,9 @@ def build_hit_records(
                 sample_id=context.sample_id,
                 run_date=context.run_date,
                 contig_id=contig_id,
+                adjusted_taxid=classification.adjusted_taxid,
+                adjusted_taxid_name=classification.adjusted_taxid_name,
+                adjusted_taxid_rank=classification.adjusted_taxid_rank,
             )
         )
 
@@ -190,6 +251,9 @@ def write_hits_to_path(hits: list[HitRecord], output_path: Path) -> Path:
                 "sample_id": pl.Utf8,
                 "run_date": pl.Utf8,
                 "contig_id": pl.Utf8,
+                "adjusted_taxid": pl.Int64,
+                "adjusted_taxid_name": pl.Utf8,
+                "adjusted_taxid_rank": pl.Utf8,
             }
         )
     else:
@@ -204,6 +268,9 @@ def write_hits_to_path(hits: list[HitRecord], output_path: Path) -> Path:
                     "sample_id": h.sample_id,
                     "run_date": h.run_date,
                     "contig_id": h.contig_id,
+                    "adjusted_taxid": h.adjusted_taxid,
+                    "adjusted_taxid_name": h.adjusted_taxid_name,
+                    "adjusted_taxid_rank": h.adjusted_taxid_rank,
                 }
                 for h in hits
             ]
@@ -355,13 +422,13 @@ def main() -> None:
     logger.info(f"Found {len(contigs)} contigs")
 
     logger.info(f"Parsing BLAST results from {args.blast_results}")
-    contig_ids_with_hits = parse_blast_contig_ids(args.blast_results)
-    logger.info(f"Found {len(contig_ids_with_hits)} contigs with hits")
+    classifications = parse_blast_classifications(args.blast_results)
+    logger.info(f"Found {len(classifications)} contigs with hits")
 
     # Build hit records
     hit_records = build_hit_records(
         contigs=contigs,
-        contig_ids_with_hits=contig_ids_with_hits,
+        classifications=classifications,
         context=context,
     )
     logger.info(f"Computed {len(hit_records)} hit records")
