@@ -490,22 +490,26 @@ def open(  # noqa: A001
     taxdump_dir = get_taxdump_dir(state_dir)
     sqlite_path = taxdump_dir / "taxonomy.sqlite"
 
-    if offline and not sqlite_path.exists():
-        # Offline mode with no SQLite - try to build from .dmp files
-        nodes_dmp = taxdump_dir / "nodes.dmp"
-        if nodes_dmp.exists():
-            _build_sqlite_from_dmp(taxdump_dir)
-        else:
+    if offline:
+        if not sqlite_path.exists():
+            # In offline mode, require pre-built taxonomy.sqlite.
+            # Don't attempt to build from .dmp files - distributed workers on
+            # read-only filesystems can't write, and attempting to do so causes
+            # "unable to write to readonly database" errors.
             raise TaxonomyOfflineError(
                 f"Taxonomy database not found at {sqlite_path} and offline mode is enabled. "
-                f"Either disable offline mode to download from NCBI, or copy taxonomy data to {taxdump_dir}"
+                f"Run 'nvd taxonomy ensure' or ensure CHECK_RUN_STATE runs locally before "
+                f"launching distributed jobs."
             )
-    elif not offline:
+    else:
         # Normal mode: download if stale
         taxdump_dir = _ensure_taxdump(state_dir)
         sqlite_path = taxdump_dir / "taxonomy.sqlite"
 
-    conn = sqlite3.connect(sqlite_path, timeout=30.0)
+    # Open in read-only mode to avoid "unable to write to readonly database" errors
+    # on distributed workers where the state directory may be read-only.
+    # URI mode with ?mode=ro tells SQLite not to acquire write locks or create journals.
+    conn = sqlite3.connect(f"file:{sqlite_path}?mode=ro", uri=True, timeout=30.0)
     conn.row_factory = sqlite3.Row
 
     try:

@@ -551,14 +551,40 @@ class TestContextManagers:
         with pytest.raises(sqlite3.ProgrammingError):
             conn.execute("SELECT 1")
 
-    def test_wal_mode_is_enabled(self, minimal_taxdump: Path, monkeypatch):
-        """Verify the database is opened in WAL mode for concurrent access."""
+    def test_delete_journal_mode_for_network_filesystem_compatibility(
+        self, minimal_taxdump: Path, monkeypatch
+    ):
+        """Verify database uses DELETE journal mode for network filesystem compatibility.
+
+        WAL mode requires shared memory (mmap) which doesn't work reliably on
+        NFS, GPFS, Lustre, and similar network filesystems. DELETE mode uses a
+        traditional rollback journal that works correctly over the network.
+        """
         taxonomy._build_sqlite_from_dmp(minimal_taxdump)
         monkeypatch.setattr(taxonomy, "_ensure_taxdump", lambda _=None: minimal_taxdump)
 
         with taxonomy.open() as tax:
             result = tax._conn.execute("PRAGMA journal_mode;").fetchone()
             assert result[0] == "delete"
+
+    def test_open_uses_readonly_connection(self, minimal_taxdump: Path, monkeypatch):
+        """Verify connection is opened in read-only mode to support read-only filesystems.
+
+        This is critical for distributed workers on HTCondor/Slurm where the
+        state directory may be on a read-only filesystem or transferred as
+        read-only files. Without read-only mode, SQLite attempts to acquire
+        write locks and create journal files, causing "unable to write to
+        readonly database" errors even for SELECT queries.
+        """
+        taxonomy._build_sqlite_from_dmp(minimal_taxdump)
+        monkeypatch.setattr(taxonomy, "_ensure_taxdump", lambda _=None: minimal_taxdump)
+
+        with taxonomy.open() as tax:
+            # Attempting to write should fail with read-only error
+            with pytest.raises(sqlite3.OperationalError) as exc_info:
+                tax._conn.execute("CREATE TABLE test_table (id INTEGER)")
+
+            assert "readonly" in str(exc_info.value).lower()
 
 
 class TestConcurrentAccess:
@@ -717,19 +743,28 @@ class TestOfflineMode:
             assert taxon is not None
             assert taxon.scientific_name == "Homo sapiens"
 
-    def test_offline_builds_sqlite_from_dmp(self, minimal_taxdump):
-        """Offline mode builds SQLite if .dmp files exist but SQLite doesn't."""
-        # .dmp files exist but no SQLite yet
+    def test_offline_raises_when_dmp_exists_but_no_sqlite(self, minimal_taxdump):
+        """Offline mode raises error even if .dmp files exist but SQLite doesn't.
+
+        This is intentional: distributed workers on read-only filesystems can't
+        build SQLite, so we fail fast with a clear error message rather than
+        attempting to write and getting "unable to write to readonly database".
+        """
+        # Verify preconditions: .dmp files exist but no SQLite yet
+        assert (minimal_taxdump / "nodes.dmp").exists(), (
+            "Test fixture should have .dmp files"
+        )
         sqlite_path = minimal_taxdump / "taxonomy.sqlite"
         assert not sqlite_path.exists()
 
-        # Should build SQLite from .dmp files
-        with taxonomy.open(state_dir=minimal_taxdump.parent, offline=True) as tax:
-            taxon = tax.get_taxon(9606)
-            assert taxon is not None
+        # Should raise TaxonomyOfflineError - we don't attempt to build in offline mode
+        with pytest.raises(taxonomy.TaxonomyOfflineError) as exc_info:
+            with taxonomy.open(state_dir=minimal_taxdump.parent, offline=True):
+                pass
 
-        # SQLite should now exist
-        assert sqlite_path.exists()
+        assert "offline mode is enabled" in str(exc_info.value)
+        # SQLite should still not exist (we didn't try to build it)
+        assert not sqlite_path.exists()
 
     def test_offline_raises_when_no_data(self, tmp_path):
         """Offline mode raises TaxonomyOfflineError when no data exists."""
