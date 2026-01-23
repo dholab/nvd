@@ -38,8 +38,38 @@ from py_nvd.hits import (
     list_hits_with_observations,
     lookup_hit,
 )
-from py_nvd.models import TimelineBucket
+from py_nvd.models import HitStats, RecurringHit, TimelineBucket
 from py_nvd.state import get_run_ids_for_sample_sets
+
+
+def _format_classification(
+    name: str | None,
+    rank: str | None,
+    taxid: int | None = None,
+    *,
+    include_taxid: bool = False,
+) -> str:
+    """Format taxonomic classification for display.
+
+    Args:
+        name: Taxonomic name (e.g., "Influenza A virus").
+        rank: Taxonomic rank (e.g., "species").
+        taxid: Taxonomic ID (e.g., 12345).
+        include_taxid: If True, append "[taxid: N]" with dim styling.
+
+    Returns:
+        Formatted string like "Name (rank)" or "Name (rank) [dim][taxid: N][/dim]",
+        or "-" if name is None.
+    """
+    if not name:
+        return "-"
+    result = name
+    if rank:
+        result += f" ({rank})"
+    if include_taxid and taxid:
+        result += f" [dim][taxid: {taxid}][/dim]"
+    return result
+
 
 hits_app = typer.Typer(
     name="hits",
@@ -114,7 +144,7 @@ def _stats_to_dict(stats, top_recurring: list) -> dict:
     return result
 
 
-def _print_stats_rich(stats, top_recurring: list) -> None:
+def _print_stats_rich(stats: HitStats, top_recurring: list[RecurringHit]) -> None:
     """Print stats with Rich formatting."""
     console.print("\n[bold]Hit Statistics[/bold]")
     console.print("─" * 40)
@@ -161,6 +191,7 @@ def _print_stats_rich(stats, top_recurring: list) -> None:
         table.add_column("Length", justify="right")
         table.add_column("Samples", justify="right")
         table.add_column("Observations", justify="right")
+        table.add_column("Top Classification")
 
         for hit in top_recurring:
             table.add_row(
@@ -168,6 +199,7 @@ def _print_stats_rich(stats, top_recurring: list) -> None:
                 f"{hit.sequence_length:,} bp",
                 str(hit.sample_count),
                 str(hit.observation_count),
+                _format_classification(hit.top_taxid_name, hit.top_taxid_rank),
             )
 
         console.print(table)
@@ -269,6 +301,15 @@ def _print_lookup_rich(hit, observations: list) -> None:
         f"GC: {hit.gc_content * 100:.1f}%  │  "
         f"First seen: {hit.first_seen_date}"
     )
+
+    # Classification
+    classification = _format_classification(
+        hit.top_taxid_name, hit.top_taxid_rank, hit.top_taxid, include_taxid=True
+    )
+    if hit.top_taxid_name:
+        console.print(f"  Classification: {classification}")
+    else:
+        console.print("  Classification: [dim]None[/dim]")
 
     # Observations
     console.print(f"\n[bold]Observations ({len(observations)} total):[/bold]")
@@ -607,7 +648,9 @@ def hits_recur(
         _print_recur_rich(hits, min_samples, min_runs)
 
 
-def _print_recur_rich(hits: list, min_samples: int, min_runs: int | None) -> None:
+def _print_recur_rich(
+    hits: list[RecurringHit], min_samples: int, min_runs: int | None
+) -> None:
     """Print recurring hits with Rich formatting."""
     # Build filter description
     filters = [f"{min_samples}+ samples"]
@@ -628,6 +671,7 @@ def _print_recur_rich(hits: list, min_samples: int, min_runs: int | None) -> Non
     table.add_column("Samples", justify="right")
     table.add_column("Runs", justify="right")
     table.add_column("Observations", justify="right")
+    table.add_column("Top Classification")
     table.add_column("First Seen", style="dim")
     table.add_column("Last Seen", style="dim")
 
@@ -638,6 +682,7 @@ def _print_recur_rich(hits: list, min_samples: int, min_runs: int | None) -> Non
             str(hit.sample_count),
             str(hit.run_count),
             str(hit.observation_count),
+            _format_classification(hit.top_taxid_name, hit.top_taxid_rank),
             hit.first_seen_date,
             hit.last_seen_date,
         )
@@ -738,6 +783,9 @@ def _export_tabular(
         "sequence_length": [],
         "gc_content": [],
         "first_seen_date": [],
+        "top_taxid": [],
+        "top_taxid_name": [],
+        "top_taxid_rank": [],
         "sample_set_id": [],
         "run_id": [],
         "sample_id": [],
@@ -753,6 +801,9 @@ def _export_tabular(
         data["sequence_length"].append(hit.sequence_length)
         data["gc_content"].append(hit.gc_content)
         data["first_seen_date"].append(hit.first_seen_date)
+        data["top_taxid"].append(hit.top_taxid)
+        data["top_taxid_name"].append(hit.top_taxid_name)
+        data["top_taxid_rank"].append(hit.top_taxid_rank)
         data["sample_set_id"].append(obs.sample_set_id)
         data["run_id"].append(run_id_map.get(obs.sample_set_id))
         data["sample_id"].append(obs.sample_id)

@@ -352,6 +352,11 @@ class Hit:
     The hit_key is a BLAKE3 hash of the canonical sequence (lexicographically
     smaller of the sequence and its reverse complement), making it strand-agnostic
     and deterministic across runs.
+
+    Classification fields (top_taxid, top_taxid_name, top_taxid_rank) contain the
+    taxonomic assignment from the most recent observation. When a hit has multiple
+    observations, we use the most recent non-null classification. These may be None
+    for hits from older runs that predate classification tracking.
     """
 
     hit_key: str  # BLAKE3 hash of canonical sequence (32 hex chars)
@@ -359,6 +364,11 @@ class Hit:
     sequence_compressed: bytes  # 2-bit + zlib compressed (with N positions)
     gc_content: float  # GC fraction (0.0-1.0)
     first_seen_date: str  # ISO8601
+
+    # Classification from most recent observation (may be None for old data)
+    top_taxid: int | None = None
+    top_taxid_name: str | None = None
+    top_taxid_rank: str | None = None
 
     @classmethod
     def from_row(cls, row: Row) -> Self:
@@ -418,6 +428,11 @@ class RecurringHit:
     Used for identifying sequences that recur across the dataset,
     which may indicate persistent infections, contamination, or
     lab reagent artifacts.
+
+    Classification fields (top_taxid, top_taxid_name, top_taxid_rank) contain the
+    most common taxonomic assignment across all observations. When a hit has
+    multiple different classifications, we use the one that appears most frequently.
+    These may be None for hits from older runs that predate classification tracking.
     """
 
     hit_key: str
@@ -428,6 +443,11 @@ class RecurringHit:
     sample_count: int  # Number of distinct samples
     run_count: int  # Number of distinct runs (sample_set_ids)
     observation_count: int  # Total observations
+
+    # Most common classification across all observations (may be None for old data)
+    top_taxid: int | None = None
+    top_taxid_name: str | None = None
+    top_taxid_rank: str | None = None
 
 
 @dataclass(frozen=True)

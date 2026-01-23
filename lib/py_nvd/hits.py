@@ -505,7 +505,8 @@ def get_hit(hit_key: str, state_dir: Path | str | None = None) -> Hit | None:
     Get a hit by its key.
 
     Since parquet stores denormalized data, this aggregates across all
-    observations to compute first_seen_date as MIN(run_date).
+    observations to compute first_seen_date as MIN(run_date). Classification
+    is taken from the most recent observation with non-null adjusted_taxid.
     """
     assert hit_key, "hit_key cannot be empty"
     assert len(hit_key) == 32, f"hit_key must be 32 hex chars, got {len(hit_key)}"
@@ -514,19 +515,45 @@ def get_hit(hit_key: str, state_dir: Path | str | None = None) -> Hit | None:
         return None
 
     con = query_hits(state_dir)
+    # Get basic hit info with first_seen_date
+    # Then join with most recent classification (where adjusted_taxid is not null)
     result = con.execute(
         """
+        WITH hit_base AS (
+            SELECT
+                hit_key,
+                ANY_VALUE(sequence_length) as sequence_length,
+                ANY_VALUE(sequence_compressed) as sequence_compressed,
+                ANY_VALUE(gc_content) as gc_content,
+                MIN(run_date) as first_seen_date
+            FROM hits
+            WHERE hit_key = ?
+            GROUP BY hit_key
+        ),
+        most_recent_classification AS (
+            SELECT
+                hit_key,
+                adjusted_taxid,
+                adjusted_taxid_name,
+                adjusted_taxid_rank
+            FROM hits
+            WHERE hit_key = ? AND adjusted_taxid IS NOT NULL
+            ORDER BY run_date DESC
+            LIMIT 1
+        )
         SELECT
-            hit_key,
-            sequence_length,
-            sequence_compressed,
-            gc_content,
-            MIN(run_date) as first_seen_date
-        FROM hits
-        WHERE hit_key = ?
-        GROUP BY hit_key, sequence_length, sequence_compressed, gc_content
+            h.hit_key,
+            h.sequence_length,
+            h.sequence_compressed,
+            h.gc_content,
+            h.first_seen_date,
+            c.adjusted_taxid,
+            c.adjusted_taxid_name,
+            c.adjusted_taxid_rank
+        FROM hit_base h
+        LEFT JOIN most_recent_classification c ON h.hit_key = c.hit_key
         """,
-        [hit_key.lower()],
+        [hit_key.lower(), hit_key.lower()],
     ).fetchone()
 
     if result is None:
@@ -538,6 +565,9 @@ def get_hit(hit_key: str, state_dir: Path | str | None = None) -> Hit | None:
         sequence_compressed=result[2],
         gc_content=result[3],
         first_seen_date=result[4],
+        top_taxid=result[5],
+        top_taxid_name=result[6],
+        top_taxid_rank=result[7],
     )
 
 
@@ -547,6 +577,9 @@ def list_hits(
 ) -> list[Hit]:
     """
     List all unique hits, ordered by first_seen_date descending.
+
+    Classification is taken from the most recent observation with non-null
+    adjusted_taxid for each hit.
 
     Args:
         limit: Maximum number of hits to return
@@ -562,16 +595,40 @@ def list_hits(
 
     con = query_hits(state_dir)
 
+    # Get basic hit info, then join with most recent classification per hit
     sql = """
+        WITH hit_base AS (
+            SELECT
+                hit_key,
+                ANY_VALUE(sequence_length) as sequence_length,
+                ANY_VALUE(sequence_compressed) as sequence_compressed,
+                ANY_VALUE(gc_content) as gc_content,
+                MIN(run_date) as first_seen_date
+            FROM hits
+            GROUP BY hit_key
+        ),
+        most_recent_classification AS (
+            SELECT DISTINCT ON (hit_key)
+                hit_key,
+                adjusted_taxid,
+                adjusted_taxid_name,
+                adjusted_taxid_rank
+            FROM hits
+            WHERE adjusted_taxid IS NOT NULL
+            ORDER BY hit_key, run_date DESC
+        )
         SELECT
-            hit_key,
-            sequence_length,
-            sequence_compressed,
-            gc_content,
-            MIN(run_date) as first_seen_date
-        FROM hits
-        GROUP BY hit_key, sequence_length, sequence_compressed, gc_content
-        ORDER BY first_seen_date DESC
+            h.hit_key,
+            h.sequence_length,
+            h.sequence_compressed,
+            h.gc_content,
+            h.first_seen_date,
+            c.adjusted_taxid,
+            c.adjusted_taxid_name,
+            c.adjusted_taxid_rank
+        FROM hit_base h
+        LEFT JOIN most_recent_classification c ON h.hit_key = c.hit_key
+        ORDER BY h.first_seen_date DESC
     """
 
     if limit is not None:
@@ -587,6 +644,9 @@ def list_hits(
             sequence_compressed=row[2],
             gc_content=row[3],
             first_seen_date=row[4],
+            top_taxid=row[5],
+            top_taxid_name=row[6],
+            top_taxid_rank=row[7],
         )
         for row in rows
     ]
@@ -939,6 +999,9 @@ def get_recurring_hits(
     or lab reagent artifacts. This query helps identify sequences that
     warrant further investigation.
 
+    Classification is the most common (mode) adjusted_taxid across all
+    observations for each hit.
+
     Args:
         min_samples: Minimum number of distinct samples (default: 2)
         min_runs: Minimum number of distinct runs (sample_set_ids), or None for no filter
@@ -958,28 +1021,59 @@ def get_recurring_hits(
 
     con = query_hits(state_dir)
 
-    # Build query - note we compute first_seen_date as MIN(run_date)
+    # Build query with most common classification per hit
+    # MODE() returns the most frequent value; we use it on adjusted_taxid
+    # and then get the corresponding name/rank from any row with that taxid
     sql = """
+        WITH hit_stats AS (
+            SELECT
+                hit_key,
+                ANY_VALUE(sequence_length) as sequence_length,
+                ANY_VALUE(gc_content) as gc_content,
+                MIN(run_date) as first_seen_date,
+                MAX(run_date) as last_seen_date,
+                COUNT(DISTINCT sample_id) as sample_count,
+                COUNT(DISTINCT sample_set_id) as run_count,
+                COUNT(*) as observation_count,
+                MODE(adjusted_taxid) as top_taxid
+            FROM hits
+            GROUP BY hit_key
+            HAVING sample_count >= ?
+        ),
+        taxid_names AS (
+            -- Get one (name, rank) pair per (hit_key, adjusted_taxid) combination.
+            -- ORDER BY ensures deterministic selection when multiple rows exist.
+            SELECT DISTINCT ON (hit_key, adjusted_taxid)
+                hit_key,
+                adjusted_taxid,
+                adjusted_taxid_name,
+                adjusted_taxid_rank
+            FROM hits
+            WHERE adjusted_taxid IS NOT NULL
+            ORDER BY hit_key, adjusted_taxid
+        )
         SELECT
-            hit_key,
-            ANY_VALUE(sequence_length) as sequence_length,
-            ANY_VALUE(gc_content) as gc_content,
-            MIN(run_date) as first_seen_date,
-            MAX(run_date) as last_seen_date,
-            COUNT(DISTINCT sample_id) as sample_count,
-            COUNT(DISTINCT sample_set_id) as run_count,
-            COUNT(*) as observation_count
-        FROM hits
-        GROUP BY hit_key
-        HAVING sample_count >= ?
+            s.hit_key,
+            s.sequence_length,
+            s.gc_content,
+            s.first_seen_date,
+            s.last_seen_date,
+            s.sample_count,
+            s.run_count,
+            s.observation_count,
+            s.top_taxid,
+            t.adjusted_taxid_name,
+            t.adjusted_taxid_rank
+        FROM hit_stats s
+        LEFT JOIN taxid_names t ON s.hit_key = t.hit_key AND s.top_taxid = t.adjusted_taxid
     """
     params: list[int] = [min_samples]
 
     if min_runs is not None:
-        sql += " AND run_count >= ?"
+        sql += " WHERE s.run_count >= ?"
         params.append(min_runs)
 
-    sql += " ORDER BY sample_count DESC, observation_count DESC"
+    sql += " ORDER BY s.sample_count DESC, s.observation_count DESC"
 
     if limit is not None:
         # f-string is safe here because limit is validated as positive int above
@@ -997,6 +1091,9 @@ def get_recurring_hits(
             sample_count=row[5],
             run_count=row[6],
             observation_count=row[7],
+            top_taxid=row[8],
+            top_taxid_name=row[9],
+            top_taxid_rank=row[10],
         )
         for row in rows
     ]
@@ -1084,6 +1181,13 @@ def list_hits_with_observations(
     Returns one tuple per observation, so a hit observed in multiple samples
     will appear multiple times (once per observation).
 
+    Note:
+        Unlike get_hit() and list_hits() which return the *most recent*
+        classification, this function returns the classification from each
+        *specific observation*. This is the per-observation semantic, not
+        aggregated. Use this when you need to see how classification may
+        have changed over time for a given hit.
+
     Args:
         limit: Maximum number of rows to return
         state_dir: Optional state directory override
@@ -1099,6 +1203,7 @@ def list_hits_with_observations(
     con = query_hits(state_dir)
 
     # We need to compute first_seen_date per hit and join back
+    # Include classification from each observation
     sql = """
         SELECT
             h.hit_key,
@@ -1109,7 +1214,10 @@ def list_hits_with_observations(
             h.sample_set_id,
             h.sample_id,
             h.run_date,
-            h.contig_id
+            h.contig_id,
+            h.adjusted_taxid,
+            h.adjusted_taxid_name,
+            h.adjusted_taxid_rank
         FROM hits h
         INNER JOIN (
             SELECT hit_key, MIN(run_date) as first_seen_date
@@ -1133,6 +1241,9 @@ def list_hits_with_observations(
             sequence_compressed=row[2],
             gc_content=row[3],
             first_seen_date=row[4],
+            top_taxid=row[9],
+            top_taxid_name=row[10],
+            top_taxid_rank=row[11],
         )
         observation = HitObservation(
             hit_key=row[0],

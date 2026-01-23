@@ -50,8 +50,22 @@ def make_hit_record(
     sample_id: str,
     run_date: str,
     contig_id: str | None = None,
+    adjusted_taxid: int | None = None,
+    adjusted_taxid_name: str | None = None,
+    adjusted_taxid_rank: str | None = None,
 ) -> HitRecord:
-    """Helper to create a HitRecord from a sequence."""
+    """Helper to create a HitRecord from a sequence.
+
+    Args:
+        seq: The nucleotide sequence.
+        sample_set_id: The sample set identifier.
+        sample_id: The sample identifier.
+        run_date: ISO 8601 timestamp of the run.
+        contig_id: Optional contig identifier.
+        adjusted_taxid: Optional taxonomic ID from LCA classification.
+        adjusted_taxid_name: Optional taxonomic name (e.g., "Influenza A virus").
+        adjusted_taxid_rank: Optional taxonomic rank (e.g., "species").
+    """
     return HitRecord(
         hit_key=compute_hit_key(seq),
         sequence_length=len(seq),
@@ -61,6 +75,9 @@ def make_hit_record(
         sample_id=sample_id,
         run_date=run_date,
         contig_id=contig_id,
+        adjusted_taxid=adjusted_taxid,
+        adjusted_taxid_name=adjusted_taxid_name,
+        adjusted_taxid_rank=adjusted_taxid_rank,
     )
 
 
@@ -266,6 +283,157 @@ class TestGetHit:
         assert result is None
 
 
+class TestGetHitClassification:
+    """Tests for classification fields in get_hit().
+
+    The get_hit() function returns classification from the most recent
+    observation with non-null adjusted_taxid.
+    """
+
+    def test_single_observation_with_classification(self, temp_state_dir):
+        """Hit with classified observation returns classification."""
+        record = make_hit_record(
+            "ACGTACGT",
+            "set_001",
+            "sample_a",
+            "2024-01-01T00:00:00Z",
+            adjusted_taxid=12345,
+            adjusted_taxid_name="Test virus",
+            adjusted_taxid_rank="species",
+        )
+        write_hits_parquet([record], "sample_a", "set_001", temp_state_dir)
+
+        hit = get_hit(record.hit_key, temp_state_dir)
+
+        assert hit is not None
+        assert hit.top_taxid == 12345
+        assert hit.top_taxid_name == "Test virus"
+        assert hit.top_taxid_rank == "species"
+
+    def test_single_observation_without_classification(self, temp_state_dir):
+        """Hit without classification returns None for all classification fields."""
+        record = make_hit_record(
+            "ACGTACGT",
+            "set_001",
+            "sample_a",
+            "2024-01-01T00:00:00Z",
+        )
+        write_hits_parquet([record], "sample_a", "set_001", temp_state_dir)
+
+        hit = get_hit(record.hit_key, temp_state_dir)
+
+        assert hit is not None
+        assert hit.top_taxid is None
+        assert hit.top_taxid_name is None
+        assert hit.top_taxid_rank is None
+
+    def test_multiple_observations_returns_most_recent_classification(
+        self, temp_state_dir
+    ):
+        """Most recent classification is returned when multiple observations exist."""
+        # Older observation with taxid=111
+        older = make_hit_record(
+            "ACGTACGT",
+            "set_001",
+            "sample_a",
+            "2024-01-01T00:00:00Z",
+            adjusted_taxid=111,
+            adjusted_taxid_name="Old virus",
+            adjusted_taxid_rank="genus",
+        )
+        # Newer observation with taxid=222
+        newer = make_hit_record(
+            "ACGTACGT",
+            "set_001",
+            "sample_b",
+            "2024-06-01T00:00:00Z",
+            adjusted_taxid=222,
+            adjusted_taxid_name="New virus",
+            adjusted_taxid_rank="species",
+        )
+        write_hits_parquet([older, newer], "sample_a", "set_001", temp_state_dir)
+
+        hit = get_hit(older.hit_key, temp_state_dir)
+
+        assert hit is not None
+        assert hit.top_taxid == 222
+        assert hit.top_taxid_name == "New virus"
+        assert hit.top_taxid_rank == "species"
+
+    def test_most_recent_null_falls_back_to_older_classification(self, temp_state_dir):
+        """Falls back to older classification when most recent is NULL."""
+        # Older observation with classification
+        older = make_hit_record(
+            "ACGTACGT",
+            "set_001",
+            "sample_a",
+            "2024-01-01T00:00:00Z",
+            adjusted_taxid=111,
+            adjusted_taxid_name="Old virus",
+            adjusted_taxid_rank="genus",
+        )
+        # Newer observation without classification
+        newer = make_hit_record(
+            "ACGTACGT",
+            "set_001",
+            "sample_b",
+            "2024-06-01T00:00:00Z",
+        )
+        write_hits_parquet([older, newer], "sample_a", "set_001", temp_state_dir)
+
+        hit = get_hit(older.hit_key, temp_state_dir)
+
+        assert hit is not None
+        # Should fall back to the older classification since newer is NULL
+        assert hit.top_taxid == 111
+        assert hit.top_taxid_name == "Old virus"
+        assert hit.top_taxid_rank == "genus"
+
+    def test_all_observations_null_classification(self, temp_state_dir):
+        """All NULL classifications result in None."""
+        records = [
+            make_hit_record("ACGTACGT", "set_001", "sample_a", "2024-01-01T00:00:00Z"),
+            make_hit_record("ACGTACGT", "set_001", "sample_b", "2024-06-01T00:00:00Z"),
+        ]
+        write_hits_parquet(records, "sample_a", "set_001", temp_state_dir)
+
+        hit = get_hit(records[0].hit_key, temp_state_dir)
+
+        assert hit is not None
+        assert hit.top_taxid is None
+        assert hit.top_taxid_name is None
+        assert hit.top_taxid_rank is None
+
+    def test_first_seen_date_independent_of_classification(self, temp_state_dir):
+        """first_seen_date is MIN(run_date), not tied to classification."""
+        # Older observation without classification
+        older = make_hit_record(
+            "ACGTACGT",
+            "set_001",
+            "sample_a",
+            "2024-01-01T00:00:00Z",
+        )
+        # Newer observation with classification
+        newer = make_hit_record(
+            "ACGTACGT",
+            "set_001",
+            "sample_b",
+            "2024-06-01T00:00:00Z",
+            adjusted_taxid=222,
+            adjusted_taxid_name="New virus",
+            adjusted_taxid_rank="species",
+        )
+        write_hits_parquet([older, newer], "sample_a", "set_001", temp_state_dir)
+
+        hit = get_hit(older.hit_key, temp_state_dir)
+
+        assert hit is not None
+        # first_seen_date should be the older date (full ISO format)
+        assert hit.first_seen_date == "2024-01-01T00:00:00Z"
+        # But classification should be from the newer observation
+        assert hit.top_taxid == 222
+
+
 class TestListHits:
     """Tests for list_hits()."""
 
@@ -314,6 +482,105 @@ class TestListHits:
         assert hits[0].first_seen_date == "2024-01-03T00:00:00Z"
         assert hits[1].first_seen_date == "2024-01-02T00:00:00Z"
         assert hits[2].first_seen_date == "2024-01-01T00:00:00Z"
+
+
+class TestListHitsClassification:
+    """Tests for classification fields in list_hits().
+
+    The list_hits() function returns classification from the most recent
+    observation with non-null adjusted_taxid for each hit.
+    """
+
+    def test_returns_most_recent_classification_per_hit(self, temp_state_dir):
+        """Each hit in list has its most recent non-null classification."""
+        # Hit 1: two observations, newer has classification
+        hit1_old = make_hit_record(
+            "AAACCC",
+            "set_001",
+            "sample_a",
+            "2024-01-01T00:00:00Z",
+        )
+        hit1_new = make_hit_record(
+            "AAACCC",
+            "set_001",
+            "sample_b",
+            "2024-06-01T00:00:00Z",
+            adjusted_taxid=111,
+            adjusted_taxid_name="Virus A",
+            adjusted_taxid_rank="species",
+        )
+        # Hit 2: single observation with classification
+        hit2 = make_hit_record(
+            "AAAGGG",
+            "set_001",
+            "sample_a",
+            "2024-03-01T00:00:00Z",
+            adjusted_taxid=222,
+            adjusted_taxid_name="Virus B",
+            adjusted_taxid_rank="genus",
+        )
+        write_hits_parquet(
+            [hit1_old, hit1_new, hit2], "sample_a", "set_001", temp_state_dir
+        )
+
+        hits = list_hits(state_dir=temp_state_dir)
+
+        assert len(hits) == 2
+        # Find each hit by key
+        hit1 = next(h for h in hits if h.hit_key == hit1_old.hit_key)
+        hit2_result = next(h for h in hits if h.hit_key == hit2.hit_key)
+
+        assert hit1.top_taxid == 111
+        assert hit1.top_taxid_name == "Virus A"
+        assert hit2_result.top_taxid == 222
+        assert hit2_result.top_taxid_name == "Virus B"
+
+    def test_hit_without_classification_has_none(self, temp_state_dir):
+        """Hits without any classified observations have None for classification."""
+        record = make_hit_record(
+            "AAACCC",
+            "set_001",
+            "sample_a",
+            "2024-01-01T00:00:00Z",
+        )
+        write_hits_parquet([record], "sample_a", "set_001", temp_state_dir)
+
+        hits = list_hits(state_dir=temp_state_dir)
+
+        assert len(hits) == 1
+        assert hits[0].top_taxid is None
+        assert hits[0].top_taxid_name is None
+        assert hits[0].top_taxid_rank is None
+
+    def test_mixed_classified_and_unclassified_hits(self, temp_state_dir):
+        """List correctly handles mix of classified and unclassified hits."""
+        classified = make_hit_record(
+            "AAACCC",
+            "set_001",
+            "sample_a",
+            "2024-01-01T00:00:00Z",
+            adjusted_taxid=111,
+            adjusted_taxid_name="Virus A",
+            adjusted_taxid_rank="species",
+        )
+        unclassified = make_hit_record(
+            "AAAGGG",
+            "set_001",
+            "sample_a",
+            "2024-01-02T00:00:00Z",
+        )
+        write_hits_parquet(
+            [classified, unclassified], "sample_a", "set_001", temp_state_dir
+        )
+
+        hits = list_hits(state_dir=temp_state_dir)
+
+        assert len(hits) == 2
+        classified_hit = next(h for h in hits if h.hit_key == classified.hit_key)
+        unclassified_hit = next(h for h in hits if h.hit_key == unclassified.hit_key)
+
+        assert classified_hit.top_taxid == 111
+        assert unclassified_hit.top_taxid is None
 
 
 class TestListHitObservations:
@@ -553,6 +820,106 @@ class TestListHitsWithObservations:
         result = list_hits_with_observations(limit=2, state_dir=temp_state_dir)
 
         assert len(result) == 2
+
+
+class TestListHitsWithObservationsClassification:
+    """Tests for per-observation classification in list_hits_with_observations().
+
+    Unlike get_hit() and list_hits() which return the most recent classification,
+    list_hits_with_observations() returns the classification from each specific
+    observation. This is the per-observation semantic, not aggregated.
+    """
+
+    def test_returns_observation_specific_classification(self, temp_state_dir):
+        """Each tuple has classification from that specific observation."""
+        # Two observations with different classifications
+        obs1 = make_hit_record(
+            "AAACCC",
+            "set_001",
+            "sample_a",
+            "2024-01-01T00:00:00Z",
+            adjusted_taxid=111,
+            adjusted_taxid_name="Virus A",
+            adjusted_taxid_rank="species",
+        )
+        obs2 = make_hit_record(
+            "AAACCC",
+            "set_001",
+            "sample_b",
+            "2024-06-01T00:00:00Z",
+            adjusted_taxid=222,
+            adjusted_taxid_name="Virus B",
+            adjusted_taxid_rank="genus",
+        )
+        write_hits_parquet([obs1, obs2], "sample_a", "set_001", temp_state_dir)
+
+        result = list_hits_with_observations(state_dir=temp_state_dir)
+
+        assert len(result) == 2
+
+        # Find each observation by sample_id
+        result_a = next((h, o) for h, o in result if o.sample_id == "sample_a")
+        result_b = next((h, o) for h, o in result if o.sample_id == "sample_b")
+
+        # Each Hit should have the classification from its specific observation
+        assert result_a[0].top_taxid == 111
+        assert result_a[0].top_taxid_name == "Virus A"
+        assert result_a[0].top_taxid_rank == "species"
+
+        assert result_b[0].top_taxid == 222
+        assert result_b[0].top_taxid_name == "Virus B"
+        assert result_b[0].top_taxid_rank == "genus"
+
+    def test_null_classification_preserved(self, temp_state_dir):
+        """Observations without classification have None in the Hit."""
+        record = make_hit_record(
+            "AAACCC",
+            "set_001",
+            "sample_a",
+            "2024-01-01T00:00:00Z",
+        )
+        write_hits_parquet([record], "sample_a", "set_001", temp_state_dir)
+
+        result = list_hits_with_observations(state_dir=temp_state_dir)
+
+        assert len(result) == 1
+        hit, obs = result[0]
+        assert hit.top_taxid is None
+        assert hit.top_taxid_name is None
+        assert hit.top_taxid_rank is None
+
+    def test_mixed_classified_and_unclassified_observations(self, temp_state_dir):
+        """Mix of classified and unclassified observations handled correctly."""
+        classified = make_hit_record(
+            "AAACCC",
+            "set_001",
+            "sample_a",
+            "2024-01-01T00:00:00Z",
+            adjusted_taxid=111,
+            adjusted_taxid_name="Virus A",
+            adjusted_taxid_rank="species",
+        )
+        unclassified = make_hit_record(
+            "AAACCC",
+            "set_001",
+            "sample_b",
+            "2024-06-01T00:00:00Z",
+        )
+        write_hits_parquet(
+            [classified, unclassified], "sample_a", "set_001", temp_state_dir
+        )
+
+        result = list_hits_with_observations(state_dir=temp_state_dir)
+
+        assert len(result) == 2
+
+        result_a = next((h, o) for h, o in result if o.sample_id == "sample_a")
+        result_b = next((h, o) for h, o in result if o.sample_id == "sample_b")
+
+        # sample_a observation has classification
+        assert result_a[0].top_taxid == 111
+        # sample_b observation does not
+        assert result_b[0].top_taxid is None
 
 
 class TestDeleteSampleHits:
@@ -1079,6 +1446,180 @@ class TestGetRecurringHits:
         assert len(result) == 1
         assert result[0].sequence_length == 8
         assert result[0].gc_content == 1.0
+
+
+class TestRecurringHitsClassification:
+    """Tests for MODE() classification logic in get_recurring_hits().
+
+    The get_recurring_hits() function uses MODE(adjusted_taxid) to find
+    the most common classification across all observations of each hit.
+    """
+
+    def test_mode_returns_most_common_classification(self, temp_state_dir):
+        """MODE() returns the most frequent classification."""
+        # 2 observations with taxid=111, 1 with taxid=222
+        records = [
+            make_hit_record(
+                "AAACCC",
+                "run_001",
+                "sample_a",
+                "2024-01-01T00:00:00Z",
+                adjusted_taxid=111,
+                adjusted_taxid_name="Virus A",
+                adjusted_taxid_rank="species",
+            ),
+            make_hit_record(
+                "AAACCC",
+                "run_001",
+                "sample_b",
+                "2024-01-02T00:00:00Z",
+                adjusted_taxid=111,
+                adjusted_taxid_name="Virus A",
+                adjusted_taxid_rank="species",
+            ),
+            make_hit_record(
+                "AAACCC",
+                "run_001",
+                "sample_c",
+                "2024-01-03T00:00:00Z",
+                adjusted_taxid=222,
+                adjusted_taxid_name="Virus B",
+                adjusted_taxid_rank="genus",
+            ),
+        ]
+        write_hits_parquet(records, "sample_a", "run_001", temp_state_dir)
+
+        result = get_recurring_hits(min_samples=2, state_dir=temp_state_dir)
+
+        assert len(result) == 1
+        # MODE should return 111 (appears twice vs once for 222)
+        assert result[0].top_taxid == 111
+        assert result[0].top_taxid_name == "Virus A"
+        assert result[0].top_taxid_rank == "species"
+
+    def test_mode_ignores_null_classifications(self, temp_state_dir):
+        """MODE() ignores NULL values when computing most common."""
+        # 2 NULL, 1 with taxid=111
+        records = [
+            make_hit_record(
+                "AAACCC",
+                "run_001",
+                "sample_a",
+                "2024-01-01T00:00:00Z",
+            ),
+            make_hit_record(
+                "AAACCC",
+                "run_001",
+                "sample_b",
+                "2024-01-02T00:00:00Z",
+            ),
+            make_hit_record(
+                "AAACCC",
+                "run_001",
+                "sample_c",
+                "2024-01-03T00:00:00Z",
+                adjusted_taxid=111,
+                adjusted_taxid_name="Virus A",
+                adjusted_taxid_rank="species",
+            ),
+        ]
+        write_hits_parquet(records, "sample_a", "run_001", temp_state_dir)
+
+        result = get_recurring_hits(min_samples=2, state_dir=temp_state_dir)
+
+        assert len(result) == 1
+        # MODE should return 111 (the only non-NULL value)
+        assert result[0].top_taxid == 111
+        assert result[0].top_taxid_name == "Virus A"
+        assert result[0].top_taxid_rank == "species"
+
+    def test_all_null_classifications_returns_none(self, temp_state_dir):
+        """All NULL classifications result in None."""
+        records = [
+            make_hit_record("AAACCC", "run_001", "sample_a", "2024-01-01T00:00:00Z"),
+            make_hit_record("AAACCC", "run_001", "sample_b", "2024-01-02T00:00:00Z"),
+        ]
+        write_hits_parquet(records, "sample_a", "run_001", temp_state_dir)
+
+        result = get_recurring_hits(min_samples=2, state_dir=temp_state_dir)
+
+        assert len(result) == 1
+        assert result[0].top_taxid is None
+        assert result[0].top_taxid_name is None
+        assert result[0].top_taxid_rank is None
+
+    def test_uniform_classification_returns_that_classification(self, temp_state_dir):
+        """When all observations have same classification, returns that classification."""
+        records = [
+            make_hit_record(
+                "AAACCC",
+                "run_001",
+                "sample_a",
+                "2024-01-01T00:00:00Z",
+                adjusted_taxid=111,
+                adjusted_taxid_name="Virus A",
+                adjusted_taxid_rank="species",
+            ),
+            make_hit_record(
+                "AAACCC",
+                "run_001",
+                "sample_b",
+                "2024-01-02T00:00:00Z",
+                adjusted_taxid=111,
+                adjusted_taxid_name="Virus A",
+                adjusted_taxid_rank="species",
+            ),
+        ]
+        write_hits_parquet(records, "sample_a", "run_001", temp_state_dir)
+
+        result = get_recurring_hits(min_samples=2, state_dir=temp_state_dir)
+
+        assert len(result) == 1
+        assert result[0].top_taxid == 111
+        assert result[0].top_taxid_name == "Virus A"
+        assert result[0].top_taxid_rank == "species"
+
+    def test_classification_name_and_rank_match_modal_taxid(self, temp_state_dir):
+        """top_taxid_name and top_taxid_rank correspond to the MODE taxid."""
+        # Create observations where the modal taxid has specific name/rank
+        records = [
+            make_hit_record(
+                "AAACCC",
+                "run_001",
+                "sample_a",
+                "2024-01-01T00:00:00Z",
+                adjusted_taxid=111,
+                adjusted_taxid_name="Virus A",
+                adjusted_taxid_rank="species",
+            ),
+            make_hit_record(
+                "AAACCC",
+                "run_001",
+                "sample_b",
+                "2024-01-02T00:00:00Z",
+                adjusted_taxid=111,
+                adjusted_taxid_name="Virus A",
+                adjusted_taxid_rank="species",
+            ),
+            make_hit_record(
+                "AAACCC",
+                "run_001",
+                "sample_c",
+                "2024-01-03T00:00:00Z",
+                adjusted_taxid=222,
+                adjusted_taxid_name="Virus B",
+                adjusted_taxid_rank="genus",
+            ),
+        ]
+        write_hits_parquet(records, "sample_a", "run_001", temp_state_dir)
+
+        result = get_recurring_hits(min_samples=2, state_dir=temp_state_dir)
+
+        assert len(result) == 1
+        # Verify name/rank match the modal taxid (111), not the minority (222)
+        assert result[0].top_taxid == 111
+        assert result[0].top_taxid_name == "Virus A"
+        assert result[0].top_taxid_rank == "species"
 
 
 class TestGetDiscoveryTimeline:
