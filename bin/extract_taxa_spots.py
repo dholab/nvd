@@ -188,6 +188,11 @@ def parse_command_line_args() -> argparse.Namespace:
         default=None,
         help="State directory containing taxonomy cache (default: NVD_STATE_DIR or ~/.nvd/)",
     )
+    parser.add_argument(
+        "--sync",
+        action="store_true",
+        help="Require pre-cached taxonomy database (fail if unavailable)",
+    )
 
     return parser.parse_args()
 
@@ -199,10 +204,11 @@ def execute(
     stringency: float,
     include_children: bool,
     state_dir: str | None = None,
+    sync: bool = False,
 ) -> None:
     """Execute the taxa filtering pipeline."""
     try:
-        with taxonomy.open(state_dir=state_dir) as tax:
+        with taxonomy.open(state_dir=state_dir, sync=sync) as tax:
             resolved_taxa = resolve_taxa(taxa, tax)
             if not resolved_taxa:
                 logger.error("No valid taxa specified. Exiting.")
@@ -259,6 +265,7 @@ def main() -> None:
         stringency=args.stringency,
         include_children=args.include_children,
         state_dir=args.state_dir,
+        sync=args.sync,
     )
 
 

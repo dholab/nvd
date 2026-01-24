@@ -24,6 +24,12 @@ Each sample's hits are stored in a Hive-partitioned structure:
 The month=NULL partition holds uncompacted data. After running `nvd hits compact`,
 data moves to month=YYYY-MM partitions for better query performance.
 
+Graceful Degradation:
+    By default, if the state database is unavailable for marking samples as
+    completed or releasing locks, this script will warn and continue. The
+    parquet file (the critical output) is still written. Use --sync to require
+    state database operations and fail if unavailable.
+
 Usage:
     register_hits.py --contigs contigs.fasta --blast-results merged.tsv \\
         --state-dir /path/to/state --sample-set-id abc123 --sample-id sample_a \\
@@ -43,6 +49,7 @@ from pathlib import Path
 import polars as pl
 from Bio import SeqIO
 from loguru import logger
+from py_nvd.db import format_state_warning, get_state_db_path, StateUnavailableError
 from py_nvd.hits import (
     HitRecord,
     calculate_gc_content,
@@ -381,6 +388,11 @@ def main() -> None:
         help="Write parquet to this path instead of state directory (for Nextflow publishDir)",
     )
     parser.add_argument(
+        "--sync",
+        action="store_true",
+        help="Require state database synchronization (fail if unavailable)",
+    )
+    parser.add_argument(
         "-v",
         "--verbose",
         action="count",
@@ -461,9 +473,30 @@ def main() -> None:
         )
         logger.info(f"Marked sample {context.sample_id} as completed in state database")
     except Exception as e:
-        # Log but don't fail - hits are registered, that's the critical part
+        db_path = get_state_db_path(context.state_dir)
+        if args.sync:
+            raise StateUnavailableError(
+                db_path=db_path,
+                operation="Marking sample as completed",
+                reason=str(e),
+                original_error=e,
+            ) from e
+
+        # Graceful degradation: warn but don't fail
+        # Hits are registered (parquet written), that's the critical part
         # State tracking is for resume/upload gating, not data integrity
-        logger.warning(f"Failed to mark sample completed (non-fatal): {e}")
+        warning = format_state_warning(
+            operation="Marking sample as completed",
+            context=f"Sample '{context.sample_id}' in run '{args.run_id}'",
+            error=e,
+            db_path=db_path,
+            consequences=[
+                "Sample completion status NOT recorded",
+                "Sample may be re-processed on pipeline resume",
+                "Upload gating may not work correctly",
+            ],
+        )
+        logger.warning(warning)
 
     # Release sample lock if LabKey is disabled
     # When LabKey is enabled, locks are released after successful upload
@@ -479,7 +512,28 @@ def main() -> None:
             else:
                 logger.debug(f"No lock to release for sample {context.sample_id}")
         except Exception as e:
-            logger.warning(f"Failed to release sample lock (non-fatal): {e}")
+            db_path = get_state_db_path(context.state_dir)
+            if args.sync:
+                raise StateUnavailableError(
+                    db_path=db_path,
+                    operation="Releasing sample lock",
+                    reason=str(e),
+                    original_error=e,
+                ) from e
+
+            # Graceful degradation: warn but don't fail
+            warning = format_state_warning(
+                operation="Releasing sample lock",
+                context=f"Sample '{context.sample_id}' in run '{args.run_id}'",
+                error=e,
+                db_path=db_path,
+                consequences=[
+                    "Sample lock NOT released",
+                    "Lock will expire after TTL (default: 72 hours)",
+                    "Other runs may be blocked from processing this sample",
+                ],
+            )
+            logger.warning(warning)
 
 
 if __name__ == "__main__":

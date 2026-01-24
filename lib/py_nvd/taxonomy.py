@@ -23,17 +23,19 @@ from __future__ import annotations
 import builtins
 import os
 import sqlite3
+import sys
 import tarfile
 import urllib.request
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import taxopy
 import taxopy.utilities
 from taxopy.exceptions import TaxidError
 
-from py_nvd.db import get_taxdump_dir
+from py_nvd.db import ResourceUnavailableError, get_taxdump_dir
 from py_nvd.models import Taxon
 
 # Save builtin open before we shadow it with our context manager
@@ -41,7 +43,6 @@ _open = builtins.open
 
 if TYPE_CHECKING:
     from collections.abc import Generator
-    from pathlib import Path
 
 # NCBI taxdump URL and configuration
 TAXDUMP_URL = "https://ftp.ncbi.nlm.nih.gov/pub/taxonomy/taxdump.tar.gz"
@@ -444,10 +445,157 @@ class TaxonomyOfflineError(Exception):
     """Raised when taxonomy database is unavailable in offline mode."""
 
 
+class TaxonomyUnavailableError(ResourceUnavailableError):
+    """
+    Raised when taxonomy database is unavailable and --sync was requested.
+
+    This error indicates that the taxonomy database could not be accessed
+    (due to download failures, permission errors, corruption, etc.) and the
+    user explicitly requested synchronization via --sync.
+
+    Without --sync, this condition results in a warning and the script
+    attempting a lazy download instead of failing.
+
+    Attributes:
+        taxdump_dir: Path to the taxdump directory
+        operation: What operation was being attempted
+        reason: Human-readable explanation of why taxonomy is unavailable
+        original_error: The underlying exception that caused the failure
+    """
+
+    resource_type = "Taxonomy database"
+    recovery_hint = "remove --sync (may fetch latest taxonomy)"
+
+    def __init__(
+        self,
+        taxdump_dir: Path | str,
+        operation: str,
+        reason: str,
+        original_error: Exception | None = None,
+    ):
+        super().__init__(
+            resource_path=taxdump_dir,
+            operation=operation,
+            reason=reason,
+            original_error=original_error,
+        )
+
+    @property
+    def taxdump_dir(self) -> Path:
+        """Alias for resource_path for backward compatibility."""
+        return self.resource_path
+
+
+def format_taxonomy_warning(
+    *,
+    operation: str,
+    context: str,
+    error: Exception | None,
+    taxdump_dir: Path | str,
+    will_download: bool = True,
+) -> str:
+    """
+    Format a detailed warning message for taxonomy database issues.
+
+    This produces a "wide event" style warning with full context about what
+    was being attempted, what went wrong, and what will happen next.
+
+    Args:
+        operation: Short description of the operation (e.g., "Loading taxonomy")
+        context: Detailed context about what was being done
+        error: The exception that occurred (if any)
+        taxdump_dir: Path to the taxdump directory
+        will_download: Whether a fresh download will be attempted
+
+    Returns:
+        Formatted multi-line warning string suitable for logging
+    """
+    # Validate inputs
+    assert operation, "operation must not be empty"
+    assert context, "context must not be empty"
+
+    # Determine error details
+    if error is not None:
+        error_type = type(error).__name__
+        error_msg = str(error)
+
+        # Provide more helpful explanations for common errors
+        if isinstance(error, PermissionError):
+            explanation = (
+                "The taxonomy directory or files are not readable/writable "
+                "by the current user."
+            )
+        elif isinstance(error, sqlite3.DatabaseError):
+            explanation = (
+                "The taxonomy.sqlite file appears to be corrupted or is not "
+                "a valid SQLite database."
+            )
+        elif isinstance(error, (OSError, IOError)) and "readonly" in str(error).lower():
+            explanation = "The taxonomy directory is on a read-only filesystem."
+        elif isinstance(error, urllib.request.URLError):
+            explanation = "Failed to download taxonomy data from NCBI (network error)."
+        elif isinstance(error, TaxonomyOfflineError):
+            explanation = (
+                "Taxonomy database not found and offline mode is enabled. "
+                "The database must be pre-downloaded."
+            )
+        else:
+            explanation = "An unexpected error occurred while accessing taxonomy data."
+
+        error_section = f"""
+Error:
+  Type: {error_type}
+  Message: {error_msg}
+  Explanation: {explanation}
+"""
+    else:
+        error_section = """
+Issue:
+  The pre-cached taxonomy database was not found or is stale.
+"""
+
+    if will_download:
+        consequence = """
+Consequence:
+  Attempting to download fresh taxonomy data from NCBI.
+  WARNING: The latest NCBI taxonomy may include changes that affect results:
+    - Taxids may have been merged or deprecated
+    - Taxonomic classifications may have changed
+    - New taxa may have been added
+  For reproducible results, use 'nvd taxonomy ensure' before running the pipeline.
+"""
+    else:
+        consequence = """
+Consequence:
+  Cannot proceed without taxonomy data.
+  The --sync flag requires pre-cached taxonomy to be available.
+"""
+
+    return f"""
+================================================================================
+WARNING: TAXONOMY DATABASE ISSUE
+================================================================================
+
+Context:
+  Operation: {operation}
+  Details: {context}
+  Taxdump directory: {taxdump_dir}
+{error_section}{consequence}
+Resolution:
+  To pre-download taxonomy: nvd taxonomy ensure
+  To require pre-cached taxonomy (fail if unavailable): add --sync to the command
+
+================================================================================
+""".strip()
+
+
 @contextmanager
 def open(  # noqa: A001
     state_dir: Path | str | None = None,
     offline: bool | None = None,
+    *,
+    sync: bool = False,
+    warn_callback: callable | None = None,
 ) -> Generator[TaxonomyDB, None, None]:
     """
     Context manager for taxonomy database access.
@@ -462,9 +610,16 @@ def open(  # noqa: A001
         offline: If True, never attempt to download taxonomy data.
                  If None (default), checks NVD_TAXONOMY_OFFLINE env var.
                  Set to True for air-gapped environments with pre-cached data.
+        sync: If True, require pre-cached taxonomy and fail if unavailable.
+              If False (default), attempt lazy download with a warning if
+              pre-cached taxonomy is missing or stale.
+        warn_callback: Optional callback function to receive warning messages.
+                       If None, warnings are printed to stderr. The callback
+                       should accept a single string argument.
 
     Raises:
         TaxonomyOfflineError: If offline=True and no cached taxonomy exists.
+        TaxonomyUnavailableError: If sync=True and taxonomy cannot be loaded.
 
     Usage:
         with taxonomy.open() as tax:
@@ -482,7 +637,19 @@ def open(  # noqa: A001
         with taxonomy.open(offline=True) as tax:
             # Uses cached data only, never downloads
             taxon = tax.get_taxon(9606)
+
+        # Sync mode (require pre-cached taxonomy)
+        with taxonomy.open(sync=True) as tax:
+            # Fails if taxonomy not pre-cached
+            taxon = tax.get_taxon(9606)
     """
+
+    def emit_warning(msg: str) -> None:
+        if warn_callback is not None:
+            warn_callback(msg)
+        else:
+            print(msg, file=sys.stderr)
+
     # Resolve offline mode from env var if not explicitly set
     if offline is None:
         offline = os.environ.get("NVD_TAXONOMY_OFFLINE", "").lower() in ("1", "true")
@@ -502,15 +669,86 @@ def open(  # noqa: A001
                 f"launching distributed jobs."
             )
     else:
-        # Normal mode: download if stale
-        taxdump_dir = _ensure_taxdump(state_dir)
-        sqlite_path = taxdump_dir / "taxonomy.sqlite"
+        # Check if we need to download/rebuild
+        needs_download = _is_taxdump_stale(taxdump_dir)
+        needs_rebuild = not sqlite_path.exists()
+
+        if needs_download or needs_rebuild:
+            if sync:
+                # Sync mode: fail if taxonomy not ready
+                if needs_download:
+                    reason = "Taxonomy data is missing or stale (>30 days old)"
+                else:
+                    reason = "taxonomy.sqlite not found (needs rebuild from .dmp files)"
+                raise TaxonomyUnavailableError(
+                    taxdump_dir=taxdump_dir,
+                    operation="Loading taxonomy database",
+                    reason=reason,
+                )
+            else:
+                # Graceful mode: warn and attempt download
+                if needs_download:
+                    context = "Pre-cached taxonomy is missing or stale"
+                else:
+                    context = "taxonomy.sqlite needs to be rebuilt from .dmp files"
+
+                warning = format_taxonomy_warning(
+                    operation="Loading taxonomy database",
+                    context=context,
+                    error=None,
+                    taxdump_dir=taxdump_dir,
+                    will_download=True,
+                )
+                emit_warning(warning)
+
+        # Attempt to ensure taxonomy is available (download if needed)
+        try:
+            taxdump_dir = _ensure_taxdump(state_dir)
+            sqlite_path = taxdump_dir / "taxonomy.sqlite"
+        except Exception as e:
+            if sync:
+                raise TaxonomyUnavailableError(
+                    taxdump_dir=taxdump_dir,
+                    operation="Downloading/building taxonomy database",
+                    reason=str(e),
+                    original_error=e,
+                ) from e
+            else:
+                # Even in graceful mode, we can't proceed without taxonomy
+                warning = format_taxonomy_warning(
+                    operation="Downloading/building taxonomy database",
+                    context="Failed to download or build taxonomy database",
+                    error=e,
+                    taxdump_dir=taxdump_dir,
+                    will_download=False,
+                )
+                emit_warning(warning)
+                raise
 
     # Open in read-only mode to avoid "unable to write to readonly database" errors
     # on distributed workers where the state directory may be read-only.
     # URI mode with ?mode=ro tells SQLite not to acquire write locks or create journals.
-    conn = sqlite3.connect(f"file:{sqlite_path}?mode=ro", uri=True, timeout=30.0)
-    conn.row_factory = sqlite3.Row
+    try:
+        conn = sqlite3.connect(f"file:{sqlite_path}?mode=ro", uri=True, timeout=30.0)
+        conn.row_factory = sqlite3.Row
+    except Exception as e:
+        if sync:
+            raise TaxonomyUnavailableError(
+                taxdump_dir=taxdump_dir,
+                operation="Opening taxonomy database",
+                reason=str(e),
+                original_error=e,
+            ) from e
+        else:
+            warning = format_taxonomy_warning(
+                operation="Opening taxonomy database",
+                context=f"Failed to open {sqlite_path}",
+                error=e,
+                taxdump_dir=taxdump_dir,
+                will_download=False,
+            )
+            emit_warning(warning)
+            raise
 
     try:
         yield TaxonomyDB(conn, taxdump_dir)

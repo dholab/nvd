@@ -97,6 +97,188 @@ class SchemaMismatchError(Exception):
         )
 
 
+class ResourceUnavailableError(Exception):
+    """
+    Base class for errors when a required resource is unavailable.
+
+    This is the parent class for StateUnavailableError and TaxonomyUnavailableError.
+    It provides a common interface for errors that occur when --sync is requested
+    but the underlying resource (database, taxonomy, etc.) cannot be accessed.
+
+    Attributes:
+        resource_path: Path to the resource (database file, directory, etc.)
+        operation: What operation was being attempted
+        reason: Human-readable explanation of why the resource is unavailable
+        original_error: The underlying exception that caused the failure
+    """
+
+    # Subclasses should override these
+    resource_type: str = "Resource"
+    recovery_hint: str = "remove the --sync flag"
+
+    def __init__(
+        self,
+        resource_path: Path | str,
+        operation: str,
+        reason: str,
+        original_error: Exception | None = None,
+    ):
+        self.resource_path = (
+            Path(resource_path) if isinstance(resource_path, str) else resource_path
+        )
+        self.operation = operation
+        self.reason = reason
+        self.original_error = original_error
+        super().__init__(
+            f"{self.resource_type} unavailable during '{operation}': {reason}\n"
+            f"Path: {resource_path}\n"
+            f"The --sync flag requires this resource to be available.\n"
+            f"To continue without it, {self.recovery_hint}."
+        )
+
+
+class StateUnavailableError(ResourceUnavailableError):
+    """
+    Raised when the state database is unavailable and --sync was requested.
+
+    This error indicates that the state database could not be accessed (due to
+    permission errors, corruption, missing files, etc.) and the user explicitly
+    requested synchronization with the coordination system via --sync.
+
+    Without --sync, this condition results in a warning and graceful degradation
+    instead of an exception.
+
+    Attributes:
+        db_path: Path to the database file (or intended path)
+        operation: What operation was being attempted
+        reason: Human-readable explanation of why the database is unavailable
+        original_error: The underlying exception that caused the failure
+    """
+
+    resource_type = "State database"
+    recovery_hint = "remove the --sync flag"
+
+    def __init__(
+        self,
+        db_path: Path | str,
+        operation: str,
+        reason: str,
+        original_error: Exception | None = None,
+    ):
+        super().__init__(
+            resource_path=db_path,
+            operation=operation,
+            reason=reason,
+            original_error=original_error,
+        )
+
+    @property
+    def db_path(self) -> Path:
+        """Alias for resource_path for backward compatibility."""
+        return self.resource_path
+
+
+def format_state_warning(
+    *,
+    operation: str,
+    context: str,
+    error: Exception,
+    db_path: Path | str,
+    consequences: list[str],
+) -> str:
+    """
+    Format a detailed warning message for state database unavailability.
+
+    This produces a "wide event" style warning with full context about what
+    was being attempted, what went wrong, and what the consequences are.
+
+    Args:
+        operation: Short description of the operation (e.g., "Registering run")
+        context: Detailed context about what was being done
+        error: The exception that occurred
+        db_path: Path to the state database
+        consequences: List of consequences of continuing without state
+
+    Returns:
+        Formatted multi-line warning string suitable for logging
+
+    Example:
+        >>> warning = format_state_warning(
+        ...     operation="Registering run",
+        ...     context="Run 'friendly_turing' with 12 samples (sample_set_id: abc123)",
+        ...     error=PermissionError("Permission denied"),
+        ...     db_path=Path("/home/user/.nvd/state.sqlite"),
+        ...     consequences=[
+        ...         "Duplicate detection DISABLED",
+        ...         "Sample locking DISABLED",
+        ...     ],
+        ... )
+    """
+    # Validate inputs
+    assert operation, "operation must not be empty"
+    assert context, "context must not be empty"
+    assert consequences, "consequences must not be empty"
+
+    # Determine error type and provide helpful explanation
+    error_type = type(error).__name__
+    error_msg = str(error)
+
+    # Provide more helpful explanations for common errors
+    # Note: Order matters! OperationalError is a subclass of DatabaseError,
+    # so we must check for OperationalError first.
+    if isinstance(error, PermissionError):
+        explanation = (
+            "The database file exists but is not readable/writable by the current user."
+        )
+    elif isinstance(error, sqlite3.OperationalError):
+        if "readonly" in error_msg.lower():
+            explanation = "The database or its directory is on a read-only filesystem."
+        elif "locked" in error_msg.lower():
+            explanation = "The database is locked by another process."
+        else:
+            explanation = "A database operation failed unexpectedly."
+    elif isinstance(error, sqlite3.DatabaseError):
+        explanation = "The database file appears to be corrupted or is not a valid SQLite database."
+    elif isinstance(error, FileNotFoundError):
+        explanation = "The database file or its parent directory does not exist."
+    elif isinstance(error, SchemaMismatchError):
+        explanation = (
+            f"The database schema version ({error.current_version}) doesn't match "
+            f"the expected version ({error.expected_version})."
+        )
+    else:
+        explanation = "An unexpected error occurred while accessing the database."
+
+    # Build consequence lines
+    consequence_lines = "\n".join(f"  - {c}" for c in consequences)
+
+    return f"""
+================================================================================
+WARNING: STATE DATABASE UNAVAILABLE
+================================================================================
+
+Context:
+  Operation: {operation}
+  Details: {context}
+
+Error:
+  Type: {error_type}
+  Message: {error_msg}
+  Path: {db_path}
+  Explanation: {explanation}
+
+Consequence:
+  Continuing WITHOUT coordination. This means:
+{consequence_lines}
+
+Resolution:
+  To fix the underlying issue, check file permissions and database integrity.
+  To require coordination (fail instead of continuing), add --sync to the command.
+
+================================================================================
+""".strip()
+
+
 def get_config_path(explicit_path: Path | str | None = None) -> Path:
     """
     Resolve the NVD config file path using hierarchical fallback.

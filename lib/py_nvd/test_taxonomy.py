@@ -5,6 +5,7 @@ Uses minimal test fixtures to avoid downloading real NCBI data during tests.
 """
 
 import sqlite3
+import urllib.request
 from pathlib import Path
 
 import pytest
@@ -862,3 +863,275 @@ class TestTaxonomyDbEnvVar:
 
         # Verify taxonomy was NOT copied to user state
         assert not (user_state / "taxdump" / "taxonomy.sqlite").exists()
+
+
+class TestSyncMode:
+    """Tests for sync mode behavior (--sync flag)."""
+
+    def test_sync_mode_raises_when_taxonomy_missing(self, tmp_path):
+        """sync=True raises TaxonomyUnavailableError when no taxonomy exists."""
+        empty_dir = tmp_path / "empty"
+        empty_dir.mkdir()
+
+        with pytest.raises(taxonomy.TaxonomyUnavailableError) as exc_info:
+            with taxonomy.open(state_dir=empty_dir, sync=True):
+                pass
+
+        assert "missing or stale" in str(exc_info.value)
+        assert exc_info.value.operation == "Loading taxonomy database"
+
+    def test_sync_mode_raises_when_taxonomy_stale(self, minimal_taxdump, monkeypatch):
+        """sync=True raises TaxonomyUnavailableError when taxonomy is >30 days old."""
+        import os
+        import time
+
+        # Build SQLite first
+        taxonomy._build_sqlite_from_dmp(minimal_taxdump)
+
+        # Make nodes.dmp appear 31 days old
+        nodes_dmp = minimal_taxdump / "nodes.dmp"
+        old_time = time.time() - (31 * 24 * 60 * 60)
+        os.utime(nodes_dmp, (old_time, old_time))
+
+        with pytest.raises(taxonomy.TaxonomyUnavailableError) as exc_info:
+            with taxonomy.open(state_dir=minimal_taxdump.parent, sync=True):
+                pass
+
+        assert "missing or stale" in str(exc_info.value)
+
+    def test_sync_mode_raises_when_sqlite_missing(self, minimal_taxdump):
+        """sync=True raises TaxonomyUnavailableError when .dmp exists but SQLite doesn't."""
+        # Don't build SQLite - only .dmp files exist
+        sqlite_path = minimal_taxdump / "taxonomy.sqlite"
+        assert not sqlite_path.exists()
+
+        with pytest.raises(taxonomy.TaxonomyUnavailableError) as exc_info:
+            with taxonomy.open(state_dir=minimal_taxdump.parent, sync=True):
+                pass
+
+        assert "needs rebuild" in str(exc_info.value)
+
+    def test_sync_mode_succeeds_when_taxonomy_available(
+        self, minimal_taxdump, monkeypatch
+    ):
+        """sync=True succeeds when taxonomy is ready."""
+        taxonomy._build_sqlite_from_dmp(minimal_taxdump)
+        # Must patch get_taxdump_dir so the staleness check uses our test directory
+        monkeypatch.setattr(taxonomy, "get_taxdump_dir", lambda _=None: minimal_taxdump)
+        monkeypatch.setattr(taxonomy, "_ensure_taxdump", lambda _=None: minimal_taxdump)
+
+        # Should not raise
+        with taxonomy.open(sync=True) as tax:
+            taxon = tax.get_taxon(9606)
+            assert taxon is not None
+            assert taxon.scientific_name == "Homo sapiens"
+
+    def test_graceful_mode_warns_when_taxonomy_missing(
+        self, minimal_taxdump, monkeypatch
+    ):
+        """sync=False emits warning via callback when taxonomy needs download."""
+        # Don't build SQLite yet
+        sqlite_path = minimal_taxdump / "taxonomy.sqlite"
+        if sqlite_path.exists():
+            sqlite_path.unlink()
+
+        warnings_received = []
+
+        def capture_warning(msg):
+            warnings_received.append(msg)
+
+        # Patch _ensure_taxdump to build SQLite (simulating successful download)
+        def mock_ensure(state_dir=None):
+            taxonomy._build_sqlite_from_dmp(minimal_taxdump)
+            return minimal_taxdump
+
+        monkeypatch.setattr(taxonomy, "_ensure_taxdump", mock_ensure)
+        monkeypatch.setattr(taxonomy, "get_taxdump_dir", lambda _=None: minimal_taxdump)
+
+        with taxonomy.open(sync=False, warn_callback=capture_warning) as tax:
+            taxon = tax.get_taxon(9606)
+            assert taxon is not None
+
+        # Should have received a warning
+        assert len(warnings_received) == 1
+        assert "TAXONOMY DATABASE ISSUE" in warnings_received[0]
+
+    def test_warn_callback_receives_formatted_warning(
+        self, minimal_taxdump, monkeypatch
+    ):
+        """Verify the callback receives properly formatted warning."""
+        # Make taxonomy stale
+        import os
+        import time
+
+        nodes_dmp = minimal_taxdump / "nodes.dmp"
+        old_time = time.time() - (31 * 24 * 60 * 60)
+        os.utime(nodes_dmp, (old_time, old_time))
+
+        warnings_received = []
+
+        def capture_warning(msg):
+            warnings_received.append(msg)
+
+        # Patch to simulate successful download after warning
+        def mock_ensure(state_dir=None):
+            taxonomy._build_sqlite_from_dmp(minimal_taxdump)
+            return minimal_taxdump
+
+        monkeypatch.setattr(taxonomy, "_ensure_taxdump", mock_ensure)
+        monkeypatch.setattr(taxonomy, "get_taxdump_dir", lambda _=None: minimal_taxdump)
+
+        with taxonomy.open(sync=False, warn_callback=capture_warning) as tax:
+            pass
+
+        assert len(warnings_received) == 1
+        warning = warnings_received[0]
+        # Check warning structure
+        assert "Context:" in warning
+        assert "Operation:" in warning
+        assert "Consequence:" in warning
+        assert "Resolution:" in warning
+
+
+class TestTaxonomyUnavailableError:
+    """Tests for TaxonomyUnavailableError exception."""
+
+    def test_error_attributes(self, tmp_path):
+        """Verify exception has correct attributes."""
+        original = ValueError("original error")
+        error = taxonomy.TaxonomyUnavailableError(
+            taxdump_dir=tmp_path / "taxdump",
+            operation="test operation",
+            reason="test reason",
+            original_error=original,
+        )
+
+        assert error.taxdump_dir == tmp_path / "taxdump"
+        assert error.operation == "test operation"
+        assert error.reason == "test reason"
+        assert error.original_error is original
+
+    def test_error_attributes_with_string_path(self, tmp_path):
+        """Verify exception handles string path correctly."""
+        error = taxonomy.TaxonomyUnavailableError(
+            taxdump_dir=str(tmp_path / "taxdump"),
+            operation="test operation",
+            reason="test reason",
+        )
+
+        assert error.taxdump_dir == tmp_path / "taxdump"
+        assert isinstance(error.taxdump_dir, Path)
+        # Also verify resource_path (the base class attribute)
+        assert error.resource_path == tmp_path / "taxdump"
+
+    def test_error_message_format(self, tmp_path):
+        """Verify error message is helpful."""
+        error = taxonomy.TaxonomyUnavailableError(
+            taxdump_dir=tmp_path / "taxdump",
+            operation="Loading taxonomy",
+            reason="Database file not found",
+        )
+
+        message = str(error)
+        assert "Loading taxonomy" in message
+        assert "Database file not found" in message
+        assert "--sync" in message
+        assert str(tmp_path / "taxdump") in message
+
+    def test_error_without_original_error(self, tmp_path):
+        """Verify exception works without original_error."""
+        error = taxonomy.TaxonomyUnavailableError(
+            taxdump_dir=tmp_path / "taxdump",
+            operation="test",
+            reason="test reason",
+        )
+
+        assert error.original_error is None
+
+
+class TestFormatTaxonomyWarning:
+    """Tests for format_taxonomy_warning() function."""
+
+    def test_format_warning_with_permission_error(self, tmp_path):
+        """Verify warning format for PermissionError."""
+        error = PermissionError("Permission denied")
+        warning = taxonomy.format_taxonomy_warning(
+            operation="Loading taxonomy",
+            context="Opening database file",
+            error=error,
+            taxdump_dir=tmp_path,
+            will_download=True,
+        )
+
+        assert "TAXONOMY DATABASE ISSUE" in warning
+        assert "PermissionError" in warning
+        assert "not readable/writable" in warning
+        assert str(tmp_path) in warning
+
+    def test_format_warning_with_database_error(self, tmp_path):
+        """Verify warning format for sqlite3.DatabaseError."""
+        error = sqlite3.DatabaseError("file is not a database")
+        warning = taxonomy.format_taxonomy_warning(
+            operation="Loading taxonomy",
+            context="Opening database file",
+            error=error,
+            taxdump_dir=tmp_path,
+            will_download=True,
+        )
+
+        assert "DatabaseError" in warning
+        assert "corrupted" in warning
+
+    def test_format_warning_with_url_error(self, tmp_path):
+        """Verify warning format for URLError."""
+        error = urllib.request.URLError("Connection refused")
+        warning = taxonomy.format_taxonomy_warning(
+            operation="Downloading taxonomy",
+            context="Fetching from NCBI",
+            error=error,
+            taxdump_dir=tmp_path,
+            will_download=False,
+        )
+
+        assert "URLError" in warning
+        assert "network error" in warning
+
+    def test_format_warning_without_error(self, tmp_path):
+        """Verify warning format when no error occurred (stale/missing case)."""
+        warning = taxonomy.format_taxonomy_warning(
+            operation="Loading taxonomy",
+            context="Pre-cached taxonomy is stale",
+            error=None,
+            taxdump_dir=tmp_path,
+            will_download=True,
+        )
+
+        assert "TAXONOMY DATABASE ISSUE" in warning
+        assert "not found or is stale" in warning
+        assert "Error:" not in warning  # No error section when error=None
+
+    def test_format_warning_will_download_true(self, tmp_path):
+        """Verify consequence text when download will be attempted."""
+        warning = taxonomy.format_taxonomy_warning(
+            operation="Loading taxonomy",
+            context="Missing database",
+            error=None,
+            taxdump_dir=tmp_path,
+            will_download=True,
+        )
+
+        assert "download fresh taxonomy" in warning
+        assert "Taxids may have been merged" in warning
+
+    def test_format_warning_will_download_false(self, tmp_path):
+        """Verify consequence text when download will NOT be attempted."""
+        warning = taxonomy.format_taxonomy_warning(
+            operation="Loading taxonomy",
+            context="Download failed",
+            error=ValueError("test"),
+            taxdump_dir=tmp_path,
+            will_download=False,
+        )
+
+        assert "Cannot proceed without taxonomy" in warning
+        assert "--sync flag requires" in warning

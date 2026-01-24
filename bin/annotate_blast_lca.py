@@ -23,8 +23,16 @@ Key features:
 - Automatic NCBI taxonomy database management via py_nvd.taxonomy
 - Taxonomic rank refinement to avoid uninterpretable levels
 
+Graceful Degradation:
+    By default, if the pre-cached taxonomy database is unavailable, this script
+    will warn and attempt to download fresh taxonomy data from NCBI. Use --sync
+    to require pre-cached taxonomy and fail if unavailable.
+
 Usage:
     python annotate_blast_lca.py -i blast_results.txt -o annotated.txt
+
+    # Require pre-cached taxonomy (fail if unavailable)
+    python annotate_blast_lca.py -i blast_results.txt -o annotated.txt --sync
 """
 
 import argparse
@@ -428,6 +436,11 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="State directory containing taxonomy cache (default: NVD_STATE_DIR or ~/.nvd/)",
     )
+    parser.add_argument(
+        "--sync",
+        action="store_true",
+        help="Require pre-cached taxonomy database (fail if unavailable)",
+    )
 
     return parser.parse_args()
 
@@ -470,7 +483,7 @@ def main() -> None:
         Path(args.output_file).touch()
         return
 
-    with taxonomy.open(state_dir=args.state_dir) as tax:
+    with taxonomy.open(state_dir=args.state_dir, sync=args.sync) as tax:
         tx = tax.taxopy_db
 
         logger.info("Processing BLAST results with parameters: {}", params)

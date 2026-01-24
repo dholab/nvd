@@ -421,6 +421,11 @@ def parse_arguments() -> argparse.Namespace:
         default=None,
         help="State directory containing taxonomy cache (default: NVD_STATE_DIR or ~/.nvd/)",
     )
+    parser.add_argument(
+        "--sync",
+        action="store_true",
+        help="Require pre-cached taxonomy database (fail if unavailable)",
+    )
     return parser.parse_args()
 
 
@@ -444,11 +449,12 @@ def main() -> None:
         input_file = args.input_file
         output_file = args.output_file
 
-    # Get state_dir from args (None in snakemake mode)
+    # Get state_dir and sync from args (None/False in snakemake mode)
     state_dir = getattr(args, "state_dir", None)
+    sync = getattr(args, "sync", False)
 
     try:
-        with taxonomy.open(state_dir=state_dir) as tax:
+        with taxonomy.open(state_dir=state_dir, sync=sync) as tax:
             logger.info(f"Reading {input_file}")
             with open(input_file) as f:
                 counter = parse_input(f, tax, args)
@@ -473,6 +479,8 @@ def main() -> None:
             with open(output_file, "w") as f:
                 f.write(formatted_tree)
 
+    except (KeyboardInterrupt, SystemExit):
+        raise
     except Exception:
         logger.exception("An unexpected error occurred. Detailed traceback:")
         sys.exit(1)

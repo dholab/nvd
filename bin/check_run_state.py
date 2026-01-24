@@ -27,9 +27,17 @@ upload succeeds.
 The sample_set_id is output to stdout for Nextflow to capture.
 All logging goes to stderr to avoid polluting the stdout output.
 
+Graceful Degradation:
+    By default, if the state database is unavailable (permission errors,
+    corruption, etc.), this script will warn and continue without coordination.
+    Use --sync to require the state database and fail if unavailable.
+
 Usage:
     check_run_state.py --samplesheet samples.csv --run-id run_001 \\
         --state-dir /path/to/state
+
+    # Require state database (fail if unavailable)
+    check_run_state.py --samplesheet samples.csv --run-id run_001 --sync
 
 Exit codes:
     0: Success, run registered (or some samples need processing)
@@ -39,11 +47,16 @@ Exit codes:
 import argparse
 import csv
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from loguru import logger
-from py_nvd.db import get_taxdump_dir
+from py_nvd.db import (
+    format_state_warning,
+    get_state_db_path,
+    get_taxdump_dir,
+    StateUnavailableError,
+)
 from py_nvd.state import (
     acquire_sample_locks,
     compute_sample_set_id,
@@ -52,7 +65,7 @@ from py_nvd.state import (
     register_run,
     update_run_id,
 )
-from py_nvd.taxonomy import ensure_taxonomy_available
+from py_nvd.taxonomy import ensure_taxonomy_available, format_taxonomy_warning
 
 
 @dataclass
@@ -66,6 +79,8 @@ class RunRegistration:
         state_dir: Path to state directory (None for default)
         experiment_id: Optional experiment ID for tracking
         lock_ttl_hours: Lock TTL in hours (default: 72)
+        sync: If True, require state DB and fail if unavailable
+        state_available: Tracks whether state DB operations succeeded
     """
 
     run_id: str
@@ -73,11 +88,53 @@ class RunRegistration:
     state_dir: str | None = None
     experiment_id: int | None = None
     lock_ttl_hours: int = DEFAULT_LOCK_TTL_HOURS
+    sync: bool = False
+    state_available: bool = field(default=True, init=False)
 
     @property
     def sample_set_id(self) -> str:
         """Compute deterministic sample set ID from sample list."""
         return compute_sample_set_id(self.sample_ids)
+
+    def _handle_state_error(
+        self,
+        error: Exception,
+        operation: str,
+        context: str,
+        consequences: list[str],
+    ) -> None:
+        """
+        Handle a state database error with graceful degradation or failure.
+
+        Args:
+            error: The exception that occurred
+            operation: Short description of the operation
+            context: Detailed context about what was being done
+            consequences: List of consequences of continuing without state
+
+        Raises:
+            StateUnavailableError: If sync=True
+        """
+        db_path = get_state_db_path(self.state_dir)
+
+        if self.sync:
+            raise StateUnavailableError(
+                db_path=db_path,
+                operation=operation,
+                reason=str(error),
+                original_error=error,
+            ) from error
+
+        # Graceful degradation: warn and continue
+        self.state_available = False
+        warning = format_state_warning(
+            operation=operation,
+            context=context,
+            error=error,
+            db_path=db_path,
+            consequences=consequences,
+        )
+        logger.warning(warning)
 
     def check_existing(self) -> list[str]:
         """
@@ -88,10 +145,26 @@ class RunRegistration:
 
         Raises:
             SystemExit: If all samples are already uploaded
+            StateUnavailableError: If sync=True and state DB unavailable
         """
         logger.info("Checking for previously uploaded samples...")
 
-        uploaded = get_uploaded_sample_ids(self.sample_ids, state_dir=self.state_dir)
+        try:
+            uploaded = get_uploaded_sample_ids(
+                self.sample_ids, state_dir=self.state_dir
+            )
+        except Exception as e:
+            self._handle_state_error(
+                error=e,
+                operation="Checking uploaded samples",
+                context=f"Run '{self.run_id}' with {len(self.sample_ids)} samples",
+                consequences=[
+                    "Duplicate detection DISABLED (samples may have been uploaded before)",
+                    "All samples will be processed regardless of prior upload status",
+                ],
+            )
+            # Continue without duplicate detection
+            return self.sample_ids
 
         if uploaded:
             not_uploaded = [s for s in self.sample_ids if s not in uploaded]
@@ -136,17 +209,36 @@ class RunRegistration:
 
         Returns:
             True if a new run was registered, False if sample_set_id already exists
-            (indicating a resume scenario).
+            (indicating a resume scenario), or None if state DB unavailable.
+
+        Raises:
+            StateUnavailableError: If sync=True and state DB unavailable
         """
+        if not self.state_available:
+            logger.info("Skipping run registration (state database unavailable)")
+            return True  # Treat as new run since we can't check
+
         logger.info(f"Registering run: {self.run_id}")
         logger.debug(f"Sample set ID: {self.sample_set_id}")
 
-        run = register_run(
-            self.run_id,
-            self.sample_set_id,
-            self.experiment_id,
-            state_dir=self.state_dir,
-        )
+        try:
+            run = register_run(
+                self.run_id,
+                self.sample_set_id,
+                self.experiment_id,
+                state_dir=self.state_dir,
+            )
+        except Exception as e:
+            self._handle_state_error(
+                error=e,
+                operation="Registering run",
+                context=f"Run '{self.run_id}' with sample_set_id '{self.sample_set_id}'",
+                consequences=[
+                    "Run provenance tracking DISABLED",
+                    "Resume detection DISABLED (run may be re-registered on resume)",
+                ],
+            )
+            return True  # Treat as new run
 
         if not run:
             # Run registration failed - sample_set_id already exists
@@ -169,6 +261,7 @@ class RunRegistration:
         logger.debug(f"  Sample set ID: {self.sample_set_id}")
         logger.debug(f"  State dir: {self.state_dir or '(default)'}")
         logger.debug(f"  Total samples in set: {len(self.sample_ids)}")
+        logger.debug(f"  State available: {self.state_available}")
         if self.experiment_id:
             logger.debug(f"  Experiment ID: {self.experiment_id}")
 
@@ -181,15 +274,33 @@ class RunRegistration:
 
         Raises:
             SystemExit: If ALL samples are locked by other runs
+            StateUnavailableError: If sync=True and state DB unavailable
         """
+        if not self.state_available:
+            logger.info("Skipping lock acquisition (state database unavailable)")
+            logger.warning("Sample locking DISABLED - concurrent runs may conflict")
+            return self.sample_ids  # Return all samples as "locked"
+
         logger.info("Acquiring sample locks...")
 
-        acquired, conflicts = acquire_sample_locks(
-            self.sample_ids,
-            self.run_id,
-            ttl_hours=self.lock_ttl_hours,
-            state_dir=self.state_dir,
-        )
+        try:
+            acquired, conflicts = acquire_sample_locks(
+                self.sample_ids,
+                self.run_id,
+                ttl_hours=self.lock_ttl_hours,
+                state_dir=self.state_dir,
+            )
+        except Exception as e:
+            self._handle_state_error(
+                error=e,
+                operation="Acquiring sample locks",
+                context=f"Run '{self.run_id}' attempting to lock {len(self.sample_ids)} samples",
+                consequences=[
+                    "Sample locking DISABLED (concurrent runs may process same samples)",
+                    "All samples will be processed without coordination",
+                ],
+            )
+            return self.sample_ids  # Return all samples as "locked"
 
         if conflicts:
             # Group conflicts by run_id for cleaner logging
@@ -244,6 +355,36 @@ class RunRegistration:
             logger.info(f"Skipping {len(conflicts)} samples (locked by other runs)")
 
         return acquired
+
+    def update_run_id_on_resume(self, locked_samples: list[str]) -> None:
+        """
+        Update run_id for a resumed run after acquiring locks.
+
+        Args:
+            locked_samples: List of samples that were successfully locked
+        """
+        if not self.state_available:
+            logger.debug("Skipping run_id update (state database unavailable)")
+            return
+
+        if not locked_samples:
+            return
+
+        logger.info(f"Updating run_id to '{self.run_id}' for resumed run")
+        try:
+            updated_run = update_run_id(
+                self.sample_set_id,
+                self.run_id,
+                state_dir=self.state_dir,
+            )
+            if updated_run:
+                logger.debug(f"Run updated: {updated_run}")
+            else:
+                # This shouldn't happen if register() returned False
+                logger.warning("Failed to update run_id - run may not exist")
+        except Exception as e:
+            # Non-fatal - log warning but continue
+            logger.warning(f"Failed to update run_id (non-fatal): {e}")
 
 
 def configure_logging(verbose: bool = False) -> None:  # noqa: FBT001, FBT002
@@ -329,6 +470,11 @@ def parse_args() -> argparse.Namespace:
         help=f"Lock TTL in hours (default: {DEFAULT_LOCK_TTL_HOURS})",
     )
     parser.add_argument(
+        "--sync",
+        action="store_true",
+        help="Require state database synchronization (fail if unavailable)",
+    )
+    parser.add_argument(
         "-v",
         "--verbose",
         action="store_true",
@@ -350,6 +496,7 @@ def main() -> None:
     logger.debug(f"Samplesheet: {args.samplesheet}")
     logger.debug(f"Run ID: {args.run_id}")
     logger.debug(f"State dir: {args.state_dir or '(default)'}")
+    logger.debug(f"Sync mode: {args.sync}")
     if args.experiment_id:
         logger.debug(f"Experiment ID: {args.experiment_id}")
     logger.info("=" * 60)
@@ -378,8 +525,29 @@ def main() -> None:
     else:
         logger.info("Taxonomy database not found, downloading from NCBI...")
         logger.info("(This may take a few minutes on first run)")
-        ensure_taxonomy_available(args.state_dir)
-        logger.info(f"Taxonomy database ready: {taxdump_dir}")
+        try:
+            ensure_taxonomy_available(args.state_dir)
+            logger.info(f"Taxonomy database ready: {taxdump_dir}")
+        except Exception as e:
+            # Taxonomy download failed
+            if args.sync:
+                logger.error(f"Taxonomy download failed and --sync was specified: {e}")
+                sys.exit(1)
+            else:
+                # Graceful degradation: warn but continue
+                # Workers will attempt lazy download when they need taxonomy
+                warning = format_taxonomy_warning(
+                    operation="Pre-downloading taxonomy database",
+                    context="Preparing taxonomy for distributed workers",
+                    error=e,
+                    taxdump_dir=taxdump_dir,
+                    will_download=True,
+                )
+                logger.warning(warning)
+                logger.warning(
+                    "Workers will attempt to download taxonomy when needed. "
+                    "This may cause delays and potential version inconsistencies."
+                )
 
     # Create registration object
     registration = RunRegistration(
@@ -388,6 +556,7 @@ def main() -> None:
         state_dir=args.state_dir,
         experiment_id=args.experiment_id,
         lock_ttl_hours=args.lock_ttl,
+        sync=args.sync,
     )
 
     logger.debug(f"Computed sample_set_id: {registration.sample_set_id}")
@@ -402,18 +571,8 @@ def main() -> None:
     # If this is a resume (run already existed), update the run_id now that
     # we've successfully acquired locks. This keeps the runs table in sync
     # with the sample_locks table, which updates run_id on re-acquisition.
-    if not is_new_run and locked_samples:
-        logger.info(f"Updating run_id to '{registration.run_id}' for resumed run")
-        updated_run = update_run_id(
-            registration.sample_set_id,
-            registration.run_id,
-            state_dir=registration.state_dir,
-        )
-        if updated_run:
-            logger.debug(f"Run updated: {updated_run}")
-        else:
-            # This shouldn't happen if register() returned False
-            logger.warning("Failed to update run_id - run may not exist")
+    if not is_new_run:
+        registration.update_run_id_on_resume(locked_samples)
 
     # The actual samples to process are those that are:
     # 1. Not already uploaded (samples_to_process)
@@ -424,6 +583,8 @@ def main() -> None:
     logger.info("RUN STATE CHECK COMPLETE")
     logger.info("=" * 60)
     logger.info(f"Samples to process: {len(final_samples)}")
+    if not registration.state_available:
+        logger.warning("State coordination DISABLED - running without state database")
     if len(final_samples) < len(sample_ids):
         skipped_uploaded = len(sample_ids) - len(samples_to_process)
         skipped_locked = len(samples_to_process) - len(final_samples)

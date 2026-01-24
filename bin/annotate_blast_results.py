@@ -51,19 +51,25 @@ def parse_command_line_args() -> argparse.Namespace:
         default=None,
         help="State directory containing taxonomy cache (default: NVD_STATE_DIR or ~/.nvd/)",
     )
+    parser.add_argument(
+        "--sync",
+        action="store_true",
+        help="Require pre-cached taxonomy database (fail if unavailable)",
+    )
 
     return parser.parse_args()
 
 
 def main() -> None:
     state_dir = None
+    sync = False
     if "snakemake" in globals() and MODE == "snakemake":
         # sqlite_cache from snakemake is ignored - taxonomy.open() handles it
         input_file = snakemake.input.blast_results
         output_file = snakemake.output[0]
         sample_name = snakemake.params.sample
         task = snakemake.params.task
-        # snakemake mode doesn't support state_dir yet
+        # snakemake mode doesn't support state_dir or sync yet
     else:
         args = parse_command_line_args()
         # args.sqlite_cache is ignored - taxonomy.open() handles DB location
@@ -72,6 +78,7 @@ def main() -> None:
         sample_name = args.sample_name
         task = args.task
         state_dir = args.state_dir
+        sync = args.sync
 
     try:
         if not os.path.exists(input_file):
@@ -84,7 +91,7 @@ def main() -> None:
             return
 
         with (
-            taxonomy.open(state_dir=state_dir) as tax,
+            taxonomy.open(state_dir=state_dir, sync=sync) as tax,
             open(input_file) as infile,
             open(output_file, "w", newline="") as outfile,
         ):
