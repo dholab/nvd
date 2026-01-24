@@ -21,6 +21,9 @@ process MEGABLAST {
     script:
     def outfmt = "6 qseqid qlen sseqid stitle length pident evalue bitscore sscinames staxids"
     def blast_task = "megablast"
+    def index_exists = file("${blast_db}/${params.blast_db_prefix}.00.idx").exists() ||
+                       file("${blast_db}/${params.blast_db_prefix}.00.00.idx").exists()
+    def use_index = (blast_task == "megablast" && index_exists) ? "-use_index true" : ""
     """
     export BLASTDB=${blast_db}
     blastn -task ${blast_task} \
@@ -29,6 +32,7 @@ process MEGABLAST {
     -num_threads ${task.cpus} \
     -outfmt "${outfmt}" \
     -max_target_seqs ${params.max_blast_targets} \
+    ${use_index} \
     > ${sample_id}.megablast.txt
     """
 }
