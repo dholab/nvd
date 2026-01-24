@@ -2,6 +2,16 @@
 CLI commands for managing and querying metagenomic hits.
 
 Commands:
+    nvd hits report    - Show comprehensive report for a run
+    nvd hits top       - Show top taxa findings for a run
+    nvd hits samples   - Show per-sample breakdown for a run
+    nvd hits categories - Show findings grouped by virus family
+    nvd hits quality   - Show contig quality metrics for a run
+    nvd hits novel     - Show novel taxa (first-time sightings) for a run
+    nvd hits movers    - Show top movers (biggest prevalence changes) for a run
+    nvd hits rare      - Show rare taxa in a run
+    nvd hits history   - Show history of a specific taxon
+    nvd hits compare   - Compare run metrics to historical norms
     nvd hits export    - Export hits to various formats
     nvd hits stats     - Show summary statistics
     nvd hits lookup    - Look up a hit by key or sequence
@@ -27,18 +37,43 @@ from py_nvd.cli.utils import console, error, info
 from py_nvd.db import get_state_db_path
 from py_nvd.hits import (
     compact_hits,
+    get_contig_quality,
     get_discovery_timeline,
     get_hit,
     get_hit_sequence,
     get_hit_stats,
+    get_negative_samples,
+    get_novel_taxa,
+    get_rare_taxa,
     get_recurring_hits,
+    get_run_comparison,
+    get_run_report,
+    get_sample_summaries,
+    get_taxa_by_category,
+    get_taxon_history,
+    get_top_movers,
+    get_top_taxa,
     is_valid_hit_key,
     list_hit_observations,
     list_hits,
     list_hits_with_observations,
     lookup_hit,
 )
-from py_nvd.models import HitStats, RecurringHit, TimelineBucket
+from py_nvd.models import (
+    CategorySummary,
+    ContigQuality,
+    HitStats,
+    NovelTaxon,
+    RareTaxon,
+    RecurringHit,
+    RunComparison,
+    RunReport,
+    SampleSummary,
+    TaxonChange,
+    TaxonHistory,
+    TaxonSummary,
+    TimelineBucket,
+)
 from py_nvd.state import get_run_ids_for_sample_sets
 
 
@@ -142,6 +177,1140 @@ def _stats_to_dict(stats, top_recurring: list) -> dict:
     result = asdict(stats)
     result["top_recurring"] = [asdict(hit) for hit in top_recurring]
     return result
+
+
+def _print_stats_rich(stats: HitStats, top_recurring: list[RecurringHit]) -> None:
+    """Print stats with Rich formatting."""
+    console.print("\n[bold]Hit Statistics[/bold]")
+    console.print("─" * 40)
+
+
+@hits_app.command("report")
+def hits_report(
+    run: Annotated[
+        str,
+        typer.Option(
+            "--run",
+            "-r",
+            help="Sample set ID (run identifier)",
+        ),
+    ],
+    json_output: Annotated[
+        bool,
+        typer.Option(
+            "--json",
+            help="Output as JSON",
+        ),
+    ] = False,
+) -> None:
+    """
+    Show comprehensive report for a pipeline run.
+
+    Displays summary counts, top findings, quality metrics, and negative
+    samples for a specific run. This is the primary reporting command for
+    understanding run results.
+
+    Examples:
+
+        # Show report for a run
+        nvd hits report --run 4eb47dfdadfa0d33
+
+        # Output as JSON (for scripting)
+        nvd hits report --run 4eb47dfdadfa0d33 --json
+    """
+    db_path = get_state_db_path()
+    if not db_path.exists():
+        error(f"Database not found: {db_path}\nRun 'nvd state init' to create it.")
+        raise typer.Exit(1)
+
+    report = get_run_report(run)
+
+    if report is None:
+        if json_output:
+            console.print_json(data={"found": False, "sample_set_id": run})
+        else:
+            info(f"No hits found for run: {run}")
+        return
+
+    if json_output:
+        console.print_json(data=_report_to_dict(report))
+    else:
+        _print_report_rich(report)
+
+
+def _report_to_dict(report: RunReport) -> dict:
+    """Convert RunReport to JSON-serializable dict."""
+    return {
+        "sample_set_id": report.sample_set_id,
+        "run_date": report.run_date,
+        "samples_analyzed": report.samples_analyzed,
+        "samples_with_viral_hits": report.samples_with_viral_hits,
+        "samples_negative": report.samples_negative,
+        "unique_hits": report.unique_hits,
+        "viral_taxa_found": report.viral_taxa_found,
+        "median_contig_length": report.median_contig_length,
+        "contigs_over_500bp": report.contigs_over_500bp,
+        "top_findings": [
+            {
+                "taxid": t.taxid,
+                "name": t.name,
+                "rank": t.rank,
+                "sample_count": t.sample_count,
+                "hit_count": t.hit_count,
+                "avg_contig_length": t.avg_contig_length,
+            }
+            for t in report.top_findings
+        ],
+        "sample_summaries": [
+            {
+                "sample_id": s.sample_id,
+                "total_hits": s.total_hits,
+                "viral_taxa_count": s.viral_taxa_count,
+                "taxa_detected": list(s.taxa_detected),
+            }
+            for s in report.sample_summaries
+        ],
+    }
+
+
+def _print_report_rich(report: RunReport) -> None:
+    """Print run report with Rich formatting."""
+    # Header
+    console.print(f"\n[bold]Run Report:[/bold] [cyan]{report.sample_set_id}[/cyan]")
+    if report.run_date:
+        # Extract just the date part
+        date_str = (
+            report.run_date[:10] if len(report.run_date) >= 10 else report.run_date
+        )
+        console.print(f"[dim]Date: {date_str}[/dim]")
+    console.print()
+
+    # Summary section
+    console.print("[bold]Summary[/bold]")
+    console.print("─" * 40)
+    console.print(f"  Samples analyzed:      {report.samples_analyzed:,}")
+    if report.samples_analyzed > 0:
+        pct = report.samples_with_viral_hits / report.samples_analyzed * 100
+        console.print(
+            f"  Samples with hits:     {report.samples_with_viral_hits:,} ({pct:.0f}%)"
+        )
+    else:
+        console.print(f"  Samples with hits:     {report.samples_with_viral_hits:,}")
+    console.print(f"  Samples negative:      {report.samples_negative:,}")
+    console.print(f"  Unique contigs:        {report.unique_hits:,}")
+    console.print(f"  Taxa identified:       {report.viral_taxa_found:,}")
+
+    # Top findings
+    console.print(f"\n[bold]Top Findings[/bold] (by sample prevalence)")
+    console.print("─" * 40)
+    if report.top_findings:
+        table = Table(show_header=True, header_style="bold", box=None, padding=(0, 2))
+        table.add_column("Taxon")
+        table.add_column("Samples", justify="right")
+        table.add_column("Contigs", justify="right")
+        table.add_column("Avg Length", justify="right")
+
+        for t in report.top_findings:
+            name = t.name or "-"
+            if t.rank:
+                name += f" [dim]({t.rank})[/dim]"
+            table.add_row(
+                name,
+                str(t.sample_count),
+                str(t.hit_count),
+                f"{t.avg_contig_length:.0f} bp",
+            )
+
+        console.print(table)
+    else:
+        console.print("  [dim]No viral taxa identified[/dim]")
+
+    # Quality metrics
+    console.print("\n[bold]Contig Quality[/bold]")
+    console.print("─" * 40)
+    console.print(f"  Median length:         {report.median_contig_length:,} bp")
+    if report.unique_hits > 0:
+        pct_500 = report.contigs_over_500bp / report.unique_hits * 100
+        console.print(
+            f"  Contigs ≥500 bp:       {report.contigs_over_500bp:,} ({pct_500:.1f}%)"
+        )
+    else:
+        console.print(f"  Contigs ≥500 bp:       {report.contigs_over_500bp:,}")
+
+    # Negative samples
+    if report.samples_negative > 0:
+        negative = get_negative_samples(report.sample_set_id)
+        console.print("\n[bold]Samples with No Viral Hits[/bold]")
+        console.print("─" * 40)
+        # Display as comma-separated list, wrapping if needed
+        if len(negative) <= 10:
+            console.print(f"  {', '.join(negative)}")
+        else:
+            # Show first 10 with count
+            console.print(f"  {', '.join(negative[:10])}")
+            console.print(f"  [dim]...and {len(negative) - 10} more[/dim]")
+
+    console.print()
+
+
+@hits_app.command("top")
+def hits_top(
+    run: Annotated[
+        str,
+        typer.Option(
+            "--run",
+            "-r",
+            help="Sample set ID (run identifier)",
+        ),
+    ],
+    limit: Annotated[
+        int,
+        typer.Option(
+            "--limit",
+            "-n",
+            help="Number of top taxa to show",
+        ),
+    ] = 10,
+    json_output: Annotated[
+        bool,
+        typer.Option(
+            "--json",
+            help="Output as JSON",
+        ),
+    ] = False,
+) -> None:
+    """
+    Show top taxa findings for a run.
+
+    Displays taxa ordered by sample prevalence (number of samples where
+    each taxon was detected). Use --limit to control how many to show.
+
+    Examples:
+
+        # Show top 10 taxa (default)
+        nvd hits top --run 4eb47dfdadfa0d33
+
+        # Show top 20 taxa
+        nvd hits top --run 4eb47dfdadfa0d33 --limit 20
+
+        # Output as JSON
+        nvd hits top --run 4eb47dfdadfa0d33 --json
+    """
+    db_path = get_state_db_path()
+    if not db_path.exists():
+        error(f"Database not found: {db_path}\nRun 'nvd state init' to create it.")
+        raise typer.Exit(1)
+
+    taxa = get_top_taxa(sample_set_id=run, limit=limit)
+
+    if json_output:
+        console.print_json(data=[_taxon_to_dict(t) for t in taxa])
+    else:
+        _print_top_taxa_rich(taxa, run, limit)
+
+
+def _taxon_to_dict(t: TaxonSummary) -> dict:
+    """Convert TaxonSummary to JSON-serializable dict."""
+    return {
+        "taxid": t.taxid,
+        "name": t.name,
+        "rank": t.rank,
+        "sample_count": t.sample_count,
+        "hit_count": t.hit_count,
+        "avg_contig_length": t.avg_contig_length,
+    }
+
+
+def _print_top_taxa_rich(taxa: list[TaxonSummary], run: str, limit: int) -> None:
+    """Print top taxa with Rich formatting."""
+    console.print(f"\n[bold]Top {limit} Taxa:[/bold] [cyan]{run}[/cyan]")
+    console.print("─" * 50)
+
+    if not taxa:
+        console.print("  [dim]No viral taxa identified[/dim]\n")
+        return
+
+    table = Table(show_header=True, header_style="bold", box=None, padding=(0, 2))
+    table.add_column("Taxon")
+    table.add_column("Samples", justify="right")
+    table.add_column("Contigs", justify="right")
+    table.add_column("Avg Length", justify="right")
+
+    for t in taxa:
+        name = t.name or "-"
+        if t.rank:
+            name += f" [dim]({t.rank})[/dim]"
+        table.add_row(
+            name,
+            str(t.sample_count),
+            str(t.hit_count),
+            f"{t.avg_contig_length:.0f} bp",
+        )
+
+    console.print(table)
+    console.print()
+
+
+@hits_app.command("samples")
+def hits_samples(
+    run: Annotated[
+        str,
+        typer.Option(
+            "--run",
+            "-r",
+            help="Sample set ID (run identifier)",
+        ),
+    ],
+    json_output: Annotated[
+        bool,
+        typer.Option(
+            "--json",
+            help="Output as JSON",
+        ),
+    ] = False,
+) -> None:
+    """
+    Show per-sample breakdown for a run.
+
+    Displays each sample with its hit count and detected taxa. Samples
+    are ordered by viral taxa count (most interesting first).
+
+    Examples:
+
+        # Show per-sample breakdown
+        nvd hits samples --run 4eb47dfdadfa0d33
+
+        # Output as JSON
+        nvd hits samples --run 4eb47dfdadfa0d33 --json
+    """
+    db_path = get_state_db_path()
+    if not db_path.exists():
+        error(f"Database not found: {db_path}\nRun 'nvd state init' to create it.")
+        raise typer.Exit(1)
+
+    summaries = get_sample_summaries(run)
+
+    if json_output:
+        console.print_json(data=[_sample_summary_to_dict(s) for s in summaries])
+    else:
+        _print_samples_rich(summaries, run)
+
+
+def _sample_summary_to_dict(s: SampleSummary) -> dict:
+    """Convert SampleSummary to JSON-serializable dict."""
+    return {
+        "sample_id": s.sample_id,
+        "total_hits": s.total_hits,
+        "viral_taxa_count": s.viral_taxa_count,
+        "taxa_detected": list(s.taxa_detected),
+    }
+
+
+def _print_samples_rich(summaries: list[SampleSummary], run: str) -> None:
+    """Print sample summaries with Rich formatting."""
+    console.print(f"\n[bold]Per-Sample Breakdown:[/bold] [cyan]{run}[/cyan]")
+    console.print("─" * 60)
+
+    if not summaries:
+        console.print("  [dim]No samples found[/dim]\n")
+        return
+
+    table = Table(show_header=True, header_style="bold", box=None, padding=(0, 2))
+    table.add_column("Sample")
+    table.add_column("Hits", justify="right")
+    table.add_column("Taxa", justify="right")
+    table.add_column("Detected Taxa")
+
+    for s in summaries:
+        # Truncate taxa list if too long
+        taxa_str = ", ".join(s.taxa_detected[:5])
+        if len(s.taxa_detected) > 5:
+            taxa_str += f" [dim](+{len(s.taxa_detected) - 5} more)[/dim]"
+        elif not s.taxa_detected:
+            taxa_str = "[dim]-[/dim]"
+
+        table.add_row(
+            s.sample_id,
+            str(s.total_hits),
+            str(s.viral_taxa_count),
+            taxa_str,
+        )
+
+    console.print(table)
+    console.print(f"\n[dim]{len(summaries)} sample(s)[/dim]\n")
+
+
+@hits_app.command("categories")
+def hits_categories(
+    run: Annotated[
+        str,
+        typer.Option(
+            "--run",
+            "-r",
+            help="Sample set ID (run identifier)",
+        ),
+    ],
+    json_output: Annotated[
+        bool,
+        typer.Option(
+            "--json",
+            help="Output as JSON",
+        ),
+    ] = False,
+) -> None:
+    """
+    Show findings grouped by virus family.
+
+    Displays a high-level triage view with taxa grouped by virus family
+    (e.g., Orthoherpesviridae, Picornaviridae). Useful for quickly
+    understanding the types of viruses detected.
+
+    Examples:
+
+        # Show category breakdown
+        nvd hits categories --run 4eb47dfdadfa0d33
+
+        # Output as JSON
+        nvd hits categories --run 4eb47dfdadfa0d33 --json
+    """
+    db_path = get_state_db_path()
+    if not db_path.exists():
+        error(f"Database not found: {db_path}\nRun 'nvd state init' to create it.")
+        raise typer.Exit(1)
+
+    categories = get_taxa_by_category(run)
+
+    if json_output:
+        console.print_json(data=[_category_to_dict(c) for c in categories])
+    else:
+        _print_categories_rich(categories, run)
+
+
+def _category_to_dict(c: CategorySummary) -> dict:
+    """Convert CategorySummary to JSON-serializable dict."""
+    return {
+        "category": c.category,
+        "sample_count": c.sample_count,
+        "hit_count": c.hit_count,
+        "taxa": list(c.taxa),
+    }
+
+
+def _print_categories_rich(categories: list[CategorySummary], run: str) -> None:
+    """Print category summaries with Rich formatting."""
+    console.print(f"\n[bold]Findings by Virus Family:[/bold] [cyan]{run}[/cyan]")
+    console.print("─" * 60)
+
+    if not categories:
+        console.print("  [dim]No viral taxa identified[/dim]\n")
+        return
+
+    table = Table(show_header=True, header_style="bold", box=None, padding=(0, 2))
+    table.add_column("Family")
+    table.add_column("Samples", justify="right")
+    table.add_column("Contigs", justify="right")
+    table.add_column("Taxa")
+
+    for c in categories:
+        # Truncate taxa list if too long
+        taxa_str = ", ".join(c.taxa[:3])
+        if len(c.taxa) > 3:
+            taxa_str += f" [dim](+{len(c.taxa) - 3} more)[/dim]"
+
+        table.add_row(
+            c.category,
+            str(c.sample_count),
+            str(c.hit_count),
+            taxa_str,
+        )
+
+    console.print(table)
+    console.print(f"\n[dim]{len(categories)} family/families[/dim]\n")
+
+
+@hits_app.command("quality")
+def hits_quality(
+    run: Annotated[
+        str,
+        typer.Option(
+            "--run",
+            "-r",
+            help="Sample set ID (run identifier)",
+        ),
+    ],
+    json_output: Annotated[
+        bool,
+        typer.Option(
+            "--json",
+            help="Output as JSON",
+        ),
+    ] = False,
+) -> None:
+    """
+    Show contig quality metrics for a run.
+
+    Displays assembly quality statistics including length distribution
+    and GC content. Useful for QC and troubleshooting.
+
+    Examples:
+
+        # Show quality metrics
+        nvd hits quality --run 4eb47dfdadfa0d33
+
+        # Output as JSON
+        nvd hits quality --run 4eb47dfdadfa0d33 --json
+    """
+    db_path = get_state_db_path()
+    if not db_path.exists():
+        error(f"Database not found: {db_path}\nRun 'nvd state init' to create it.")
+        raise typer.Exit(1)
+
+    quality = get_contig_quality(run)
+
+    if quality is None:
+        if json_output:
+            console.print_json(data={"found": False, "sample_set_id": run})
+        else:
+            info(f"No hits found for run: {run}")
+        return
+
+    if json_output:
+        console.print_json(data=_quality_to_dict(quality))
+    else:
+        _print_quality_rich(quality, run)
+
+
+def _quality_to_dict(q: ContigQuality) -> dict:
+    """Convert ContigQuality to JSON-serializable dict."""
+    return {
+        "total_contigs": q.total_contigs,
+        "total_bases": q.total_bases,
+        "mean_length": q.mean_length,
+        "median_length": q.median_length,
+        "max_length": q.max_length,
+        "contigs_500bp_plus": q.contigs_500bp_plus,
+        "contigs_1kb_plus": q.contigs_1kb_plus,
+        "mean_gc": q.mean_gc,
+    }
+
+
+def _print_quality_rich(quality: ContigQuality, run: str) -> None:
+    """Print quality metrics with Rich formatting."""
+    console.print(f"\n[bold]Contig Quality:[/bold] [cyan]{run}[/cyan]")
+    console.print("─" * 40)
+
+    console.print(f"  Total contigs:         {quality.total_contigs:,}")
+    console.print(f"  Total bases:           {quality.total_bases:,}")
+    console.print()
+    console.print("[bold]Length Distribution[/bold]")
+    console.print(f"  Mean:                  {quality.mean_length:,.0f} bp")
+    console.print(f"  Median:                {quality.median_length:,} bp")
+    console.print(f"  Max:                   {quality.max_length:,} bp")
+    console.print()
+
+    # Percentage calculations
+    if quality.total_contigs > 0:
+        pct_500 = quality.contigs_500bp_plus / quality.total_contigs * 100
+        pct_1k = quality.contigs_1kb_plus / quality.total_contigs * 100
+        console.print(
+            f"  Contigs ≥500 bp:       {quality.contigs_500bp_plus:,} ({pct_500:.1f}%)"
+        )
+        console.print(
+            f"  Contigs ≥1 kb:         {quality.contigs_1kb_plus:,} ({pct_1k:.1f}%)"
+        )
+    else:
+        console.print(f"  Contigs ≥500 bp:       {quality.contigs_500bp_plus:,}")
+        console.print(f"  Contigs ≥1 kb:         {quality.contigs_1kb_plus:,}")
+
+    console.print()
+    console.print("[bold]GC Content[/bold]")
+    console.print(f"  Mean GC:               {quality.mean_gc * 100:.1f}%")
+    console.print()
+
+
+@hits_app.command("novel")
+def hits_novel(
+    run: Annotated[
+        str,
+        typer.Option(
+            "--run",
+            "-r",
+            help="Sample set ID (run identifier)",
+        ),
+    ],
+    json_output: Annotated[
+        bool,
+        typer.Option(
+            "--json",
+            help="Output as JSON",
+        ),
+    ] = False,
+) -> None:
+    """
+    Show novel taxa (first-time sightings) for a run.
+
+    Identifies taxa in this run that have never appeared in any previous run.
+    Useful for detecting emerging pathogens or new contamination sources.
+
+    Note: "Novel" means not seen in the NVD state database, not necessarily
+    novel to science. Historical data availability affects what's considered novel.
+
+    Examples:
+
+        # Show novel taxa for a run
+        nvd hits novel --run 4eb47dfdadfa0d33
+
+        # Output as JSON
+        nvd hits novel --run 4eb47dfdadfa0d33 --json
+    """
+    db_path = get_state_db_path()
+    if not db_path.exists():
+        error(f"Database not found: {db_path}\nRun 'nvd state init' to create it.")
+        raise typer.Exit(1)
+
+    taxa = get_novel_taxa(run)
+
+    if json_output:
+        console.print_json(data=[_novel_taxon_to_dict(t) for t in taxa])
+    else:
+        _print_novel_taxa_rich(taxa, run)
+
+
+def _novel_taxon_to_dict(t: NovelTaxon) -> dict:
+    """Convert NovelTaxon to JSON-serializable dict."""
+    return {
+        "taxid": t.taxid,
+        "name": t.name,
+        "rank": t.rank,
+        "sample_count": t.sample_count,
+        "hit_count": t.hit_count,
+    }
+
+
+def _print_novel_taxa_rich(taxa: list[NovelTaxon], run: str) -> None:
+    """Print novel taxa with Rich formatting."""
+    console.print(
+        f"\n[bold]Novel Taxa (First-Time Sightings):[/bold] [cyan]{run}[/cyan]"
+    )
+    console.print("─" * 50)
+
+    if not taxa:
+        console.print("  [dim]No novel taxa identified[/dim]")
+        console.print("  [dim](All taxa in this run have been seen before)[/dim]\n")
+        return
+
+    table = Table(show_header=True, header_style="bold", box=None, padding=(0, 2))
+    table.add_column("Taxon")
+    table.add_column("Samples", justify="right")
+    table.add_column("Contigs", justify="right")
+
+    for t in taxa:
+        name = t.name or "-"
+        if t.rank:
+            name += f" [dim]({t.rank})[/dim]"
+        table.add_row(
+            name,
+            str(t.sample_count),
+            str(t.hit_count),
+        )
+
+    console.print(table)
+    console.print(f"\n[dim]{len(taxa)} novel taxon/taxa[/dim]\n")
+
+
+@hits_app.command("movers")
+def hits_movers(
+    run: Annotated[
+        str,
+        typer.Option(
+            "--run",
+            "-r",
+            help="Sample set ID (run identifier)",
+        ),
+    ],
+    limit: Annotated[
+        int,
+        typer.Option(
+            "--limit",
+            "-n",
+            help="Number of top movers to show",
+        ),
+    ] = 10,
+    json_output: Annotated[
+        bool,
+        typer.Option(
+            "--json",
+            help="Output as JSON",
+        ),
+    ] = False,
+) -> None:
+    """
+    Show top movers (biggest prevalence changes) for a run.
+
+    Compares each taxon's prevalence in this run against its historical
+    average across all prior runs. Returns taxa sorted by absolute change.
+
+    Positive change means higher prevalence than usual; negative means lower.
+
+    Examples:
+
+        # Show top 10 movers (default)
+        nvd hits movers --run 4eb47dfdadfa0d33
+
+        # Show top 20 movers
+        nvd hits movers --run 4eb47dfdadfa0d33 --limit 20
+
+        # Output as JSON
+        nvd hits movers --run 4eb47dfdadfa0d33 --json
+    """
+    db_path = get_state_db_path()
+    if not db_path.exists():
+        error(f"Database not found: {db_path}\nRun 'nvd state init' to create it.")
+        raise typer.Exit(1)
+
+    movers = get_top_movers(run, limit=limit)
+
+    if json_output:
+        console.print_json(data=[_taxon_change_to_dict(t) for t in movers])
+    else:
+        _print_movers_rich(movers, run, limit)
+
+
+def _taxon_change_to_dict(t: TaxonChange) -> dict:
+    """Convert TaxonChange to JSON-serializable dict."""
+    return {
+        "taxid": t.taxid,
+        "name": t.name,
+        "rank": t.rank,
+        "current_prevalence_pct": t.current_prevalence_pct,
+        "baseline_prevalence_pct": t.baseline_prevalence_pct,
+        "change_pct": t.change_pct,
+        "current_sample_count": t.current_sample_count,
+        "baseline_run_count": t.baseline_run_count,
+    }
+
+
+def _print_movers_rich(movers: list[TaxonChange], run: str, limit: int) -> None:
+    """Print top movers with Rich formatting."""
+    console.print(f"\n[bold]Top {limit} Movers:[/bold] [cyan]{run}[/cyan]")
+    console.print("─" * 60)
+
+    if not movers:
+        console.print("  [dim]No movers to show[/dim]")
+        console.print(
+            "  [dim](This may be the first run, or no taxa in this run)[/dim]\n"
+        )
+        return
+
+    # Show baseline info
+    if movers:
+        console.print(
+            f"  [dim]Baseline: {movers[0].baseline_run_count} prior run(s)[/dim]\n"
+        )
+
+    table = Table(show_header=True, header_style="bold", box=None, padding=(0, 2))
+    table.add_column("Taxon")
+    table.add_column("Current", justify="right")
+    table.add_column("Baseline", justify="right")
+    table.add_column("Change", justify="right")
+    table.add_column("Samples", justify="right")
+
+    for t in movers:
+        name = t.name or "-"
+        if t.rank:
+            name += f" [dim]({t.rank})[/dim]"
+
+        # Color the change based on direction
+        if t.change_pct > 0:
+            change_str = f"[green]+{t.change_pct:.1f}%[/green]"
+        elif t.change_pct < 0:
+            change_str = f"[red]{t.change_pct:.1f}%[/red]"
+        else:
+            change_str = "0.0%"
+
+        table.add_row(
+            name,
+            f"{t.current_prevalence_pct:.1f}%",
+            f"{t.baseline_prevalence_pct:.1f}%",
+            change_str,
+            str(t.current_sample_count),
+        )
+
+    console.print(table)
+    console.print()
+
+
+@hits_app.command("rare")
+def hits_rare(
+    run: Annotated[
+        str,
+        typer.Option(
+            "--run",
+            "-r",
+            help="Sample set ID (run identifier)",
+        ),
+    ],
+    threshold: Annotated[
+        float,
+        typer.Option(
+            "--threshold",
+            "-t",
+            help="Maximum historical run percentage to be considered rare (default: 5%)",
+        ),
+    ] = 5.0,
+    json_output: Annotated[
+        bool,
+        typer.Option(
+            "--json",
+            help="Output as JSON",
+        ),
+    ] = False,
+) -> None:
+    """
+    Show rare taxa in a run.
+
+    Identifies taxa present in this run that have historically appeared
+    in few runs (less than threshold percentage). Useful for flagging
+    unusual findings that warrant closer inspection.
+
+    Examples:
+
+        # Show taxa appearing in <5% of runs (default)
+        nvd hits rare --run 4eb47dfdadfa0d33
+
+        # Show taxa appearing in <10% of runs
+        nvd hits rare --run 4eb47dfdadfa0d33 --threshold 10
+
+        # Output as JSON
+        nvd hits rare --run 4eb47dfdadfa0d33 --json
+    """
+    db_path = get_state_db_path()
+    if not db_path.exists():
+        error(f"Database not found: {db_path}\nRun 'nvd state init' to create it.")
+        raise typer.Exit(1)
+
+    if threshold <= 0 or threshold > 100:
+        error("Threshold must be between 0 and 100")
+        raise typer.Exit(1)
+
+    taxa = get_rare_taxa(run, threshold_pct=threshold)
+
+    if json_output:
+        console.print_json(data=[_rare_taxon_to_dict(t) for t in taxa])
+    else:
+        _print_rare_taxa_rich(taxa, run, threshold)
+
+
+def _rare_taxon_to_dict(t: RareTaxon) -> dict:
+    """Convert RareTaxon to JSON-serializable dict."""
+    return {
+        "taxid": t.taxid,
+        "name": t.name,
+        "rank": t.rank,
+        "historical_run_count": t.historical_run_count,
+        "historical_run_pct": t.historical_run_pct,
+        "current_sample_count": t.current_sample_count,
+    }
+
+
+def _print_rare_taxa_rich(taxa: list[RareTaxon], run: str, threshold: float) -> None:
+    """Print rare taxa with Rich formatting."""
+    console.print(
+        f"\n[bold]Rare Taxa (<{threshold:.0f}% of runs):[/bold] [cyan]{run}[/cyan]"
+    )
+    console.print("─" * 50)
+
+    if not taxa:
+        console.print("  [dim]No rare taxa identified[/dim]")
+        console.print(f"  [dim](All taxa appear in ≥{threshold:.0f}% of runs)[/dim]\n")
+        return
+
+    table = Table(show_header=True, header_style="bold", box=None, padding=(0, 2))
+    table.add_column("Taxon")
+    table.add_column("Historical", justify="right")
+    table.add_column("Samples", justify="right")
+
+    for t in taxa:
+        name = t.name or "-"
+        if t.rank:
+            name += f" [dim]({t.rank})[/dim]"
+        table.add_row(
+            name,
+            f"{t.historical_run_count} runs ({t.historical_run_pct:.1f}%)",
+            str(t.current_sample_count),
+        )
+
+    console.print(table)
+    console.print(f"\n[dim]{len(taxa)} rare taxon/taxa[/dim]\n")
+
+
+@hits_app.command("history")
+def hits_history(
+    taxon: Annotated[
+        str,
+        typer.Option(
+            "--taxon",
+            "-t",
+            help="Taxon name to look up",
+        ),
+    ],
+    json_output: Annotated[
+        bool,
+        typer.Option(
+            "--json",
+            help="Output as JSON",
+        ),
+    ] = False,
+) -> None:
+    """
+    Show history of a specific taxon across all runs.
+
+    Provides a detailed track record showing when and how often a taxon
+    has been detected. Useful for understanding whether a finding is
+    typical or unusual for this dataset.
+
+    Examples:
+
+        # Show history for a taxon
+        nvd hits history --taxon "Human gammaherpesvirus 4"
+
+        # Output as JSON
+        nvd hits history --taxon "Rhinovirus A" --json
+    """
+    db_path = get_state_db_path()
+    if not db_path.exists():
+        error(f"Database not found: {db_path}\nRun 'nvd state init' to create it.")
+        raise typer.Exit(1)
+
+    history = get_taxon_history(taxon)
+
+    if history is None:
+        if json_output:
+            console.print_json(data={"found": False, "taxon": taxon})
+        else:
+            info(f"Taxon not found: {taxon}")
+        return
+
+    if json_output:
+        console.print_json(data=_taxon_history_to_dict(history))
+    else:
+        _print_taxon_history_rich(history)
+
+
+def _taxon_history_to_dict(h: TaxonHistory) -> dict:
+    """Convert TaxonHistory to JSON-serializable dict."""
+    return {
+        "found": True,
+        "taxid": h.taxid,
+        "name": h.name,
+        "rank": h.rank,
+        "total_runs_seen": h.total_runs_seen,
+        "total_runs_in_system": h.total_runs_in_system,
+        "overall_prevalence_pct": h.overall_prevalence_pct,
+        "first_seen_date": h.first_seen_date,
+        "last_seen_date": h.last_seen_date,
+        "run_history": [
+            {
+                "sample_set_id": r.sample_set_id,
+                "run_date": r.run_date,
+                "sample_count": r.sample_count,
+                "prevalence_pct": r.prevalence_pct,
+            }
+            for r in h.run_history
+        ],
+    }
+
+
+def _print_taxon_history_rich(history: TaxonHistory) -> None:
+    """Print taxon history with Rich formatting."""
+    console.print(f"\n[bold]Taxon History:[/bold] [cyan]{history.name}[/cyan]")
+    if history.rank:
+        console.print(f"[dim]Rank: {history.rank}[/dim]")
+    if history.taxid:
+        console.print(f"[dim]Taxid: {history.taxid}[/dim]")
+    console.print("─" * 50)
+
+    # Summary
+    console.print(
+        f"  Runs with taxon:       {history.total_runs_seen} / {history.total_runs_in_system}"
+    )
+    console.print(
+        f"  Overall prevalence:    {history.overall_prevalence_pct:.1f}% of runs"
+    )
+    console.print(f"  First seen:            {history.first_seen_date[:10]}")
+    console.print(f"  Last seen:             {history.last_seen_date[:10]}")
+
+    # Run history table
+    console.print(f"\n[bold]Run History ({len(history.run_history)} runs):[/bold]")
+
+    if history.run_history:
+        table = Table(show_header=True, header_style="bold", box=None, padding=(0, 2))
+        table.add_column("Date", style="dim")
+        table.add_column("Run")
+        table.add_column("Samples", justify="right")
+        table.add_column("Prevalence", justify="right")
+
+        for r in history.run_history:
+            date_str = r.run_date[:10] if len(r.run_date) >= 10 else r.run_date
+            table.add_row(
+                date_str,
+                r.sample_set_id,
+                str(r.sample_count),
+                f"{r.prevalence_pct:.1f}%",
+            )
+
+        console.print(table)
+
+    console.print()
+
+
+@hits_app.command("compare")
+def hits_compare(
+    run: Annotated[
+        str,
+        typer.Option(
+            "--run",
+            "-r",
+            help="Sample set ID (run identifier)",
+        ),
+    ],
+    json_output: Annotated[
+        bool,
+        typer.Option(
+            "--json",
+            help="Output as JSON",
+        ),
+    ] = False,
+) -> None:
+    """
+    Compare run metrics to historical norms.
+
+    Provides context for interpreting a run by comparing its key metrics
+    (sample count, hit count, taxa count, contig length) against the
+    historical average across all prior runs.
+
+    Examples:
+
+        # Compare a run to historical norms
+        nvd hits compare --run 4eb47dfdadfa0d33
+
+        # Output as JSON
+        nvd hits compare --run 4eb47dfdadfa0d33 --json
+    """
+    db_path = get_state_db_path()
+    if not db_path.exists():
+        error(f"Database not found: {db_path}\nRun 'nvd state init' to create it.")
+        raise typer.Exit(1)
+
+    comparison = get_run_comparison(run)
+
+    if comparison is None:
+        if json_output:
+            console.print_json(data={"found": False, "sample_set_id": run})
+        else:
+            info(f"Run not found: {run}")
+        return
+
+    if json_output:
+        console.print_json(data=_run_comparison_to_dict(comparison))
+    else:
+        _print_run_comparison_rich(comparison)
+
+
+def _run_comparison_to_dict(c: RunComparison) -> dict:
+    """Convert RunComparison to JSON-serializable dict."""
+    return {
+        "found": True,
+        "sample_set_id": c.sample_set_id,
+        "run_date": c.run_date,
+        "samples_analyzed": c.samples_analyzed,
+        "unique_hits": c.unique_hits,
+        "taxa_found": c.taxa_found,
+        "median_contig_length": c.median_contig_length,
+        "historical_run_count": c.historical_run_count,
+        "avg_samples": c.avg_samples,
+        "avg_hits": c.avg_hits,
+        "avg_taxa": c.avg_taxa,
+        "avg_median_length": c.avg_median_length,
+    }
+
+
+def _print_run_comparison_rich(comparison: RunComparison) -> None:
+    """Print run comparison with Rich formatting."""
+    console.print(
+        f"\n[bold]Run Comparison:[/bold] [cyan]{comparison.sample_set_id}[/cyan]"
+    )
+    if comparison.run_date:
+        date_str = (
+            comparison.run_date[:10]
+            if len(comparison.run_date) >= 10
+            else comparison.run_date
+        )
+        console.print(f"[dim]Date: {date_str}[/dim]")
+    console.print("─" * 50)
+
+    if comparison.historical_run_count == 0:
+        console.print("  [dim]No prior runs for comparison[/dim]\n")
+        console.print("[bold]Current Run Metrics[/bold]")
+        console.print(f"  Samples analyzed:      {comparison.samples_analyzed:,}")
+        console.print(f"  Unique hits:           {comparison.unique_hits:,}")
+        console.print(f"  Taxa found:            {comparison.taxa_found:,}")
+        console.print(
+            f"  Median contig length:  {comparison.median_contig_length:,} bp"
+        )
+        console.print()
+        return
+
+    console.print(
+        f"  [dim]Baseline: {comparison.historical_run_count} prior run(s)[/dim]\n"
+    )
+
+    # Build comparison table
+    table = Table(show_header=True, header_style="bold", box=None, padding=(0, 2))
+    table.add_column("Metric")
+    table.add_column("This Run", justify="right")
+    table.add_column("Avg", justify="right")
+    table.add_column("Diff", justify="right")
+
+    def _format_diff(current: float, avg: float) -> str:
+        """Format difference with color."""
+        if avg == 0:
+            return "-"
+        diff_pct = ((current - avg) / avg) * 100
+        if diff_pct > 10:
+            return f"[green]+{diff_pct:.0f}%[/green]"
+        elif diff_pct < -10:
+            return f"[red]{diff_pct:.0f}%[/red]"
+        else:
+            return f"{diff_pct:+.0f}%"
+
+    table.add_row(
+        "Samples",
+        f"{comparison.samples_analyzed:,}",
+        f"{comparison.avg_samples:.1f}",
+        _format_diff(comparison.samples_analyzed, comparison.avg_samples),
+    )
+    table.add_row(
+        "Unique hits",
+        f"{comparison.unique_hits:,}",
+        f"{comparison.avg_hits:.1f}",
+        _format_diff(comparison.unique_hits, comparison.avg_hits),
+    )
+    table.add_row(
+        "Taxa found",
+        f"{comparison.taxa_found:,}",
+        f"{comparison.avg_taxa:.1f}",
+        _format_diff(comparison.taxa_found, comparison.avg_taxa),
+    )
+    table.add_row(
+        "Median length",
+        f"{comparison.median_contig_length:,} bp",
+        f"{comparison.avg_median_length:.0f} bp",
+        _format_diff(comparison.median_contig_length, comparison.avg_median_length),
+    )
+
+    console.print(table)
+    console.print()
 
 
 def _print_stats_rich(stats: HitStats, top_recurring: list[RecurringHit]) -> None:

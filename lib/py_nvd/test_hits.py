@@ -11,8 +11,11 @@ These tests verify:
 import pytest
 
 from py_nvd.hits import (
+    DEFAULT_NOISE_TAXA,
+    FAMILY_SEARCH_PATTERNS,
     HitRecord,
     SampleSetStats,
+    _classify_taxon_to_family,
     calculate_gc_content,
     canonical_sequence,
     compact_hits,
@@ -27,10 +30,22 @@ from py_nvd.hits import (
     get_discovery_timeline,
     get_hit,
     get_hit_sequence,
+    get_contig_quality,
+    get_highlights_string,
     get_hit_stats,
+    get_negative_samples,
+    get_novel_taxa,
+    get_rare_taxa,
     get_recurring_hits,
+    get_run_comparison,
+    get_run_report,
     get_sample_parquet_path,
+    get_sample_summaries,
     get_stats_for_sample_set,
+    get_taxa_by_category,
+    get_taxon_history,
+    get_top_movers,
+    get_top_taxa,
     is_valid_hit_key,
     list_hit_observations,
     list_hits,
@@ -41,7 +56,20 @@ from py_nvd.hits import (
     sample_hits_exist,
     write_hits_parquet,
 )
-from py_nvd.models import DeleteResult
+from py_nvd.models import (
+    CategorySummary,
+    ContigQuality,
+    DeleteResult,
+    NovelTaxon,
+    RareTaxon,
+    RunComparison,
+    RunReport,
+    SampleSummary,
+    TaxonChange,
+    TaxonHistory,
+    TaxonRunPresence,
+    TaxonSummary,
+)
 
 
 def make_hit_record(
@@ -2533,3 +2561,3718 @@ class TestGetStatsForSampleSet:
         """Raises AssertionError for empty sample_set_id."""
         with pytest.raises(AssertionError, match="cannot be empty"):
             get_stats_for_sample_set("", temp_state_dir)
+
+
+class TestGetTopTaxa:
+    """Tests for get_top_taxa()."""
+
+    def test_empty_database(self, temp_state_dir):
+        """Empty database returns empty list."""
+        result = get_top_taxa(state_dir=temp_state_dir)
+        assert result == []
+
+    def test_single_taxon(self, temp_state_dir):
+        """Single hit with classification returns one TaxonSummary."""
+        record = make_hit_record(
+            "ACGTACGT",
+            "set_001",
+            "sample_a",
+            "2024-01-01T00:00:00Z",
+            adjusted_taxid=10376,
+            adjusted_taxid_name="Human gammaherpesvirus 4",
+            adjusted_taxid_rank="species",
+        )
+        write_hits_parquet([record], "sample_a", "set_001", temp_state_dir)
+
+        result = get_top_taxa(state_dir=temp_state_dir)
+
+        assert len(result) == 1
+        assert isinstance(result[0], TaxonSummary)
+        assert result[0].taxid == 10376
+        assert result[0].name == "Human gammaherpesvirus 4"
+        assert result[0].rank == "species"
+        assert result[0].sample_count == 1
+        assert result[0].hit_count == 1
+        assert result[0].avg_contig_length == 8
+
+    def test_excludes_noise_taxa_by_default(self, temp_state_dir):
+        """By default, 'root' and 'Homo sapiens' are excluded."""
+        records = [
+            make_hit_record(
+                "AAACCC",
+                "set_001",
+                "sample_a",
+                "2024-01-01T00:00:00Z",
+                adjusted_taxid=1,
+                adjusted_taxid_name="root",
+                adjusted_taxid_rank="no rank",
+            ),
+            make_hit_record(
+                "AAAGGG",
+                "set_001",
+                "sample_a",
+                "2024-01-01T00:00:00Z",
+                adjusted_taxid=9606,
+                adjusted_taxid_name="Homo sapiens",
+                adjusted_taxid_rank="species",
+            ),
+            make_hit_record(
+                "AAATTT",
+                "set_001",
+                "sample_a",
+                "2024-01-01T00:00:00Z",
+                adjusted_taxid=10376,
+                adjusted_taxid_name="Human gammaherpesvirus 4",
+                adjusted_taxid_rank="species",
+            ),
+        ]
+        write_hits_parquet(records, "sample_a", "set_001", temp_state_dir)
+
+        result = get_top_taxa(state_dir=temp_state_dir)
+
+        assert len(result) == 1
+        assert result[0].name == "Human gammaherpesvirus 4"
+
+    def test_include_noise_taxa_when_disabled(self, temp_state_dir):
+        """When exclude_noise=False, noise taxa are included."""
+        records = [
+            make_hit_record(
+                "AAACCC",
+                "set_001",
+                "sample_a",
+                "2024-01-01T00:00:00Z",
+                adjusted_taxid=1,
+                adjusted_taxid_name="root",
+                adjusted_taxid_rank="no rank",
+            ),
+            make_hit_record(
+                "AAAGGG",
+                "set_001",
+                "sample_a",
+                "2024-01-01T00:00:00Z",
+                adjusted_taxid=10376,
+                adjusted_taxid_name="Human gammaherpesvirus 4",
+                adjusted_taxid_rank="species",
+            ),
+        ]
+        write_hits_parquet(records, "sample_a", "set_001", temp_state_dir)
+
+        result = get_top_taxa(exclude_noise=False, state_dir=temp_state_dir)
+
+        assert len(result) == 2
+        names = {r.name for r in result}
+        assert "root" in names
+        assert "Human gammaherpesvirus 4" in names
+
+    def test_ordered_by_sample_count_descending(self, temp_state_dir):
+        """Results are ordered by sample_count descending."""
+        # Taxon A in 3 samples, Taxon B in 1 sample
+        records = [
+            make_hit_record(
+                "AAACCC",
+                "set_001",
+                "sample_a",
+                "2024-01-01T00:00:00Z",
+                adjusted_taxid=111,
+                adjusted_taxid_name="Taxon A",
+                adjusted_taxid_rank="species",
+            ),
+            make_hit_record(
+                "AAAGGG",
+                "set_001",
+                "sample_b",
+                "2024-01-01T00:00:00Z",
+                adjusted_taxid=111,
+                adjusted_taxid_name="Taxon A",
+                adjusted_taxid_rank="species",
+            ),
+            make_hit_record(
+                "AAATTT",
+                "set_001",
+                "sample_c",
+                "2024-01-01T00:00:00Z",
+                adjusted_taxid=111,
+                adjusted_taxid_name="Taxon A",
+                adjusted_taxid_rank="species",
+            ),
+            make_hit_record(
+                "CCCGGG",
+                "set_001",
+                "sample_a",
+                "2024-01-01T00:00:00Z",
+                adjusted_taxid=222,
+                adjusted_taxid_name="Taxon B",
+                adjusted_taxid_rank="species",
+            ),
+        ]
+        write_hits_parquet(records, "sample_a", "set_001", temp_state_dir)
+
+        result = get_top_taxa(state_dir=temp_state_dir)
+
+        assert len(result) == 2
+        assert result[0].name == "Taxon A"
+        assert result[0].sample_count == 3
+        assert result[1].name == "Taxon B"
+        assert result[1].sample_count == 1
+
+    def test_secondary_sort_by_hit_count(self, temp_state_dir):
+        """When sample_count is equal, sorts by hit_count descending."""
+        # Both taxa in 1 sample, but Taxon A has 3 hits, Taxon B has 1 hit
+        records = [
+            make_hit_record(
+                "AAACCC",
+                "set_001",
+                "sample_a",
+                "2024-01-01T00:00:00Z",
+                adjusted_taxid=111,
+                adjusted_taxid_name="Taxon A",
+                adjusted_taxid_rank="species",
+            ),
+            make_hit_record(
+                "AAAGGG",
+                "set_001",
+                "sample_a",
+                "2024-01-01T00:00:00Z",
+                adjusted_taxid=111,
+                adjusted_taxid_name="Taxon A",
+                adjusted_taxid_rank="species",
+            ),
+            make_hit_record(
+                "AAATTT",
+                "set_001",
+                "sample_a",
+                "2024-01-01T00:00:00Z",
+                adjusted_taxid=111,
+                adjusted_taxid_name="Taxon A",
+                adjusted_taxid_rank="species",
+            ),
+            make_hit_record(
+                "CCCGGG",
+                "set_001",
+                "sample_a",
+                "2024-01-01T00:00:00Z",
+                adjusted_taxid=222,
+                adjusted_taxid_name="Taxon B",
+                adjusted_taxid_rank="species",
+            ),
+        ]
+        write_hits_parquet(records, "sample_a", "set_001", temp_state_dir)
+
+        result = get_top_taxa(state_dir=temp_state_dir)
+
+        assert len(result) == 2
+        assert result[0].name == "Taxon A"
+        assert result[0].hit_count == 3
+        assert result[1].name == "Taxon B"
+        assert result[1].hit_count == 1
+
+    def test_limit_parameter(self, temp_state_dir):
+        """Limit parameter restricts number of results."""
+        records = [
+            make_hit_record(
+                "AAACCC",
+                "set_001",
+                "sample_a",
+                "2024-01-01T00:00:00Z",
+                adjusted_taxid=111,
+                adjusted_taxid_name="Taxon A",
+                adjusted_taxid_rank="species",
+            ),
+            make_hit_record(
+                "AAAGGG",
+                "set_001",
+                "sample_a",
+                "2024-01-01T00:00:00Z",
+                adjusted_taxid=222,
+                adjusted_taxid_name="Taxon B",
+                adjusted_taxid_rank="species",
+            ),
+            make_hit_record(
+                "AAATTT",
+                "set_001",
+                "sample_a",
+                "2024-01-01T00:00:00Z",
+                adjusted_taxid=333,
+                adjusted_taxid_name="Taxon C",
+                adjusted_taxid_rank="species",
+            ),
+        ]
+        write_hits_parquet(records, "sample_a", "set_001", temp_state_dir)
+
+        result = get_top_taxa(limit=2, state_dir=temp_state_dir)
+
+        assert len(result) == 2
+
+    def test_filter_by_sample_set_id(self, temp_state_dir):
+        """Filtering by sample_set_id returns only taxa from that run."""
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "AAACCC",
+                    "set_001",
+                    "sample_a",
+                    "2024-01-01T00:00:00Z",
+                    adjusted_taxid=111,
+                    adjusted_taxid_name="Taxon A",
+                    adjusted_taxid_rank="species",
+                )
+            ],
+            "sample_a",
+            "set_001",
+            temp_state_dir,
+        )
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "AAAGGG",
+                    "set_002",
+                    "sample_b",
+                    "2024-01-02T00:00:00Z",
+                    adjusted_taxid=222,
+                    adjusted_taxid_name="Taxon B",
+                    adjusted_taxid_rank="species",
+                )
+            ],
+            "sample_b",
+            "set_002",
+            temp_state_dir,
+        )
+
+        result = get_top_taxa(sample_set_id="set_001", state_dir=temp_state_dir)
+
+        assert len(result) == 1
+        assert result[0].name == "Taxon A"
+
+    def test_all_runs_when_no_sample_set_id(self, temp_state_dir):
+        """When sample_set_id is None, queries all runs."""
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "AAACCC",
+                    "set_001",
+                    "sample_a",
+                    "2024-01-01T00:00:00Z",
+                    adjusted_taxid=111,
+                    adjusted_taxid_name="Taxon A",
+                    adjusted_taxid_rank="species",
+                )
+            ],
+            "sample_a",
+            "set_001",
+            temp_state_dir,
+        )
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "AAAGGG",
+                    "set_002",
+                    "sample_b",
+                    "2024-01-02T00:00:00Z",
+                    adjusted_taxid=222,
+                    adjusted_taxid_name="Taxon B",
+                    adjusted_taxid_rank="species",
+                )
+            ],
+            "sample_b",
+            "set_002",
+            temp_state_dir,
+        )
+
+        result = get_top_taxa(sample_set_id=None, state_dir=temp_state_dir)
+
+        assert len(result) == 2
+        names = {r.name for r in result}
+        assert names == {"Taxon A", "Taxon B"}
+
+    def test_excludes_null_taxid_name(self, temp_state_dir):
+        """Hits without adjusted_taxid_name are excluded."""
+        records = [
+            make_hit_record(
+                "AAACCC",
+                "set_001",
+                "sample_a",
+                "2024-01-01T00:00:00Z",
+                # No classification
+            ),
+            make_hit_record(
+                "AAAGGG",
+                "set_001",
+                "sample_a",
+                "2024-01-01T00:00:00Z",
+                adjusted_taxid=111,
+                adjusted_taxid_name="Taxon A",
+                adjusted_taxid_rank="species",
+            ),
+        ]
+        write_hits_parquet(records, "sample_a", "set_001", temp_state_dir)
+
+        result = get_top_taxa(state_dir=temp_state_dir)
+
+        assert len(result) == 1
+        assert result[0].name == "Taxon A"
+
+    def test_avg_contig_length_computed_correctly(self, temp_state_dir):
+        """avg_contig_length is the mean of sequence_length for that taxon."""
+        # Two hits for same taxon: lengths 100 and 200 -> avg 150
+        records = [
+            make_hit_record(
+                "A" * 100,
+                "set_001",
+                "sample_a",
+                "2024-01-01T00:00:00Z",
+                adjusted_taxid=111,
+                adjusted_taxid_name="Taxon A",
+                adjusted_taxid_rank="species",
+            ),
+            make_hit_record(
+                "C" * 200,
+                "set_001",
+                "sample_a",
+                "2024-01-01T00:00:00Z",
+                adjusted_taxid=111,
+                adjusted_taxid_name="Taxon A",
+                adjusted_taxid_rank="species",
+            ),
+        ]
+        write_hits_parquet(records, "sample_a", "set_001", temp_state_dir)
+
+        result = get_top_taxa(state_dir=temp_state_dir)
+
+        assert len(result) == 1
+        assert result[0].avg_contig_length == 150
+
+    def test_raises_on_invalid_limit(self, temp_state_dir):
+        """Raises AssertionError for limit <= 0."""
+        with pytest.raises(AssertionError, match="limit must be positive"):
+            get_top_taxa(limit=0, state_dir=temp_state_dir)
+
+        with pytest.raises(AssertionError, match="limit must be positive"):
+            get_top_taxa(limit=-1, state_dir=temp_state_dir)
+
+    def test_raises_on_empty_sample_set_id(self, temp_state_dir):
+        """Raises AssertionError for empty string sample_set_id."""
+        with pytest.raises(AssertionError, match="cannot be empty string"):
+            get_top_taxa(sample_set_id="", state_dir=temp_state_dir)
+
+    def test_default_noise_taxa_constant(self):
+        """DEFAULT_NOISE_TAXA contains expected values."""
+        assert "root" in DEFAULT_NOISE_TAXA
+        assert "Homo sapiens" in DEFAULT_NOISE_TAXA
+
+    def test_taxon_with_null_taxid(self, temp_state_dir):
+        """Taxon with name but null taxid is handled correctly."""
+        record = make_hit_record(
+            "ACGTACGT",
+            "set_001",
+            "sample_a",
+            "2024-01-01T00:00:00Z",
+            adjusted_taxid=None,
+            adjusted_taxid_name="Unknown virus",
+            adjusted_taxid_rank="no rank",
+        )
+        write_hits_parquet([record], "sample_a", "set_001", temp_state_dir)
+
+        result = get_top_taxa(state_dir=temp_state_dir)
+
+        assert len(result) == 1
+        assert result[0].taxid is None
+        assert result[0].name == "Unknown virus"
+
+    def test_taxon_with_null_rank(self, temp_state_dir):
+        """Taxon with null rank is handled correctly."""
+        record = make_hit_record(
+            "ACGTACGT",
+            "set_001",
+            "sample_a",
+            "2024-01-01T00:00:00Z",
+            adjusted_taxid=12345,
+            adjusted_taxid_name="Some virus",
+            adjusted_taxid_rank=None,
+        )
+        write_hits_parquet([record], "sample_a", "set_001", temp_state_dir)
+
+        result = get_top_taxa(state_dir=temp_state_dir)
+
+        assert len(result) == 1
+        assert result[0].rank is None
+
+
+class TestGetHighlightsString:
+    """Tests for get_highlights_string()."""
+
+    def test_empty_database(self, temp_state_dir):
+        """Empty database returns empty string."""
+        result = get_highlights_string(state_dir=temp_state_dir)
+        assert result == ""
+
+    def test_single_taxon(self, temp_state_dir):
+        """Single taxon returns formatted string."""
+        record = make_hit_record(
+            "ACGTACGT",
+            "set_001",
+            "sample_a",
+            "2024-01-01T00:00:00Z",
+            adjusted_taxid=10376,
+            adjusted_taxid_name="Human gammaherpesvirus 4",
+            adjusted_taxid_rank="species",
+        )
+        write_hits_parquet([record], "sample_a", "set_001", temp_state_dir)
+
+        result = get_highlights_string(state_dir=temp_state_dir)
+
+        assert result == "Human gammaherpesvirus 4 (1)"
+
+    def test_multiple_taxa_formatted_correctly(self, temp_state_dir):
+        """Multiple taxa are comma-separated with sample counts."""
+        records = [
+            make_hit_record(
+                "AAACCC",
+                "set_001",
+                "sample_a",
+                "2024-01-01T00:00:00Z",
+                adjusted_taxid=111,
+                adjusted_taxid_name="Taxon A",
+                adjusted_taxid_rank="species",
+            ),
+            make_hit_record(
+                "AAAGGG",
+                "set_001",
+                "sample_a",
+                "2024-01-01T00:00:00Z",
+                adjusted_taxid=222,
+                adjusted_taxid_name="Taxon B",
+                adjusted_taxid_rank="species",
+            ),
+        ]
+        write_hits_parquet(records, "sample_a", "set_001", temp_state_dir)
+
+        result = get_highlights_string(state_dir=temp_state_dir)
+
+        # Both taxa have 1 sample, order may vary by hit_count tiebreaker
+        assert "Taxon A (1)" in result
+        assert "Taxon B (1)" in result
+        assert ", " in result
+
+    def test_ordered_by_sample_count(self, temp_state_dir):
+        """Taxa are ordered by sample count descending."""
+        # Taxon A in 2 samples, Taxon B in 1 sample
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "AAACCC",
+                    "set_001",
+                    "sample_a",
+                    "2024-01-01T00:00:00Z",
+                    adjusted_taxid=111,
+                    adjusted_taxid_name="Taxon A",
+                    adjusted_taxid_rank="species",
+                ),
+            ],
+            "sample_a",
+            "set_001",
+            temp_state_dir,
+        )
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "AAAGGG",
+                    "set_001",
+                    "sample_b",
+                    "2024-01-01T00:00:00Z",
+                    adjusted_taxid=111,
+                    adjusted_taxid_name="Taxon A",
+                    adjusted_taxid_rank="species",
+                ),
+            ],
+            "sample_b",
+            "set_001",
+            temp_state_dir,
+        )
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "CCCGGG",
+                    "set_001",
+                    "sample_a",
+                    "2024-01-01T00:00:00Z",
+                    adjusted_taxid=222,
+                    adjusted_taxid_name="Taxon B",
+                    adjusted_taxid_rank="species",
+                ),
+            ],
+            "sample_c",
+            "set_001",
+            temp_state_dir,
+        )
+
+        result = get_highlights_string(state_dir=temp_state_dir)
+
+        # Taxon A should come first (2 samples vs 1)
+        assert result.startswith("Taxon A (2)")
+
+    def test_limit_parameter(self, temp_state_dir):
+        """Limit parameter restricts number of taxa in output."""
+        records = [
+            make_hit_record(
+                "AAACCC",
+                "set_001",
+                "sample_a",
+                "2024-01-01T00:00:00Z",
+                adjusted_taxid=111,
+                adjusted_taxid_name="Taxon A",
+                adjusted_taxid_rank="species",
+            ),
+            make_hit_record(
+                "AAAGGG",
+                "set_001",
+                "sample_a",
+                "2024-01-01T00:00:00Z",
+                adjusted_taxid=222,
+                adjusted_taxid_name="Taxon B",
+                adjusted_taxid_rank="species",
+            ),
+            make_hit_record(
+                "AAATTT",
+                "set_001",
+                "sample_a",
+                "2024-01-01T00:00:00Z",
+                adjusted_taxid=333,
+                adjusted_taxid_name="Taxon C",
+                adjusted_taxid_rank="species",
+            ),
+        ]
+        write_hits_parquet(records, "sample_a", "set_001", temp_state_dir)
+
+        result = get_highlights_string(limit=2, state_dir=temp_state_dir)
+
+        # Should only have 2 taxa (one comma)
+        assert result.count(", ") == 1
+
+    def test_excludes_noise_taxa(self, temp_state_dir):
+        """Noise taxa (root, Homo sapiens) are excluded."""
+        records = [
+            make_hit_record(
+                "AAACCC",
+                "set_001",
+                "sample_a",
+                "2024-01-01T00:00:00Z",
+                adjusted_taxid=1,
+                adjusted_taxid_name="root",
+                adjusted_taxid_rank="no rank",
+            ),
+            make_hit_record(
+                "AAAGGG",
+                "set_001",
+                "sample_a",
+                "2024-01-01T00:00:00Z",
+                adjusted_taxid=111,
+                adjusted_taxid_name="Taxon A",
+                adjusted_taxid_rank="species",
+            ),
+        ]
+        write_hits_parquet(records, "sample_a", "set_001", temp_state_dir)
+
+        result = get_highlights_string(state_dir=temp_state_dir)
+
+        assert "root" not in result
+        assert "Taxon A (1)" in result
+
+    def test_filter_by_sample_set_id(self, temp_state_dir):
+        """Filtering by sample_set_id only includes taxa from that run."""
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "AAACCC",
+                    "set_001",
+                    "sample_a",
+                    "2024-01-01T00:00:00Z",
+                    adjusted_taxid=111,
+                    adjusted_taxid_name="Taxon A",
+                    adjusted_taxid_rank="species",
+                )
+            ],
+            "sample_a",
+            "set_001",
+            temp_state_dir,
+        )
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "AAAGGG",
+                    "set_002",
+                    "sample_b",
+                    "2024-01-02T00:00:00Z",
+                    adjusted_taxid=222,
+                    adjusted_taxid_name="Taxon B",
+                    adjusted_taxid_rank="species",
+                )
+            ],
+            "sample_b",
+            "set_002",
+            temp_state_dir,
+        )
+
+        result = get_highlights_string(
+            sample_set_id="set_001", state_dir=temp_state_dir
+        )
+
+        assert "Taxon A" in result
+        assert "Taxon B" not in result
+
+    def test_no_matching_taxa_returns_empty(self, temp_state_dir):
+        """Returns empty string when all taxa are filtered out."""
+        # Only noise taxa
+        records = [
+            make_hit_record(
+                "AAACCC",
+                "set_001",
+                "sample_a",
+                "2024-01-01T00:00:00Z",
+                adjusted_taxid=1,
+                adjusted_taxid_name="root",
+                adjusted_taxid_rank="no rank",
+            ),
+            make_hit_record(
+                "AAAGGG",
+                "set_001",
+                "sample_a",
+                "2024-01-01T00:00:00Z",
+                adjusted_taxid=9606,
+                adjusted_taxid_name="Homo sapiens",
+                adjusted_taxid_rank="species",
+            ),
+        ]
+        write_hits_parquet(records, "sample_a", "set_001", temp_state_dir)
+
+        result = get_highlights_string(state_dir=temp_state_dir)
+
+        assert result == ""
+
+
+class TestGetSampleSummaries:
+    """Tests for get_sample_summaries()."""
+
+    def test_empty_database(self, temp_state_dir):
+        """Empty database returns empty list."""
+        result = get_sample_summaries("set_001", state_dir=temp_state_dir)
+        assert result == []
+
+    def test_single_sample(self, temp_state_dir):
+        """Single sample returns one SampleSummary."""
+        record = make_hit_record(
+            "ACGTACGT",
+            "set_001",
+            "sample_a",
+            "2024-01-01T00:00:00Z",
+            adjusted_taxid=10376,
+            adjusted_taxid_name="Human gammaherpesvirus 4",
+            adjusted_taxid_rank="species",
+        )
+        write_hits_parquet([record], "sample_a", "set_001", temp_state_dir)
+
+        result = get_sample_summaries("set_001", state_dir=temp_state_dir)
+
+        assert len(result) == 1
+        assert isinstance(result[0], SampleSummary)
+        assert result[0].sample_id == "sample_a"
+        assert result[0].total_hits == 1
+        assert result[0].viral_taxa_count == 1
+        assert result[0].taxa_detected == ("Human gammaherpesvirus 4",)
+
+    def test_multiple_samples_ordered_by_taxa_count(self, temp_state_dir):
+        """Samples are ordered by viral_taxa_count descending."""
+        # sample_a: 2 taxa, sample_b: 1 taxon
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "AAACCC",
+                    "set_001",
+                    "sample_a",
+                    "2024-01-01T00:00:00Z",
+                    adjusted_taxid=111,
+                    adjusted_taxid_name="Taxon A",
+                    adjusted_taxid_rank="species",
+                ),
+                make_hit_record(
+                    "AAAGGG",
+                    "set_001",
+                    "sample_a",
+                    "2024-01-01T00:00:00Z",
+                    adjusted_taxid=222,
+                    adjusted_taxid_name="Taxon B",
+                    adjusted_taxid_rank="species",
+                ),
+            ],
+            "sample_a",
+            "set_001",
+            temp_state_dir,
+        )
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "CCCGGG",
+                    "set_001",
+                    "sample_b",
+                    "2024-01-01T00:00:00Z",
+                    adjusted_taxid=111,
+                    adjusted_taxid_name="Taxon A",
+                    adjusted_taxid_rank="species",
+                ),
+            ],
+            "sample_b",
+            "set_001",
+            temp_state_dir,
+        )
+
+        result = get_sample_summaries("set_001", state_dir=temp_state_dir)
+
+        assert len(result) == 2
+        assert result[0].sample_id == "sample_a"
+        assert result[0].viral_taxa_count == 2
+        assert result[1].sample_id == "sample_b"
+        assert result[1].viral_taxa_count == 1
+
+    def test_secondary_sort_by_total_hits(self, temp_state_dir):
+        """When viral_taxa_count is equal, sorts by total_hits descending."""
+        # Both samples have 1 taxon, but sample_a has 3 hits, sample_b has 1 hit
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "AAACCC",
+                    "set_001",
+                    "sample_a",
+                    "2024-01-01T00:00:00Z",
+                    adjusted_taxid=111,
+                    adjusted_taxid_name="Taxon A",
+                    adjusted_taxid_rank="species",
+                ),
+                make_hit_record(
+                    "AAAGGG",
+                    "set_001",
+                    "sample_a",
+                    "2024-01-01T00:00:00Z",
+                    adjusted_taxid=111,
+                    adjusted_taxid_name="Taxon A",
+                    adjusted_taxid_rank="species",
+                ),
+                make_hit_record(
+                    "AAATTT",
+                    "set_001",
+                    "sample_a",
+                    "2024-01-01T00:00:00Z",
+                    adjusted_taxid=111,
+                    adjusted_taxid_name="Taxon A",
+                    adjusted_taxid_rank="species",
+                ),
+            ],
+            "sample_a",
+            "set_001",
+            temp_state_dir,
+        )
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "CCCGGG",
+                    "set_001",
+                    "sample_b",
+                    "2024-01-01T00:00:00Z",
+                    adjusted_taxid=222,
+                    adjusted_taxid_name="Taxon B",
+                    adjusted_taxid_rank="species",
+                ),
+            ],
+            "sample_b",
+            "set_001",
+            temp_state_dir,
+        )
+
+        result = get_sample_summaries("set_001", state_dir=temp_state_dir)
+
+        assert len(result) == 2
+        assert result[0].sample_id == "sample_a"
+        assert result[0].total_hits == 3
+        assert result[1].sample_id == "sample_b"
+        assert result[1].total_hits == 1
+
+    def test_excludes_noise_taxa_from_count(self, temp_state_dir):
+        """Noise taxa are excluded from viral_taxa_count."""
+        records = [
+            make_hit_record(
+                "AAACCC",
+                "set_001",
+                "sample_a",
+                "2024-01-01T00:00:00Z",
+                adjusted_taxid=1,
+                adjusted_taxid_name="root",
+                adjusted_taxid_rank="no rank",
+            ),
+            make_hit_record(
+                "AAAGGG",
+                "set_001",
+                "sample_a",
+                "2024-01-01T00:00:00Z",
+                adjusted_taxid=9606,
+                adjusted_taxid_name="Homo sapiens",
+                adjusted_taxid_rank="species",
+            ),
+            make_hit_record(
+                "AAATTT",
+                "set_001",
+                "sample_a",
+                "2024-01-01T00:00:00Z",
+                adjusted_taxid=10376,
+                adjusted_taxid_name="Human gammaherpesvirus 4",
+                adjusted_taxid_rank="species",
+            ),
+        ]
+        write_hits_parquet(records, "sample_a", "set_001", temp_state_dir)
+
+        result = get_sample_summaries("set_001", state_dir=temp_state_dir)
+
+        assert len(result) == 1
+        assert result[0].total_hits == 3  # All hits counted
+        assert result[0].viral_taxa_count == 1  # Only EBV
+        assert result[0].taxa_detected == ("Human gammaherpesvirus 4",)
+
+    def test_excludes_noise_taxa_from_list(self, temp_state_dir):
+        """Noise taxa are excluded from taxa_detected list."""
+        records = [
+            make_hit_record(
+                "AAACCC",
+                "set_001",
+                "sample_a",
+                "2024-01-01T00:00:00Z",
+                adjusted_taxid=1,
+                adjusted_taxid_name="root",
+                adjusted_taxid_rank="no rank",
+            ),
+            make_hit_record(
+                "AAAGGG",
+                "set_001",
+                "sample_a",
+                "2024-01-01T00:00:00Z",
+                adjusted_taxid=111,
+                adjusted_taxid_name="Taxon A",
+                adjusted_taxid_rank="species",
+            ),
+        ]
+        write_hits_parquet(records, "sample_a", "set_001", temp_state_dir)
+
+        result = get_sample_summaries("set_001", state_dir=temp_state_dir)
+
+        assert "root" not in result[0].taxa_detected
+        assert "Taxon A" in result[0].taxa_detected
+
+    def test_taxa_detected_sorted_alphabetically(self, temp_state_dir):
+        """taxa_detected list is sorted alphabetically."""
+        records = [
+            make_hit_record(
+                "AAACCC",
+                "set_001",
+                "sample_a",
+                "2024-01-01T00:00:00Z",
+                adjusted_taxid=333,
+                adjusted_taxid_name="Zebra virus",
+                adjusted_taxid_rank="species",
+            ),
+            make_hit_record(
+                "AAAGGG",
+                "set_001",
+                "sample_a",
+                "2024-01-01T00:00:00Z",
+                adjusted_taxid=111,
+                adjusted_taxid_name="Alpha virus",
+                adjusted_taxid_rank="species",
+            ),
+            make_hit_record(
+                "AAATTT",
+                "set_001",
+                "sample_a",
+                "2024-01-01T00:00:00Z",
+                adjusted_taxid=222,
+                adjusted_taxid_name="Beta virus",
+                adjusted_taxid_rank="species",
+            ),
+        ]
+        write_hits_parquet(records, "sample_a", "set_001", temp_state_dir)
+
+        result = get_sample_summaries("set_001", state_dir=temp_state_dir)
+
+        assert result[0].taxa_detected == ("Alpha virus", "Beta virus", "Zebra virus")
+
+    def test_only_returns_samples_from_specified_run(self, temp_state_dir):
+        """Only returns samples from the specified sample_set_id."""
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "AAACCC",
+                    "set_001",
+                    "sample_a",
+                    "2024-01-01T00:00:00Z",
+                    adjusted_taxid=111,
+                    adjusted_taxid_name="Taxon A",
+                    adjusted_taxid_rank="species",
+                )
+            ],
+            "sample_a",
+            "set_001",
+            temp_state_dir,
+        )
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "AAAGGG",
+                    "set_002",
+                    "sample_b",
+                    "2024-01-02T00:00:00Z",
+                    adjusted_taxid=222,
+                    adjusted_taxid_name="Taxon B",
+                    adjusted_taxid_rank="species",
+                )
+            ],
+            "sample_b",
+            "set_002",
+            temp_state_dir,
+        )
+
+        result = get_sample_summaries("set_001", state_dir=temp_state_dir)
+
+        assert len(result) == 1
+        assert result[0].sample_id == "sample_a"
+
+    def test_sample_with_no_viral_taxa(self, temp_state_dir):
+        """Sample with only noise taxa has viral_taxa_count=0 and empty list."""
+        records = [
+            make_hit_record(
+                "AAACCC",
+                "set_001",
+                "sample_a",
+                "2024-01-01T00:00:00Z",
+                adjusted_taxid=1,
+                adjusted_taxid_name="root",
+                adjusted_taxid_rank="no rank",
+            ),
+        ]
+        write_hits_parquet(records, "sample_a", "set_001", temp_state_dir)
+
+        result = get_sample_summaries("set_001", state_dir=temp_state_dir)
+
+        assert len(result) == 1
+        assert result[0].total_hits == 1
+        assert result[0].viral_taxa_count == 0
+        assert result[0].taxa_detected == ()
+
+    def test_sample_with_unclassified_hits(self, temp_state_dir):
+        """Hits without classification are counted in total but not in taxa."""
+        records = [
+            make_hit_record(
+                "AAACCC",
+                "set_001",
+                "sample_a",
+                "2024-01-01T00:00:00Z",
+                # No classification
+            ),
+            make_hit_record(
+                "AAAGGG",
+                "set_001",
+                "sample_a",
+                "2024-01-01T00:00:00Z",
+                adjusted_taxid=111,
+                adjusted_taxid_name="Taxon A",
+                adjusted_taxid_rank="species",
+            ),
+        ]
+        write_hits_parquet(records, "sample_a", "set_001", temp_state_dir)
+
+        result = get_sample_summaries("set_001", state_dir=temp_state_dir)
+
+        assert result[0].total_hits == 2
+        assert result[0].viral_taxa_count == 1
+        assert result[0].taxa_detected == ("Taxon A",)
+
+    def test_raises_on_empty_sample_set_id(self, temp_state_dir):
+        """Raises AssertionError for empty sample_set_id."""
+        with pytest.raises(AssertionError, match="cannot be empty"):
+            get_sample_summaries("", state_dir=temp_state_dir)
+
+
+class TestGetNegativeSamples:
+    """Tests for get_negative_samples()."""
+
+    def test_empty_database(self, temp_state_dir):
+        """Empty database returns empty list."""
+        result = get_negative_samples("set_001", state_dir=temp_state_dir)
+        assert result == []
+
+    def test_all_samples_have_viral_hits(self, temp_state_dir):
+        """Returns empty list when all samples have viral taxa."""
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "AAACCC",
+                    "set_001",
+                    "sample_a",
+                    "2024-01-01T00:00:00Z",
+                    adjusted_taxid=111,
+                    adjusted_taxid_name="Taxon A",
+                    adjusted_taxid_rank="species",
+                )
+            ],
+            "sample_a",
+            "set_001",
+            temp_state_dir,
+        )
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "AAAGGG",
+                    "set_001",
+                    "sample_b",
+                    "2024-01-01T00:00:00Z",
+                    adjusted_taxid=222,
+                    adjusted_taxid_name="Taxon B",
+                    adjusted_taxid_rank="species",
+                )
+            ],
+            "sample_b",
+            "set_001",
+            temp_state_dir,
+        )
+
+        result = get_negative_samples("set_001", state_dir=temp_state_dir)
+
+        assert result == []
+
+    def test_sample_with_only_noise_taxa(self, temp_state_dir):
+        """Sample with only noise taxa is returned as negative."""
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "AAACCC",
+                    "set_001",
+                    "sample_a",
+                    "2024-01-01T00:00:00Z",
+                    adjusted_taxid=1,
+                    adjusted_taxid_name="root",
+                    adjusted_taxid_rank="no rank",
+                ),
+                make_hit_record(
+                    "AAAGGG",
+                    "set_001",
+                    "sample_a",
+                    "2024-01-01T00:00:00Z",
+                    adjusted_taxid=9606,
+                    adjusted_taxid_name="Homo sapiens",
+                    adjusted_taxid_rank="species",
+                ),
+            ],
+            "sample_a",
+            "set_001",
+            temp_state_dir,
+        )
+
+        result = get_negative_samples("set_001", state_dir=temp_state_dir)
+
+        assert result == ["sample_a"]
+
+    def test_mixed_positive_and_negative_samples(self, temp_state_dir):
+        """Returns only negative samples when mix exists."""
+        # sample_a: only noise
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "AAACCC",
+                    "set_001",
+                    "sample_a",
+                    "2024-01-01T00:00:00Z",
+                    adjusted_taxid=1,
+                    adjusted_taxid_name="root",
+                    adjusted_taxid_rank="no rank",
+                )
+            ],
+            "sample_a",
+            "set_001",
+            temp_state_dir,
+        )
+        # sample_b: has viral hit
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "AAAGGG",
+                    "set_001",
+                    "sample_b",
+                    "2024-01-01T00:00:00Z",
+                    adjusted_taxid=111,
+                    adjusted_taxid_name="Taxon A",
+                    adjusted_taxid_rank="species",
+                )
+            ],
+            "sample_b",
+            "set_001",
+            temp_state_dir,
+        )
+        # sample_c: only noise
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "CCCGGG",
+                    "set_001",
+                    "sample_c",
+                    "2024-01-01T00:00:00Z",
+                    adjusted_taxid=9606,
+                    adjusted_taxid_name="Homo sapiens",
+                    adjusted_taxid_rank="species",
+                )
+            ],
+            "sample_c",
+            "set_001",
+            temp_state_dir,
+        )
+
+        result = get_negative_samples("set_001", state_dir=temp_state_dir)
+
+        assert result == ["sample_a", "sample_c"]
+
+    def test_sorted_alphabetically(self, temp_state_dir):
+        """Results are sorted alphabetically by sample_id."""
+        # Create in non-alphabetical order
+        for sample_id in ["sample_z", "sample_a", "sample_m"]:
+            write_hits_parquet(
+                [
+                    make_hit_record(
+                        f"AAA{sample_id}",
+                        "set_001",
+                        sample_id,
+                        "2024-01-01T00:00:00Z",
+                        adjusted_taxid=1,
+                        adjusted_taxid_name="root",
+                        adjusted_taxid_rank="no rank",
+                    )
+                ],
+                sample_id,
+                "set_001",
+                temp_state_dir,
+            )
+
+        result = get_negative_samples("set_001", state_dir=temp_state_dir)
+
+        assert result == ["sample_a", "sample_m", "sample_z"]
+
+    def test_only_queries_specified_run(self, temp_state_dir):
+        """Only considers samples from the specified sample_set_id."""
+        # set_001: sample_a with only noise
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "AAACCC",
+                    "set_001",
+                    "sample_a",
+                    "2024-01-01T00:00:00Z",
+                    adjusted_taxid=1,
+                    adjusted_taxid_name="root",
+                    adjusted_taxid_rank="no rank",
+                )
+            ],
+            "sample_a",
+            "set_001",
+            temp_state_dir,
+        )
+        # set_002: sample_b with only noise (should not appear)
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "AAAGGG",
+                    "set_002",
+                    "sample_b",
+                    "2024-01-02T00:00:00Z",
+                    adjusted_taxid=1,
+                    adjusted_taxid_name="root",
+                    adjusted_taxid_rank="no rank",
+                )
+            ],
+            "sample_b",
+            "set_002",
+            temp_state_dir,
+        )
+
+        result = get_negative_samples("set_001", state_dir=temp_state_dir)
+
+        assert result == ["sample_a"]
+        assert "sample_b" not in result
+
+    def test_sample_with_unclassified_hits_only(self, temp_state_dir):
+        """Sample with only unclassified hits (NULL taxid_name) is negative."""
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "AAACCC",
+                    "set_001",
+                    "sample_a",
+                    "2024-01-01T00:00:00Z",
+                    # No classification
+                )
+            ],
+            "sample_a",
+            "set_001",
+            temp_state_dir,
+        )
+
+        result = get_negative_samples("set_001", state_dir=temp_state_dir)
+
+        assert result == ["sample_a"]
+
+    def test_raises_on_empty_sample_set_id(self, temp_state_dir):
+        """Raises AssertionError for empty sample_set_id."""
+        with pytest.raises(AssertionError, match="cannot be empty"):
+            get_negative_samples("", state_dir=temp_state_dir)
+
+
+class TestGetContigQuality:
+    """Tests for get_contig_quality()."""
+
+    def test_empty_database(self, temp_state_dir):
+        """Empty database returns None."""
+        result = get_contig_quality("set_001", state_dir=temp_state_dir)
+        assert result is None
+
+    def test_nonexistent_sample_set(self, temp_state_dir):
+        """Nonexistent sample set returns None."""
+        # Create data for a different sample set
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "AAACCC",
+                    "set_001",
+                    "sample_a",
+                    "2024-01-01T00:00:00Z",
+                )
+            ],
+            "sample_a",
+            "set_001",
+            temp_state_dir,
+        )
+
+        result = get_contig_quality("set_999", state_dir=temp_state_dir)
+
+        assert result is None
+
+    def test_single_contig(self, temp_state_dir):
+        """Single contig returns correct metrics."""
+        seq = "A" * 100 + "G" * 100  # 200 bp, 50% GC
+        record = make_hit_record(
+            seq,
+            "set_001",
+            "sample_a",
+            "2024-01-01T00:00:00Z",
+        )
+        write_hits_parquet([record], "sample_a", "set_001", temp_state_dir)
+
+        result = get_contig_quality("set_001", state_dir=temp_state_dir)
+
+        assert result is not None
+        assert isinstance(result, ContigQuality)
+        assert result.total_contigs == 1
+        assert result.total_bases == 200
+        assert result.mean_length == 200.0
+        assert result.median_length == 200
+        assert result.max_length == 200
+        assert result.contigs_500bp_plus == 0
+        assert result.contigs_1kb_plus == 0
+        assert result.mean_gc == 0.5
+
+    def test_multiple_contigs_length_stats(self, temp_state_dir):
+        """Multiple contigs compute correct length statistics."""
+        # Contigs of length 100, 300, 600, 1200
+        records = [
+            make_hit_record("A" * 100, "set_001", "sample_a", "2024-01-01T00:00:00Z"),
+            make_hit_record("C" * 300, "set_001", "sample_a", "2024-01-01T00:00:00Z"),
+            make_hit_record("G" * 600, "set_001", "sample_a", "2024-01-01T00:00:00Z"),
+            make_hit_record("T" * 1200, "set_001", "sample_a", "2024-01-01T00:00:00Z"),
+        ]
+        write_hits_parquet(records, "sample_a", "set_001", temp_state_dir)
+
+        result = get_contig_quality("set_001", state_dir=temp_state_dir)
+
+        assert result is not None
+        assert result.total_contigs == 4
+        assert result.total_bases == 2200
+        assert result.mean_length == 550.0
+        # Median of [100, 300, 600, 1200] = (300 + 600) / 2 = 450
+        assert result.median_length == 450
+        assert result.max_length == 1200
+        assert result.contigs_500bp_plus == 2  # 600 and 1200
+        assert result.contigs_1kb_plus == 1  # 1200
+
+    def test_gc_content_averaged(self, temp_state_dir):
+        """GC content is averaged across all contigs."""
+        # Contig 1: all A (0% GC), Contig 2: all G (100% GC) -> avg 50%
+        records = [
+            make_hit_record("A" * 100, "set_001", "sample_a", "2024-01-01T00:00:00Z"),
+            make_hit_record("G" * 100, "set_001", "sample_a", "2024-01-01T00:00:00Z"),
+        ]
+        write_hits_parquet(records, "sample_a", "set_001", temp_state_dir)
+
+        result = get_contig_quality("set_001", state_dir=temp_state_dir)
+
+        assert result is not None
+        assert result.mean_gc == 0.5
+
+    def test_counts_unique_contigs_not_observations(self, temp_state_dir):
+        """Same contig in multiple samples is counted once."""
+        # Same sequence in two samples
+        seq = "ACGT" * 50  # 200 bp
+        records = [
+            make_hit_record(seq, "set_001", "sample_a", "2024-01-01T00:00:00Z"),
+            make_hit_record(seq, "set_001", "sample_b", "2024-01-01T00:00:00Z"),
+        ]
+        write_hits_parquet(records, "sample_a", "set_001", temp_state_dir)
+
+        result = get_contig_quality("set_001", state_dir=temp_state_dir)
+
+        assert result is not None
+        assert result.total_contigs == 1  # Not 2
+        assert result.total_bases == 200  # Not 400
+
+    def test_only_queries_specified_run(self, temp_state_dir):
+        """Only includes contigs from the specified sample_set_id."""
+        write_hits_parquet(
+            [make_hit_record("A" * 100, "set_001", "sample_a", "2024-01-01T00:00:00Z")],
+            "sample_a",
+            "set_001",
+            temp_state_dir,
+        )
+        write_hits_parquet(
+            [make_hit_record("C" * 500, "set_002", "sample_b", "2024-01-02T00:00:00Z")],
+            "sample_b",
+            "set_002",
+            temp_state_dir,
+        )
+
+        result = get_contig_quality("set_001", state_dir=temp_state_dir)
+
+        assert result is not None
+        assert result.total_contigs == 1
+        assert result.max_length == 100  # Not 500 from set_002
+
+    def test_raises_on_empty_sample_set_id(self, temp_state_dir):
+        """Raises AssertionError for empty sample_set_id."""
+        with pytest.raises(AssertionError, match="cannot be empty"):
+            get_contig_quality("", state_dir=temp_state_dir)
+
+
+class TestClassifyTaxonToFamily:
+    """Tests for _classify_taxon_to_family() helper."""
+
+    def test_herpesvirus_pattern(self):
+        """Herpesvirus names match Orthoherpesviridae."""
+        assert (
+            _classify_taxon_to_family("Human gammaherpesvirus 4")
+            == "Orthoherpesviridae"
+        )
+        assert (
+            _classify_taxon_to_family("Human alphaherpesvirus 1")
+            == "Orthoherpesviridae"
+        )
+        assert (
+            _classify_taxon_to_family("Herpes simplex virus 2") == "Orthoherpesviridae"
+        )
+
+    def test_rhinovirus_pattern(self):
+        """Rhinovirus names match Picornaviridae."""
+        assert _classify_taxon_to_family("Rhinovirus A") == "Picornaviridae"
+        assert _classify_taxon_to_family("Human rhinovirus 14") == "Picornaviridae"
+
+    def test_enterovirus_pattern(self):
+        """Enterovirus names match Picornaviridae."""
+        assert _classify_taxon_to_family("Enterovirus D68") == "Picornaviridae"
+        assert _classify_taxon_to_family("Coxsackievirus A16") == "Picornaviridae"
+
+    def test_polyomavirus_pattern(self):
+        """Polyomavirus names match Polyomaviridae."""
+        assert _classify_taxon_to_family("JC polyomavirus") == "Polyomaviridae"
+        assert _classify_taxon_to_family("BK virus") == "Polyomaviridae"
+        assert _classify_taxon_to_family("Merkel cell polyomavirus") == "Polyomaviridae"
+
+    def test_coronavirus_pattern(self):
+        """Coronavirus names match Coronaviridae."""
+        assert _classify_taxon_to_family("SARS-CoV-2") == "Coronaviridae"
+        assert _classify_taxon_to_family("Human coronavirus OC43") == "Coronaviridae"
+
+    def test_influenza_pattern(self):
+        """Influenza names match Orthomyxoviridae."""
+        assert _classify_taxon_to_family("Influenza A virus") == "Orthomyxoviridae"
+        assert _classify_taxon_to_family("Influenza B virus") == "Orthomyxoviridae"
+
+    def test_papillomavirus_pattern(self):
+        """Papillomavirus names match Papillomaviridae."""
+        assert (
+            _classify_taxon_to_family("Human papillomavirus 16") == "Papillomaviridae"
+        )
+        assert _classify_taxon_to_family("HPV type 18") == "Papillomaviridae"
+
+    def test_retrovirus_pattern(self):
+        """Retrovirus names match Retroviridae."""
+        assert _classify_taxon_to_family("HIV-1") == "Retroviridae"
+        assert (
+            _classify_taxon_to_family("Human T-lymphotropic virus 1") == "Retroviridae"
+        )
+        assert _classify_taxon_to_family("HTLV-2") == "Retroviridae"
+
+    def test_anellovirus_pattern(self):
+        """Anellovirus names match Anelloviridae."""
+        assert _classify_taxon_to_family("Torque teno virus") == "Anelloviridae"
+        assert _classify_taxon_to_family("TTV-like mini virus") == "Anelloviridae"
+
+    def test_norovirus_pattern(self):
+        """Norovirus names match Caliciviridae."""
+        assert _classify_taxon_to_family("Norovirus GII") == "Caliciviridae"
+        assert _classify_taxon_to_family("Sapovirus") == "Caliciviridae"
+
+    def test_case_insensitive(self):
+        """Pattern matching is case-insensitive."""
+        assert (
+            _classify_taxon_to_family("HUMAN GAMMAHERPESVIRUS 4")
+            == "Orthoherpesviridae"
+        )
+        assert (
+            _classify_taxon_to_family("human gammaherpesvirus 4")
+            == "Orthoherpesviridae"
+        )
+        assert (
+            _classify_taxon_to_family("Human Gammaherpesvirus 4")
+            == "Orthoherpesviridae"
+        )
+
+    def test_unknown_returns_other(self):
+        """Unknown taxa return 'Other'."""
+        assert _classify_taxon_to_family("Some unknown virus") == "Other"
+        assert _classify_taxon_to_family("Bacteriophage T4") == "Other"
+
+    def test_all_families_have_patterns(self):
+        """All 27 families from human_virus_families have patterns."""
+        # This ensures we haven't missed any families
+        expected_families = {
+            "Adenoviridae",
+            "Anelloviridae",
+            "Arenaviridae",
+            "Arteriviridae",
+            "Astroviridae",
+            "Bornaviridae",
+            "Peribunyaviridae",
+            "Caliciviridae",
+            "Coronaviridae",
+            "Filoviridae",
+            "Flaviviridae",
+            "Hepadnaviridae",
+            "Hepeviridae",
+            "Orthoherpesviridae",
+            "Orthomyxoviridae",
+            "Papillomaviridae",
+            "Paramyxoviridae",
+            "Parvoviridae",
+            "Picobirnaviridae",
+            "Picornaviridae",
+            "Pneumoviridae",
+            "Polyomaviridae",
+            "Poxviridae",
+            "Sedoreoviridae",
+            "Retroviridae",
+            "Rhabdoviridae",
+            "Togaviridae",
+            "Kolmioviridae",
+        }
+        assert set(FAMILY_SEARCH_PATTERNS.keys()) == expected_families
+
+    def test_short_patterns_use_word_boundaries(self):
+        """Short patterns (<=4 chars) require word boundaries to prevent false positives."""
+        # "hiv" should NOT match "archivirus" (pattern embedded in word)
+        assert _classify_taxon_to_family("Archivirus") == "Other"
+        # "hiv" SHOULD match "HIV-1" (word boundary before pattern)
+        assert _classify_taxon_to_family("HIV-1") == "Retroviridae"
+        # "rsv" should NOT match words containing "rsv" as substring
+        assert _classify_taxon_to_family("Conserved protein") == "Other"
+        # "rsv" SHOULD match "RSV" as standalone
+        assert _classify_taxon_to_family("RSV strain A") == "Pneumoviridae"
+
+    def test_long_patterns_allow_substring_matching(self):
+        """Longer patterns (>4 chars) allow substring matching for compound names."""
+        # "herpesvirus" matches "gammaherpesvirus" (suffix)
+        assert (
+            _classify_taxon_to_family("Human gammaherpesvirus 4")
+            == "Orthoherpesviridae"
+        )
+        # "coxsackie" matches "Coxsackievirus" (prefix)
+        assert _classify_taxon_to_family("Coxsackievirus A16") == "Picornaviridae"
+        # "influenza" matches as substring
+        assert _classify_taxon_to_family("Influenzavirus A") == "Orthomyxoviridae"
+
+    def test_empty_string_returns_other(self):
+        """Empty taxon name returns 'Other'."""
+        assert _classify_taxon_to_family("") == "Other"
+
+
+class TestGetTaxaByCategory:
+    """Tests for get_taxa_by_category()."""
+
+    def test_empty_database(self, temp_state_dir):
+        """Empty database returns empty list."""
+        result = get_taxa_by_category("set_001", state_dir=temp_state_dir)
+        assert result == []
+
+    def test_nonexistent_sample_set(self, temp_state_dir):
+        """Nonexistent sample set returns empty list."""
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "AAACCC",
+                    "set_001",
+                    "sample_a",
+                    "2024-01-01T00:00:00Z",
+                    adjusted_taxid=10376,
+                    adjusted_taxid_name="Human gammaherpesvirus 4",
+                    adjusted_taxid_rank="species",
+                )
+            ],
+            "sample_a",
+            "set_001",
+            temp_state_dir,
+        )
+
+        result = get_taxa_by_category("set_999", state_dir=temp_state_dir)
+
+        assert result == []
+
+    def test_single_taxon_single_family(self, temp_state_dir):
+        """Single taxon returns one CategorySummary."""
+        record = make_hit_record(
+            "ACGTACGT",
+            "set_001",
+            "sample_a",
+            "2024-01-01T00:00:00Z",
+            adjusted_taxid=10376,
+            adjusted_taxid_name="Human gammaherpesvirus 4",
+            adjusted_taxid_rank="species",
+        )
+        write_hits_parquet([record], "sample_a", "set_001", temp_state_dir)
+
+        result = get_taxa_by_category("set_001", state_dir=temp_state_dir)
+
+        assert len(result) == 1
+        assert isinstance(result[0], CategorySummary)
+        assert result[0].category == "Orthoherpesviridae"
+        assert result[0].sample_count == 1
+        assert result[0].hit_count == 1
+        assert result[0].taxa == ("Human gammaherpesvirus 4",)
+
+    def test_multiple_taxa_same_family(self, temp_state_dir):
+        """Multiple taxa in same family are grouped together."""
+        records = [
+            make_hit_record(
+                "AAACCC",
+                "set_001",
+                "sample_a",
+                "2024-01-01T00:00:00Z",
+                adjusted_taxid=10376,
+                adjusted_taxid_name="Human gammaherpesvirus 4",
+                adjusted_taxid_rank="species",
+            ),
+            make_hit_record(
+                "AAAGGG",
+                "set_001",
+                "sample_a",
+                "2024-01-01T00:00:00Z",
+                adjusted_taxid=10298,
+                adjusted_taxid_name="Human alphaherpesvirus 1",
+                adjusted_taxid_rank="species",
+            ),
+        ]
+        write_hits_parquet(records, "sample_a", "set_001", temp_state_dir)
+
+        result = get_taxa_by_category("set_001", state_dir=temp_state_dir)
+
+        assert len(result) == 1
+        assert result[0].category == "Orthoherpesviridae"
+        assert result[0].sample_count == 1
+        assert result[0].hit_count == 2
+        assert result[0].taxa == (
+            "Human alphaherpesvirus 1",
+            "Human gammaherpesvirus 4",
+        )
+
+    def test_multiple_families(self, temp_state_dir):
+        """Taxa from different families are grouped separately."""
+        records = [
+            make_hit_record(
+                "AAACCC",
+                "set_001",
+                "sample_a",
+                "2024-01-01T00:00:00Z",
+                adjusted_taxid=10376,
+                adjusted_taxid_name="Human gammaherpesvirus 4",
+                adjusted_taxid_rank="species",
+            ),
+            make_hit_record(
+                "AAAGGG",
+                "set_001",
+                "sample_a",
+                "2024-01-01T00:00:00Z",
+                adjusted_taxid=12814,
+                adjusted_taxid_name="Rhinovirus A",
+                adjusted_taxid_rank="species",
+            ),
+        ]
+        write_hits_parquet(records, "sample_a", "set_001", temp_state_dir)
+
+        result = get_taxa_by_category("set_001", state_dir=temp_state_dir)
+
+        assert len(result) == 2
+        categories = {r.category for r in result}
+        assert categories == {"Orthoherpesviridae", "Picornaviridae"}
+
+    def test_excludes_noise_taxa(self, temp_state_dir):
+        """Noise taxa (root, Homo sapiens) are excluded."""
+        records = [
+            make_hit_record(
+                "AAACCC",
+                "set_001",
+                "sample_a",
+                "2024-01-01T00:00:00Z",
+                adjusted_taxid=1,
+                adjusted_taxid_name="root",
+                adjusted_taxid_rank="no rank",
+            ),
+            make_hit_record(
+                "AAAGGG",
+                "set_001",
+                "sample_a",
+                "2024-01-01T00:00:00Z",
+                adjusted_taxid=9606,
+                adjusted_taxid_name="Homo sapiens",
+                adjusted_taxid_rank="species",
+            ),
+            make_hit_record(
+                "AAATTT",
+                "set_001",
+                "sample_a",
+                "2024-01-01T00:00:00Z",
+                adjusted_taxid=10376,
+                adjusted_taxid_name="Human gammaherpesvirus 4",
+                adjusted_taxid_rank="species",
+            ),
+        ]
+        write_hits_parquet(records, "sample_a", "set_001", temp_state_dir)
+
+        result = get_taxa_by_category("set_001", state_dir=temp_state_dir)
+
+        assert len(result) == 1
+        assert result[0].category == "Orthoherpesviridae"
+
+    def test_unknown_taxa_grouped_as_other(self, temp_state_dir):
+        """Taxa not matching any family pattern go to 'Other'."""
+        record = make_hit_record(
+            "AAACCC",
+            "set_001",
+            "sample_a",
+            "2024-01-01T00:00:00Z",
+            adjusted_taxid=99999,
+            adjusted_taxid_name="Unknown virus XYZ",
+            adjusted_taxid_rank="species",
+        )
+        write_hits_parquet([record], "sample_a", "set_001", temp_state_dir)
+
+        result = get_taxa_by_category("set_001", state_dir=temp_state_dir)
+
+        assert len(result) == 1
+        assert result[0].category == "Other"
+        assert result[0].taxa == ("Unknown virus XYZ",)
+
+    def test_ordered_by_sample_count_descending(self, temp_state_dir):
+        """Results are ordered by sample_count descending."""
+        # Herpesvirus in 3 samples, Picornavirus in 1 sample
+        records = [
+            make_hit_record(
+                "AAACCC",
+                "set_001",
+                "sample_a",
+                "2024-01-01T00:00:00Z",
+                adjusted_taxid=10376,
+                adjusted_taxid_name="Human gammaherpesvirus 4",
+                adjusted_taxid_rank="species",
+            ),
+            make_hit_record(
+                "AAAGGG",
+                "set_001",
+                "sample_b",
+                "2024-01-01T00:00:00Z",
+                adjusted_taxid=10376,
+                adjusted_taxid_name="Human gammaherpesvirus 4",
+                adjusted_taxid_rank="species",
+            ),
+            make_hit_record(
+                "AAATTT",
+                "set_001",
+                "sample_c",
+                "2024-01-01T00:00:00Z",
+                adjusted_taxid=10376,
+                adjusted_taxid_name="Human gammaherpesvirus 4",
+                adjusted_taxid_rank="species",
+            ),
+            make_hit_record(
+                "CCCGGG",
+                "set_001",
+                "sample_a",
+                "2024-01-01T00:00:00Z",
+                adjusted_taxid=12814,
+                adjusted_taxid_name="Rhinovirus A",
+                adjusted_taxid_rank="species",
+            ),
+        ]
+        write_hits_parquet(records, "sample_a", "set_001", temp_state_dir)
+
+        result = get_taxa_by_category("set_001", state_dir=temp_state_dir)
+
+        assert len(result) == 2
+        assert result[0].category == "Orthoherpesviridae"
+        assert result[0].sample_count == 3
+        assert result[1].category == "Picornaviridae"
+        assert result[1].sample_count == 1
+
+    def test_counts_unique_samples_per_family(self, temp_state_dir):
+        """Sample count is distinct samples, not observations."""
+        # Same sample has two different herpesviruses
+        records = [
+            make_hit_record(
+                "AAACCC",
+                "set_001",
+                "sample_a",
+                "2024-01-01T00:00:00Z",
+                adjusted_taxid=10376,
+                adjusted_taxid_name="Human gammaherpesvirus 4",
+                adjusted_taxid_rank="species",
+            ),
+            make_hit_record(
+                "AAAGGG",
+                "set_001",
+                "sample_a",
+                "2024-01-01T00:00:00Z",
+                adjusted_taxid=10298,
+                adjusted_taxid_name="Human alphaherpesvirus 1",
+                adjusted_taxid_rank="species",
+            ),
+        ]
+        write_hits_parquet(records, "sample_a", "set_001", temp_state_dir)
+
+        result = get_taxa_by_category("set_001", state_dir=temp_state_dir)
+
+        assert len(result) == 1
+        assert result[0].sample_count == 1  # Not 2
+        assert result[0].hit_count == 2
+
+    def test_counts_unique_hits_per_family(self, temp_state_dir):
+        """Hit count is distinct hit_keys, not observations."""
+        # Same hit in two samples
+        seq = "ACGTACGTACGT"
+        records = [
+            make_hit_record(
+                seq,
+                "set_001",
+                "sample_a",
+                "2024-01-01T00:00:00Z",
+                adjusted_taxid=10376,
+                adjusted_taxid_name="Human gammaherpesvirus 4",
+                adjusted_taxid_rank="species",
+            ),
+            make_hit_record(
+                seq,
+                "set_001",
+                "sample_b",
+                "2024-01-01T00:00:00Z",
+                adjusted_taxid=10376,
+                adjusted_taxid_name="Human gammaherpesvirus 4",
+                adjusted_taxid_rank="species",
+            ),
+        ]
+        write_hits_parquet(records, "sample_a", "set_001", temp_state_dir)
+
+        result = get_taxa_by_category("set_001", state_dir=temp_state_dir)
+
+        assert len(result) == 1
+        assert result[0].hit_count == 1  # Not 2
+        assert result[0].sample_count == 2
+
+    def test_only_queries_specified_run(self, temp_state_dir):
+        """Only includes taxa from the specified sample_set_id."""
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "AAACCC",
+                    "set_001",
+                    "sample_a",
+                    "2024-01-01T00:00:00Z",
+                    adjusted_taxid=10376,
+                    adjusted_taxid_name="Human gammaherpesvirus 4",
+                    adjusted_taxid_rank="species",
+                )
+            ],
+            "sample_a",
+            "set_001",
+            temp_state_dir,
+        )
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "CCCGGG",
+                    "set_002",
+                    "sample_b",
+                    "2024-01-02T00:00:00Z",
+                    adjusted_taxid=12814,
+                    adjusted_taxid_name="Rhinovirus A",
+                    adjusted_taxid_rank="species",
+                )
+            ],
+            "sample_b",
+            "set_002",
+            temp_state_dir,
+        )
+
+        result = get_taxa_by_category("set_001", state_dir=temp_state_dir)
+
+        assert len(result) == 1
+        assert result[0].category == "Orthoherpesviridae"
+
+    def test_taxa_list_is_alphabetized(self, temp_state_dir):
+        """Taxa within a category are alphabetically sorted."""
+        records = [
+            make_hit_record(
+                "AAACCC",
+                "set_001",
+                "sample_a",
+                "2024-01-01T00:00:00Z",
+                adjusted_taxid=10376,
+                adjusted_taxid_name="Zebra herpesvirus",
+                adjusted_taxid_rank="species",
+            ),
+            make_hit_record(
+                "AAAGGG",
+                "set_001",
+                "sample_a",
+                "2024-01-01T00:00:00Z",
+                adjusted_taxid=10298,
+                adjusted_taxid_name="Alpha herpesvirus",
+                adjusted_taxid_rank="species",
+            ),
+        ]
+        write_hits_parquet(records, "sample_a", "set_001", temp_state_dir)
+
+        result = get_taxa_by_category("set_001", state_dir=temp_state_dir)
+
+        assert result[0].taxa == ("Alpha herpesvirus", "Zebra herpesvirus")
+
+    def test_excludes_null_taxon_names(self, temp_state_dir):
+        """Records with NULL adjusted_taxid_name are excluded."""
+        records = [
+            make_hit_record(
+                "AAACCC",
+                "set_001",
+                "sample_a",
+                "2024-01-01T00:00:00Z",
+                adjusted_taxid=None,
+                adjusted_taxid_name=None,
+            ),
+            make_hit_record(
+                "AAAGGG",
+                "set_001",
+                "sample_a",
+                "2024-01-01T00:00:00Z",
+                adjusted_taxid=10376,
+                adjusted_taxid_name="Human gammaherpesvirus 4",
+                adjusted_taxid_rank="species",
+            ),
+        ]
+        write_hits_parquet(records, "sample_a", "set_001", temp_state_dir)
+
+        result = get_taxa_by_category("set_001", state_dir=temp_state_dir)
+
+        assert len(result) == 1
+        assert result[0].hit_count == 1  # Only the named hit
+
+    def test_raises_on_empty_sample_set_id(self, temp_state_dir):
+        """Raises AssertionError for empty sample_set_id."""
+        with pytest.raises(AssertionError, match="cannot be empty"):
+            get_taxa_by_category("", state_dir=temp_state_dir)
+
+
+class TestGetRunReport:
+    """Tests for get_run_report()."""
+
+    def test_empty_database(self, temp_state_dir):
+        """Empty database returns None."""
+        result = get_run_report("set_001", state_dir=temp_state_dir)
+        assert result is None
+
+    def test_nonexistent_sample_set(self, temp_state_dir):
+        """Nonexistent sample set returns None."""
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "AAACCC",
+                    "set_001",
+                    "sample_a",
+                    "2024-01-01T00:00:00Z",
+                    adjusted_taxid=10376,
+                    adjusted_taxid_name="Human gammaherpesvirus 4",
+                    adjusted_taxid_rank="species",
+                )
+            ],
+            "sample_a",
+            "set_001",
+            temp_state_dir,
+        )
+
+        result = get_run_report("set_999", state_dir=temp_state_dir)
+
+        assert result is None
+
+    def test_returns_run_report_type(self, temp_state_dir):
+        """Returns a RunReport instance."""
+        record = make_hit_record(
+            "ACGTACGT",
+            "set_001",
+            "sample_a",
+            "2024-01-01T00:00:00Z",
+            adjusted_taxid=10376,
+            adjusted_taxid_name="Human gammaherpesvirus 4",
+            adjusted_taxid_rank="species",
+        )
+        write_hits_parquet([record], "sample_a", "set_001", temp_state_dir)
+
+        result = get_run_report("set_001", state_dir=temp_state_dir)
+
+        assert result is not None
+        assert isinstance(result, RunReport)
+
+    def test_sample_set_id_populated(self, temp_state_dir):
+        """sample_set_id is populated correctly."""
+        record = make_hit_record(
+            "ACGTACGT",
+            "set_001",
+            "sample_a",
+            "2024-01-01T00:00:00Z",
+        )
+        write_hits_parquet([record], "sample_a", "set_001", temp_state_dir)
+
+        result = get_run_report("set_001", state_dir=temp_state_dir)
+
+        assert result is not None
+        assert result.sample_set_id == "set_001"
+
+    def test_run_date_is_earliest(self, temp_state_dir):
+        """run_date is the earliest run_date in the sample set."""
+        records = [
+            make_hit_record("AAACCC", "set_001", "sample_a", "2024-01-15T00:00:00Z"),
+            make_hit_record("AAAGGG", "set_001", "sample_b", "2024-01-01T00:00:00Z"),
+            make_hit_record("AAATTT", "set_001", "sample_c", "2024-01-10T00:00:00Z"),
+        ]
+        write_hits_parquet(records, "sample_a", "set_001", temp_state_dir)
+
+        result = get_run_report("set_001", state_dir=temp_state_dir)
+
+        assert result is not None
+        assert result.run_date == "2024-01-01T00:00:00Z"
+
+    def test_samples_analyzed_count(self, temp_state_dir):
+        """samples_analyzed counts distinct samples."""
+        records = [
+            make_hit_record("AAACCC", "set_001", "sample_a", "2024-01-01T00:00:00Z"),
+            make_hit_record("AAAGGG", "set_001", "sample_b", "2024-01-01T00:00:00Z"),
+            make_hit_record("AAATTT", "set_001", "sample_c", "2024-01-01T00:00:00Z"),
+        ]
+        write_hits_parquet(records, "sample_a", "set_001", temp_state_dir)
+
+        result = get_run_report("set_001", state_dir=temp_state_dir)
+
+        assert result is not None
+        assert result.samples_analyzed == 3
+
+    def test_unique_hits_count(self, temp_state_dir):
+        """unique_hits counts distinct hit_keys."""
+        # Same sequence in two samples = 1 unique hit
+        seq = "ACGTACGTACGT"
+        records = [
+            make_hit_record(seq, "set_001", "sample_a", "2024-01-01T00:00:00Z"),
+            make_hit_record(seq, "set_001", "sample_b", "2024-01-01T00:00:00Z"),
+            make_hit_record("GGGGCCCC", "set_001", "sample_a", "2024-01-01T00:00:00Z"),
+        ]
+        write_hits_parquet(records, "sample_a", "set_001", temp_state_dir)
+
+        result = get_run_report("set_001", state_dir=temp_state_dir)
+
+        assert result is not None
+        assert result.unique_hits == 2
+
+    def test_viral_taxa_found_excludes_noise(self, temp_state_dir):
+        """viral_taxa_found excludes noise taxa."""
+        records = [
+            make_hit_record(
+                "AAACCC",
+                "set_001",
+                "sample_a",
+                "2024-01-01T00:00:00Z",
+                adjusted_taxid=1,
+                adjusted_taxid_name="root",
+                adjusted_taxid_rank="no rank",
+            ),
+            make_hit_record(
+                "AAAGGG",
+                "set_001",
+                "sample_a",
+                "2024-01-01T00:00:00Z",
+                adjusted_taxid=9606,
+                adjusted_taxid_name="Homo sapiens",
+                adjusted_taxid_rank="species",
+            ),
+            make_hit_record(
+                "AAATTT",
+                "set_001",
+                "sample_a",
+                "2024-01-01T00:00:00Z",
+                adjusted_taxid=10376,
+                adjusted_taxid_name="Human gammaherpesvirus 4",
+                adjusted_taxid_rank="species",
+            ),
+            make_hit_record(
+                "CCCGGG",
+                "set_001",
+                "sample_a",
+                "2024-01-01T00:00:00Z",
+                adjusted_taxid=12814,
+                adjusted_taxid_name="Rhinovirus A",
+                adjusted_taxid_rank="species",
+            ),
+        ]
+        write_hits_parquet(records, "sample_a", "set_001", temp_state_dir)
+
+        result = get_run_report("set_001", state_dir=temp_state_dir)
+
+        assert result is not None
+        assert result.viral_taxa_found == 2  # EBV and Rhinovirus, not root/Homo sapiens
+
+    def test_samples_with_viral_hits_and_negative(self, temp_state_dir):
+        """samples_with_viral_hits and samples_negative are computed correctly."""
+        # sample_a has viral hit, sample_b has only noise, sample_c has viral hit
+        records = [
+            make_hit_record(
+                "AAACCC",
+                "set_001",
+                "sample_a",
+                "2024-01-01T00:00:00Z",
+                adjusted_taxid=10376,
+                adjusted_taxid_name="Human gammaherpesvirus 4",
+                adjusted_taxid_rank="species",
+            ),
+            make_hit_record(
+                "AAAGGG",
+                "set_001",
+                "sample_b",
+                "2024-01-01T00:00:00Z",
+                adjusted_taxid=1,
+                adjusted_taxid_name="root",
+                adjusted_taxid_rank="no rank",
+            ),
+            make_hit_record(
+                "AAATTT",
+                "set_001",
+                "sample_c",
+                "2024-01-01T00:00:00Z",
+                adjusted_taxid=12814,
+                adjusted_taxid_name="Rhinovirus A",
+                adjusted_taxid_rank="species",
+            ),
+        ]
+        write_hits_parquet(records, "sample_a", "set_001", temp_state_dir)
+
+        result = get_run_report("set_001", state_dir=temp_state_dir)
+
+        assert result is not None
+        assert result.samples_analyzed == 3
+        assert result.samples_with_viral_hits == 2
+        assert result.samples_negative == 1
+
+    def test_quality_metrics_populated(self, temp_state_dir):
+        """median_contig_length and contigs_over_500bp are populated."""
+        # Contigs of length 100, 300, 600, 1200
+        records = [
+            make_hit_record("A" * 100, "set_001", "sample_a", "2024-01-01T00:00:00Z"),
+            make_hit_record("C" * 300, "set_001", "sample_a", "2024-01-01T00:00:00Z"),
+            make_hit_record("G" * 600, "set_001", "sample_a", "2024-01-01T00:00:00Z"),
+            make_hit_record("T" * 1200, "set_001", "sample_a", "2024-01-01T00:00:00Z"),
+        ]
+        write_hits_parquet(records, "sample_a", "set_001", temp_state_dir)
+
+        result = get_run_report("set_001", state_dir=temp_state_dir)
+
+        assert result is not None
+        # Median of [100, 300, 600, 1200] = (300 + 600) / 2 = 450
+        assert result.median_contig_length == 450
+        assert result.contigs_over_500bp == 2  # 600 and 1200
+
+    def test_top_findings_limited_to_5(self, temp_state_dir):
+        """top_findings contains at most 5 taxa."""
+        # Create 7 different taxa
+        records = [
+            make_hit_record(
+                f"{'A' * 10}{'C' * i}",
+                "set_001",
+                "sample_a",
+                "2024-01-01T00:00:00Z",
+                adjusted_taxid=1000 + i,
+                adjusted_taxid_name=f"Taxon {i}",
+                adjusted_taxid_rank="species",
+            )
+            for i in range(7)
+        ]
+        write_hits_parquet(records, "sample_a", "set_001", temp_state_dir)
+
+        result = get_run_report("set_001", state_dir=temp_state_dir)
+
+        assert result is not None
+        assert len(result.top_findings) == 5
+
+    def test_top_findings_are_taxon_summaries(self, temp_state_dir):
+        """top_findings contains TaxonSummary objects."""
+        record = make_hit_record(
+            "ACGTACGT",
+            "set_001",
+            "sample_a",
+            "2024-01-01T00:00:00Z",
+            adjusted_taxid=10376,
+            adjusted_taxid_name="Human gammaherpesvirus 4",
+            adjusted_taxid_rank="species",
+        )
+        write_hits_parquet([record], "sample_a", "set_001", temp_state_dir)
+
+        result = get_run_report("set_001", state_dir=temp_state_dir)
+
+        assert result is not None
+        assert len(result.top_findings) == 1
+        assert isinstance(result.top_findings[0], TaxonSummary)
+        assert result.top_findings[0].name == "Human gammaherpesvirus 4"
+
+    def test_sample_summaries_populated(self, temp_state_dir):
+        """sample_summaries contains per-sample breakdown."""
+        records = [
+            make_hit_record(
+                "AAACCC",
+                "set_001",
+                "sample_a",
+                "2024-01-01T00:00:00Z",
+                adjusted_taxid=10376,
+                adjusted_taxid_name="Human gammaherpesvirus 4",
+                adjusted_taxid_rank="species",
+            ),
+            make_hit_record(
+                "AAAGGG",
+                "set_001",
+                "sample_b",
+                "2024-01-01T00:00:00Z",
+                adjusted_taxid=12814,
+                adjusted_taxid_name="Rhinovirus A",
+                adjusted_taxid_rank="species",
+            ),
+        ]
+        write_hits_parquet(records, "sample_a", "set_001", temp_state_dir)
+
+        result = get_run_report("set_001", state_dir=temp_state_dir)
+
+        assert result is not None
+        assert len(result.sample_summaries) == 2
+        assert all(isinstance(s, SampleSummary) for s in result.sample_summaries)
+        sample_ids = {s.sample_id for s in result.sample_summaries}
+        assert sample_ids == {"sample_a", "sample_b"}
+
+    def test_only_queries_specified_run(self, temp_state_dir):
+        """Only includes data from the specified sample_set_id."""
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "AAACCC",
+                    "set_001",
+                    "sample_a",
+                    "2024-01-01T00:00:00Z",
+                    adjusted_taxid=10376,
+                    adjusted_taxid_name="Human gammaherpesvirus 4",
+                    adjusted_taxid_rank="species",
+                )
+            ],
+            "sample_a",
+            "set_001",
+            temp_state_dir,
+        )
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "CCCGGG",
+                    "set_002",
+                    "sample_b",
+                    "2024-01-02T00:00:00Z",
+                    adjusted_taxid=12814,
+                    adjusted_taxid_name="Rhinovirus A",
+                    adjusted_taxid_rank="species",
+                )
+            ],
+            "sample_b",
+            "set_002",
+            temp_state_dir,
+        )
+
+        result = get_run_report("set_001", state_dir=temp_state_dir)
+
+        assert result is not None
+        assert result.samples_analyzed == 1
+        assert result.unique_hits == 1
+        assert len(result.top_findings) == 1
+        assert result.top_findings[0].name == "Human gammaherpesvirus 4"
+
+    def test_run_with_only_noise_taxa(self, temp_state_dir):
+        """Run with only noise taxa has zero viral_taxa_found but still returns report."""
+        records = [
+            make_hit_record(
+                "AAACCC",
+                "set_001",
+                "sample_a",
+                "2024-01-01T00:00:00Z",
+                adjusted_taxid=1,
+                adjusted_taxid_name="root",
+                adjusted_taxid_rank="no rank",
+            ),
+            make_hit_record(
+                "AAAGGG",
+                "set_001",
+                "sample_b",
+                "2024-01-01T00:00:00Z",
+                adjusted_taxid=9606,
+                adjusted_taxid_name="Homo sapiens",
+                adjusted_taxid_rank="species",
+            ),
+        ]
+        write_hits_parquet(records, "sample_a", "set_001", temp_state_dir)
+
+        result = get_run_report("set_001", state_dir=temp_state_dir)
+
+        assert result is not None  # Run exists, even if no viral findings
+        assert result.samples_analyzed == 2
+        assert result.viral_taxa_found == 0
+        assert result.samples_with_viral_hits == 0
+        assert result.samples_negative == 2
+        assert result.top_findings == ()
+
+    def test_raises_on_empty_sample_set_id(self, temp_state_dir):
+        """Raises AssertionError for empty sample_set_id."""
+        with pytest.raises(AssertionError, match="cannot be empty"):
+            get_run_report("", state_dir=temp_state_dir)
+
+
+class TestGetNovelTaxa:
+    """Tests for get_novel_taxa()."""
+
+    def test_returns_empty_list_when_no_hits(self, temp_state_dir):
+        """Returns empty list when no parquet files exist."""
+        result = get_novel_taxa("set_001", state_dir=temp_state_dir)
+        assert result == []
+
+    def test_returns_empty_list_when_run_not_found(self, temp_state_dir):
+        """Returns empty list when sample_set_id doesn't exist."""
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "AAACCC",
+                    "set_001",
+                    "sample_a",
+                    "2024-01-01T00:00:00Z",
+                    adjusted_taxid=10376,
+                    adjusted_taxid_name="Human gammaherpesvirus 4",
+                    adjusted_taxid_rank="species",
+                )
+            ],
+            "sample_a",
+            "set_001",
+            temp_state_dir,
+        )
+
+        result = get_novel_taxa("nonexistent", state_dir=temp_state_dir)
+        assert result == []
+
+    def test_first_run_all_taxa_are_novel(self, temp_state_dir):
+        """In the first run, all taxa are novel (no prior history)."""
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "AAACCC",
+                    "set_001",
+                    "sample_a",
+                    "2024-01-01T00:00:00Z",
+                    adjusted_taxid=10376,
+                    adjusted_taxid_name="Human gammaherpesvirus 4",
+                    adjusted_taxid_rank="species",
+                ),
+                make_hit_record(
+                    "GGGCCC",
+                    "set_001",
+                    "sample_b",
+                    "2024-01-01T00:00:00Z",
+                    adjusted_taxid=12814,
+                    adjusted_taxid_name="Rhinovirus A",
+                    adjusted_taxid_rank="species",
+                ),
+            ],
+            "sample_a",
+            "set_001",
+            temp_state_dir,
+        )
+
+        # First run - all taxa are novel since there's no history
+        result = get_novel_taxa("set_001", state_dir=temp_state_dir)
+
+        # All taxa should be novel (no prior runs)
+        assert len(result) == 2
+        names = {t.name for t in result}
+        assert names == {"Human gammaherpesvirus 4", "Rhinovirus A"}
+
+    def test_identifies_novel_taxa_in_second_run(self, temp_state_dir):
+        """Correctly identifies taxa that are new in the second run."""
+        # First run: EBV
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "AAACCC",
+                    "set_001",
+                    "sample_a",
+                    "2024-01-01T00:00:00Z",
+                    adjusted_taxid=10376,
+                    adjusted_taxid_name="Human gammaherpesvirus 4",
+                    adjusted_taxid_rank="species",
+                )
+            ],
+            "sample_a",
+            "set_001",
+            temp_state_dir,
+        )
+
+        # Second run: EBV (not novel) + Rhinovirus (novel)
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "AAACCC",
+                    "set_002",
+                    "sample_b",
+                    "2024-01-02T00:00:00Z",
+                    adjusted_taxid=10376,
+                    adjusted_taxid_name="Human gammaherpesvirus 4",
+                    adjusted_taxid_rank="species",
+                ),
+                make_hit_record(
+                    "GGGCCC",
+                    "set_002",
+                    "sample_b",
+                    "2024-01-02T00:00:00Z",
+                    adjusted_taxid=12814,
+                    adjusted_taxid_name="Rhinovirus A",
+                    adjusted_taxid_rank="species",
+                ),
+            ],
+            "sample_b",
+            "set_002",
+            temp_state_dir,
+        )
+
+        result = get_novel_taxa("set_002", state_dir=temp_state_dir)
+
+        # Only Rhinovirus should be novel
+        assert len(result) == 1
+        assert result[0].name == "Rhinovirus A"
+        assert result[0].sample_count == 1
+        assert result[0].hit_count == 1
+
+    def test_excludes_noise_taxa(self, temp_state_dir):
+        """Noise taxa (root, Homo sapiens) are excluded from results."""
+        # First run: nothing
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "AAACCC",
+                    "set_001",
+                    "sample_a",
+                    "2024-01-01T00:00:00Z",
+                    adjusted_taxid=10376,
+                    adjusted_taxid_name="Human gammaherpesvirus 4",
+                    adjusted_taxid_rank="species",
+                )
+            ],
+            "sample_a",
+            "set_001",
+            temp_state_dir,
+        )
+
+        # Second run: root and Homo sapiens (both noise, should be excluded)
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "GGGCCC",
+                    "set_002",
+                    "sample_b",
+                    "2024-01-02T00:00:00Z",
+                    adjusted_taxid=1,
+                    adjusted_taxid_name="root",
+                    adjusted_taxid_rank="no rank",
+                ),
+                make_hit_record(
+                    "TTTCCC",
+                    "set_002",
+                    "sample_b",
+                    "2024-01-02T00:00:00Z",
+                    adjusted_taxid=9606,
+                    adjusted_taxid_name="Homo sapiens",
+                    adjusted_taxid_rank="species",
+                ),
+            ],
+            "sample_b",
+            "set_002",
+            temp_state_dir,
+        )
+
+        result = get_novel_taxa("set_002", state_dir=temp_state_dir)
+        assert result == []
+
+    def test_ordered_by_sample_count_desc(self, temp_state_dir):
+        """Results are ordered by sample_count DESC, then hit_count DESC."""
+        # First run: baseline
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "AAACCC",
+                    "set_001",
+                    "sample_a",
+                    "2024-01-01T00:00:00Z",
+                    adjusted_taxid=10376,
+                    adjusted_taxid_name="Human gammaherpesvirus 4",
+                    adjusted_taxid_rank="species",
+                )
+            ],
+            "sample_a",
+            "set_001",
+            temp_state_dir,
+        )
+
+        # Second run: multiple novel taxa with different sample counts
+        write_hits_parquet(
+            [
+                # Rhinovirus in 2 samples
+                make_hit_record(
+                    "GGGCCC",
+                    "set_002",
+                    "sample_b",
+                    "2024-01-02T00:00:00Z",
+                    adjusted_taxid=12814,
+                    adjusted_taxid_name="Rhinovirus A",
+                    adjusted_taxid_rank="species",
+                ),
+                make_hit_record(
+                    "GGGAAA",
+                    "set_002",
+                    "sample_c",
+                    "2024-01-02T00:00:00Z",
+                    adjusted_taxid=12814,
+                    adjusted_taxid_name="Rhinovirus A",
+                    adjusted_taxid_rank="species",
+                ),
+                # Norovirus in 1 sample
+                make_hit_record(
+                    "TTTCCC",
+                    "set_002",
+                    "sample_b",
+                    "2024-01-02T00:00:00Z",
+                    adjusted_taxid=142786,
+                    adjusted_taxid_name="Norovirus GII",
+                    adjusted_taxid_rank="species",
+                ),
+            ],
+            "sample_b",
+            "set_002",
+            temp_state_dir,
+        )
+
+        result = get_novel_taxa("set_002", state_dir=temp_state_dir)
+
+        assert len(result) == 2
+        # Rhinovirus first (2 samples) > Norovirus (1 sample)
+        assert result[0].name == "Rhinovirus A"
+        assert result[0].sample_count == 2
+        assert result[1].name == "Norovirus GII"
+        assert result[1].sample_count == 1
+
+    def test_excludes_unclassified_hits(self, temp_state_dir):
+        """Hits with NULL adjusted_taxid_name are excluded from results."""
+        # First run: EBV (classified)
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "AAACCC",
+                    "set_001",
+                    "sample_a",
+                    "2024-01-01T00:00:00Z",
+                    adjusted_taxid=10376,
+                    adjusted_taxid_name="Human gammaherpesvirus 4",
+                    adjusted_taxid_rank="species",
+                )
+            ],
+            "sample_a",
+            "set_001",
+            temp_state_dir,
+        )
+
+        # Second run: unclassified hit (NULL taxon_name) + classified hit
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "GGGCCC",
+                    "set_002",
+                    "sample_b",
+                    "2024-01-02T00:00:00Z",
+                    adjusted_taxid=None,
+                    adjusted_taxid_name=None,
+                    adjusted_taxid_rank=None,
+                ),
+                make_hit_record(
+                    "TTTCCC",
+                    "set_002",
+                    "sample_b",
+                    "2024-01-02T00:00:00Z",
+                    adjusted_taxid=12814,
+                    adjusted_taxid_name="Rhinovirus A",
+                    adjusted_taxid_rank="species",
+                ),
+            ],
+            "sample_b",
+            "set_002",
+            temp_state_dir,
+        )
+
+        result = get_novel_taxa("set_002", state_dir=temp_state_dir)
+
+        # Only Rhinovirus should be returned (unclassified hit excluded)
+        assert len(result) == 1
+        assert result[0].name == "Rhinovirus A"
+
+    def test_raises_on_empty_sample_set_id(self, temp_state_dir):
+        """Raises AssertionError for empty sample_set_id."""
+        with pytest.raises(AssertionError, match="cannot be empty"):
+            get_novel_taxa("", state_dir=temp_state_dir)
+
+
+class TestGetTopMovers:
+    """Tests for get_top_movers()."""
+
+    def test_returns_empty_list_when_no_hits(self, temp_state_dir):
+        """Returns empty list when no parquet files exist."""
+        result = get_top_movers("set_001", state_dir=temp_state_dir)
+        assert result == []
+
+    def test_returns_empty_list_when_no_prior_runs(self, temp_state_dir):
+        """Returns empty list when there are no prior runs to compare against."""
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "AAACCC",
+                    "set_001",
+                    "sample_a",
+                    "2024-01-01T00:00:00Z",
+                    adjusted_taxid=10376,
+                    adjusted_taxid_name="Human gammaherpesvirus 4",
+                    adjusted_taxid_rank="species",
+                )
+            ],
+            "sample_a",
+            "set_001",
+            temp_state_dir,
+        )
+
+        # First run has no prior history to compare against
+        result = get_top_movers("set_001", state_dir=temp_state_dir)
+        assert result == []
+
+    def test_calculates_prevalence_change(self, temp_state_dir):
+        """Correctly calculates prevalence change from baseline."""
+        # First run: EBV in 1/2 samples (50%)
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "AAACCC",
+                    "set_001",
+                    "sample_a",
+                    "2024-01-01T00:00:00Z",
+                    adjusted_taxid=10376,
+                    adjusted_taxid_name="Human gammaherpesvirus 4",
+                    adjusted_taxid_rank="species",
+                ),
+                make_hit_record(
+                    "GGGCCC",
+                    "set_001",
+                    "sample_b",
+                    "2024-01-01T00:00:00Z",
+                    adjusted_taxid=12814,
+                    adjusted_taxid_name="Rhinovirus A",
+                    adjusted_taxid_rank="species",
+                ),
+            ],
+            "sample_a",
+            "set_001",
+            temp_state_dir,
+        )
+
+        # Second run: EBV in 2/2 samples (100%) - up from 50%
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "AAACCC",
+                    "set_002",
+                    "sample_c",
+                    "2024-01-02T00:00:00Z",
+                    adjusted_taxid=10376,
+                    adjusted_taxid_name="Human gammaherpesvirus 4",
+                    adjusted_taxid_rank="species",
+                ),
+                make_hit_record(
+                    "TTTCCC",
+                    "set_002",
+                    "sample_d",
+                    "2024-01-02T00:00:00Z",
+                    adjusted_taxid=10376,
+                    adjusted_taxid_name="Human gammaherpesvirus 4",
+                    adjusted_taxid_rank="species",
+                ),
+            ],
+            "sample_c",
+            "set_002",
+            temp_state_dir,
+        )
+
+        result = get_top_movers("set_002", state_dir=temp_state_dir)
+
+        assert len(result) == 1
+        ebv = result[0]
+        assert ebv.name == "Human gammaherpesvirus 4"
+        assert ebv.current_prevalence_pct == 100.0
+        assert ebv.baseline_prevalence_pct == 50.0
+        assert ebv.change_pct == 50.0
+        assert ebv.baseline_run_count == 1
+
+    def test_novel_taxa_have_zero_baseline(self, temp_state_dir):
+        """Novel taxa (not in history) have baseline_prevalence_pct of 0."""
+        # First run: EBV only
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "AAACCC",
+                    "set_001",
+                    "sample_a",
+                    "2024-01-01T00:00:00Z",
+                    adjusted_taxid=10376,
+                    adjusted_taxid_name="Human gammaherpesvirus 4",
+                    adjusted_taxid_rank="species",
+                )
+            ],
+            "sample_a",
+            "set_001",
+            temp_state_dir,
+        )
+
+        # Second run: Rhinovirus (novel)
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "GGGCCC",
+                    "set_002",
+                    "sample_b",
+                    "2024-01-02T00:00:00Z",
+                    adjusted_taxid=12814,
+                    adjusted_taxid_name="Rhinovirus A",
+                    adjusted_taxid_rank="species",
+                )
+            ],
+            "sample_b",
+            "set_002",
+            temp_state_dir,
+        )
+
+        result = get_top_movers("set_002", state_dir=temp_state_dir)
+
+        assert len(result) == 1
+        rhino = result[0]
+        assert rhino.name == "Rhinovirus A"
+        assert rhino.baseline_prevalence_pct == 0.0
+        assert rhino.current_prevalence_pct == 100.0
+        assert rhino.change_pct == 100.0
+
+    def test_ordered_by_absolute_change(self, temp_state_dir):
+        """Results are ordered by |change_pct| DESC."""
+        # First run: EBV 50%, Rhinovirus 50%
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "AAACCC",
+                    "set_001",
+                    "sample_a",
+                    "2024-01-01T00:00:00Z",
+                    adjusted_taxid=10376,
+                    adjusted_taxid_name="Human gammaherpesvirus 4",
+                    adjusted_taxid_rank="species",
+                ),
+                make_hit_record(
+                    "GGGCCC",
+                    "set_001",
+                    "sample_b",
+                    "2024-01-01T00:00:00Z",
+                    adjusted_taxid=12814,
+                    adjusted_taxid_name="Rhinovirus A",
+                    adjusted_taxid_rank="species",
+                ),
+            ],
+            "sample_a",
+            "set_001",
+            temp_state_dir,
+        )
+
+        # Second run: EBV 100% (+50 change), Norovirus 100% (+100, novel)
+        # Note: Rhinovirus is NOT in this run, so it won't appear in results
+        # (get_top_movers only returns taxa present in the current run)
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "AAACCC",
+                    "set_002",
+                    "sample_c",
+                    "2024-01-02T00:00:00Z",
+                    adjusted_taxid=10376,
+                    adjusted_taxid_name="Human gammaherpesvirus 4",
+                    adjusted_taxid_rank="species",
+                ),
+                make_hit_record(
+                    "TTTCCC",
+                    "set_002",
+                    "sample_c",
+                    "2024-01-02T00:00:00Z",
+                    adjusted_taxid=142786,
+                    adjusted_taxid_name="Norovirus GII",
+                    adjusted_taxid_rank="species",
+                ),
+            ],
+            "sample_c",
+            "set_002",
+            temp_state_dir,
+        )
+
+        result = get_top_movers("set_002", limit=10, state_dir=temp_state_dir)
+
+        # Norovirus (+100) should be first, then EBV (+50)
+        assert len(result) == 2
+        assert result[0].name == "Norovirus GII"
+        assert result[0].change_pct == 100.0
+        assert result[1].name == "Human gammaherpesvirus 4"
+        assert result[1].change_pct == 50.0
+
+    def test_respects_limit(self, temp_state_dir):
+        """Respects the limit parameter."""
+        # First run
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "AAACCC",
+                    "set_001",
+                    "sample_a",
+                    "2024-01-01T00:00:00Z",
+                    adjusted_taxid=10376,
+                    adjusted_taxid_name="Human gammaherpesvirus 4",
+                    adjusted_taxid_rank="species",
+                )
+            ],
+            "sample_a",
+            "set_001",
+            temp_state_dir,
+        )
+
+        # Second run with multiple taxa
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "GGGCCC",
+                    "set_002",
+                    "sample_b",
+                    "2024-01-02T00:00:00Z",
+                    adjusted_taxid=12814,
+                    adjusted_taxid_name="Rhinovirus A",
+                    adjusted_taxid_rank="species",
+                ),
+                make_hit_record(
+                    "TTTCCC",
+                    "set_002",
+                    "sample_b",
+                    "2024-01-02T00:00:00Z",
+                    adjusted_taxid=142786,
+                    adjusted_taxid_name="Norovirus GII",
+                    adjusted_taxid_rank="species",
+                ),
+            ],
+            "sample_b",
+            "set_002",
+            temp_state_dir,
+        )
+
+        result = get_top_movers("set_002", limit=1, state_dir=temp_state_dir)
+        assert len(result) == 1
+        # Both taxa are novel (100% change), but we should get exactly one
+        assert result[0].name in {"Rhinovirus A", "Norovirus GII"}
+        assert result[0].change_pct == 100.0
+
+    def test_excludes_noise_taxa(self, temp_state_dir):
+        """Noise taxa are excluded from results."""
+        # First run
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "AAACCC",
+                    "set_001",
+                    "sample_a",
+                    "2024-01-01T00:00:00Z",
+                    adjusted_taxid=10376,
+                    adjusted_taxid_name="Human gammaherpesvirus 4",
+                    adjusted_taxid_rank="species",
+                )
+            ],
+            "sample_a",
+            "set_001",
+            temp_state_dir,
+        )
+
+        # Second run with only noise taxa
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "GGGCCC",
+                    "set_002",
+                    "sample_b",
+                    "2024-01-02T00:00:00Z",
+                    adjusted_taxid=1,
+                    adjusted_taxid_name="root",
+                    adjusted_taxid_rank="no rank",
+                )
+            ],
+            "sample_b",
+            "set_002",
+            temp_state_dir,
+        )
+
+        result = get_top_movers("set_002", state_dir=temp_state_dir)
+        assert result == []
+
+    def test_negative_prevalence_change(self, temp_state_dir):
+        """Correctly handles taxa that decrease in prevalence."""
+        # First run: Rhinovirus in 2/2 samples (100%)
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "GGGCCC",
+                    "set_001",
+                    "sample_a",
+                    "2024-01-01T00:00:00Z",
+                    adjusted_taxid=12814,
+                    adjusted_taxid_name="Rhinovirus A",
+                    adjusted_taxid_rank="species",
+                ),
+                make_hit_record(
+                    "GGGAAA",
+                    "set_001",
+                    "sample_b",
+                    "2024-01-01T00:00:00Z",
+                    adjusted_taxid=12814,
+                    adjusted_taxid_name="Rhinovirus A",
+                    adjusted_taxid_rank="species",
+                ),
+            ],
+            "sample_a",
+            "set_001",
+            temp_state_dir,
+        )
+
+        # Second run: Rhinovirus in 1/2 samples (50%) - down from 100%
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "GGGCCC",
+                    "set_002",
+                    "sample_c",
+                    "2024-01-02T00:00:00Z",
+                    adjusted_taxid=12814,
+                    adjusted_taxid_name="Rhinovirus A",
+                    adjusted_taxid_rank="species",
+                ),
+                make_hit_record(
+                    "AAACCC",
+                    "set_002",
+                    "sample_d",
+                    "2024-01-02T00:00:00Z",
+                    adjusted_taxid=10376,
+                    adjusted_taxid_name="Human gammaherpesvirus 4",
+                    adjusted_taxid_rank="species",
+                ),
+            ],
+            "sample_c",
+            "set_002",
+            temp_state_dir,
+        )
+
+        result = get_top_movers("set_002", state_dir=temp_state_dir)
+
+        # Both taxa should be returned, ordered by absolute change
+        assert len(result) == 2
+
+        # Find Rhinovirus in results (should have negative change)
+        rhino = next((t for t in result if t.name == "Rhinovirus A"), None)
+        assert rhino is not None
+        assert rhino.current_prevalence_pct == 50.0
+        assert rhino.baseline_prevalence_pct == 100.0
+        assert rhino.change_pct == -50.0  # Negative change
+
+        # EBV is novel (0% baseline -> 50% current = +50%)
+        ebv = next((t for t in result if t.name == "Human gammaherpesvirus 4"), None)
+        assert ebv is not None
+        assert ebv.change_pct == 50.0
+
+    def test_raises_on_empty_sample_set_id(self, temp_state_dir):
+        """Raises AssertionError for empty sample_set_id."""
+        with pytest.raises(AssertionError, match="cannot be empty"):
+            get_top_movers("", state_dir=temp_state_dir)
+
+    def test_raises_on_invalid_limit(self, temp_state_dir):
+        """Raises AssertionError for non-positive limit."""
+        with pytest.raises(AssertionError, match="must be positive"):
+            get_top_movers("set_001", limit=0, state_dir=temp_state_dir)
+
+
+class TestGetRareTaxa:
+    """Tests for get_rare_taxa()."""
+
+    def test_returns_empty_list_when_no_hits(self, temp_state_dir):
+        """Returns empty list when no parquet files exist."""
+        result = get_rare_taxa("set_001", state_dir=temp_state_dir)
+        assert result == []
+
+    def test_identifies_rare_taxa(self, temp_state_dir):
+        """Identifies taxa that appear in few runs."""
+        # Run 1: EBV
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "AAACCC",
+                    "set_001",
+                    "sample_a",
+                    "2024-01-01T00:00:00Z",
+                    adjusted_taxid=10376,
+                    adjusted_taxid_name="Human gammaherpesvirus 4",
+                    adjusted_taxid_rank="species",
+                )
+            ],
+            "sample_a",
+            "set_001",
+            temp_state_dir,
+        )
+
+        # Run 2: EBV
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "AAACCC",
+                    "set_002",
+                    "sample_b",
+                    "2024-01-02T00:00:00Z",
+                    adjusted_taxid=10376,
+                    adjusted_taxid_name="Human gammaherpesvirus 4",
+                    adjusted_taxid_rank="species",
+                )
+            ],
+            "sample_b",
+            "set_002",
+            temp_state_dir,
+        )
+
+        # Run 3: EBV + Rhinovirus (Rhinovirus is rare - only in 1/3 runs = 33%)
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "AAACCC",
+                    "set_003",
+                    "sample_c",
+                    "2024-01-03T00:00:00Z",
+                    adjusted_taxid=10376,
+                    adjusted_taxid_name="Human gammaherpesvirus 4",
+                    adjusted_taxid_rank="species",
+                ),
+                make_hit_record(
+                    "GGGCCC",
+                    "set_003",
+                    "sample_c",
+                    "2024-01-03T00:00:00Z",
+                    adjusted_taxid=12814,
+                    adjusted_taxid_name="Rhinovirus A",
+                    adjusted_taxid_rank="species",
+                ),
+            ],
+            "sample_c",
+            "set_003",
+            temp_state_dir,
+        )
+
+        # With threshold 50%, Rhinovirus (33%) should be rare, EBV (100%) should not
+        result = get_rare_taxa("set_003", threshold_pct=50.0, state_dir=temp_state_dir)
+
+        assert len(result) == 1
+        assert result[0].name == "Rhinovirus A"
+        assert result[0].historical_run_count == 1
+        assert result[0].historical_run_pct == pytest.approx(33.33, rel=0.1)
+
+    def test_respects_threshold(self, temp_state_dir):
+        """Respects the threshold_pct parameter."""
+        # Create 2 runs with same taxon (50% prevalence)
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "AAACCC",
+                    "set_001",
+                    "sample_a",
+                    "2024-01-01T00:00:00Z",
+                    adjusted_taxid=10376,
+                    adjusted_taxid_name="Human gammaherpesvirus 4",
+                    adjusted_taxid_rank="species",
+                )
+            ],
+            "sample_a",
+            "set_001",
+            temp_state_dir,
+        )
+
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "GGGCCC",
+                    "set_002",
+                    "sample_b",
+                    "2024-01-02T00:00:00Z",
+                    adjusted_taxid=12814,
+                    adjusted_taxid_name="Rhinovirus A",
+                    adjusted_taxid_rank="species",
+                )
+            ],
+            "sample_b",
+            "set_002",
+            temp_state_dir,
+        )
+
+        # With threshold 40%, nothing is rare (both at 50%)
+        result = get_rare_taxa("set_002", threshold_pct=40.0, state_dir=temp_state_dir)
+        assert result == []
+
+        # With threshold 60%, Rhinovirus is rare (50% < 60%)
+        result = get_rare_taxa("set_002", threshold_pct=60.0, state_dir=temp_state_dir)
+        assert len(result) == 1
+        assert result[0].name == "Rhinovirus A"
+
+    def test_ordered_by_rarity(self, temp_state_dir):
+        """Results are ordered by historical_run_pct ASC (rarest first)."""
+        # Run 1: EBV + Rhinovirus
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "AAACCC",
+                    "set_001",
+                    "sample_a",
+                    "2024-01-01T00:00:00Z",
+                    adjusted_taxid=10376,
+                    adjusted_taxid_name="Human gammaherpesvirus 4",
+                    adjusted_taxid_rank="species",
+                ),
+                make_hit_record(
+                    "GGGCCC",
+                    "set_001",
+                    "sample_a",
+                    "2024-01-01T00:00:00Z",
+                    adjusted_taxid=12814,
+                    adjusted_taxid_name="Rhinovirus A",
+                    adjusted_taxid_rank="species",
+                ),
+            ],
+            "sample_a",
+            "set_001",
+            temp_state_dir,
+        )
+
+        # Run 2: EBV only
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "AAACCC",
+                    "set_002",
+                    "sample_b",
+                    "2024-01-02T00:00:00Z",
+                    adjusted_taxid=10376,
+                    adjusted_taxid_name="Human gammaherpesvirus 4",
+                    adjusted_taxid_rank="species",
+                )
+            ],
+            "sample_b",
+            "set_002",
+            temp_state_dir,
+        )
+
+        # Run 3: EBV + Rhinovirus + Norovirus (Norovirus is rarest - 1/3 runs)
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "AAACCC",
+                    "set_003",
+                    "sample_c",
+                    "2024-01-03T00:00:00Z",
+                    adjusted_taxid=10376,
+                    adjusted_taxid_name="Human gammaherpesvirus 4",
+                    adjusted_taxid_rank="species",
+                ),
+                make_hit_record(
+                    "GGGCCC",
+                    "set_003",
+                    "sample_c",
+                    "2024-01-03T00:00:00Z",
+                    adjusted_taxid=12814,
+                    adjusted_taxid_name="Rhinovirus A",
+                    adjusted_taxid_rank="species",
+                ),
+                make_hit_record(
+                    "TTTCCC",
+                    "set_003",
+                    "sample_c",
+                    "2024-01-03T00:00:00Z",
+                    adjusted_taxid=142786,
+                    adjusted_taxid_name="Norovirus GII",
+                    adjusted_taxid_rank="species",
+                ),
+            ],
+            "sample_c",
+            "set_003",
+            temp_state_dir,
+        )
+
+        # Threshold 70% includes Rhinovirus (66%) and Norovirus (33%)
+        result = get_rare_taxa("set_003", threshold_pct=70.0, state_dir=temp_state_dir)
+
+        assert len(result) == 2
+        # Norovirus (33%) should be first (rarer than Rhinovirus at 66%)
+        assert result[0].name == "Norovirus GII"
+        assert result[1].name == "Rhinovirus A"
+
+    def test_excludes_noise_taxa(self, temp_state_dir):
+        """Noise taxa are excluded from results."""
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "AAACCC",
+                    "set_001",
+                    "sample_a",
+                    "2024-01-01T00:00:00Z",
+                    adjusted_taxid=1,
+                    adjusted_taxid_name="root",
+                    adjusted_taxid_rank="no rank",
+                )
+            ],
+            "sample_a",
+            "set_001",
+            temp_state_dir,
+        )
+
+        result = get_rare_taxa("set_001", threshold_pct=100.0, state_dir=temp_state_dir)
+        assert result == []
+
+    def test_returns_empty_list_when_run_not_found(self, temp_state_dir):
+        """Returns empty list when sample_set_id doesn't exist."""
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "AAACCC",
+                    "set_001",
+                    "sample_a",
+                    "2024-01-01T00:00:00Z",
+                    adjusted_taxid=10376,
+                    adjusted_taxid_name="Human gammaherpesvirus 4",
+                    adjusted_taxid_rank="species",
+                )
+            ],
+            "sample_a",
+            "set_001",
+            temp_state_dir,
+        )
+
+        result = get_rare_taxa("nonexistent", state_dir=temp_state_dir)
+        assert result == []
+
+    def test_raises_on_empty_sample_set_id(self, temp_state_dir):
+        """Raises AssertionError for empty sample_set_id."""
+        with pytest.raises(AssertionError, match="cannot be empty"):
+            get_rare_taxa("", state_dir=temp_state_dir)
+
+    def test_raises_on_invalid_threshold(self, temp_state_dir):
+        """Raises AssertionError for invalid threshold_pct."""
+        with pytest.raises(AssertionError, match="must be between"):
+            get_rare_taxa("set_001", threshold_pct=0, state_dir=temp_state_dir)
+        with pytest.raises(AssertionError, match="must be between"):
+            get_rare_taxa("set_001", threshold_pct=101, state_dir=temp_state_dir)
+
+
+class TestGetTaxonHistory:
+    """Tests for get_taxon_history()."""
+
+    def test_returns_none_when_no_hits(self, temp_state_dir):
+        """Returns None when no parquet files exist."""
+        result = get_taxon_history("Human gammaherpesvirus 4", state_dir=temp_state_dir)
+        assert result is None
+
+    def test_returns_none_for_unknown_taxon(self, temp_state_dir):
+        """Returns None for a taxon that doesn't exist."""
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "AAACCC",
+                    "set_001",
+                    "sample_a",
+                    "2024-01-01T00:00:00Z",
+                    adjusted_taxid=10376,
+                    adjusted_taxid_name="Human gammaherpesvirus 4",
+                    adjusted_taxid_rank="species",
+                )
+            ],
+            "sample_a",
+            "set_001",
+            temp_state_dir,
+        )
+
+        result = get_taxon_history("Nonexistent virus", state_dir=temp_state_dir)
+        assert result is None
+
+    def test_returns_complete_history(self, temp_state_dir):
+        """Returns complete history across multiple runs."""
+        # Run 1: EBV in 1/2 samples
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "AAACCC",
+                    "set_001",
+                    "sample_a",
+                    "2024-01-01T00:00:00Z",
+                    adjusted_taxid=10376,
+                    adjusted_taxid_name="Human gammaherpesvirus 4",
+                    adjusted_taxid_rank="species",
+                ),
+                make_hit_record(
+                    "GGGCCC",
+                    "set_001",
+                    "sample_b",
+                    "2024-01-01T00:00:00Z",
+                    adjusted_taxid=12814,
+                    adjusted_taxid_name="Rhinovirus A",
+                    adjusted_taxid_rank="species",
+                ),
+            ],
+            "sample_a",
+            "set_001",
+            temp_state_dir,
+        )
+
+        # Run 2: EBV in 2/2 samples
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "AAACCC",
+                    "set_002",
+                    "sample_c",
+                    "2024-01-02T00:00:00Z",
+                    adjusted_taxid=10376,
+                    adjusted_taxid_name="Human gammaherpesvirus 4",
+                    adjusted_taxid_rank="species",
+                ),
+                make_hit_record(
+                    "TTTCCC",
+                    "set_002",
+                    "sample_d",
+                    "2024-01-02T00:00:00Z",
+                    adjusted_taxid=10376,
+                    adjusted_taxid_name="Human gammaherpesvirus 4",
+                    adjusted_taxid_rank="species",
+                ),
+            ],
+            "sample_c",
+            "set_002",
+            temp_state_dir,
+        )
+
+        result = get_taxon_history("Human gammaherpesvirus 4", state_dir=temp_state_dir)
+
+        assert result is not None
+        assert result.name == "Human gammaherpesvirus 4"
+        assert result.taxid == 10376
+        assert result.rank == "species"
+        assert result.total_runs_seen == 2
+        assert result.total_runs_in_system == 2
+        assert result.overall_prevalence_pct == 100.0
+        assert result.first_seen_date == "2024-01-01T00:00:00Z"
+        assert result.last_seen_date == "2024-01-02T00:00:00Z"
+
+        # Check run history
+        assert len(result.run_history) == 2
+        assert result.run_history[0].sample_set_id == "set_001"
+        assert result.run_history[0].sample_count == 1
+        assert result.run_history[0].prevalence_pct == 50.0
+        assert result.run_history[1].sample_set_id == "set_002"
+        assert result.run_history[1].sample_count == 2
+        assert result.run_history[1].prevalence_pct == 100.0
+
+    def test_run_history_ordered_by_date(self, temp_state_dir):
+        """Run history is ordered by date ascending."""
+        # Create runs out of order
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "AAACCC",
+                    "set_002",
+                    "sample_b",
+                    "2024-01-02T00:00:00Z",
+                    adjusted_taxid=10376,
+                    adjusted_taxid_name="Human gammaherpesvirus 4",
+                    adjusted_taxid_rank="species",
+                )
+            ],
+            "sample_b",
+            "set_002",
+            temp_state_dir,
+        )
+
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "AAACCC",
+                    "set_001",
+                    "sample_a",
+                    "2024-01-01T00:00:00Z",
+                    adjusted_taxid=10376,
+                    adjusted_taxid_name="Human gammaherpesvirus 4",
+                    adjusted_taxid_rank="species",
+                )
+            ],
+            "sample_a",
+            "set_001",
+            temp_state_dir,
+        )
+
+        result = get_taxon_history("Human gammaherpesvirus 4", state_dir=temp_state_dir)
+
+        assert result is not None
+        assert len(result.run_history) == 2
+        # Should be ordered by date, not by insertion order
+        assert result.run_history[0].run_date < result.run_history[1].run_date
+
+    def test_calculates_overall_prevalence(self, temp_state_dir):
+        """Correctly calculates overall prevalence across runs."""
+        # Run 1: EBV
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "AAACCC",
+                    "set_001",
+                    "sample_a",
+                    "2024-01-01T00:00:00Z",
+                    adjusted_taxid=10376,
+                    adjusted_taxid_name="Human gammaherpesvirus 4",
+                    adjusted_taxid_rank="species",
+                )
+            ],
+            "sample_a",
+            "set_001",
+            temp_state_dir,
+        )
+
+        # Run 2: Rhinovirus only (no EBV)
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "GGGCCC",
+                    "set_002",
+                    "sample_b",
+                    "2024-01-02T00:00:00Z",
+                    adjusted_taxid=12814,
+                    adjusted_taxid_name="Rhinovirus A",
+                    adjusted_taxid_rank="species",
+                )
+            ],
+            "sample_b",
+            "set_002",
+            temp_state_dir,
+        )
+
+        # Run 3: EBV
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "AAACCC",
+                    "set_003",
+                    "sample_c",
+                    "2024-01-03T00:00:00Z",
+                    adjusted_taxid=10376,
+                    adjusted_taxid_name="Human gammaherpesvirus 4",
+                    adjusted_taxid_rank="species",
+                )
+            ],
+            "sample_c",
+            "set_003",
+            temp_state_dir,
+        )
+
+        result = get_taxon_history("Human gammaherpesvirus 4", state_dir=temp_state_dir)
+
+        assert result is not None
+        assert result.total_runs_seen == 2
+        assert result.total_runs_in_system == 3
+        assert result.overall_prevalence_pct == pytest.approx(66.67, rel=0.1)
+
+    def test_raises_on_empty_taxon_name(self, temp_state_dir):
+        """Raises AssertionError for empty taxon_name."""
+        with pytest.raises(AssertionError, match="cannot be empty"):
+            get_taxon_history("", state_dir=temp_state_dir)
+
+
+class TestGetRunComparison:
+    """Tests for get_run_comparison()."""
+
+    def test_returns_none_when_no_hits(self, temp_state_dir):
+        """Returns None when no parquet files exist."""
+        result = get_run_comparison("set_001", state_dir=temp_state_dir)
+        assert result is None
+
+    def test_returns_none_for_unknown_run(self, temp_state_dir):
+        """Returns None for a run that doesn't exist."""
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "AAACCC",
+                    "set_001",
+                    "sample_a",
+                    "2024-01-01T00:00:00Z",
+                    adjusted_taxid=10376,
+                    adjusted_taxid_name="Human gammaherpesvirus 4",
+                    adjusted_taxid_rank="species",
+                )
+            ],
+            "sample_a",
+            "set_001",
+            temp_state_dir,
+        )
+
+        result = get_run_comparison("nonexistent", state_dir=temp_state_dir)
+        assert result is None
+
+    def test_returns_current_metrics(self, temp_state_dir):
+        """Returns correct current run metrics."""
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "AAACCC",
+                    "set_001",
+                    "sample_a",
+                    "2024-01-01T00:00:00Z",
+                    adjusted_taxid=10376,
+                    adjusted_taxid_name="Human gammaherpesvirus 4",
+                    adjusted_taxid_rank="species",
+                ),
+                make_hit_record(
+                    "GGGCCC",
+                    "set_001",
+                    "sample_b",
+                    "2024-01-01T00:00:00Z",
+                    adjusted_taxid=12814,
+                    adjusted_taxid_name="Rhinovirus A",
+                    adjusted_taxid_rank="species",
+                ),
+            ],
+            "sample_a",
+            "set_001",
+            temp_state_dir,
+        )
+
+        result = get_run_comparison("set_001", state_dir=temp_state_dir)
+
+        assert result is not None
+        assert result.sample_set_id == "set_001"
+        assert result.samples_analyzed == 2
+        assert result.unique_hits == 2
+        assert result.taxa_found == 2  # EBV and Rhinovirus
+
+    def test_calculates_historical_baseline(self, temp_state_dir):
+        """Calculates historical baseline from prior runs."""
+        # Run 1: 2 samples, 2 hits, 2 taxa
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "AAACCC",
+                    "set_001",
+                    "sample_a",
+                    "2024-01-01T00:00:00Z",
+                    adjusted_taxid=10376,
+                    adjusted_taxid_name="Human gammaherpesvirus 4",
+                    adjusted_taxid_rank="species",
+                ),
+                make_hit_record(
+                    "GGGCCC",
+                    "set_001",
+                    "sample_b",
+                    "2024-01-01T00:00:00Z",
+                    adjusted_taxid=12814,
+                    adjusted_taxid_name="Rhinovirus A",
+                    adjusted_taxid_rank="species",
+                ),
+            ],
+            "sample_a",
+            "set_001",
+            temp_state_dir,
+        )
+
+        # Run 2: 4 samples, 4 hits, 2 taxa
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "AAACCC",
+                    "set_002",
+                    "sample_c",
+                    "2024-01-02T00:00:00Z",
+                    adjusted_taxid=10376,
+                    adjusted_taxid_name="Human gammaherpesvirus 4",
+                    adjusted_taxid_rank="species",
+                ),
+                make_hit_record(
+                    "GGGCCC",
+                    "set_002",
+                    "sample_d",
+                    "2024-01-02T00:00:00Z",
+                    adjusted_taxid=12814,
+                    adjusted_taxid_name="Rhinovirus A",
+                    adjusted_taxid_rank="species",
+                ),
+                make_hit_record(
+                    "TTTCCC",
+                    "set_002",
+                    "sample_e",
+                    "2024-01-02T00:00:00Z",
+                    adjusted_taxid=10376,
+                    adjusted_taxid_name="Human gammaherpesvirus 4",
+                    adjusted_taxid_rank="species",
+                ),
+                make_hit_record(
+                    "CCCAAA",
+                    "set_002",
+                    "sample_f",
+                    "2024-01-02T00:00:00Z",
+                    adjusted_taxid=12814,
+                    adjusted_taxid_name="Rhinovirus A",
+                    adjusted_taxid_rank="species",
+                ),
+            ],
+            "sample_c",
+            "set_002",
+            temp_state_dir,
+        )
+
+        # Compare run 2 against run 1
+        result = get_run_comparison("set_002", state_dir=temp_state_dir)
+
+        assert result is not None
+        assert result.historical_run_count == 1
+        assert result.avg_samples == 2.0  # Run 1 had 2 samples
+        assert result.avg_hits == 2.0  # Run 1 had 2 hits
+        assert result.avg_taxa == 2.0  # Run 1 had 2 taxa
+
+    def test_first_run_has_zero_baseline(self, temp_state_dir):
+        """First run has zero historical baseline."""
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "AAACCC",
+                    "set_001",
+                    "sample_a",
+                    "2024-01-01T00:00:00Z",
+                    adjusted_taxid=10376,
+                    adjusted_taxid_name="Human gammaherpesvirus 4",
+                    adjusted_taxid_rank="species",
+                )
+            ],
+            "sample_a",
+            "set_001",
+            temp_state_dir,
+        )
+
+        result = get_run_comparison("set_001", state_dir=temp_state_dir)
+
+        assert result is not None
+        assert result.historical_run_count == 0
+        assert result.avg_samples == 0.0
+        assert result.avg_hits == 0.0
+        assert result.avg_taxa == 0.0
+
+    def test_excludes_noise_taxa_from_count(self, temp_state_dir):
+        """Noise taxa are excluded from taxa_found count."""
+        write_hits_parquet(
+            [
+                make_hit_record(
+                    "AAACCC",
+                    "set_001",
+                    "sample_a",
+                    "2024-01-01T00:00:00Z",
+                    adjusted_taxid=10376,
+                    adjusted_taxid_name="Human gammaherpesvirus 4",
+                    adjusted_taxid_rank="species",
+                ),
+                make_hit_record(
+                    "GGGCCC",
+                    "set_001",
+                    "sample_a",
+                    "2024-01-01T00:00:00Z",
+                    adjusted_taxid=1,
+                    adjusted_taxid_name="root",
+                    adjusted_taxid_rank="no rank",
+                ),
+                make_hit_record(
+                    "TTTCCC",
+                    "set_001",
+                    "sample_a",
+                    "2024-01-01T00:00:00Z",
+                    adjusted_taxid=9606,
+                    adjusted_taxid_name="Homo sapiens",
+                    adjusted_taxid_rank="species",
+                ),
+            ],
+            "sample_a",
+            "set_001",
+            temp_state_dir,
+        )
+
+        result = get_run_comparison("set_001", state_dir=temp_state_dir)
+
+        assert result is not None
+        assert result.taxa_found == 1  # Only EBV, not root or Homo sapiens
+        assert result.unique_hits == 3  # All 3 hits counted
+
+    def test_raises_on_empty_sample_set_id(self, temp_state_dir):
+        """Raises AssertionError for empty sample_set_id."""
+        with pytest.raises(AssertionError, match="cannot be empty"):
+            get_run_comparison("", state_dir=temp_state_dir)

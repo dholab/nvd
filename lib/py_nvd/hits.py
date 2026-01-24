@@ -53,6 +53,7 @@ from __future__ import annotations
 import shutil
 import zlib
 from dataclasses import dataclass
+import re
 from pathlib import Path
 from typing import Literal
 
@@ -62,13 +63,24 @@ import polars as pl
 
 from py_nvd.db import get_hits_dir
 from py_nvd.models import (
+    CategorySummary,
     CompactionResult,
+    ContigQuality,
     DeleteResult,
     Hit,
     HitObservation,
     HitStats,
     MonthCompactionInfo,
+    NovelTaxon,
+    RareTaxon,
     RecurringHit,
+    RunComparison,
+    RunReport,
+    SampleSummary,
+    TaxonChange,
+    TaxonHistory,
+    TaxonRunPresence,
+    TaxonSummary,
     TimelineBucket,
 )
 
@@ -984,6 +996,1193 @@ def get_hit_stats(state_dir: Path | str | None = None) -> HitStats:
         date_first=date_first,
         date_last=date_last,
     )
+
+
+# Taxa that are filtered out by default in get_top_taxa() because they
+# represent unclassified hits or host contamination, not viral findings.
+DEFAULT_NOISE_TAXA = frozenset({"root", "Homo sapiens"})
+
+# Mapping from virus family to search patterns for adjusted_taxid_name.
+# Used by get_taxa_by_category() to group findings by virus family for triage.
+#
+# Patterns are matched with word boundaries (e.g., "hiv" matches "HIV-1" but
+# not "archivirus"). Matching is case-insensitive. First matching family wins.
+#
+# Based on human_virus_families from nextflow.config (the families we enrich
+# for during pipeline processing). Update this mapping when adding new
+# families to the enrichment list.
+#
+# This is a starting point—patterns may need refinement as we encounter
+# taxa with unexpected naming conventions in NCBI taxonomy.
+FAMILY_SEARCH_PATTERNS: dict[str, tuple[str, ...]] = {
+    "Adenoviridae": ("adenovirus",),
+    "Anelloviridae": ("anellovirus", "torque teno", "ttv"),
+    "Arenaviridae": ("arenavirus", "lassa", "junin", "machupo"),
+    "Arteriviridae": ("arterivirus",),
+    "Astroviridae": ("astrovirus",),
+    "Bornaviridae": ("bornavirus",),
+    "Peribunyaviridae": ("bunyavirus", "orthobunyavirus", "la crosse"),
+    "Caliciviridae": ("calicivirus", "norovirus", "sapovirus"),
+    "Coronaviridae": ("coronavirus", "sars-cov", "mers-cov"),
+    "Filoviridae": ("filovirus", "ebola", "marburg"),
+    "Flaviviridae": (
+        "flavivirus",
+        "dengue",
+        "zika",
+        "hepatitis c",
+        "yellow fever",
+        "west nile",
+    ),
+    "Hepadnaviridae": ("hepadnavirus", "hepatitis b"),
+    "Hepeviridae": ("hepevirus", "hepatitis e"),
+    "Orthoherpesviridae": (
+        "herpesvirus",
+        "herpes simplex",
+        "varicella",
+        "epstein-barr",
+        "cytomegalovirus",
+    ),
+    "Orthomyxoviridae": ("influenza", "orthomyxovirus"),
+    "Papillomaviridae": ("papillomavirus", "hpv"),
+    "Paramyxoviridae": (
+        "paramyxovirus",
+        "measles",
+        "mumps",
+        "parainfluenza",
+        "henipavirus",
+        "nipah",
+    ),
+    "Parvoviridae": ("parvovirus", "bocavirus", "erythrovirus"),
+    "Picobirnaviridae": ("picobirnavirus",),
+    "Picornaviridae": (
+        "picornavirus",
+        "rhinovirus",
+        "enterovirus",
+        "coxsackie",
+        "poliovirus",
+        "hepatitis a",
+        "parechovirus",
+    ),
+    "Pneumoviridae": ("pneumovirus", "respiratory syncytial", "rsv", "metapneumovirus"),
+    "Polyomaviridae": ("polyomavirus", "merkel cell", "jc virus", "bk virus"),
+    "Poxviridae": ("poxvirus", "variola", "monkeypox", "mpox", "vaccinia", "molluscum"),
+    "Sedoreoviridae": ("rotavirus", "reovirus", "orbivirus"),
+    "Retroviridae": ("retrovirus", "hiv", "htlv", "lentivirus", "t-lymphotropic"),
+    "Rhabdoviridae": ("rhabdovirus", "rabies", "lyssavirus", "vesiculovirus"),
+    "Togaviridae": ("togavirus", "alphavirus", "rubivirus", "rubella", "chikungunya"),
+    "Kolmioviridae": ("deltavirus", "hepatitis d", "hepatitis delta"),
+}
+
+
+# Compiled regex patterns for family classification.
+# Short patterns (<=4 chars like "hiv", "rsv") use word boundaries to prevent
+# false positives (e.g., "hiv" should not match "archivirus").
+# Longer patterns use substring matching to handle compound names
+# (e.g., "herpesvirus" should match "gammaherpesvirus").
+# Compiled once at module load for efficiency.
+def _build_family_pattern(patterns: tuple[str, ...]) -> re.Pattern[str]:
+    """Build a regex pattern for a family's search patterns."""
+    parts = []
+    for p in patterns:
+        escaped = re.escape(p)
+        if len(p) <= 4:
+            # Short patterns need word boundaries to avoid false positives
+            parts.append(r"\b" + escaped + r"\b")
+        else:
+            # Longer patterns can use substring matching
+            parts.append(escaped)
+    return re.compile("(" + "|".join(parts) + ")", re.IGNORECASE)
+
+
+_FAMILY_PATTERNS_COMPILED: list[tuple[str, re.Pattern[str]]] = [
+    (family, _build_family_pattern(patterns))
+    for family, patterns in FAMILY_SEARCH_PATTERNS.items()
+]
+
+
+def get_top_taxa(
+    sample_set_id: str | None = None,
+    limit: int = 10,
+    exclude_noise: bool = True,
+    state_dir: Path | str | None = None,
+) -> list[TaxonSummary]:
+    """
+    Get the most prevalent taxa by sample count.
+
+    Returns taxa ordered by the number of samples they appear in (descending),
+    then by hit count. This ordering prioritizes breadth of detection over
+    depth, which is more meaningful for interpreting metagenomic findings.
+
+    Note: Results require expert interpretation. Common false positives include:
+    - Endogenous retroviruses (ERVs) matching HIV/HTLV
+    - Host sequences matching viral databases at conserved regions
+    - Database artifacts and chimeric reference sequences
+
+    Args:
+        sample_set_id: Filter to a specific run. If None, queries all runs.
+        limit: Maximum number of taxa to return (default: 10)
+        exclude_noise: If True, excludes 'root' and 'Homo sapiens' (default: True)
+        state_dir: Optional state directory override
+
+    Returns:
+        List of TaxonSummary ordered by sample_count DESC, hit_count DESC.
+        Empty list if no hits exist or no taxa match the filters.
+    """
+    assert limit > 0, "limit must be positive"
+    assert sample_set_id is None or sample_set_id, (
+        "sample_set_id cannot be empty string (use None for all runs)"
+    )
+
+    if not has_any_hits(state_dir):
+        return []
+
+    con = query_hits(state_dir)
+
+    # Build WHERE clause
+    conditions: list[str] = ["adjusted_taxid_name IS NOT NULL"]
+    params: list[str | int] = []
+
+    if sample_set_id is not None:
+        conditions.append("sample_set_id = ?")
+        params.append(sample_set_id)
+
+    if exclude_noise:
+        # Use placeholders for the noise taxa to avoid SQL injection
+        placeholders = ", ".join("?" for _ in DEFAULT_NOISE_TAXA)
+        conditions.append(f"adjusted_taxid_name NOT IN ({placeholders})")
+        params.extend(DEFAULT_NOISE_TAXA)
+
+    where_clause = " AND ".join(conditions)
+
+    sql = f"""
+        SELECT
+            adjusted_taxid as taxid,
+            adjusted_taxid_name as name,
+            adjusted_taxid_rank as rank,
+            COUNT(DISTINCT sample_id) as sample_count,
+            COUNT(DISTINCT hit_key) as hit_count,
+            ROUND(AVG(sequence_length))::INTEGER as avg_contig_length
+        FROM hits
+        WHERE {where_clause}
+        GROUP BY adjusted_taxid, adjusted_taxid_name, adjusted_taxid_rank
+        ORDER BY sample_count DESC, hit_count DESC
+        LIMIT {limit}
+    """
+
+    rows = con.execute(sql, params).fetchall()
+
+    return [
+        TaxonSummary(
+            taxid=row[0],
+            name=row[1],
+            rank=row[2],
+            sample_count=row[3],
+            hit_count=row[4],
+            avg_contig_length=row[5] if row[5] is not None else 0,
+        )
+        for row in rows
+    ]
+
+
+def get_highlights_string(
+    sample_set_id: str | None = None,
+    limit: int = 5,
+    state_dir: Path | str | None = None,
+) -> str:
+    """
+    Get a one-liner summary of top taxa for display (e.g., Slack messages).
+
+    Returns a formatted string like:
+    "EBV (12 samples), Rhinovirus A (8), HPV (7), JC polyomavirus (5)"
+
+    Uses get_top_taxa() internally, so the same filtering and ordering applies.
+
+    Args:
+        sample_set_id: Filter to a specific run. If None, queries all runs.
+        limit: Maximum number of taxa to include (default: 5)
+        state_dir: Optional state directory override
+
+    Returns:
+        Formatted string of top taxa with sample counts.
+        Empty string if no taxa found.
+    """
+    taxa = get_top_taxa(
+        sample_set_id=sample_set_id,
+        limit=limit,
+        exclude_noise=True,
+        state_dir=state_dir,
+    )
+
+    if not taxa:
+        return ""
+
+    return ", ".join(f"{t.name} ({t.sample_count})" for t in taxa)
+
+
+def get_sample_summaries(
+    sample_set_id: str,
+    state_dir: Path | str | None = None,
+) -> list[SampleSummary]:
+    """
+    Get per-sample breakdown of hits for a run.
+
+    Returns a summary for each sample showing total hits and taxa detected.
+    Ordered by viral_taxa_count descending (most interesting samples first),
+    then by total_hits descending.
+
+    Noise taxa ('root', 'Homo sapiens') are excluded from viral_taxa_count
+    and taxa_detected.
+
+    Args:
+        sample_set_id: The run to query (required)
+        state_dir: Optional state directory override
+
+    Returns:
+        List of SampleSummary ordered by viral_taxa_count DESC, total_hits DESC.
+        Empty list if no hits exist for the sample set.
+    """
+    assert sample_set_id, "sample_set_id cannot be empty"
+
+    if not has_any_hits(state_dir):
+        return []
+
+    con = query_hits(state_dir)
+
+    # Build noise filter placeholders
+    # Note: We cast adjusted_taxid_name to VARCHAR to handle edge cases where
+    # parquet schema inference produces INTEGER when all values are NULL.
+    noise_placeholders = ", ".join("?" for _ in DEFAULT_NOISE_TAXA)
+
+    sql = f"""
+        SELECT
+            sample_id,
+            COUNT(DISTINCT hit_key) as total_hits,
+            COUNT(DISTINCT adjusted_taxid_name) FILTER (
+                WHERE adjusted_taxid_name IS NOT NULL
+                  AND CAST(adjusted_taxid_name AS VARCHAR) NOT IN ({noise_placeholders})
+            ) as viral_taxa_count,
+            list(DISTINCT adjusted_taxid_name ORDER BY adjusted_taxid_name) FILTER (
+                WHERE adjusted_taxid_name IS NOT NULL
+                  AND CAST(adjusted_taxid_name AS VARCHAR) NOT IN ({noise_placeholders})
+            ) as taxa_detected
+        FROM hits
+        WHERE sample_set_id = ?
+        GROUP BY sample_id
+        ORDER BY viral_taxa_count DESC, total_hits DESC
+    """
+
+    # Parameters: noise taxa twice (for COUNT and list filters), then sample_set_id
+    params = [*DEFAULT_NOISE_TAXA, *DEFAULT_NOISE_TAXA, sample_set_id]
+
+    rows = con.execute(sql, params).fetchall()
+
+    return [
+        SampleSummary(
+            sample_id=row[0],
+            total_hits=row[1],
+            viral_taxa_count=row[2],
+            taxa_detected=tuple(row[3]) if row[3] else (),
+        )
+        for row in rows
+    ]
+
+
+def get_negative_samples(
+    sample_set_id: str,
+    state_dir: Path | str | None = None,
+) -> list[str]:
+    """
+    Get samples with no viral hits (only noise taxa like 'root' or 'Homo sapiens').
+
+    Useful for identifying samples that may have failed processing, had
+    insufficient sequencing depth, or genuinely have no detectable viral content.
+
+    Args:
+        sample_set_id: The run to query (required)
+        state_dir: Optional state directory override
+
+    Returns:
+        List of sample_id strings for samples with no viral taxa.
+        Sorted alphabetically. Empty list if all samples have viral hits.
+    """
+    assert sample_set_id, "sample_set_id cannot be empty"
+
+    if not has_any_hits(state_dir):
+        return []
+
+    con = query_hits(state_dir)
+
+    # Convert frozenset to list for consistent parameter ordering
+    noise_list = list(DEFAULT_NOISE_TAXA)
+    noise_placeholders = ", ".join("?" for _ in noise_list)
+
+    # Note: We cast adjusted_taxid_name to VARCHAR to handle edge cases where
+    # parquet schema inference produces INTEGER when all values are NULL.
+    sql = f"""
+        SELECT sample_id
+        FROM hits
+        WHERE sample_set_id = ?
+        GROUP BY sample_id
+        HAVING COUNT(DISTINCT adjusted_taxid_name) FILTER (
+            WHERE adjusted_taxid_name IS NOT NULL
+              AND CAST(adjusted_taxid_name AS VARCHAR) NOT IN ({noise_placeholders})
+        ) = 0
+        ORDER BY sample_id
+    """
+
+    params = [sample_set_id, *noise_list]
+
+    rows = con.execute(sql, params).fetchall()
+
+    return [row[0] for row in rows]
+
+
+def get_contig_quality(
+    sample_set_id: str,
+    state_dir: Path | str | None = None,
+) -> ContigQuality | None:
+    """
+    Get assembly quality metrics for contigs in a run.
+
+    Computes statistics about contig lengths and GC content, useful for
+    QC and troubleshooting. Each unique hit_key is counted once (not per
+    observation).
+
+    Args:
+        sample_set_id: The run to query (required)
+        state_dir: Optional state directory override
+
+    Returns:
+        ContigQuality with computed metrics, or None if no hits exist
+        for the sample set.
+    """
+    assert sample_set_id, "sample_set_id cannot be empty"
+
+    if not has_any_hits(state_dir):
+        return None
+
+    con = query_hits(state_dir)
+
+    sql = """
+        WITH unique_contigs AS (
+            SELECT DISTINCT
+                hit_key,
+                sequence_length,
+                gc_content
+            FROM hits
+            WHERE sample_set_id = ?
+        )
+        SELECT
+            COUNT(*) as total_contigs,
+            COALESCE(SUM(sequence_length), 0) as total_bases,
+            COALESCE(AVG(sequence_length), 0) as mean_length,
+            COALESCE(MEDIAN(sequence_length), 0)::INTEGER as median_length,
+            COALESCE(MAX(sequence_length), 0) as max_length,
+            COUNT(*) FILTER (WHERE sequence_length >= 500) as contigs_500bp_plus,
+            COUNT(*) FILTER (WHERE sequence_length >= 1000) as contigs_1kb_plus,
+            COALESCE(AVG(gc_content), 0) as mean_gc
+        FROM unique_contigs
+    """
+
+    row = con.execute(sql, [sample_set_id]).fetchone()
+
+    if row is None or row[0] == 0:
+        return None
+
+    return ContigQuality(
+        total_contigs=row[0],
+        total_bases=row[1],
+        mean_length=row[2],
+        median_length=row[3],
+        max_length=row[4],
+        contigs_500bp_plus=row[5],
+        contigs_1kb_plus=row[6],
+        mean_gc=row[7],
+    )
+
+
+def _classify_taxon_to_family(taxon_name: str) -> str:
+    """
+    Classify a taxon name to a virus family using pattern matching.
+
+    Searches FAMILY_SEARCH_PATTERNS for a case-insensitive word-boundary match.
+    First matching family wins. Returns "Other" if no pattern matches.
+
+    Word boundaries prevent false positives like "hiv" matching "archivirus".
+
+    Args:
+        taxon_name: The adjusted_taxid_name to classify
+
+    Returns:
+        Family name (e.g., "Orthoherpesviridae") or "Other"
+    """
+    for family, pattern in _FAMILY_PATTERNS_COMPILED:
+        if pattern.search(taxon_name):
+            return family
+    return "Other"
+
+
+def get_taxa_by_category(
+    sample_set_id: str,
+    state_dir: Path | str | None = None,
+) -> list[CategorySummary]:
+    """
+    Group findings by virus family for high-level triage.
+
+    Returns a summary for each virus family detected, showing how many
+    samples and contigs belong to that family. Families are determined
+    by pattern matching taxon names against FAMILY_SEARCH_PATTERNS.
+
+    Taxa that don't match any known family are grouped under "Other".
+    Noise taxa ('root', 'Homo sapiens') are excluded.
+
+    For specific taxon-level details, use get_top_taxa() instead.
+
+    Args:
+        sample_set_id: The run to query (required)
+        state_dir: Optional state directory override
+
+    Returns:
+        List of CategorySummary ordered by sample_count DESC, hit_count DESC.
+        Empty list if no hits exist for the sample set.
+    """
+    assert sample_set_id, "sample_set_id cannot be empty"
+
+    if not has_any_hits(state_dir):
+        return []
+
+    con = query_hits(state_dir)
+
+    # Build noise filter
+    noise_placeholders = ", ".join("?" for _ in DEFAULT_NOISE_TAXA)
+
+    # Get all unique (taxon_name, sample_id, hit_key) combinations
+    # We need to fetch taxon names to classify them in Python
+    sql = f"""
+        SELECT DISTINCT
+            adjusted_taxid_name as taxon_name,
+            sample_id,
+            hit_key
+        FROM hits
+        WHERE sample_set_id = ?
+          AND adjusted_taxid_name IS NOT NULL
+          AND adjusted_taxid_name NOT IN ({noise_placeholders})
+    """
+
+    params = [sample_set_id, *DEFAULT_NOISE_TAXA]
+    rows = con.execute(sql, params).fetchall()
+
+    if not rows:
+        return []
+
+    # Classify each taxon and aggregate
+    # Structure: {family: {"samples": set, "hits": set, "taxa": set}}
+    family_data: dict[str, dict[str, set[str]]] = {}
+
+    for taxon_name, sample_id, hit_key in rows:
+        family = _classify_taxon_to_family(taxon_name)
+
+        if family not in family_data:
+            family_data[family] = {"samples": set(), "hits": set(), "taxa": set()}
+
+        family_data[family]["samples"].add(sample_id)
+        family_data[family]["hits"].add(hit_key)
+        family_data[family]["taxa"].add(taxon_name)
+
+    # Convert to CategorySummary objects
+    results = [
+        CategorySummary(
+            category=family,
+            sample_count=len(data["samples"]),
+            hit_count=len(data["hits"]),
+            taxa=tuple(sorted(data["taxa"])),
+        )
+        for family, data in family_data.items()
+    ]
+
+    # Sort by sample_count DESC, hit_count DESC, then category name for stability
+    results.sort(key=lambda x: (-x.sample_count, -x.hit_count, x.category))
+
+    return results
+
+
+def get_run_report(
+    sample_set_id: str,
+    state_dir: Path | str | None = None,
+) -> RunReport | None:
+    """
+    Generate a comprehensive report for a pipeline run.
+
+    Combines counts, quality metrics, top findings, and per-sample summaries
+    into a single RunReport object. This is the primary function for run-level
+    reporting, suitable for Slack notifications, CLI display, or JSON export.
+
+    Internally calls get_top_taxa(), get_sample_summaries(), get_negative_samples(),
+    and get_contig_quality() to gather data.
+
+    Args:
+        sample_set_id: The run to report on (required)
+        state_dir: Optional state directory override
+
+    Returns:
+        RunReport with all computed metrics, or None if no hits exist
+        for the sample set.
+    """
+    assert sample_set_id, "sample_set_id cannot be empty"
+
+    if not has_any_hits(state_dir):
+        return None
+
+    con = query_hits(state_dir)
+
+    # Check if this sample set has any data
+    count_result = con.execute(
+        "SELECT COUNT(*) FROM hits WHERE sample_set_id = ?",
+        [sample_set_id],
+    ).fetchone()
+    assert count_result is not None, "COUNT query should always return a row"
+
+    if count_result[0] == 0:
+        return None
+
+    # Get basic counts and run_date in one query
+    # Note: We cast adjusted_taxid_name to VARCHAR to handle edge cases where
+    # parquet schema inference produces INTEGER when all values are NULL.
+    noise_placeholders = ", ".join("?" for _ in DEFAULT_NOISE_TAXA)
+
+    summary_sql = f"""
+        SELECT
+            COUNT(DISTINCT sample_id) as samples_analyzed,
+            COUNT(DISTINCT hit_key) as unique_hits,
+            MIN(run_date) as run_date,
+            COUNT(DISTINCT adjusted_taxid_name) FILTER (
+                WHERE adjusted_taxid_name IS NOT NULL
+                  AND CAST(adjusted_taxid_name AS VARCHAR) NOT IN ({noise_placeholders})
+            ) as viral_taxa_found
+        FROM hits
+        WHERE sample_set_id = ?
+    """
+
+    summary_params = [*DEFAULT_NOISE_TAXA, sample_set_id]
+    summary_row = con.execute(summary_sql, summary_params).fetchone()
+    assert summary_row is not None, "summary query should always return a row"
+
+    samples_analyzed = summary_row[0]
+    unique_hits = summary_row[1]
+    run_date = summary_row[2]
+    viral_taxa_found = summary_row[3]
+
+    # Get quality metrics
+    quality = get_contig_quality(sample_set_id, state_dir)
+    median_contig_length = quality.median_length if quality else 0
+    contigs_over_500bp = quality.contigs_500bp_plus if quality else 0
+
+    # Get top findings (top 5 taxa)
+    top_findings = get_top_taxa(
+        sample_set_id=sample_set_id,
+        limit=5,
+        exclude_noise=True,
+        state_dir=state_dir,
+    )
+
+    # Get per-sample summaries
+    sample_summaries = get_sample_summaries(sample_set_id, state_dir)
+
+    # Get negative samples
+    negative_samples = get_negative_samples(sample_set_id, state_dir)
+
+    # Calculate samples with viral hits
+    samples_negative = len(negative_samples)
+    samples_with_viral_hits = samples_analyzed - samples_negative
+
+    return RunReport(
+        sample_set_id=sample_set_id,
+        run_date=run_date,
+        samples_analyzed=samples_analyzed,
+        samples_with_viral_hits=samples_with_viral_hits,
+        samples_negative=samples_negative,
+        unique_hits=unique_hits,
+        viral_taxa_found=viral_taxa_found,
+        median_contig_length=median_contig_length,
+        contigs_over_500bp=contigs_over_500bp,
+        top_findings=tuple(top_findings),
+        sample_summaries=tuple(sample_summaries),
+    )
+
+
+def get_novel_taxa(
+    sample_set_id: str,
+    state_dir: Path | str | None = None,
+) -> list[NovelTaxon]:
+    """
+    Get taxa in this run that have never appeared in any previous run.
+
+    Identifies first-time sightings by comparing taxa in the specified run
+    against all taxa seen in prior runs. Useful for detecting emerging
+    pathogens, new contamination sources, or simply tracking discovery.
+
+    Noise taxa ('root', 'Homo sapiens') are excluded.
+
+    Args:
+        sample_set_id: The run to analyze (required)
+        state_dir: Optional state directory override
+
+    Returns:
+        List of NovelTaxon ordered by sample_count DESC, hit_count DESC.
+        Empty list if no novel taxa or no hits exist.
+    """
+    assert sample_set_id, "sample_set_id cannot be empty"
+
+    if not has_any_hits(state_dir):
+        return []
+
+    con = query_hits(state_dir)
+
+    # Build noise filter
+    noise_placeholders = ", ".join("?" for _ in DEFAULT_NOISE_TAXA)
+
+    # Find taxa in current run that don't exist in any other run.
+    # Optimized: compute counts in first CTE, use NOT EXISTS instead of
+    # NOT IN + re-join pattern. This avoids scanning hits twice for counts.
+    sql = f"""
+        WITH current_taxa AS (
+            SELECT
+                adjusted_taxid as taxid,
+                adjusted_taxid_name as name,
+                adjusted_taxid_rank as rank,
+                COUNT(DISTINCT sample_id) as sample_count,
+                COUNT(DISTINCT hit_key) as hit_count
+            FROM hits
+            WHERE sample_set_id = ?
+              AND adjusted_taxid_name IS NOT NULL
+              AND adjusted_taxid_name NOT IN ({noise_placeholders})
+            GROUP BY adjusted_taxid, adjusted_taxid_name, adjusted_taxid_rank
+        ),
+        historical_taxa AS (
+            SELECT DISTINCT adjusted_taxid_name as name
+            FROM hits
+            WHERE sample_set_id != ?
+              AND adjusted_taxid_name IS NOT NULL
+              AND adjusted_taxid_name NOT IN ({noise_placeholders})
+        )
+        SELECT
+            c.taxid,
+            c.name,
+            c.rank,
+            c.sample_count,
+            c.hit_count
+        FROM current_taxa c
+        WHERE NOT EXISTS (SELECT 1 FROM historical_taxa h WHERE h.name = c.name)
+        ORDER BY c.sample_count DESC, c.hit_count DESC
+    """
+
+    # Parameters: sample_set_id, noise taxa, sample_set_id, noise taxa
+    params = [
+        sample_set_id,
+        *DEFAULT_NOISE_TAXA,
+        sample_set_id,
+        *DEFAULT_NOISE_TAXA,
+    ]
+
+    rows = con.execute(sql, params).fetchall()
+
+    result = [
+        NovelTaxon(
+            taxid=row[0],
+            name=row[1],
+            rank=row[2],
+            sample_count=row[3],
+            hit_count=row[4],
+        )
+        for row in rows
+    ]
+
+    assert all(t.name not in DEFAULT_NOISE_TAXA for t in result), (
+        "noise taxa should be filtered from results"
+    )
+    return result
+
+
+def get_top_movers(
+    sample_set_id: str,
+    limit: int = 10,
+    state_dir: Path | str | None = None,
+) -> list[TaxonChange]:
+    """
+    Get taxa with the largest prevalence change vs historical baseline.
+
+    Compares each taxon's prevalence in the specified run against its
+    historical average prevalence across all prior runs. Returns taxa
+    sorted by absolute change (largest movers first).
+
+    Prevalence is calculated as: (samples with taxon / total samples) * 100
+
+    Noise taxa ('root', 'Homo sapiens') are excluded.
+
+    Args:
+        sample_set_id: The run to analyze (required)
+        limit: Maximum number of taxa to return (default: 10)
+        state_dir: Optional state directory override
+
+    Returns:
+        List of TaxonChange ordered by |change_pct| DESC.
+        Empty list if no hits exist or this is the first run.
+    """
+    assert sample_set_id, "sample_set_id cannot be empty"
+    assert limit > 0, "limit must be positive"
+
+    if not has_any_hits(state_dir):
+        return []
+
+    con = query_hits(state_dir)
+
+    # Check if there are any prior runs
+    prior_runs = con.execute(
+        "SELECT COUNT(DISTINCT sample_set_id) FROM hits WHERE sample_set_id != ?",
+        [sample_set_id],
+    ).fetchone()
+
+    if prior_runs is None or prior_runs[0] == 0:
+        return []
+
+    baseline_run_count = prior_runs[0]
+
+    # Build noise filter
+    noise_placeholders = ", ".join("?" for _ in DEFAULT_NOISE_TAXA)
+
+    sql = f"""
+        WITH
+        -- Sample counts per run (for prevalence calculation)
+        run_sample_counts AS (
+            SELECT sample_set_id, COUNT(DISTINCT sample_id) as sample_count
+            FROM hits
+            GROUP BY sample_set_id
+        ),
+        -- Current run's taxa with prevalence
+        current_prevalence AS (
+            SELECT
+                adjusted_taxid as taxid,
+                adjusted_taxid_name as name,
+                adjusted_taxid_rank as rank,
+                COUNT(DISTINCT sample_id) as sample_count,
+                COUNT(DISTINCT sample_id) * 100.0 /
+                    (SELECT sample_count FROM run_sample_counts WHERE sample_set_id = ?) as prevalence_pct
+            FROM hits
+            WHERE sample_set_id = ?
+              AND adjusted_taxid_name IS NOT NULL
+              AND adjusted_taxid_name NOT IN ({noise_placeholders})
+            GROUP BY adjusted_taxid, adjusted_taxid_name, adjusted_taxid_rank
+        ),
+        -- Historical prevalence per taxon (average across prior runs)
+        historical_prevalence AS (
+            SELECT
+                adjusted_taxid_name as name,
+                AVG(prevalence_pct) as avg_prevalence_pct
+            FROM (
+                SELECT
+                    sample_set_id,
+                    adjusted_taxid_name,
+                    COUNT(DISTINCT sample_id) * 100.0 / r.sample_count as prevalence_pct
+                FROM hits h
+                JOIN run_sample_counts r USING (sample_set_id)
+                WHERE sample_set_id != ?
+                  AND adjusted_taxid_name IS NOT NULL
+                  AND adjusted_taxid_name NOT IN ({noise_placeholders})
+                GROUP BY sample_set_id, adjusted_taxid_name, r.sample_count
+            )
+            GROUP BY adjusted_taxid_name
+        )
+        SELECT
+            c.taxid,
+            c.name,
+            c.rank,
+            c.prevalence_pct as current_prevalence_pct,
+            COALESCE(h.avg_prevalence_pct, 0) as baseline_prevalence_pct,
+            c.prevalence_pct - COALESCE(h.avg_prevalence_pct, 0) as change_pct,
+            c.sample_count as current_sample_count
+        FROM current_prevalence c
+        LEFT JOIN historical_prevalence h ON c.name = h.name
+        ORDER BY ABS(change_pct) DESC
+        LIMIT {limit}
+    """
+
+    # Parameters for the query
+    params = [
+        sample_set_id,  # run_sample_counts subquery
+        sample_set_id,  # current_prevalence WHERE
+        *DEFAULT_NOISE_TAXA,  # current_prevalence noise filter
+        sample_set_id,  # historical_prevalence WHERE
+        *DEFAULT_NOISE_TAXA,  # historical_prevalence noise filter
+    ]
+
+    rows = con.execute(sql, params).fetchall()
+
+    result = [
+        TaxonChange(
+            taxid=row[0],
+            name=row[1],
+            rank=row[2],
+            current_prevalence_pct=row[3],
+            baseline_prevalence_pct=row[4],
+            change_pct=row[5],
+            current_sample_count=row[6],
+            baseline_run_count=baseline_run_count,
+        )
+        for row in rows
+    ]
+
+    assert all(t.name not in DEFAULT_NOISE_TAXA for t in result), (
+        "noise taxa should be filtered from results"
+    )
+    return result
+
+
+def get_rare_taxa(
+    sample_set_id: str,
+    threshold_pct: float = 5.0,
+    state_dir: Path | str | None = None,
+) -> list[RareTaxon]:
+    """
+    Get taxa in this run that appear in few historical runs.
+
+    Identifies taxa present in the current run that have historically
+    appeared in less than threshold_pct of all runs. Useful for flagging
+    unusual findings that warrant closer inspection.
+
+    Noise taxa ('root', 'Homo sapiens') are excluded.
+
+    Args:
+        sample_set_id: The run to analyze (required)
+        threshold_pct: Maximum historical run percentage to be considered rare
+                       (default: 5.0, meaning taxa in <5% of runs)
+        state_dir: Optional state directory override
+
+    Returns:
+        List of RareTaxon ordered by historical_run_pct ASC (rarest first),
+        then by current_sample_count DESC.
+        Empty list if no rare taxa or no hits exist.
+    """
+    assert sample_set_id, "sample_set_id cannot be empty"
+    assert 0 < threshold_pct <= 100, "threshold_pct must be between 0 and 100"
+
+    if not has_any_hits(state_dir):
+        return []
+
+    con = query_hits(state_dir)
+
+    # Build noise filter
+    noise_placeholders = ", ".join("?" for _ in DEFAULT_NOISE_TAXA)
+
+    sql = f"""
+        WITH
+        -- Total number of runs in the system
+        total_runs AS (
+            SELECT COUNT(DISTINCT sample_set_id) as count FROM hits
+        ),
+        -- Count of runs where each taxon appears (across all runs)
+        taxa_run_counts AS (
+            SELECT
+                adjusted_taxid_name as name,
+                COUNT(DISTINCT sample_set_id) as run_count
+            FROM hits
+            WHERE adjusted_taxid_name IS NOT NULL
+              AND adjusted_taxid_name NOT IN ({noise_placeholders})
+            GROUP BY adjusted_taxid_name
+        ),
+        -- Taxa in the current run with their details
+        current_taxa AS (
+            SELECT
+                adjusted_taxid as taxid,
+                adjusted_taxid_name as name,
+                adjusted_taxid_rank as rank,
+                COUNT(DISTINCT sample_id) as sample_count
+            FROM hits
+            WHERE sample_set_id = ?
+              AND adjusted_taxid_name IS NOT NULL
+              AND adjusted_taxid_name NOT IN ({noise_placeholders})
+            GROUP BY adjusted_taxid, adjusted_taxid_name, adjusted_taxid_rank
+        )
+        SELECT
+            c.taxid,
+            c.name,
+            c.rank,
+            t.run_count as historical_run_count,
+            t.run_count * 100.0 / r.count as historical_run_pct,
+            c.sample_count as current_sample_count
+        FROM current_taxa c
+        JOIN taxa_run_counts t ON c.name = t.name
+        CROSS JOIN total_runs r
+        WHERE t.run_count * 100.0 / r.count < ?
+        ORDER BY historical_run_pct ASC, current_sample_count DESC
+    """
+
+    # Parameters
+    params = [
+        *DEFAULT_NOISE_TAXA,  # taxa_run_counts noise filter
+        sample_set_id,  # current_taxa WHERE
+        *DEFAULT_NOISE_TAXA,  # current_taxa noise filter
+        threshold_pct,  # threshold filter
+    ]
+
+    rows = con.execute(sql, params).fetchall()
+
+    result = [
+        RareTaxon(
+            taxid=row[0],
+            name=row[1],
+            rank=row[2],
+            historical_run_count=row[3],
+            historical_run_pct=row[4],
+            current_sample_count=row[5],
+        )
+        for row in rows
+    ]
+
+    assert all(t.name not in DEFAULT_NOISE_TAXA for t in result), (
+        "noise taxa should be filtered from results"
+    )
+    assert all(t.historical_run_pct < threshold_pct for t in result), (
+        "all results should be below threshold"
+    )
+    return result
+
+
+def get_taxon_history(
+    taxon_name: str,
+    state_dir: Path | str | None = None,
+) -> TaxonHistory | None:
+    """
+    Get the complete history of a taxon across all runs.
+
+    Provides a detailed track record showing when and how often a taxon
+    has been detected. Useful for understanding whether a finding is
+    typical or unusual for this dataset.
+
+    Args:
+        taxon_name: The taxon name to look up (case-sensitive)
+        state_dir: Optional state directory override
+
+    Returns:
+        TaxonHistory with per-run details, or None if the taxon has
+        never been seen.
+    """
+    assert taxon_name, "taxon_name cannot be empty"
+
+    if not has_any_hits(state_dir):
+        return None
+
+    con = query_hits(state_dir)
+
+    # Check if this taxon exists
+    exists = con.execute(
+        "SELECT COUNT(*) FROM hits WHERE adjusted_taxid_name = ?",
+        [taxon_name],
+    ).fetchone()
+
+    if exists is None or exists[0] == 0:
+        return None
+
+    # Get taxon metadata (taxid, rank) from most recent observation
+    taxon_info = con.execute(
+        """
+        SELECT adjusted_taxid, adjusted_taxid_rank
+        FROM hits
+        WHERE adjusted_taxid_name = ?
+        ORDER BY run_date DESC
+        LIMIT 1
+        """,
+        [taxon_name],
+    ).fetchone()
+
+    taxid = taxon_info[0] if taxon_info else None
+    rank = taxon_info[1] if taxon_info else None
+
+    # Get total runs in system
+    total_runs_result = con.execute(
+        "SELECT COUNT(DISTINCT sample_set_id) FROM hits"
+    ).fetchone()
+    total_runs_in_system = total_runs_result[0] if total_runs_result else 0
+
+    # Get per-run presence with prevalence
+    run_history_sql = """
+        WITH run_sample_counts AS (
+            SELECT sample_set_id, COUNT(DISTINCT sample_id) as total_samples
+            FROM hits
+            GROUP BY sample_set_id
+        )
+        SELECT
+            h.sample_set_id,
+            MIN(h.run_date) as run_date,
+            COUNT(DISTINCT h.sample_id) as sample_count,
+            COUNT(DISTINCT h.sample_id) * 100.0 / r.total_samples as prevalence_pct
+        FROM hits h
+        JOIN run_sample_counts r ON h.sample_set_id = r.sample_set_id
+        WHERE h.adjusted_taxid_name = ?
+        GROUP BY h.sample_set_id, r.total_samples
+        ORDER BY run_date ASC
+    """
+
+    run_rows = con.execute(run_history_sql, [taxon_name]).fetchall()
+
+    if not run_rows:
+        return None
+
+    run_history = tuple(
+        TaxonRunPresence(
+            sample_set_id=row[0],
+            run_date=row[1],
+            sample_count=row[2],
+            prevalence_pct=row[3],
+        )
+        for row in run_rows
+    )
+
+    total_runs_seen = len(run_history)
+    first_seen_date = run_history[0].run_date
+    last_seen_date = run_history[-1].run_date
+    overall_prevalence_pct = (
+        (total_runs_seen / total_runs_in_system * 100)
+        if total_runs_in_system > 0
+        else 0.0
+    )
+
+    result = TaxonHistory(
+        taxid=taxid,
+        name=taxon_name,
+        rank=rank,
+        total_runs_seen=total_runs_seen,
+        total_runs_in_system=total_runs_in_system,
+        overall_prevalence_pct=overall_prevalence_pct,
+        first_seen_date=first_seen_date,
+        last_seen_date=last_seen_date,
+        run_history=run_history,
+    )
+
+    assert result.total_runs_seen == len(result.run_history), (
+        "total_runs_seen must match run_history length"
+    )
+    assert result.total_runs_seen <= result.total_runs_in_system, (
+        "cannot have seen more runs than exist"
+    )
+    return result
+
+
+def get_run_comparison(
+    sample_set_id: str,
+    state_dir: Path | str | None = None,
+) -> RunComparison | None:
+    """
+    Compare a run's metrics to historical norms.
+
+    Provides context for interpreting a run by comparing its key metrics
+    (sample count, hit count, taxa count, contig length) against the
+    historical average across all prior runs.
+
+    Args:
+        sample_set_id: The run to analyze (required)
+        state_dir: Optional state directory override
+
+    Returns:
+        RunComparison with current metrics and historical baselines,
+        or None if the run doesn't exist.
+    """
+    assert sample_set_id, "sample_set_id cannot be empty"
+
+    if not has_any_hits(state_dir):
+        return None
+
+    con = query_hits(state_dir)
+
+    # Check if this run exists
+    exists = con.execute(
+        "SELECT COUNT(*) FROM hits WHERE sample_set_id = ?",
+        [sample_set_id],
+    ).fetchone()
+
+    if exists is None or exists[0] == 0:
+        return None
+
+    # Build noise filter for taxa counting
+    noise_placeholders = ", ".join("?" for _ in DEFAULT_NOISE_TAXA)
+
+    # Get current run metrics
+    current_sql = f"""
+        SELECT
+            COUNT(DISTINCT sample_id) as samples_analyzed,
+            COUNT(DISTINCT hit_key) as unique_hits,
+            COUNT(DISTINCT adjusted_taxid_name) FILTER (
+                WHERE adjusted_taxid_name IS NOT NULL
+                  AND adjusted_taxid_name NOT IN ({noise_placeholders})
+            ) as taxa_found,
+            COALESCE(MEDIAN(sequence_length), 0)::INTEGER as median_contig_length,
+            MIN(run_date) as run_date
+        FROM hits
+        WHERE sample_set_id = ?
+    """
+
+    current_params = [*DEFAULT_NOISE_TAXA, sample_set_id]
+    current_row = con.execute(current_sql, current_params).fetchone()
+
+    if current_row is None:
+        return None
+
+    samples_analyzed = current_row[0]
+    unique_hits = current_row[1]
+    taxa_found = current_row[2]
+    median_contig_length = current_row[3]
+    run_date = current_row[4]
+
+    # Get historical metrics (from all runs except current)
+    historical_sql = f"""
+        WITH run_metrics AS (
+            SELECT
+                sample_set_id,
+                COUNT(DISTINCT sample_id) as samples,
+                COUNT(DISTINCT hit_key) as hits,
+                COUNT(DISTINCT adjusted_taxid_name) FILTER (
+                    WHERE adjusted_taxid_name IS NOT NULL
+                      AND adjusted_taxid_name NOT IN ({noise_placeholders})
+                ) as taxa,
+                COALESCE(MEDIAN(sequence_length), 0) as median_length
+            FROM hits
+            WHERE sample_set_id != ?
+            GROUP BY sample_set_id
+        )
+        SELECT
+            COUNT(*) as run_count,
+            COALESCE(AVG(samples), 0) as avg_samples,
+            COALESCE(AVG(hits), 0) as avg_hits,
+            COALESCE(AVG(taxa), 0) as avg_taxa,
+            COALESCE(AVG(median_length), 0) as avg_median_length
+        FROM run_metrics
+    """
+
+    historical_params = [*DEFAULT_NOISE_TAXA, sample_set_id]
+    historical_row = con.execute(historical_sql, historical_params).fetchone()
+
+    historical_run_count = historical_row[0] if historical_row else 0
+    avg_samples = historical_row[1] if historical_row else 0.0
+    avg_hits = historical_row[2] if historical_row else 0.0
+    avg_taxa = historical_row[3] if historical_row else 0.0
+    avg_median_length = historical_row[4] if historical_row else 0.0
+
+    result = RunComparison(
+        sample_set_id=sample_set_id,
+        run_date=run_date,
+        samples_analyzed=samples_analyzed,
+        unique_hits=unique_hits,
+        taxa_found=taxa_found,
+        median_contig_length=median_contig_length,
+        historical_run_count=historical_run_count,
+        avg_samples=avg_samples,
+        avg_hits=avg_hits,
+        avg_taxa=avg_taxa,
+        avg_median_length=avg_median_length,
+    )
+
+    assert result.samples_analyzed >= 0, "samples_analyzed must be non-negative"
+    assert result.historical_run_count >= 0, "historical_run_count must be non-negative"
+    return result
 
 
 def get_recurring_hits(

@@ -507,6 +507,255 @@ class DeleteResult:
     compacted_months_rewritten: int
 
 
+@dataclass(frozen=True)
+class TaxonSummary:
+    """
+    Summary of a taxon's presence in a sample set.
+
+    Used by get_top_taxa() to report the most prevalent taxa in a run.
+    Ordered by sample_count (how many samples have this taxon) rather
+    than hit_count (total contigs) since sample prevalence is more
+    meaningful for interpreting findings.
+
+    Note: These are raw BLAST/LCA results and require expert interpretation.
+    Common false positives include endogenous retroviruses (ERVs) matching
+    HIV/HTLV, and host sequences matching viral databases.
+    """
+
+    taxid: int | None  # NCBI taxonomy ID (None if unclassified)
+    name: str  # Scientific name (e.g., "Human gammaherpesvirus 4")
+    rank: str | None  # Taxonomic rank (e.g., "species", "genus", "no rank")
+    sample_count: int  # Number of distinct samples with this taxon
+    hit_count: int  # Number of distinct contigs (hit_keys) with this taxon
+    avg_contig_length: int  # Mean contig length in bp
+
+
+@dataclass(frozen=True)
+class SampleSummary:
+    """
+    Summary of hits for a single sample within a run.
+
+    Used by get_sample_summaries() to provide per-sample breakdown of findings.
+    Useful for identifying which samples have the most interesting or unusual
+    results, and for detailed investigation of specific samples.
+
+    The taxa_detected list contains taxon names (excluding noise taxa like
+    'root' and 'Homo sapiens') ordered alphabetically.
+    """
+
+    sample_id: str
+    total_hits: int  # Total distinct contigs (hit_keys) in this sample
+    viral_taxa_count: int  # Number of distinct taxa (excluding noise)
+    taxa_detected: tuple[str, ...]  # Taxon names found (immutable for frozen dataclass)
+
+
+@dataclass(frozen=True)
+class ContigQuality:
+    """
+    Assembly quality metrics for contigs in a run.
+
+    Used by get_contig_quality() to provide QC information about the
+    assembled contigs. Useful for troubleshooting runs with poor assembly
+    or understanding the characteristics of detected sequences.
+    """
+
+    total_contigs: int  # Number of distinct hit_keys
+    total_bases: int  # Sum of all contig lengths
+    mean_length: float  # Average contig length
+    median_length: int  # Median contig length
+    max_length: int  # Longest contig
+    contigs_500bp_plus: int  # Contigs >= 500 bp
+    contigs_1kb_plus: int  # Contigs >= 1000 bp
+    mean_gc: float  # Average GC content (0.0-1.0)
+
+
+@dataclass(frozen=True)
+class CategorySummary:
+    """
+    Summary of findings grouped by virus family.
+
+    Used by get_taxa_by_category() to provide a high-level triage view
+    of findings. Categories correspond to virus families from the
+    human_virus_families enrichment list (see FAMILY_SEARCH_PATTERNS
+    in hits.py for the mapping).
+
+    For specific taxon-level details, use get_top_taxa() instead.
+
+    Note: Taxa that don't match any known family pattern are grouped
+    under "Other". This may include novel viruses, misclassified taxa,
+    or taxa with unexpected naming conventions.
+    """
+
+    category: str  # Virus family name (e.g., "Orthoherpesviridae") or "Other"
+    sample_count: int  # Number of distinct samples with taxa in this category
+    hit_count: int  # Number of distinct contigs (hit_keys) in this category
+    taxa: tuple[str, ...]  # Specific taxon names in this category (alphabetized)
+
+
+@dataclass(frozen=True)
+class RunReport:
+    """
+    Complete summary of a pipeline run for reporting.
+
+    Combines counts, quality metrics, and findings into a single object
+    suitable for Slack notifications, CLI display, or JSON export.
+
+    Used by get_run_report() to provide a comprehensive view of a run's
+    results. This is the primary data structure for run-level reporting.
+
+    Note: All findings require expert interpretation. See TaxonSummary
+    and CategorySummary docstrings for caveats about false positives.
+    """
+
+    sample_set_id: str
+    run_date: str | None  # ISO8601, earliest run_date in the sample set
+
+    # Counts
+    samples_analyzed: int  # Total distinct samples in the run
+    samples_with_viral_hits: int  # Samples with at least one non-noise taxon
+    samples_negative: int  # Samples with no viral hits (only noise taxa)
+    unique_hits: int  # Distinct hit_keys (contigs)
+    viral_taxa_found: int  # Distinct taxa (excluding noise)
+
+    # Quality metrics
+    median_contig_length: int  # Median sequence_length across unique hits
+    contigs_over_500bp: int  # Count of contigs >= 500 bp
+
+    # Highlights
+    top_findings: tuple[TaxonSummary, ...]  # Top 5 taxa by sample prevalence
+    sample_summaries: tuple[SampleSummary, ...]  # Per-sample breakdown
+
+
+@dataclass(frozen=True)
+class NovelTaxon:
+    """
+    A taxon seen for the first time in a given run.
+
+    Used by get_novel_taxa() to identify taxa that have never appeared
+    in any previous run. Useful for detecting emerging pathogens or
+    new contamination sources.
+
+    Note: "Novel" means not seen in the NVD state database, not necessarily
+    novel to science. Historical data availability affects what's considered novel.
+    """
+
+    taxid: int | None  # NCBI taxonomy ID (None if unclassified)
+    name: str  # Scientific name
+    rank: str | None  # Taxonomic rank
+    sample_count: int  # Samples in this run with this taxon
+    hit_count: int  # Contigs in this run with this taxon
+
+
+@dataclass(frozen=True)
+class TaxonChange:
+    """
+    A taxon's prevalence change relative to historical baseline.
+
+    Used by get_top_movers() to identify taxa with the largest deviation
+    from their historical average prevalence. Positive change_pct indicates
+    higher prevalence than usual; negative indicates lower.
+
+    Note: Statistical significance depends on baseline_run_count. Small
+    baselines produce noisy comparisons.
+    """
+
+    taxid: int | None  # NCBI taxonomy ID (None if unclassified)
+    name: str  # Scientific name
+    rank: str | None  # Taxonomic rank
+    current_prevalence_pct: float  # Prevalence in this run (0-100)
+    baseline_prevalence_pct: float  # Historical average prevalence (0-100)
+    change_pct: float  # current - baseline
+    current_sample_count: int  # Samples in this run with this taxon
+    baseline_run_count: int  # Number of runs in baseline calculation
+
+
+@dataclass(frozen=True)
+class RareTaxon:
+    """
+    A taxon that appears infrequently in historical data.
+
+    Used by get_rare_taxa() to flag taxa in the current run that have
+    historically appeared in few runs. May indicate unusual findings
+    worth investigation.
+
+    Note: Rarity is relative to the available history. A taxon appearing
+    in 5% of runs may be common in absolute terms but rare in this dataset.
+    """
+
+    taxid: int | None  # NCBI taxonomy ID (None if unclassified)
+    name: str  # Scientific name
+    rank: str | None  # Taxonomic rank
+    historical_run_count: int  # Number of runs where this taxon appeared
+    historical_run_pct: float  # Percentage of runs with this taxon (0-100)
+    current_sample_count: int  # Samples in this run with this taxon
+
+
+@dataclass(frozen=True)
+class TaxonRunPresence:
+    """
+    A taxon's presence in a single run.
+
+    Used as part of TaxonHistory to show the taxon's track record
+    across runs. Each entry represents one run where the taxon was detected.
+    """
+
+    sample_set_id: str  # Run identifier
+    run_date: str  # ISO8601 timestamp
+    sample_count: int  # Samples in this run with the taxon
+    prevalence_pct: float  # Percentage of samples in this run (0-100)
+
+
+@dataclass(frozen=True)
+class TaxonHistory:
+    """
+    Complete history of a taxon across all runs.
+
+    Used by get_taxon_history() to provide a detailed track record
+    for a specific taxon. Useful for understanding whether a finding
+    is typical or unusual for this dataset.
+    """
+
+    taxid: int | None  # NCBI taxonomy ID (None if unclassified)
+    name: str  # Scientific name
+    rank: str | None  # Taxonomic rank
+    total_runs_seen: int  # Number of runs where taxon appeared
+    total_runs_in_system: int  # Total runs in the database
+    overall_prevalence_pct: float  # Percentage of runs with this taxon (0-100)
+    first_seen_date: str  # ISO8601, earliest run_date
+    last_seen_date: str  # ISO8601, most recent run_date
+    run_history: tuple[TaxonRunPresence, ...]  # Per-run details, ordered by date
+
+
+@dataclass(frozen=True)
+class RunComparison:
+    """
+    How a run compares to historical norms.
+
+    Used by get_run_comparison() to contextualize a run's metrics
+    against the historical distribution. Helps identify runs that
+    are unusually large, small, or different in character.
+
+    Note: Historical averages are simple means. With few runs in
+    the system, these may not be representative.
+    """
+
+    sample_set_id: str  # Run identifier
+    run_date: str | None  # ISO8601 timestamp
+
+    # Current run metrics
+    samples_analyzed: int  # Total samples in this run
+    unique_hits: int  # Distinct contigs
+    taxa_found: int  # Distinct taxa (excluding noise)
+    median_contig_length: int  # Median sequence length
+
+    # Historical baselines
+    historical_run_count: int  # Number of prior runs
+    avg_samples: float  # Historical average samples per run
+    avg_hits: float  # Historical average hits per run
+    avg_taxa: float  # Historical average taxa per run
+    avg_median_length: float  # Historical average median contig length
+
+
 # Valid values for constrained fields
 VALID_TOOLS = frozenset(
     {
