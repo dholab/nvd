@@ -7,7 +7,7 @@ include {
 } from "../modules/stat"
 include { EXTRACT_HUMAN_VIRUS_CONTIGS         } from "../modules/seqkit"
 include { MAP_READS_TO_CONTIGS                } from "../modules/minimap2"
-include { COUNT_MAPPED_READS                  } from "../modules/samtools"
+include { MARK_DUPLICATES ; COUNT_MAPPED_READS } from "../modules/samtools"
 
 workflow EXTRACT_HUMAN_VIRUSES {
     take:
@@ -77,7 +77,9 @@ workflow EXTRACT_HUMAN_VIRUSES {
 
     MAP_READS_TO_CONTIGS(ch_reads_with_contigs)
 
-    COUNT_MAPPED_READS(MAP_READS_TO_CONTIGS.out)
+    MARK_DUPLICATES(MAP_READS_TO_CONTIGS.out)
+
+    COUNT_MAPPED_READS(MARK_DUPLICATES.out)
 
     emit:
     contigs = EXTRACT_HUMAN_VIRUS_CONTIGS.out

@@ -1,3 +1,30 @@
+process MARK_DUPLICATES {
+
+    tag "${sample_id}"
+    label "medium"
+
+    errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
+    maxRetries 2
+
+    cpus 4
+
+    input:
+    tuple val(sample_id), path(bam), path(bai)
+
+    output:
+    tuple val(sample_id), path("${sample_id}.dedup.bam"), path("${sample_id}.dedup.bam.bai")
+
+    script:
+    """
+    samtools collate -@ ${task.cpus} -O -u ${bam} \\
+    | samtools fixmate -@ ${task.cpus} -m -u - - \\
+    | samtools sort -@ ${task.cpus} -u - \\
+    | samtools markdup -@ ${task.cpus} -s -r --duplicate-count - ${sample_id}.dedup.bam
+
+    samtools index ${sample_id}.dedup.bam
+    """
+}
+
 // idxstats: The output is TAB-delimited with each line consisting of reference sequence name, sequence length, # mapped read-segments and # unmapped read-segments.
 process COUNT_MAPPED_READS {
 
