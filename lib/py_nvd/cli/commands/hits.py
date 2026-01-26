@@ -74,7 +74,33 @@ from py_nvd.models import (
     TaxonSummary,
     TimelineBucket,
 )
-from py_nvd.state import get_run_ids_for_sample_sets
+from py_nvd.state import get_run, get_run_ids_for_sample_sets
+
+
+def resolve_run_identifier(identifier: str) -> str:
+    """
+    Resolve a run identifier to a sample_set_id.
+
+    Accepts either:
+    - A run_id (e.g., "evil_heisenberg") - looked up in the runs table
+    - A sample_set_id (e.g., "4eb47dfdadfa0d33") - returned as-is
+
+    This allows users to use the human-friendly Nextflow run names from
+    `nvd state runs` when querying hits.
+
+    Args:
+        identifier: Either a run_id or sample_set_id
+
+    Returns:
+        The sample_set_id for use in hits queries
+    """
+    # Try to look up as run_id first
+    run = get_run(identifier)
+    if run is not None:
+        return run.sample_set_id
+
+    # Not found as run_id, assume it's already a sample_set_id
+    return identifier
 
 
 def _format_classification(
@@ -192,7 +218,7 @@ def hits_report(
         typer.Option(
             "--run",
             "-r",
-            help="Sample set ID (run identifier)",
+            help="Run ID (e.g., 'evil_heisenberg') or sample set ID",
         ),
     ],
     json_output: Annotated[
@@ -212,18 +238,22 @@ def hits_report(
 
     Examples:
 
-        # Show report for a run
+        # Show report for a run (using run ID from nvd state runs)
+        nvd hits report --run evil_heisenberg
+
+        # Or using sample set ID directly
         nvd hits report --run 4eb47dfdadfa0d33
 
         # Output as JSON (for scripting)
-        nvd hits report --run 4eb47dfdadfa0d33 --json
+        nvd hits report --run evil_heisenberg --json
     """
     db_path = get_state_db_path()
     if not db_path.exists():
         error(f"Database not found: {db_path}\nRun 'nvd state init' to create it.")
         raise typer.Exit(1)
 
-    report = get_run_report(run)
+    sample_set_id = resolve_run_identifier(run)
+    report = get_run_report(sample_set_id)
 
     if report is None:
         if json_output:
@@ -360,7 +390,7 @@ def hits_top(
         typer.Option(
             "--run",
             "-r",
-            help="Sample set ID (run identifier)",
+            help="Run ID (e.g., 'evil_heisenberg') or sample set ID",
         ),
     ],
     limit: Annotated[
@@ -388,25 +418,26 @@ def hits_top(
     Examples:
 
         # Show top 10 taxa (default)
-        nvd hits top --run 4eb47dfdadfa0d33
+        nvd hits top --run evil_heisenberg
 
         # Show top 20 taxa
-        nvd hits top --run 4eb47dfdadfa0d33 --limit 20
+        nvd hits top --run evil_heisenberg --limit 20
 
         # Output as JSON
-        nvd hits top --run 4eb47dfdadfa0d33 --json
+        nvd hits top --run evil_heisenberg --json
     """
     db_path = get_state_db_path()
     if not db_path.exists():
         error(f"Database not found: {db_path}\nRun 'nvd state init' to create it.")
         raise typer.Exit(1)
 
-    taxa = get_top_taxa(sample_set_id=run, limit=limit)
+    sample_set_id = resolve_run_identifier(run)
+    taxa = get_top_taxa(sample_set_id=sample_set_id, limit=limit)
 
     if json_output:
         console.print_json(data=[_taxon_to_dict(t) for t in taxa])
     else:
-        _print_top_taxa_rich(taxa, run, limit)
+        _print_top_taxa_rich(taxa, sample_set_id, limit)
 
 
 def _taxon_to_dict(t: TaxonSummary) -> dict:
@@ -458,7 +489,7 @@ def hits_samples(
         typer.Option(
             "--run",
             "-r",
-            help="Sample set ID (run identifier)",
+            help="Run ID (e.g., 'evil_heisenberg') or sample set ID",
         ),
     ],
     json_output: Annotated[
@@ -478,22 +509,23 @@ def hits_samples(
     Examples:
 
         # Show per-sample breakdown
-        nvd hits samples --run 4eb47dfdadfa0d33
+        nvd hits samples --run evil_heisenberg
 
         # Output as JSON
-        nvd hits samples --run 4eb47dfdadfa0d33 --json
+        nvd hits samples --run evil_heisenberg --json
     """
     db_path = get_state_db_path()
     if not db_path.exists():
         error(f"Database not found: {db_path}\nRun 'nvd state init' to create it.")
         raise typer.Exit(1)
 
-    summaries = get_sample_summaries(run)
+    sample_set_id = resolve_run_identifier(run)
+    summaries = get_sample_summaries(sample_set_id)
 
     if json_output:
         console.print_json(data=[_sample_summary_to_dict(s) for s in summaries])
     else:
-        _print_samples_rich(summaries, run)
+        _print_samples_rich(summaries, sample_set_id)
 
 
 def _sample_summary_to_dict(s: SampleSummary) -> dict:
@@ -547,7 +579,7 @@ def hits_categories(
         typer.Option(
             "--run",
             "-r",
-            help="Sample set ID (run identifier)",
+            help="Run ID (e.g., 'evil_heisenberg') or sample set ID",
         ),
     ],
     json_output: Annotated[
@@ -568,22 +600,23 @@ def hits_categories(
     Examples:
 
         # Show category breakdown
-        nvd hits categories --run 4eb47dfdadfa0d33
+        nvd hits categories --run evil_heisenberg
 
         # Output as JSON
-        nvd hits categories --run 4eb47dfdadfa0d33 --json
+        nvd hits categories --run evil_heisenberg --json
     """
     db_path = get_state_db_path()
     if not db_path.exists():
         error(f"Database not found: {db_path}\nRun 'nvd state init' to create it.")
         raise typer.Exit(1)
 
-    categories = get_taxa_by_category(run)
+    sample_set_id = resolve_run_identifier(run)
+    categories = get_taxa_by_category(sample_set_id)
 
     if json_output:
         console.print_json(data=[_category_to_dict(c) for c in categories])
     else:
-        _print_categories_rich(categories, run)
+        _print_categories_rich(categories, sample_set_id)
 
 
 def _category_to_dict(c: CategorySummary) -> dict:
@@ -635,7 +668,7 @@ def hits_quality(
         typer.Option(
             "--run",
             "-r",
-            help="Sample set ID (run identifier)",
+            help="Run ID (e.g., 'evil_heisenberg') or sample set ID",
         ),
     ],
     json_output: Annotated[
@@ -655,21 +688,22 @@ def hits_quality(
     Examples:
 
         # Show quality metrics
-        nvd hits quality --run 4eb47dfdadfa0d33
+        nvd hits quality --run evil_heisenberg
 
         # Output as JSON
-        nvd hits quality --run 4eb47dfdadfa0d33 --json
+        nvd hits quality --run evil_heisenberg --json
     """
     db_path = get_state_db_path()
     if not db_path.exists():
         error(f"Database not found: {db_path}\nRun 'nvd state init' to create it.")
         raise typer.Exit(1)
 
-    quality = get_contig_quality(run)
+    sample_set_id = resolve_run_identifier(run)
+    quality = get_contig_quality(sample_set_id)
 
     if quality is None:
         if json_output:
-            console.print_json(data={"found": False, "sample_set_id": run})
+            console.print_json(data={"found": False, "sample_set_id": sample_set_id})
         else:
             info(f"No hits found for run: {run}")
         return
@@ -677,7 +711,7 @@ def hits_quality(
     if json_output:
         console.print_json(data=_quality_to_dict(quality))
     else:
-        _print_quality_rich(quality, run)
+        _print_quality_rich(quality, sample_set_id)
 
 
 def _quality_to_dict(q: ContigQuality) -> dict:
@@ -735,7 +769,7 @@ def hits_novel(
         typer.Option(
             "--run",
             "-r",
-            help="Sample set ID (run identifier)",
+            help="Run ID (e.g., 'evil_heisenberg') or sample set ID",
         ),
     ],
     json_output: Annotated[
@@ -758,22 +792,23 @@ def hits_novel(
     Examples:
 
         # Show novel taxa for a run
-        nvd hits novel --run 4eb47dfdadfa0d33
+        nvd hits novel --run evil_heisenberg
 
         # Output as JSON
-        nvd hits novel --run 4eb47dfdadfa0d33 --json
+        nvd hits novel --run evil_heisenberg --json
     """
     db_path = get_state_db_path()
     if not db_path.exists():
         error(f"Database not found: {db_path}\nRun 'nvd state init' to create it.")
         raise typer.Exit(1)
 
-    taxa = get_novel_taxa(run)
+    sample_set_id = resolve_run_identifier(run)
+    taxa = get_novel_taxa(sample_set_id)
 
     if json_output:
         console.print_json(data=[_novel_taxon_to_dict(t) for t in taxa])
     else:
-        _print_novel_taxa_rich(taxa, run)
+        _print_novel_taxa_rich(taxa, sample_set_id)
 
 
 def _novel_taxon_to_dict(t: NovelTaxon) -> dict:
@@ -825,7 +860,7 @@ def hits_movers(
         typer.Option(
             "--run",
             "-r",
-            help="Sample set ID (run identifier)",
+            help="Run ID (e.g., 'evil_heisenberg') or sample set ID",
         ),
     ],
     limit: Annotated[
@@ -855,25 +890,26 @@ def hits_movers(
     Examples:
 
         # Show top 10 movers (default)
-        nvd hits movers --run 4eb47dfdadfa0d33
+        nvd hits movers --run evil_heisenberg
 
         # Show top 20 movers
-        nvd hits movers --run 4eb47dfdadfa0d33 --limit 20
+        nvd hits movers --run evil_heisenberg --limit 20
 
         # Output as JSON
-        nvd hits movers --run 4eb47dfdadfa0d33 --json
+        nvd hits movers --run evil_heisenberg --json
     """
     db_path = get_state_db_path()
     if not db_path.exists():
         error(f"Database not found: {db_path}\nRun 'nvd state init' to create it.")
         raise typer.Exit(1)
 
-    movers = get_top_movers(run, limit=limit)
+    sample_set_id = resolve_run_identifier(run)
+    movers = get_top_movers(sample_set_id, limit=limit)
 
     if json_output:
         console.print_json(data=[_taxon_change_to_dict(t) for t in movers])
     else:
-        _print_movers_rich(movers, run, limit)
+        _print_movers_rich(movers, sample_set_id, limit)
 
 
 def _taxon_change_to_dict(t: TaxonChange) -> dict:
@@ -947,7 +983,7 @@ def hits_rare(
         typer.Option(
             "--run",
             "-r",
-            help="Sample set ID (run identifier)",
+            help="Run ID (e.g., 'evil_heisenberg') or sample set ID",
         ),
     ],
     threshold: Annotated[
@@ -976,13 +1012,13 @@ def hits_rare(
     Examples:
 
         # Show taxa appearing in <5% of runs (default)
-        nvd hits rare --run 4eb47dfdadfa0d33
+        nvd hits rare --run evil_heisenberg
 
         # Show taxa appearing in <10% of runs
-        nvd hits rare --run 4eb47dfdadfa0d33 --threshold 10
+        nvd hits rare --run evil_heisenberg --threshold 10
 
         # Output as JSON
-        nvd hits rare --run 4eb47dfdadfa0d33 --json
+        nvd hits rare --run evil_heisenberg --json
     """
     db_path = get_state_db_path()
     if not db_path.exists():
@@ -993,12 +1029,13 @@ def hits_rare(
         error("Threshold must be between 0 and 100")
         raise typer.Exit(1)
 
-    taxa = get_rare_taxa(run, threshold_pct=threshold)
+    sample_set_id = resolve_run_identifier(run)
+    taxa = get_rare_taxa(sample_set_id, threshold_pct=threshold)
 
     if json_output:
         console.print_json(data=[_rare_taxon_to_dict(t) for t in taxa])
     else:
-        _print_rare_taxa_rich(taxa, run, threshold)
+        _print_rare_taxa_rich(taxa, sample_set_id, threshold)
 
 
 def _rare_taxon_to_dict(t: RareTaxon) -> dict:
@@ -1171,7 +1208,7 @@ def hits_compare(
         typer.Option(
             "--run",
             "-r",
-            help="Sample set ID (run identifier)",
+            help="Run ID (e.g., 'evil_heisenberg') or sample set ID",
         ),
     ],
     json_output: Annotated[
@@ -1192,21 +1229,22 @@ def hits_compare(
     Examples:
 
         # Compare a run to historical norms
-        nvd hits compare --run 4eb47dfdadfa0d33
+        nvd hits compare --run evil_heisenberg
 
         # Output as JSON
-        nvd hits compare --run 4eb47dfdadfa0d33 --json
+        nvd hits compare --run evil_heisenberg --json
     """
     db_path = get_state_db_path()
     if not db_path.exists():
         error(f"Database not found: {db_path}\nRun 'nvd state init' to create it.")
         raise typer.Exit(1)
 
-    comparison = get_run_comparison(run)
+    sample_set_id = resolve_run_identifier(run)
+    comparison = get_run_comparison(sample_set_id)
 
     if comparison is None:
         if json_output:
-            console.print_json(data={"found": False, "sample_set_id": run})
+            console.print_json(data={"found": False, "sample_set_id": sample_set_id})
         else:
             info(f"Run not found: {run}")
         return
