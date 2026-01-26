@@ -10,11 +10,11 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Literal
 
-from py_nvd.db import connect
+from py_nvd.db import connect, utc_now_iso
 from py_nvd.models import (
     Database,
     DatabaseResolution,
@@ -1426,11 +1426,11 @@ def acquire_sample_lock(
         None if acquired successfully, or the blocking SampleLock if blocked
     """
     hostname, username = get_machine_fingerprint()
-    now = datetime.now().astimezone()
-    expires = now + __import__("datetime").timedelta(hours=ttl_hours)
+    now = datetime.now(timezone.utc)
+    expires = now + timedelta(hours=ttl_hours)
 
-    now_str = now.isoformat()
-    expires_str = expires.isoformat()
+    now_str = now.isoformat().replace("+00:00", "Z")
+    expires_str = expires.isoformat().replace("+00:00", "Z")
 
     with connect(state_dir) as conn:
         existing = conn.execute(
@@ -1600,7 +1600,7 @@ def cleanup_expired_locks(state_dir: Path | str | None = None) -> int:
     Returns:
         Count of locks removed
     """
-    now = datetime.now().astimezone().isoformat()
+    now = utc_now_iso()
     with connect(state_dir) as conn:
         cursor = conn.execute(
             "DELETE FROM sample_locks WHERE expires_at < ?",

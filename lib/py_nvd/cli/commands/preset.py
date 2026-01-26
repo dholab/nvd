@@ -428,9 +428,10 @@ def preset_export(
         nvd preset export production -o production.json --format json
     """
     import json as json_module
-    from datetime import datetime
 
     import yaml
+
+    from py_nvd.db import utc_now_iso
 
     preset = state.get_preset(name)
     if not preset:
@@ -450,7 +451,7 @@ def preset_export(
             f"# yaml-language-server: $schema={schema_url}",
             "#",
             f"# NVD Pipeline Preset: {preset.name}",
-            f"# Exported: {datetime.now().isoformat()}",
+            f"# Exported: {utc_now_iso()}",
             "#",
             f"# Usage: nextflow run dhoconno/nvd -params-file {output.name}",
         ]

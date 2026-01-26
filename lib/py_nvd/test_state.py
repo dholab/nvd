@@ -2642,7 +2642,7 @@ class TestSampleLocks:
 
     def test_cleanup_expired_locks_removes_only_expired(self, temp_state_dir):
         """cleanup_expired_locks removes only expired locks."""
-        from datetime import datetime, timedelta
+        from datetime import datetime, timedelta, timezone
 
         from py_nvd.state import cleanup_expired_locks, list_locks
 
@@ -2651,10 +2651,13 @@ class TestSampleLocks:
         run = register_run("run_001", set1, state_dir=temp_state_dir)
         assert run is not None
 
-        # Use local timezone to match cleanup_expired_locks implementation
-        now = datetime.now().astimezone()
+        # Use UTC to match cleanup_expired_locks implementation
+        now = datetime.now(timezone.utc)
         expired = now - timedelta(hours=1)
         active = now + timedelta(hours=72)
+
+        def to_iso(dt: datetime) -> str:
+            return dt.isoformat().replace("+00:00", "Z")
 
         # Insert one expired and one active lock
         with connect(temp_state_dir) as conn:
@@ -2662,13 +2665,13 @@ class TestSampleLocks:
                 """INSERT INTO sample_locks 
                    (sample_id, run_id, hostname, username, locked_at, expires_at)
                    VALUES (?, ?, ?, ?, ?, ?)""",
-                ("s1", "run_001", "host", "user", now.isoformat(), expired.isoformat()),
+                ("s1", "run_001", "host", "user", to_iso(now), to_iso(expired)),
             )
             conn.execute(
                 """INSERT INTO sample_locks 
                    (sample_id, run_id, hostname, username, locked_at, expires_at)
                    VALUES (?, ?, ?, ?, ?, ?)""",
-                ("s2", "run_001", "host", "user", now.isoformat(), active.isoformat()),
+                ("s2", "run_001", "host", "user", to_iso(now), to_iso(active)),
             )
             conn.commit()
 
@@ -2752,7 +2755,7 @@ class TestEffectiveRunStatus:
 
     def test_mark_stale_runs_failed_updates_only_stale(self, temp_state_dir):
         """mark_stale_runs_failed updates only stale 'running' runs."""
-        from datetime import datetime
+        from datetime import datetime, timezone
 
         from py_nvd.state import mark_stale_runs_failed
 
@@ -2762,13 +2765,18 @@ class TestEffectiveRunStatus:
             conn.execute(
                 """INSERT INTO runs (run_id, sample_set_id, started_at, status)
                    VALUES (?, ?, ?, ?)""",
-                ("old_run", "set1", "2020-01-01T00:00:00", "running"),
+                ("old_run", "set1", "2020-01-01T00:00:00Z", "running"),
             )
             # Fresh run (should stay running)
             conn.execute(
                 """INSERT INTO runs (run_id, sample_set_id, started_at, status)
                    VALUES (?, ?, ?, ?)""",
-                ("fresh_run", "set2", datetime.now().isoformat(), "running"),
+                (
+                    "fresh_run",
+                    "set2",
+                    datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                    "running",
+                ),
             )
             # Already completed (should stay completed)
             conn.execute(

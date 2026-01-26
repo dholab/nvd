@@ -64,6 +64,20 @@ EXPECTED_VERSION = 2
 CONFIRMATION_TIMEOUT_SECONDS = 300  # 5 minutes
 
 
+def utc_now_iso() -> str:
+    """
+    Return current UTC time as ISO8601 string with Z suffix.
+
+    All timestamps in the NVD state database should use this function
+    to ensure consistent UTC storage. This enables correct cross-timezone
+    comparisons and avoids daylight saving time discontinuities.
+
+    Returns:
+        ISO8601 timestamp string like "2026-01-26T15:30:00Z"
+    """
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
 class SchemaMismatchError(Exception):
     """
     Raised when database schema version doesn't match and destructive update not allowed.

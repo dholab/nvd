@@ -43,6 +43,7 @@ from py_nvd.db import (
     get_state_db_path,
     get_state_dir,
     get_taxdump_dir,
+    utc_now_iso,
 )
 from py_nvd.hits import (
     count_hit_observations,
@@ -1646,7 +1647,7 @@ def state_prune(
         # Prune without confirmation
         nvd state prune --older-than 90d --yes
     """
-    from datetime import timedelta
+    from datetime import timedelta, timezone
 
     db_path = ensure_db_exists(json_output)
 
@@ -1676,9 +1677,9 @@ def state_prune(
             )
             raise typer.Exit(1)
 
-    # Calculate cutoff date
-    cutoff = datetime.now() - timedelta(days=days)
-    cutoff_str = cutoff.strftime("%Y-%m-%d %H:%M:%S")
+    # Calculate cutoff date (UTC for consistent comparison with stored timestamps)
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    cutoff_str = cutoff.isoformat().replace("+00:00", "Z")
 
     with connect() as conn:
         # Build query for runs to prune
@@ -1929,7 +1930,7 @@ def _build_export_manifest(conn) -> dict:
 
     return {
         "schema_version": schema_version,
-        "exported_at": datetime.now().isoformat(),
+        "exported_at": utc_now_iso(),
         "nvd_version": __version__,
         "hostname": socket.gethostname(),
         "counts": counts,
