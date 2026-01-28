@@ -49,19 +49,22 @@ process ANNOTATE_MEGABLAST_RESULTS {
     input:
     tuple val(sample_id), path(blast_txt)
     val state_dir
+    val taxonomy_dir
 
     output:
     tuple val(sample_id), path("${sample_id}.annotated_megablast.txt"), emit: hits
 
     script:
     def state_dir_arg = state_dir ? "--state-dir '${state_dir}'" : ""
+    def taxonomy_dir_arg = taxonomy_dir ? "--taxonomy-dir '${taxonomy_dir}'" : ""
     """
     annotate_blast_results.py \
     --input_file ${blast_txt} \
     --output_file ${sample_id}.annotated_megablast.txt \
     --sample_name ${sample_id} \
     --task 'megablast' \
-    ${state_dir_arg}
+    ${state_dir_arg} \
+    ${taxonomy_dir_arg}
     """
 }
 
@@ -194,19 +197,22 @@ process ANNOTATE_BLASTN_RESULTS {
     input:
     tuple val(sample_id), path(blastn_txt)
     val state_dir
+    val taxonomy_dir
 
     output:
     tuple val(sample_id), path("${sample_id}.annotated_blastn.txt")
 
     script:
     def state_dir_arg = state_dir ? "--state-dir '${state_dir}'" : ""
+    def taxonomy_dir_arg = taxonomy_dir ? "--taxonomy-dir '${taxonomy_dir}'" : ""
     """
     annotate_blast_results.py \
     --sample_name ${sample_id} \
     --input_file ${blastn_txt} \
     --output_file ${sample_id}.annotated_blastn.txt \
     --task 'blastn' \
-    ${state_dir_arg}
+    ${state_dir_arg} \
+    ${taxonomy_dir_arg}
     """
 }
 

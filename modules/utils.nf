@@ -10,7 +10,7 @@
  * (database versions) for tracking.
  *
  * Input: 
- *   - tuple of (samplesheet, state_dir) - combined to ensure they travel together
+ *   - tuple of (samplesheet, state_dir, taxonomy_dir) - combined to ensure they travel together
  * Output: 
  *   - ready: val true (gates downstream processes, for combine() with other validation gates)
  *   - run_context: tuple of (sample_set_id, state_dir) - bundled for downstream upload processes
@@ -25,7 +25,7 @@ process CHECK_RUN_STATE {
     cache false  // Always run this check
 
     input:
-    tuple path(samplesheet), val(state_dir)
+    tuple path(samplesheet), val(state_dir), val(taxonomy_dir)
 
     output:
     val true, emit: ready
@@ -35,12 +35,15 @@ process CHECK_RUN_STATE {
     def exp_arg = params.experiment_id ? "--experiment-id ${params.experiment_id}" : ""
     def blast_db_arg = params.blast_db_version ? "--blast-db-version '${params.blast_db_version}'" : ""
     def stat_db_arg = params.stat_db_version ? "--stat-db-version '${params.stat_db_version}'" : ""
+    def state_dir_arg = state_dir ? "--state-dir '${state_dir}'" : ""
+    def taxonomy_dir_arg = taxonomy_dir ? "--taxonomy-dir '${taxonomy_dir}'" : ""
     """
     check_run_state.py \\
         --verbose \\
         --samplesheet ${samplesheet} \\
         --run-id '${workflow.runName}' \\
-        --state-dir ${state_dir} \\
+        ${state_dir_arg} \\
+        ${taxonomy_dir_arg} \\
         ${exp_arg} \\
         ${blast_db_arg} \\
         ${stat_db_arg}
@@ -57,14 +60,16 @@ process ANNOTATE_LEAST_COMMON_ANCESTORS {
     input:
     tuple val(sample_id), path(all_blast_hits)
     val state_dir
+    val taxonomy_dir
 
     output:
     tuple val(sample_id), path("${sample_id}_blast.merged_with_lca.tsv")
 
     script:
     def state_dir_arg = state_dir ? "--state-dir '${state_dir}'" : ""
+    def taxonomy_dir_arg = taxonomy_dir ? "--taxonomy-dir '${taxonomy_dir}'" : ""
     """
-    annotate_blast_lca.py -i ${all_blast_hits} -o ${sample_id}_blast.merged_with_lca.tsv ${state_dir_arg}
+    annotate_blast_lca.py -i ${all_blast_hits} -o ${sample_id}_blast.merged_with_lca.tsv ${state_dir_arg} ${taxonomy_dir_arg}
     """
 
 }
@@ -78,9 +83,11 @@ process ANNOTATE_LEAST_COMMON_ANCESTORS {
  * the sequence and its reverse complement).
  *
  * Input:
- *   - tuple of (sample_id, contigs, blast_results, sample_set_id, state_dir)
+ *   - tuple of (sample_id, contigs, blast_results, sample_set_id, state_dir, hits_dir)
+ *   - state_dir may be null in stateless mode
+ *   - hits_dir is the base directory for parquet output (state_dir/hits or results/hits)
  * Output:
- *   - tuple of (sample_id, log_file)
+ *   - tuple of (sample_id, log_file, parquet_file)
  *
  * Note: This is currently a "dead end" - output is not consumed by
  * downstream processes. The hits are registered in the state database
@@ -95,26 +102,29 @@ process REGISTER_HITS {
     errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
     maxRetries 2
 
-    // Publish parquet file to state directory - runs on every resume even if task is cached
-    // Uses Hive-partitioned structure: hits/month=NULL/{sample_set_id}/{sample_id}/data.parquet
-    publishDir "${state_dir}/hits/month=NULL/${sample_set_id}/${sample_id}", mode: 'copy', pattern: "data.parquet"
+    // Publish parquet file - runs on every resume even if task is cached
+    // Uses Hive-partitioned structure: {hits_dir}/month=NULL/{sample_set_id}/{sample_id}/data.parquet
+    // hits_dir is either state_dir/hits (stateful) or results/hits (stateless)
+    publishDir "${hits_dir}/month=NULL/${sample_set_id}/${sample_id}", mode: 'copy', pattern: "data.parquet"
 
     input:
-    tuple val(sample_id), path(contigs), path(blast_results), val(sample_set_id), val(state_dir)
+    tuple val(sample_id), path(contigs), path(blast_results), val(sample_set_id), val(state_dir), val(hits_dir)
 
     output:
     tuple val(sample_id), path("${sample_id}_hits_registered.log"), path("data.parquet")
 
     script:
+    assert hits_dir : "hits_dir cannot be null - this indicates a workflow configuration error"
     def blast_db_arg = params.blast_db_version ? "--blast-db-version '${params.blast_db_version}'" : ""
     def stat_db_arg = params.stat_db_version ? "--stat-db-version '${params.stat_db_version}'" : ""
     def labkey_arg = params.labkey ? "--labkey" : ""
+    def state_dir_arg = state_dir ? "--state-dir '${state_dir}'" : ""
     """
     set -o pipefail
     register_hits.py \\
         --contigs ${contigs} \\
         --blast-results ${blast_results} \\
-        --state-dir ${state_dir} \\
+        ${state_dir_arg} \\
         --sample-set-id '${sample_set_id}' \\
         --sample-id '${sample_id}' \\
         --run-id '${workflow.runName}' \\
@@ -135,7 +145,7 @@ process REGISTER_HITS {
  *
  * Input:
  *   - ready: Gate signal (true when all processing is complete)
- *   - state_dir: Path to state directory
+ *   - state_dir: Path to state directory (may be null in stateless mode)
  *   - status: "completed" or "failed"
  *
  * Output:
@@ -143,6 +153,7 @@ process REGISTER_HITS {
  *
  * Note: This process is intentionally not cached (cache false) because
  * the run status should always be updated at the end of a workflow run.
+ * In stateless mode (state_dir is null), this is a no-op.
  */
 process COMPLETE_RUN {
 
@@ -160,10 +171,11 @@ process COMPLETE_RUN {
 
     script:
     def backup_arg = status == "completed" ? "--backup" : ""
+    def state_dir_arg = state_dir ? "--state-dir '${state_dir}'" : ""
     """
     complete_run.py \\
         --run-id '${workflow.runName}' \\
-        --state-dir ${state_dir} \\
+        ${state_dir_arg} \\
         --status '${status}' \\
         ${backup_arg} \\
         -v

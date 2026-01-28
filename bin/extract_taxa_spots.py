@@ -55,7 +55,8 @@ def resolve_taxa(taxa_list: list[str], tax) -> set[int]:
         # Query by scientific name
         # We need to access the connection directly for name lookup
         row = tax._conn.execute(
-            "SELECT tax_id FROM taxons WHERE scientific_name = ?", (taxon_name,)
+            "SELECT tax_id FROM taxons WHERE scientific_name = ?",
+            (taxon_name,),
         ).fetchone()
         if row:
             resolved_taxa.add(row[0])
@@ -64,9 +65,7 @@ def resolve_taxa(taxa_list: list[str], tax) -> set[int]:
     return resolved_taxa
 
 
-def is_in_target_lineage(
-    tax_id: int, target_taxa: set[int], tax, include_children: bool
-) -> bool:
+def is_in_target_lineage(tax_id: int, target_taxa: set[int], tax, include_children: bool) -> bool:
     """
     Check if a given tax_id is in the target lineage based on the filtering options.
 
@@ -168,15 +167,9 @@ def parse_command_line_args() -> argparse.Namespace:
         help="(Deprecated) Path to SQLite taxonomy DB - now handled automatically",
     )
     parser.add_argument("--hits_file", required=True, help="Path to hits file")
-    parser.add_argument(
-        "--output_file", required=True, help="Where to write filtered results"
-    )
-    parser.add_argument(
-        "--taxa", required=True, nargs="+", help="List of taxa to include"
-    )
-    parser.add_argument(
-        "--stringency", type=float, default=0.9, help="Stringency threshold"
-    )
+    parser.add_argument("--output_file", required=True, help="Where to write filtered results")
+    parser.add_argument("--taxa", required=True, nargs="+", help="List of taxa to include")
+    parser.add_argument("--stringency", type=float, default=0.9, help="Stringency threshold")
     parser.add_argument(
         "--include_children",
         action="store_true",
@@ -187,6 +180,12 @@ def parse_command_line_args() -> argparse.Namespace:
         required=False,
         default=None,
         help="State directory containing taxonomy cache (default: NVD_STATE_DIR or ~/.nvd/)",
+    )
+    parser.add_argument(
+        "--taxonomy-dir",
+        required=False,
+        default=None,
+        help="Explicit taxonomy directory (takes precedence over --state-dir)",
     )
     parser.add_argument(
         "--sync",
@@ -204,11 +203,12 @@ def execute(
     stringency: float,
     include_children: bool,
     state_dir: str | None = None,
+    taxonomy_dir: str | None = None,
     sync: bool = False,
 ) -> None:
     """Execute the taxa filtering pipeline."""
     try:
-        with taxonomy.open(state_dir=state_dir, sync=sync) as tax:
+        with taxonomy.open(state_dir=state_dir, taxonomy_dir=taxonomy_dir, sync=sync) as tax:
             resolved_taxa = resolve_taxa(taxa, tax)
             if not resolved_taxa:
                 logger.error("No valid taxa specified. Exiting.")
@@ -265,6 +265,7 @@ def main() -> None:
         stringency=args.stringency,
         include_children=args.include_children,
         state_dir=args.state_dir,
+        taxonomy_dir=args.taxonomy_dir,
         sync=args.sync,
     )
 

@@ -52,15 +52,15 @@ from pathlib import Path
 
 from loguru import logger
 from py_nvd.db import (
+    StateUnavailableError,
     format_state_warning,
     get_state_db_path,
     get_taxdump_dir,
-    StateUnavailableError,
 )
 from py_nvd.state import (
+    DEFAULT_LOCK_TTL_HOURS,
     acquire_sample_locks,
     compute_sample_set_id,
-    DEFAULT_LOCK_TTL_HOURS,
     get_uploaded_sample_ids,
     register_run,
     update_run_id,
@@ -151,7 +151,8 @@ class RunRegistration:
 
         try:
             uploaded = get_uploaded_sample_ids(
-                self.sample_ids, state_dir=self.state_dir
+                self.sample_ids,
+                state_dir=self.state_dir,
             )
         except Exception as e:
             self._handle_state_error(
@@ -316,7 +317,7 @@ class RunRegistration:
                 logger.error("RUN CONFLICT DETECTED")
                 logger.error("=" * 60)
                 logger.error(
-                    f"Run '{self.run_id}' is already active on another machine!"
+                    f"Run '{self.run_id}' is already active on another machine!",
                 )
                 logger.error(f"  Hostname: {lock.hostname}")
                 logger.error(f"  Username: {lock.username}")
@@ -451,6 +452,10 @@ def parse_args() -> argparse.Namespace:
         help="State directory for SQLite database (default: ~/.nvd/ or NVD_STATE_DIR)",
     )
     parser.add_argument(
+        "--taxonomy-dir",
+        help="Explicit taxonomy directory (takes precedence over --state-dir for taxonomy)",
+    )
+    parser.add_argument(
         "--experiment-id",
         type=int,
         help="Experiment ID for tracking",
@@ -519,14 +524,14 @@ def main() -> None:
     # This downloads from NCBI if needed (once, on submit node) so workers
     # don't all race to download simultaneously
     logger.info("Ensuring taxonomy database is available...")
-    taxdump_dir = get_taxdump_dir(args.state_dir)
+    taxdump_dir = get_taxdump_dir(args.state_dir, args.taxonomy_dir)
     if (taxdump_dir / "taxonomy.sqlite").exists():
         logger.info(f"Taxonomy database found: {taxdump_dir}")
     else:
         logger.info("Taxonomy database not found, downloading from NCBI...")
         logger.info("(This may take a few minutes on first run)")
         try:
-            ensure_taxonomy_available(args.state_dir)
+            ensure_taxonomy_available(args.state_dir, args.taxonomy_dir)
             logger.info(f"Taxonomy database ready: {taxdump_dir}")
         except Exception as e:
             # Taxonomy download failed
@@ -546,7 +551,7 @@ def main() -> None:
                 logger.warning(warning)
                 logger.warning(
                     "Workers will attempt to download taxonomy when needed. "
-                    "This may cause delays and potential version inconsistencies."
+                    "This may cause delays and potential version inconsistencies.",
                 )
 
     # Create registration object
@@ -590,7 +595,7 @@ def main() -> None:
         skipped_locked = len(samples_to_process) - len(final_samples)
         if skipped_uploaded > 0:
             logger.info(
-                f"Samples already uploaded (will skip upload): {skipped_uploaded}"
+                f"Samples already uploaded (will skip upload): {skipped_uploaded}",
             )
         if skipped_locked > 0:
             logger.info(f"Samples locked by other runs (skipped): {skipped_locked}")

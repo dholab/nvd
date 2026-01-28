@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Self, TypeVar
 
@@ -42,16 +42,13 @@ def _parse_iso8601(timestamp: str) -> datetime:
         ValueError: If the timestamp cannot be parsed.
     """
     # Handle Z suffix (fromisoformat doesn't accept 'Z' directly)
-    if timestamp.endswith("Z"):
-        normalized = timestamp[:-1] + "+00:00"
-    else:
-        normalized = timestamp
+    normalized = timestamp[:-1] + "+00:00" if timestamp.endswith("Z") else timestamp
 
     dt = datetime.fromisoformat(normalized)
 
     # Normalize naive datetimes to UTC
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
+        dt = dt.replace(tzinfo=UTC)
 
     return dt
 
@@ -83,8 +80,7 @@ def _from_row(cls: type[T], row: Row) -> T:
 
     missing = [f for f in fields if f not in row_keys]
     assert not missing, (
-        f"Row missing columns for {cls.__name__}: {missing}. "
-        f"Available: {sorted(row_keys)}"
+        f"Row missing columns for {cls.__name__}: {missing}. Available: {sorted(row_keys)}"
     )
 
     return cls(**{f: row[f] for f in fields})
@@ -134,7 +130,7 @@ class Run:
             if duration < 0:
                 logger.warning(
                     f"Run {self.run_id} has negative duration "
-                    f"(completed_at before started_at): {duration}s"
+                    f"(completed_at before started_at): {duration}s",
                 )
                 return None
 
@@ -229,9 +225,7 @@ class Upload:
     upload_target: str  # 'labkey', 'local', 'globus', etc.
     content_hash: str  # SHA256 of uploaded data
     uploaded_at: str
-    target_metadata: dict | None = (
-        None  # Target-specific data (e.g., experiment_id, row_id)
-    )
+    target_metadata: dict | None = None  # Target-specific data (e.g., experiment_id, row_id)
 
     @field_validator("target_metadata", mode="before")
     @classmethod
@@ -307,7 +301,7 @@ class SampleLock:
     def is_expired(self) -> bool:
         """Check if this lock has expired."""
         expires = _parse_iso8601(self.expires_at)
-        return datetime.now(timezone.utc) > expires
+        return datetime.now(UTC) > expires
 
     @property
     def fingerprint(self) -> tuple[str, str]:
@@ -767,7 +761,7 @@ VALID_TOOLS = frozenset(
         "gottcha",
         "all",
         "clumpify",
-    }
+    },
 )
 
 DEFAULT_HUMAN_VIRUS_FAMILIES = (
@@ -1108,6 +1102,20 @@ class NvdParams(BaseModel):
     )
 
     # =========================================================================
+    # Stateless Mode
+    # =========================================================================
+    stateless: bool = Field(
+        False,
+        description="Run without state management (disables run tracking, LabKey, Slack)",
+        json_schema_extra={"category": "Core"},
+    )
+    taxonomy_dir: Path | None = Field(
+        None,
+        description="Taxonomy database directory (required when --stateless)",
+        json_schema_extra={"category": "Core"},
+    )
+
+    # =========================================================================
     # Internal Parameters (not user-configurable)
     # =========================================================================
     date: str | None = Field(
@@ -1198,7 +1206,7 @@ class NvdParams(BaseModel):
         if v is not None and not re.match(r"^C[A-Z0-9]+$", v):
             raise ValueError(
                 f"Invalid Slack channel ID: {v}. "
-                "Must match pattern C[A-Z0-9]+ (e.g., 'C0123456789')"
+                "Must match pattern C[A-Z0-9]+ (e.g., 'C0123456789')",
             )
         return v
 
@@ -1347,7 +1355,8 @@ def trace_merge(
     field_values: dict[str, tuple[Any, str]] = {}  # field -> (value, source_label)
     # Track what each field's value was before being overridden
     field_history: dict[
-        str, list[tuple[Any, str]]
+        str,
+        list[tuple[Any, str]],
     ] = {}  # field -> [(value, source), ...]
 
     for label, params in sources:
@@ -1387,7 +1396,7 @@ def trace_merge(
             # Check if it overrode something
             overridden_value = None
             overridden_source = None
-            if field in field_history and field_history[field]:
+            if field_history.get(field):
                 overridden_value, overridden_source = field_history[field][-1]
 
             source_list.append(
@@ -1397,19 +1406,18 @@ def trace_merge(
                     source=source_label,
                     overridden_value=overridden_value,
                     overridden_source=overridden_source,
-                )
+                ),
             )
-        else:
-            # Value is the default
-            if value is not None:
-                defaults_used += 1
-                source_list.append(
-                    ParamSource(
-                        field=field,
-                        value=value,
-                        source="default",
-                    )
-                )
+        # Value is the default
+        elif value is not None:
+            defaults_used += 1
+            source_list.append(
+                ParamSource(
+                    field=field,
+                    value=value,
+                    source="default",
+                ),
+            )
 
     return TracedParams(
         params=merged,

@@ -115,16 +115,19 @@ process GENERATE_STAT_CONTIG_REPORT {
     input:
     tuple val(sample_id), path(secondpass_file)
     val state_dir
+    val taxonomy_dir
 
     output:
     tuple val(sample_id), path("${sample_id}.report"), emit: report
 
     script:
     def state_dir_arg = state_dir ? "--state-dir '${state_dir}'" : ""
+    def taxonomy_dir_arg = taxonomy_dir ? "--taxonomy-dir '${taxonomy_dir}'" : ""
     """
     hits_to_report.py \
     --cutoff-percent ${params.cutoff_percent} \
     ${state_dir_arg} \
+    ${taxonomy_dir_arg} \
     ${secondpass_file} \
     ${sample_id}.report
     """
@@ -141,6 +144,7 @@ process IDENTIFY_HUMAN_VIRUS_FAMILY_CONTIGS {
     input:
     tuple val(sample_id), path(secondpass_file)
     val state_dir
+    val taxonomy_dir
 
     output:
     tuple val(sample_id), path("${sample_id}.report")
@@ -151,6 +155,7 @@ process IDENTIFY_HUMAN_VIRUS_FAMILY_CONTIGS {
         ? params.human_virus_families.join(" ")
         : params.human_virus_families.toString().split(",").collect { it.trim() }.join(" ")
     def state_dir_arg = state_dir ? "--state-dir '${state_dir}'" : ""
+    def taxonomy_dir_arg = taxonomy_dir ? "--taxonomy-dir '${taxonomy_dir}'" : ""
     """
     extract_taxa_spots.py \
     --hits_file ${secondpass_file} \
@@ -158,7 +163,8 @@ process IDENTIFY_HUMAN_VIRUS_FAMILY_CONTIGS {
     --taxa ${virus_families} \
     --stringency ${params.tax_stringency} \
     --include_children \
-    ${state_dir_arg}
+    ${state_dir_arg} \
+    ${taxonomy_dir_arg}
     """
 }
 

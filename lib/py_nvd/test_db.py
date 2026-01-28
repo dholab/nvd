@@ -13,6 +13,7 @@ from py_nvd.db import (
     SchemaMismatchError,
     StateUnavailableError,
     format_state_warning,
+    get_taxdump_dir,
 )
 
 
@@ -258,3 +259,71 @@ class TestFormatStateWarning:
         )
 
         assert str(tmp_path / "state.sqlite") in warning
+
+
+class TestGetTaxdumpDir:
+    """Tests for get_taxdump_dir() function with taxonomy_dir parameter."""
+
+    def test_taxonomy_dir_takes_precedence_over_env_var(self, tmp_path, monkeypatch):
+        """Explicit taxonomy_dir parameter takes precedence over NVD_TAXONOMY_DB env var."""
+        env_dir = tmp_path / "env_taxonomy"
+        env_dir.mkdir()
+        explicit_dir = tmp_path / "explicit_taxonomy"
+        explicit_dir.mkdir()
+
+        monkeypatch.setenv("NVD_TAXONOMY_DB", str(env_dir))
+
+        result = get_taxdump_dir(taxonomy_dir=explicit_dir)
+        assert result == explicit_dir
+
+    def test_taxonomy_dir_takes_precedence_over_state_dir(self, tmp_path):
+        """Explicit taxonomy_dir parameter takes precedence over state_dir fallback."""
+        state_dir = tmp_path / "state"
+        state_dir.mkdir()
+        explicit_dir = tmp_path / "explicit_taxonomy"
+        explicit_dir.mkdir()
+
+        result = get_taxdump_dir(state_dir=state_dir, taxonomy_dir=explicit_dir)
+        assert result == explicit_dir
+
+    def test_taxonomy_dir_with_string_path(self, tmp_path):
+        """taxonomy_dir works with string path."""
+        explicit_dir = tmp_path / "explicit_taxonomy"
+        explicit_dir.mkdir()
+
+        result = get_taxdump_dir(taxonomy_dir=str(explicit_dir))
+        assert result == explicit_dir
+        assert isinstance(result, Path)
+
+    def test_taxonomy_dir_with_path_object(self, tmp_path):
+        """taxonomy_dir works with Path object."""
+        explicit_dir = tmp_path / "explicit_taxonomy"
+        explicit_dir.mkdir()
+
+        result = get_taxdump_dir(taxonomy_dir=explicit_dir)
+        assert result == explicit_dir
+        assert isinstance(result, Path)
+
+    def test_env_var_used_when_taxonomy_dir_is_none(self, tmp_path, monkeypatch):
+        """NVD_TAXONOMY_DB env var is used when taxonomy_dir is None."""
+        env_dir = tmp_path / "env_taxonomy"
+        env_dir.mkdir()
+
+        monkeypatch.setenv("NVD_TAXONOMY_DB", str(env_dir))
+
+        result = get_taxdump_dir(taxonomy_dir=None)
+        assert result == env_dir
+
+    def test_state_dir_fallback_when_no_taxonomy_dir_or_env_var(
+        self, tmp_path, monkeypatch
+    ):
+        """Falls back to {state_dir}/taxdump when no taxonomy_dir or env var."""
+        # Ensure env var is not set
+        monkeypatch.delenv("NVD_TAXONOMY_DB", raising=False)
+        monkeypatch.delenv("NVD_STATE_DIR", raising=False)
+
+        state_dir = tmp_path / "state"
+        state_dir.mkdir()
+
+        result = get_taxdump_dir(state_dir=state_dir, taxonomy_dir=None)
+        assert result == state_dir / "taxdump"

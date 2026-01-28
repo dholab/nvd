@@ -49,7 +49,7 @@ from pathlib import Path
 import polars as pl
 from Bio import SeqIO
 from loguru import logger
-from py_nvd.db import format_state_warning, get_state_db_path, StateUnavailableError
+from py_nvd.db import StateUnavailableError, format_state_warning, get_state_db_path
 from py_nvd.hits import (
     HitRecord,
     calculate_gc_content,
@@ -67,9 +67,12 @@ class HitRegistrationContext:
 
     Bundles all the parameters needed for hit registration, providing
     validation and type safety over loose string arguments.
+
+    When state_dir is None (stateless mode), state operations are skipped
+    and --output must be specified for parquet output.
     """
 
-    state_dir: Path
+    state_dir: Path | None
     sample_set_id: str
     sample_id: str
     run_date: str
@@ -116,9 +119,7 @@ class ContigClassification:
 
     def __post_init__(self) -> None:
         assert self.contig_id, "contig_id cannot be empty"
-        assert isinstance(self.contig_id, str), (
-            f"contig_id must be str, got {type(self.contig_id)}"
-        )
+        assert isinstance(self.contig_id, str), f"contig_id must be str, got {type(self.contig_id)}"
 
 
 def parse_blast_classifications(
@@ -226,7 +227,7 @@ def build_hit_records(
                 adjusted_taxid=classification.adjusted_taxid,
                 adjusted_taxid_name=classification.adjusted_taxid_name,
                 adjusted_taxid_rank=classification.adjusted_taxid_rank,
-            )
+            ),
         )
 
     return hit_records
@@ -261,7 +262,7 @@ def write_hits_to_path(hits: list[HitRecord], output_path: Path) -> Path:
                 "adjusted_taxid": pl.Int64,
                 "adjusted_taxid_name": pl.Utf8,
                 "adjusted_taxid_rank": pl.Utf8,
-            }
+            },
         )
     else:
         df = pl.DataFrame(
@@ -280,7 +281,7 @@ def write_hits_to_path(hits: list[HitRecord], output_path: Path) -> Path:
                     "adjusted_taxid_rank": h.adjusted_taxid_rank,
                 }
                 for h in hits
-            ]
+            ],
         )
 
     # Ensure parent directory exists
@@ -336,8 +337,9 @@ def main() -> None:
     parser.add_argument(
         "--state-dir",
         type=Path,
-        required=True,
-        help="Path to state directory containing state.sqlite",
+        required=False,
+        default=None,
+        help="Path to state directory containing state.sqlite (optional in stateless mode)",
     )
     parser.add_argument(
         "--sample-set-id",
@@ -414,6 +416,13 @@ def main() -> None:
         logger.error(f"BLAST results file not found: {args.blast_results}")
         sys.exit(1)
 
+    # In stateless mode (no state_dir), --output is required
+    if args.state_dir is None and args.output is None:
+        logger.error(
+            "--output is required when --state-dir is not provided (stateless mode)",
+        )
+        sys.exit(1)
+
     # Build registration context
     run_date = args.run_date or datetime.now(UTC).isoformat()
 
@@ -462,45 +471,52 @@ def main() -> None:
 
     # Mark sample as completed in state database
     # This enables per-sample resume and upload gating
-    try:
-        mark_sample_completed(
-            sample_id=context.sample_id,
-            sample_set_id=context.sample_set_id,
-            run_id=args.run_id,
-            blast_db_version=args.blast_db_version,
-            stat_db_version=args.stat_db_version,
-            state_dir=str(context.state_dir),
-        )
-        logger.info(f"Marked sample {context.sample_id} as completed in state database")
-    except Exception as e:
-        db_path = get_state_db_path(context.state_dir)
-        if args.sync:
-            raise StateUnavailableError(
-                db_path=db_path,
-                operation="Marking sample as completed",
-                reason=str(e),
-                original_error=e,
-            ) from e
+    # Skip in stateless mode (no state_dir)
+    if context.state_dir is not None:
+        try:
+            mark_sample_completed(
+                sample_id=context.sample_id,
+                sample_set_id=context.sample_set_id,
+                run_id=args.run_id,
+                blast_db_version=args.blast_db_version,
+                stat_db_version=args.stat_db_version,
+                state_dir=str(context.state_dir),
+            )
+            logger.info(
+                f"Marked sample {context.sample_id} as completed in state database",
+            )
+        except Exception as e:
+            db_path = get_state_db_path(context.state_dir)
+            if args.sync:
+                raise StateUnavailableError(
+                    db_path=db_path,
+                    operation="Marking sample as completed",
+                    reason=str(e),
+                    original_error=e,
+                ) from e
 
-        # Graceful degradation: warn but don't fail
-        # Hits are registered (parquet written), that's the critical part
-        # State tracking is for resume/upload gating, not data integrity
-        warning = format_state_warning(
-            operation="Marking sample as completed",
-            context=f"Sample '{context.sample_id}' in run '{args.run_id}'",
-            error=e,
-            db_path=db_path,
-            consequences=[
-                "Sample completion status NOT recorded",
-                "Sample may be re-processed on pipeline resume",
-                "Upload gating may not work correctly",
-            ],
-        )
-        logger.warning(warning)
+            # Graceful degradation: warn but don't fail
+            # Hits are registered (parquet written), that's the critical part
+            # State tracking is for resume/upload gating, not data integrity
+            warning = format_state_warning(
+                operation="Marking sample as completed",
+                context=f"Sample '{context.sample_id}' in run '{args.run_id}'",
+                error=e,
+                db_path=db_path,
+                consequences=[
+                    "Sample completion status NOT recorded",
+                    "Sample may be re-processed on pipeline resume",
+                    "Upload gating may not work correctly",
+                ],
+            )
+            logger.warning(warning)
+    else:
+        logger.debug("Skipping state operations (stateless mode)")
 
     # Release sample lock if LabKey is disabled
     # When LabKey is enabled, locks are released after successful upload
-    if not args.labkey:
+    # Skip in stateless mode (no state_dir)
+    if not args.labkey and context.state_dir is not None:
         try:
             released = release_sample_lock(
                 sample_id=context.sample_id,

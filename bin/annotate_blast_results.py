@@ -31,7 +31,7 @@ else:
 
 def parse_command_line_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Annotate BLAST results with taxonomy info"
+        description="Annotate BLAST results with taxonomy info",
     )
     # Keep --sqlite_cache for backward compatibility with Nextflow,
     # but it's no longer used (taxonomy.open() handles DB location)
@@ -52,6 +52,12 @@ def parse_command_line_args() -> argparse.Namespace:
         help="State directory containing taxonomy cache (default: NVD_STATE_DIR or ~/.nvd/)",
     )
     parser.add_argument(
+        "--taxonomy-dir",
+        required=False,
+        default=None,
+        help="Explicit taxonomy directory (takes precedence over --state-dir)",
+    )
+    parser.add_argument(
         "--sync",
         action="store_true",
         help="Require pre-cached taxonomy database (fail if unavailable)",
@@ -62,6 +68,7 @@ def parse_command_line_args() -> argparse.Namespace:
 
 def main() -> None:
     state_dir = None
+    taxonomy_dir = None
     sync = False
     if "snakemake" in globals() and MODE == "snakemake":
         # sqlite_cache from snakemake is ignored - taxonomy.open() handles it
@@ -69,7 +76,7 @@ def main() -> None:
         output_file = snakemake.output[0]
         sample_name = snakemake.params.sample
         task = snakemake.params.task
-        # snakemake mode doesn't support state_dir or sync yet
+        # snakemake mode doesn't support state_dir, taxonomy_dir, or sync yet
     else:
         args = parse_command_line_args()
         # args.sqlite_cache is ignored - taxonomy.open() handles DB location
@@ -78,6 +85,7 @@ def main() -> None:
         sample_name = args.sample_name
         task = args.task
         state_dir = args.state_dir
+        taxonomy_dir = args.taxonomy_dir
         sync = args.sync
 
     try:
@@ -91,7 +99,11 @@ def main() -> None:
             return
 
         with (
-            taxonomy.open(state_dir=state_dir, sync=sync) as tax,
+            taxonomy.open(
+                state_dir=state_dir,
+                taxonomy_dir=taxonomy_dir,
+                sync=sync,
+            ) as tax,
             open(input_file) as infile,
             open(output_file, "w", newline="") as outfile,
         ):

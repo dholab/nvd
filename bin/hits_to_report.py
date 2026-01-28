@@ -251,9 +251,7 @@ def format_tax_tree(tree, args):
     if args.no_padding:
         res = [
             f"{name}{args.separator}{stats}"
-            for name, stats in (
-                line.split("\t", 1) for line in res if isinstance(line, str)
-            )
+            for name, stats in (line.split("\t", 1) for line in res if isinstance(line, str))
         ]
     else:
         res = list(pad_tree(res, args.separator))
@@ -422,6 +420,11 @@ def parse_arguments() -> argparse.Namespace:
         help="State directory containing taxonomy cache (default: NVD_STATE_DIR or ~/.nvd/)",
     )
     parser.add_argument(
+        "--taxonomy-dir",
+        default=None,
+        help="Explicit taxonomy directory (takes precedence over --state-dir)",
+    )
+    parser.add_argument(
         "--sync",
         action="store_true",
         help="Require pre-cached taxonomy database (fail if unavailable)",
@@ -449,12 +452,17 @@ def main() -> None:
         input_file = args.input_file
         output_file = args.output_file
 
-    # Get state_dir and sync from args (None/False in snakemake mode)
+    # Get state_dir, taxonomy_dir, and sync from args (None/False in snakemake mode)
     state_dir = getattr(args, "state_dir", None)
+    taxonomy_dir = getattr(args, "taxonomy_dir", None)
     sync = getattr(args, "sync", False)
 
     try:
-        with taxonomy.open(state_dir=state_dir, sync=sync) as tax:
+        with taxonomy.open(
+            state_dir=state_dir,
+            taxonomy_dir=taxonomy_dir,
+            sync=sync,
+        ) as tax:
             logger.info(f"Reading {input_file}")
             with open(input_file) as f:
                 counter = parse_input(f, tax, args)

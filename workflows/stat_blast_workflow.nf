@@ -77,24 +77,18 @@ workflow STAT_BLAST_WORKFLOW {
         ? Channel.fromPath(params.human_virus_taxlist) 
         : Channel.empty()
 
-    // State directory for run tracking and upload deduplication.
-    // Resolve state_dir to an absolute path string.
-    // We use val (not path) to avoid Nextflow staging the directory, which would
-    // cause writes to go to a work directory copy instead of the shared location.
-    // The directory is created if it doesn't exist (matching db.py behavior).
-    assert params.state_dir : "params.state_dir must be set (check nextflow.config defaults)"
-    def state_dir_file = file(params.state_dir)
-    if (!state_dir_file.exists()) {
-        state_dir_file.mkdirs()
-    }
-    def state_dir_str = state_dir_file.toAbsolutePath().toString()
+    // Resolve directories for stateful vs stateless mode.
+    // Returns absolute path strings (not Nextflow path objects) to avoid staging.
+    // See lib/NvdDirs.groovy for validation logic and error messages.
+    dirs = NvdDirs.resolve(params, log)
 
-    // Combine samplesheet and state_dir into a tuple for CHECK_RUN_STATE.
+    // Combine samplesheet, state_dir, and taxonomy_dir into a tuple for CHECK_RUN_STATE.
     // This ensures they travel together and we get visible cross-product failures
     // if either channel unexpectedly emits multiple values.
-    // Note: state_dir is passed as a val (string), not a path, to avoid staging.
+    // Note: directories are passed as val (string), not path, to avoid staging.
     ch_run_state_input = Channel.fromPath(params.samplesheet)
-        .combine(Channel.value(state_dir_str))
+        .combine(Channel.value(dirs.state_dir))
+        .combine(Channel.value(dirs.taxonomy_dir))
 
     // Check run state upfront (prevents duplicate processing of same sample set)
     // Reads sample IDs directly from samplesheet for immediate validation
@@ -120,9 +114,14 @@ workflow STAT_BLAST_WORKFLOW {
     // This is safe because CHECK_RUN_STATE emits exactly once per pipeline run.
     ch_run_context = CHECK_RUN_STATE.out.run_context.first()
 
-    // Extract state_dir from run_context for taxonomy-using processes
+    // Extract state_dir from run_context for state-tracking processes
     // (run_context is a value channel: [sample_set_id, state_dir])
     ch_state_dir = ch_run_context.map { _sample_set_id, state_dir -> state_dir }
+    
+    // Create value channels for taxonomy_dir and hits_dir
+    // These are resolved at workflow start and broadcast to all consumers
+    ch_taxonomy_dir = Channel.value(dirs.taxonomy_dir)
+    ch_hits_dir = Channel.value(dirs.hits_dir)
 
     EXTRACT_HUMAN_VIRUSES(
         PREPROCESS_CONTIGS.out.contigs,
@@ -130,31 +129,35 @@ workflow STAT_BLAST_WORKFLOW {
         ch_stat_index,
         ch_stat_dbss,
         ch_stat_annotation,
-        ch_state_dir
+        ch_state_dir,
+        ch_taxonomy_dir
     )
 
     CLASSIFY_WITH_MEGABLAST(
         EXTRACT_HUMAN_VIRUSES.out.contigs,
         ch_blast_db_files,
-        ch_state_dir
+        ch_state_dir,
+        ch_taxonomy_dir
     )
 
     CLASSIFY_WITH_BLASTN(
         CLASSIFY_WITH_MEGABLAST.out.filtered_megablast,
         CLASSIFY_WITH_MEGABLAST.out.megablast_contigs,
         ch_blast_db_files,
-        ch_state_dir
+        ch_state_dir,
+        ch_taxonomy_dir
     )
 
     // Register hits with idempotent keys in the state database.
-    // Join contigs with merged BLAST results, then combine with run context.
+    // Join contigs with merged BLAST results, then combine with run context and hits_dir.
     // DSL2 automatically forks EXTRACT_HUMAN_VIRUSES.out.contigs and 
     // CLASSIFY_WITH_BLASTN.out.merged_results for multiple consumers.
     ch_register_hits_input = EXTRACT_HUMAN_VIRUSES.out.contigs
         .join(CLASSIFY_WITH_BLASTN.out.merged_results, by: 0)
         .combine(ch_run_context)
-        .map { sample_id, contigs, blast_results, sample_set_id, state_dir ->
-            tuple(sample_id, contigs, blast_results, sample_set_id, state_dir)
+        .combine(ch_hits_dir)
+        .map { sample_id, contigs, blast_results, sample_set_id, state_dir, hits_dir ->
+            tuple(sample_id, contigs, blast_results, sample_set_id, state_dir, hits_dir)
         }
 
     REGISTER_HITS(ch_register_hits_input)

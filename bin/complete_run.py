@@ -36,10 +36,10 @@ from pathlib import Path
 
 from loguru import logger
 from py_nvd.db import (
+    StateUnavailableError,
     create_backup,
     format_state_warning,
     get_state_db_path,
-    StateUnavailableError,
 )
 from py_nvd.state import complete_run, release_all_locks_for_run
 
@@ -75,8 +75,9 @@ def main() -> None:
     parser.add_argument(
         "--state-dir",
         type=Path,
-        required=True,
-        help="Path to state directory containing state.sqlite",
+        required=False,
+        default=None,
+        help="Path to state directory containing state.sqlite (optional in stateless mode)",
     )
     parser.add_argument(
         "--status",
@@ -107,6 +108,12 @@ def main() -> None:
     args = parser.parse_args()
 
     configure_logging(args.verbose)
+
+    # In stateless mode (no state_dir), this is a no-op
+    if args.state_dir is None:
+        logger.info(f"Stateless mode: skipping run completion for {args.run_id}")
+        logger.info(f"Stateless mode: no state operations for run {args.run_id}")
+        return
 
     logger.info(f"Marking run {args.run_id} as {args.status}")
 

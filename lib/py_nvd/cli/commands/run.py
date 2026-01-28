@@ -10,8 +10,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import typer
 
@@ -40,6 +39,9 @@ from py_nvd.cli.utils import (
 from py_nvd.models import NvdParams
 from py_nvd.params import load_params_file
 from py_nvd.state import resolve_database_versions
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def _format_command_for_display(cmd: list[str]) -> str:
@@ -158,6 +160,18 @@ def run(  # noqa: PLR0913, PLR0912, PLR0915, C901
         None,
         "--state-dir",
         help="State directory for run tracking (default: ~/.nvd/ or NVD_STATE_DIR)",
+        rich_help_panel=PANEL_CORE,
+    ),
+    stateless: bool | None = typer.Option(
+        None,
+        "--stateless/--no-stateless",
+        help="Run without state management (disables run tracking, LabKey, Slack)",
+        rich_help_panel=PANEL_CORE,
+    ),
+    taxonomy_dir: Path | None = typer.Option(
+        None,
+        "--taxonomy-dir",
+        help="Taxonomy database directory (required when --stateless)",
         rich_help_panel=PANEL_CORE,
     ),
     preset: str | None = typer.Option(
@@ -583,6 +597,8 @@ def run(  # noqa: PLR0913, PLR0912, PLR0915, C901
         "cleanup": cleanup,
         "work_dir": work_dir,
         "state_dir": state_dir,
+        "stateless": stateless,
+        "taxonomy_dir": taxonomy_dir,
         # Database paths
         "gottcha2_db": gottcha2_db,
         "blast_db": blast_db,

@@ -27,8 +27,7 @@ import sys
 import tarfile
 import urllib.request
 from contextlib import contextmanager
-from datetime import datetime, timedelta, timezone
-from pathlib import Path
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
 import taxopy
@@ -43,6 +42,7 @@ _open = builtins.open
 
 if TYPE_CHECKING:
     from collections.abc import Generator
+    from pathlib import Path
 
 # NCBI taxdump URL and configuration
 TAXDUMP_URL = "https://ftp.ncbi.nlm.nih.gov/pub/taxonomy/taxdump.tar.gz"
@@ -55,8 +55,8 @@ def _is_taxdump_stale(taxdump_dir: Path) -> bool:
     nodes_dmp = taxdump_dir / "nodes.dmp"
     if not nodes_dmp.exists():
         return True
-    mtime = datetime.fromtimestamp(nodes_dmp.stat().st_mtime, tz=timezone.utc)
-    age = datetime.now(tz=timezone.utc) - mtime
+    mtime = datetime.fromtimestamp(nodes_dmp.stat().st_mtime, tz=UTC)
+    age = datetime.now(tz=UTC) - mtime
     return age > MAX_AGE
 
 
@@ -178,13 +178,21 @@ def _build_sqlite_from_dmp(taxdump_dir: Path) -> Path:
     return sqlite_path
 
 
-def _ensure_taxdump(state_dir: Path | str | None = None) -> Path:
+def _ensure_taxdump(
+    state_dir: Path | str | None = None,
+    taxonomy_dir: Path | str | None = None,
+) -> Path:
     """
     Ensure taxdump is downloaded, extracted, and SQLite is built.
 
-    Returns path to taxdump directory.
+    Args:
+        state_dir: Optional state directory for fallback resolution.
+        taxonomy_dir: Optional explicit taxonomy directory (takes precedence).
+
+    Returns:
+        Path to taxdump directory.
     """
-    taxdump_dir = get_taxdump_dir(state_dir)
+    taxdump_dir = get_taxdump_dir(state_dir, taxonomy_dir)
     sqlite_path = taxdump_dir / "taxonomy.sqlite"
 
     if _is_taxdump_stale(taxdump_dir):
@@ -197,7 +205,10 @@ def _ensure_taxdump(state_dir: Path | str | None = None) -> Path:
     return taxdump_dir
 
 
-def ensure_taxonomy_available(state_dir: Path | str | None = None) -> Path:
+def ensure_taxonomy_available(
+    state_dir: Path | str | None = None,
+    taxonomy_dir: Path | str | None = None,
+) -> Path:
     """
     Ensure taxonomy database is downloaded and ready for use.
 
@@ -212,11 +223,13 @@ def ensure_taxonomy_available(state_dir: Path | str | None = None) -> Path:
     Args:
         state_dir: Optional state directory override. If None, uses
                    NVD_STATE_DIR env var or ~/.nvd/
+        taxonomy_dir: Optional explicit taxonomy directory (takes precedence
+                      over state_dir-derived path).
 
     Returns:
         Path to the taxdump directory containing taxonomy.sqlite
     """
-    return _ensure_taxdump(state_dir)
+    return _ensure_taxdump(state_dir, taxonomy_dir)
 
 
 class TaxonomyDB:
@@ -522,8 +535,7 @@ def format_taxonomy_warning(
         # Provide more helpful explanations for common errors
         if isinstance(error, PermissionError):
             explanation = (
-                "The taxonomy directory or files are not readable/writable "
-                "by the current user."
+                "The taxonomy directory or files are not readable/writable by the current user."
             )
         elif isinstance(error, sqlite3.DatabaseError):
             explanation = (
@@ -594,6 +606,7 @@ def open(  # noqa: A001
     state_dir: Path | str | None = None,
     offline: bool | None = None,
     *,
+    taxonomy_dir: Path | str | None = None,
     sync: bool = False,
     warn_callback: callable | None = None,
 ) -> Generator[TaxonomyDB, None, None]:
@@ -610,6 +623,9 @@ def open(  # noqa: A001
         offline: If True, never attempt to download taxonomy data.
                  If None (default), checks NVD_TAXONOMY_OFFLINE env var.
                  Set to True for air-gapped environments with pre-cached data.
+        taxonomy_dir: Optional explicit taxonomy directory. Takes precedence
+                      over state_dir-derived path. Enables stateless mode
+                      where taxonomy is decoupled from state management.
         sync: If True, require pre-cached taxonomy and fail if unavailable.
               If False (default), attempt lazy download with a warning if
               pre-cached taxonomy is missing or stale.
@@ -642,6 +658,11 @@ def open(  # noqa: A001
         with taxonomy.open(sync=True) as tax:
             # Fails if taxonomy not pre-cached
             taxon = tax.get_taxon(9606)
+
+        # Explicit taxonomy directory (stateless mode)
+        with taxonomy.open(taxonomy_dir="/shared/taxonomy") as tax:
+            # Uses specified directory, ignores state_dir
+            taxon = tax.get_taxon(9606)
     """
 
     def emit_warning(msg: str) -> None:
@@ -654,7 +675,7 @@ def open(  # noqa: A001
     if offline is None:
         offline = os.environ.get("NVD_TAXONOMY_OFFLINE", "").lower() in ("1", "true")
 
-    taxdump_dir = get_taxdump_dir(state_dir)
+    taxdump_dir = get_taxdump_dir(state_dir, taxonomy_dir)
     sqlite_path = taxdump_dir / "taxonomy.sqlite"
 
     if offline:
@@ -666,7 +687,7 @@ def open(  # noqa: A001
             raise TaxonomyOfflineError(
                 f"Taxonomy database not found at {sqlite_path} and offline mode is enabled. "
                 f"Run 'nvd taxonomy ensure' or ensure CHECK_RUN_STATE runs locally before "
-                f"launching distributed jobs."
+                f"launching distributed jobs.",
             )
     else:
         # Check if we need to download/rebuild
@@ -703,7 +724,7 @@ def open(  # noqa: A001
 
         # Attempt to ensure taxonomy is available (download if needed)
         try:
-            taxdump_dir = _ensure_taxdump(state_dir)
+            taxdump_dir = _ensure_taxdump(state_dir, taxonomy_dir)
             sqlite_path = taxdump_dir / "taxonomy.sqlite"
         except Exception as e:
             if sync:

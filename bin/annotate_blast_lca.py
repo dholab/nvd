@@ -437,6 +437,12 @@ def parse_args() -> argparse.Namespace:
         help="State directory containing taxonomy cache (default: NVD_STATE_DIR or ~/.nvd/)",
     )
     parser.add_argument(
+        "--taxonomy-dir",
+        type=str,
+        default=None,
+        help="Explicit taxonomy directory (takes precedence over --state-dir)",
+    )
+    parser.add_argument(
         "--sync",
         action="store_true",
         help="Require pre-cached taxonomy database (fail if unavailable)",
@@ -483,7 +489,11 @@ def main() -> None:
         Path(args.output_file).touch()
         return
 
-    with taxonomy.open(state_dir=args.state_dir, sync=args.sync) as tax:
+    with taxonomy.open(
+        state_dir=args.state_dir,
+        taxonomy_dir=args.taxonomy_dir,
+        sync=args.sync,
+    ) as tax:
         tx = tax.taxopy_db
 
         logger.info("Processing BLAST results with parameters: {}", params)

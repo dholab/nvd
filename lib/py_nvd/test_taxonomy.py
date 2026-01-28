@@ -171,7 +171,11 @@ def test_taxonomy(minimal_taxdump: Path, monkeypatch: pytest.MonkeyPatch):
     taxonomy._build_sqlite_from_dmp(minimal_taxdump)
 
     # Patch _ensure_taxdump to return our test directory
-    monkeypatch.setattr(taxonomy, "_ensure_taxdump", lambda _=None: minimal_taxdump)
+    monkeypatch.setattr(
+        taxonomy,
+        "_ensure_taxdump",
+        lambda _=None, __=None: minimal_taxdump,
+    )
 
     with taxonomy.open() as tax:
         yield tax
@@ -369,12 +373,16 @@ class TestMergedTaxidResolution:
     """Tests for merged taxid resolution including chains and edge cases."""
 
     def test_get_taxon_resolves_merge_chain(
-        self, taxdump_with_merge_chain: Path, monkeypatch
+        self,
+        taxdump_with_merge_chain: Path,
+        monkeypatch,
     ):
         """Multi-level merge resolution: 11111 -> 22222 -> 9606."""
         taxonomy._build_sqlite_from_dmp(taxdump_with_merge_chain)
         monkeypatch.setattr(
-            taxonomy, "_ensure_taxdump", lambda _=None: taxdump_with_merge_chain
+            taxonomy,
+            "_ensure_taxdump",
+            lambda _=None, __=None: taxdump_with_merge_chain,
         )
 
         with taxonomy.open() as tax:
@@ -384,12 +392,16 @@ class TestMergedTaxidResolution:
             assert taxon.scientific_name == "Homo sapiens"
 
     def test_get_taxon_merge_to_nonexistent_returns_none(
-        self, taxdump_with_merge_chain: Path, monkeypatch
+        self,
+        taxdump_with_merge_chain: Path,
+        monkeypatch,
     ):
         """Merge pointing to non-existent taxid returns None."""
         taxonomy._build_sqlite_from_dmp(taxdump_with_merge_chain)
         monkeypatch.setattr(
-            taxonomy, "_ensure_taxdump", lambda _=None: taxdump_with_merge_chain
+            taxonomy,
+            "_ensure_taxdump",
+            lambda _=None, __=None: taxdump_with_merge_chain,
         )
 
         with taxonomy.open() as tax:
@@ -398,12 +410,16 @@ class TestMergedTaxidResolution:
             assert taxon is None
 
     def test_get_taxon_cyclic_merge_returns_none(
-        self, taxdump_with_cyclic_merge: Path, monkeypatch
+        self,
+        taxdump_with_cyclic_merge: Path,
+        monkeypatch,
     ):
         """Cyclic merge (A -> B -> A) returns None instead of infinite loop."""
         taxonomy._build_sqlite_from_dmp(taxdump_with_cyclic_merge)
         monkeypatch.setattr(
-            taxonomy, "_ensure_taxdump", lambda _=None: taxdump_with_cyclic_merge
+            taxonomy,
+            "_ensure_taxdump",
+            lambda _=None, __=None: taxdump_with_cyclic_merge,
         )
 
         with taxonomy.open() as tax:
@@ -461,7 +477,9 @@ class TestEnsureTaxdump:
     """Tests for _ensure_taxdump() control flow paths."""
 
     def test_ensure_taxdump_fresh_dmp_but_missing_sqlite_rebuilds(
-        self, minimal_taxdump: Path, monkeypatch
+        self,
+        minimal_taxdump: Path,
+        monkeypatch,
     ):
         """Path 2: Fresh .dmp files but missing SQLite triggers rebuild only."""
         # Ensure SQLite doesn't exist
@@ -478,7 +496,11 @@ class TestEnsureTaxdump:
             original_download(taxdump_dir)
 
         monkeypatch.setattr(taxonomy, "_download_and_extract_taxdump", mock_download)
-        monkeypatch.setattr(taxonomy, "get_taxdump_dir", lambda _=None: minimal_taxdump)
+        monkeypatch.setattr(
+            taxonomy,
+            "get_taxdump_dir",
+            lambda _=None, __=None: minimal_taxdump,
+        )
 
         # Call _ensure_taxdump
         result = taxonomy._ensure_taxdump()
@@ -490,7 +512,9 @@ class TestEnsureTaxdump:
         assert result == minimal_taxdump
 
     def test_ensure_taxdump_fresh_with_sqlite_does_nothing(
-        self, minimal_taxdump: Path, monkeypatch
+        self,
+        minimal_taxdump: Path,
+        monkeypatch,
     ):
         """Path 3: Fresh taxdump with SQLite returns immediately."""
         # Build SQLite first
@@ -511,7 +535,11 @@ class TestEnsureTaxdump:
 
         monkeypatch.setattr(taxonomy, "_download_and_extract_taxdump", mock_download)
         monkeypatch.setattr(taxonomy, "_build_sqlite_from_dmp", mock_build)
-        monkeypatch.setattr(taxonomy, "get_taxdump_dir", lambda _=None: minimal_taxdump)
+        monkeypatch.setattr(
+            taxonomy,
+            "get_taxdump_dir",
+            lambda _=None, __=None: minimal_taxdump,
+        )
 
         # Call _ensure_taxdump
         result = taxonomy._ensure_taxdump()
@@ -530,7 +558,11 @@ class TestContextManagers:
     def test_open_returns_taxonomy_db(self, minimal_taxdump: Path, monkeypatch):
         """Test that open() returns a TaxonomyDB instance."""
         taxonomy._build_sqlite_from_dmp(minimal_taxdump)
-        monkeypatch.setattr(taxonomy, "_ensure_taxdump", lambda _=None: minimal_taxdump)
+        monkeypatch.setattr(
+            taxonomy,
+            "_ensure_taxdump",
+            lambda _=None, __=None: minimal_taxdump,
+        )
 
         with taxonomy.open() as tax:
             assert isinstance(tax, taxonomy.TaxonomyDB)
@@ -542,7 +574,11 @@ class TestContextManagers:
     ):
         """Test that database connection is closed after context exits."""
         taxonomy._build_sqlite_from_dmp(minimal_taxdump)
-        monkeypatch.setattr(taxonomy, "_ensure_taxdump", lambda _=None: minimal_taxdump)
+        monkeypatch.setattr(
+            taxonomy,
+            "_ensure_taxdump",
+            lambda _=None, __=None: minimal_taxdump,
+        )
 
         with taxonomy.open() as tax:
             conn = tax._conn
@@ -553,7 +589,9 @@ class TestContextManagers:
             conn.execute("SELECT 1")
 
     def test_delete_journal_mode_for_network_filesystem_compatibility(
-        self, minimal_taxdump: Path, monkeypatch
+        self,
+        minimal_taxdump: Path,
+        monkeypatch,
     ):
         """Verify database uses DELETE journal mode for network filesystem compatibility.
 
@@ -562,7 +600,11 @@ class TestContextManagers:
         traditional rollback journal that works correctly over the network.
         """
         taxonomy._build_sqlite_from_dmp(minimal_taxdump)
-        monkeypatch.setattr(taxonomy, "_ensure_taxdump", lambda _=None: minimal_taxdump)
+        monkeypatch.setattr(
+            taxonomy,
+            "_ensure_taxdump",
+            lambda _=None, __=None: minimal_taxdump,
+        )
 
         with taxonomy.open() as tax:
             result = tax._conn.execute("PRAGMA journal_mode;").fetchone()
@@ -578,7 +620,11 @@ class TestContextManagers:
         readonly database" errors even for SELECT queries.
         """
         taxonomy._build_sqlite_from_dmp(minimal_taxdump)
-        monkeypatch.setattr(taxonomy, "_ensure_taxdump", lambda _=None: minimal_taxdump)
+        monkeypatch.setattr(
+            taxonomy,
+            "_ensure_taxdump",
+            lambda _=None, __=None: minimal_taxdump,
+        )
 
         with taxonomy.open() as tax:
             # Attempting to write should fail with read-only error
@@ -597,7 +643,11 @@ class TestConcurrentAccess:
         import time
 
         taxonomy._build_sqlite_from_dmp(minimal_taxdump)
-        monkeypatch.setattr(taxonomy, "_ensure_taxdump", lambda _=None: minimal_taxdump)
+        monkeypatch.setattr(
+            taxonomy,
+            "_ensure_taxdump",
+            lambda _=None, __=None: minimal_taxdump,
+        )
 
         results = []
         errors = []
@@ -752,9 +802,7 @@ class TestOfflineMode:
         attempting to write and getting "unable to write to readonly database".
         """
         # Verify preconditions: .dmp files exist but no SQLite yet
-        assert (minimal_taxdump / "nodes.dmp").exists(), (
-            "Test fixture should have .dmp files"
-        )
+        assert (minimal_taxdump / "nodes.dmp").exists(), "Test fixture should have .dmp files"
         sqlite_path = minimal_taxdump / "taxonomy.sqlite"
         assert not sqlite_path.exists()
 
@@ -842,7 +890,10 @@ class TestTaxonomyDbEnvVar:
             assert taxon.scientific_name == "Homo sapiens"
 
     def test_env_var_with_shared_readonly_taxonomy(
-        self, minimal_taxdump, tmp_path, monkeypatch
+        self,
+        minimal_taxdump,
+        tmp_path,
+        monkeypatch,
     ):
         """Simulates cluster setup: shared taxonomy, separate state dir."""
         # Build taxonomy in "shared" location
@@ -912,13 +963,23 @@ class TestSyncMode:
         assert "needs rebuild" in str(exc_info.value)
 
     def test_sync_mode_succeeds_when_taxonomy_available(
-        self, minimal_taxdump, monkeypatch
+        self,
+        minimal_taxdump,
+        monkeypatch,
     ):
         """sync=True succeeds when taxonomy is ready."""
         taxonomy._build_sqlite_from_dmp(minimal_taxdump)
         # Must patch get_taxdump_dir so the staleness check uses our test directory
-        monkeypatch.setattr(taxonomy, "get_taxdump_dir", lambda _=None: minimal_taxdump)
-        monkeypatch.setattr(taxonomy, "_ensure_taxdump", lambda _=None: minimal_taxdump)
+        monkeypatch.setattr(
+            taxonomy,
+            "get_taxdump_dir",
+            lambda _=None, __=None: minimal_taxdump,
+        )
+        monkeypatch.setattr(
+            taxonomy,
+            "_ensure_taxdump",
+            lambda _=None, __=None: minimal_taxdump,
+        )
 
         # Should not raise
         with taxonomy.open(sync=True) as tax:
@@ -927,7 +988,9 @@ class TestSyncMode:
             assert taxon.scientific_name == "Homo sapiens"
 
     def test_graceful_mode_warns_when_taxonomy_missing(
-        self, minimal_taxdump, monkeypatch
+        self,
+        minimal_taxdump,
+        monkeypatch,
     ):
         """sync=False emits warning via callback when taxonomy needs download."""
         # Don't build SQLite yet
@@ -941,12 +1004,16 @@ class TestSyncMode:
             warnings_received.append(msg)
 
         # Patch _ensure_taxdump to build SQLite (simulating successful download)
-        def mock_ensure(state_dir=None):
+        def mock_ensure(state_dir=None, taxonomy_dir=None):
             taxonomy._build_sqlite_from_dmp(minimal_taxdump)
             return minimal_taxdump
 
         monkeypatch.setattr(taxonomy, "_ensure_taxdump", mock_ensure)
-        monkeypatch.setattr(taxonomy, "get_taxdump_dir", lambda _=None: minimal_taxdump)
+        monkeypatch.setattr(
+            taxonomy,
+            "get_taxdump_dir",
+            lambda _=None, __=None: minimal_taxdump,
+        )
 
         with taxonomy.open(sync=False, warn_callback=capture_warning) as tax:
             taxon = tax.get_taxon(9606)
@@ -957,7 +1024,9 @@ class TestSyncMode:
         assert "TAXONOMY DATABASE ISSUE" in warnings_received[0]
 
     def test_warn_callback_receives_formatted_warning(
-        self, minimal_taxdump, monkeypatch
+        self,
+        minimal_taxdump,
+        monkeypatch,
     ):
         """Verify the callback receives properly formatted warning."""
         # Make taxonomy stale
@@ -974,12 +1043,16 @@ class TestSyncMode:
             warnings_received.append(msg)
 
         # Patch to simulate successful download after warning
-        def mock_ensure(state_dir=None):
+        def mock_ensure(state_dir=None, taxonomy_dir=None):
             taxonomy._build_sqlite_from_dmp(minimal_taxdump)
             return minimal_taxdump
 
         monkeypatch.setattr(taxonomy, "_ensure_taxdump", mock_ensure)
-        monkeypatch.setattr(taxonomy, "get_taxdump_dir", lambda _=None: minimal_taxdump)
+        monkeypatch.setattr(
+            taxonomy,
+            "get_taxdump_dir",
+            lambda _=None, __=None: minimal_taxdump,
+        )
 
         with taxonomy.open(sync=False, warn_callback=capture_warning) as tax:
             pass
@@ -1135,3 +1208,101 @@ class TestFormatTaxonomyWarning:
 
         assert "Cannot proceed without taxonomy" in warning
         assert "--sync flag requires" in warning
+
+
+class TestTaxonomyDirParameter:
+    """Tests for taxonomy_dir parameter in taxonomy.open().
+
+    The taxonomy_dir parameter enables stateless mode where taxonomy
+    is decoupled from the state directory.
+    """
+
+    def test_open_with_explicit_taxonomy_dir(self, minimal_taxdump: Path):
+        """taxonomy.open() uses explicit taxonomy_dir when provided."""
+        # Build SQLite in the minimal_taxdump directory
+        taxonomy._build_sqlite_from_dmp(minimal_taxdump)
+
+        # Open with explicit taxonomy_dir (no state_dir needed)
+        with taxonomy.open(taxonomy_dir=minimal_taxdump, offline=True) as tax:
+            taxon = tax.get_taxon(9606)
+            assert taxon is not None
+            assert taxon.scientific_name == "Homo sapiens"
+
+    def test_taxonomy_dir_takes_precedence_over_state_dir(
+        self,
+        minimal_taxdump: Path,
+        tmp_path: Path,
+    ):
+        """taxonomy_dir takes precedence over state_dir-derived path."""
+        # Build SQLite in the minimal_taxdump directory
+        taxonomy._build_sqlite_from_dmp(minimal_taxdump)
+
+        # Create a different state_dir that does NOT have taxonomy
+        other_state = tmp_path / "other_state"
+        other_state.mkdir()
+
+        # Open with both state_dir and taxonomy_dir - taxonomy_dir should win
+        with taxonomy.open(
+            state_dir=other_state,
+            taxonomy_dir=minimal_taxdump,
+            offline=True,
+        ) as tax:
+            taxon = tax.get_taxon(9606)
+            assert taxon is not None
+            assert taxon.scientific_name == "Homo sapiens"
+
+    def test_taxonomy_dir_with_string_path(self, minimal_taxdump: Path):
+        """taxonomy_dir works with string path."""
+        taxonomy._build_sqlite_from_dmp(minimal_taxdump)
+
+        # Pass as string instead of Path
+        with taxonomy.open(taxonomy_dir=str(minimal_taxdump), offline=True) as tax:
+            taxon = tax.get_taxon(9606)
+            assert taxon is not None
+
+    def test_taxonomy_dir_enables_stateless_mode(
+        self,
+        minimal_taxdump: Path,
+        monkeypatch,
+    ):
+        """taxonomy_dir allows operation without any state_dir.
+
+        This is the key use case for stateless mode: taxonomy is provided
+        explicitly, so no state directory is needed.
+        """
+        taxonomy._build_sqlite_from_dmp(minimal_taxdump)
+
+        # Ensure no state-related env vars are set
+        monkeypatch.delenv("NVD_STATE_DIR", raising=False)
+        monkeypatch.delenv("NVD_TAXONOMY_DB", raising=False)
+
+        # Open with only taxonomy_dir - no state_dir at all
+        with taxonomy.open(taxonomy_dir=minimal_taxdump, offline=True) as tax:
+            taxon = tax.get_taxon(9606)
+            assert taxon is not None
+            assert taxon.scientific_name == "Homo sapiens"
+
+            # Verify LCA also works
+            lca = tax.find_lca([9606, 9598])
+            assert lca == 207598  # Homininae
+
+    def test_taxonomy_dir_takes_precedence_over_env_var(
+        self,
+        minimal_taxdump: Path,
+        tmp_path: Path,
+        monkeypatch,
+    ):
+        """taxonomy_dir takes precedence over NVD_TAXONOMY_DB env var."""
+        # Build SQLite in the minimal_taxdump directory
+        taxonomy._build_sqlite_from_dmp(minimal_taxdump)
+
+        # Set env var to a different (empty) directory
+        env_dir = tmp_path / "env_taxonomy"
+        env_dir.mkdir()
+        monkeypatch.setenv("NVD_TAXONOMY_DB", str(env_dir))
+
+        # Open with explicit taxonomy_dir - should use it, not env var
+        with taxonomy.open(taxonomy_dir=minimal_taxdump, offline=True) as tax:
+            taxon = tax.get_taxon(9606)
+            assert taxon is not None
+            assert taxon.scientific_name == "Homo sapiens"

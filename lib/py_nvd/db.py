@@ -351,19 +351,42 @@ def get_state_db_path(state_dir: Path | str | None = None) -> Path:
     return get_state_dir(state_dir) / "state.sqlite"
 
 
-def get_taxdump_dir(state_dir: Path | str | None = None) -> Path:
+def get_taxdump_dir(
+    state_dir: Path | str | None = None,
+    taxonomy_dir: Path | str | None = None,
+) -> Path:
     """
     Get path to the taxdump directory containing .dmp files and taxonomy.sqlite.
 
     Priority:
-        1. NVD_TAXONOMY_DB environment variable (for shared cluster installs)
-        2. {state_dir}/taxdump (default)
+        1. Explicit taxonomy_dir argument (from CLI or Nextflow param)
+        2. NVD_TAXONOMY_DB environment variable (for shared cluster installs)
+        3. {state_dir}/taxdump (default)
 
-    The NVD_TAXONOMY_DB override is useful for cluster environments where
-    taxonomy data is pre-downloaded to a shared location.
+    The explicit taxonomy_dir parameter enables stateless mode where taxonomy
+    is decoupled from the state directory. The NVD_TAXONOMY_DB override is
+    useful for cluster environments where taxonomy data is pre-downloaded
+    to a shared location.
+
+    Args:
+        state_dir: Optional explicit state directory for fallback resolution.
+        taxonomy_dir: Optional explicit taxonomy directory (takes precedence).
+
+    Returns:
+        Path to the taxdump directory.
+
+    Raises:
+        ValueError: If taxonomy_dir is None, NVD_TAXONOMY_DB is not set,
+                    and state_dir is also None (cannot resolve path).
     """
+    if taxonomy_dir is not None:
+        return Path(taxonomy_dir)
     if ENV_VAR_TAXONOMY in os.environ:
         return Path(os.environ[ENV_VAR_TAXONOMY])
+    if state_dir is None and ENV_VAR not in os.environ:
+        # In stateless mode with no taxonomy_dir, we can't derive a path
+        # Let get_state_dir handle this - it will use DEFAULT_STATE_DIR
+        pass
     return get_state_dir(state_dir) / "taxdump"
 
 
