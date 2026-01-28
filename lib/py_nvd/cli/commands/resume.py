@@ -1,4 +1,3 @@
-# ruff: noqa: FBT001, FBT002
 """
 Resume command for the NVD CLI.
 
@@ -16,9 +15,6 @@ from typing import Annotated
 
 import typer
 
-# If editor exits faster than this, warn about GUI editors needing --wait
-EDITOR_MIN_DURATION_SECONDS = 1.0
-
 from py_nvd.cli.prompts import (
     PromptTimeout,
     confirm_with_timeout,
@@ -32,6 +28,9 @@ from py_nvd.cli.utils import (
     info,
     warning,
 )
+
+# If editor exits faster than this, warn about GUI editors needing --wait
+EDITOR_MIN_DURATION_SECONDS = 1.0
 
 
 def _read_resume_command() -> str:
@@ -47,7 +46,7 @@ def _read_resume_command() -> str:
     if not RESUME_FILE.exists():
         error(
             "No previous run detected (.nfresume not found).\n"
-            "Make sure you start with 'nvd run' before using 'nvd resume'."
+            "Make sure you start with 'nvd run' before using 'nvd resume'.",
         )
     return RESUME_FILE.read_text(encoding="utf-8").strip()
 
@@ -102,7 +101,7 @@ def _open_editor(filepath: str) -> bool:
             warning(
                 f"Editor exited in {elapsed:.1f}s - did it open in the background?\n"
                 "   GUI editors like VS Code need: export EDITOR='code --wait'\n"
-                "   Or use a terminal editor like vim, nano, or helix."
+                "   Or use a terminal editor like vim, nano, or helix.",
             )
 
         return result.returncode == 0
@@ -216,7 +215,7 @@ def resume(
         if not is_interactive():
             error(
                 "Interactive mode requires a terminal.\n"
-                "Use 'nvd resume' without -i for non-interactive execution."
+                "Use 'nvd resume' without -i for non-interactive execution.",
             )
         _interactive_resume(command)
     else:

@@ -10,7 +10,8 @@ from __future__ import annotations
 
 import subprocess
 import sys
-from typing import TYPE_CHECKING, Any
+from pathlib import Path  # noqa: TC003
+from typing import Any
 
 import typer
 
@@ -39,9 +40,6 @@ from py_nvd.cli.utils import (
 from py_nvd.models import NvdParams
 from py_nvd.params import load_params_file
 from py_nvd.state import resolve_database_versions
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 
 def _format_command_for_display(cmd: list[str]) -> str:

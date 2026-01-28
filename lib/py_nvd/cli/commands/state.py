@@ -51,7 +51,7 @@ from py_nvd.hits import (
     count_sample_set_observations,
     delete_sample_set_hits,
 )
-from py_nvd.models import ProcessedSampleStatus, Status, UploadType
+from py_nvd.models import ProcessedSampleStatus, Status, UploadType  # noqa: TC001
 
 state_app = typer.Typer(
     name="state",
@@ -295,9 +295,7 @@ def state_info(
 
         # Get lock counts (handle case where table doesn't exist yet)
         try:
-            locks_count = conn.execute("SELECT COUNT(*) FROM sample_locks").fetchone()[
-                0
-            ]
+            locks_count = conn.execute("SELECT COUNT(*) FROM sample_locks").fetchone()[0]
             expired_locks_count = conn.execute(
                 "SELECT COUNT(*) FROM sample_locks WHERE expires_at < datetime('now')",
             ).fetchone()[0]
@@ -381,9 +379,7 @@ def state_info(
     table.add_row("Taxonomy Versions", str(taxonomy_count))
     hits_display = "[dim]skipped[/dim]" if hits_count is None else str(hits_count)
     obs_display = (
-        "[dim]skipped[/dim]"
-        if hit_observations_count is None
-        else str(hit_observations_count)
+        "[dim]skipped[/dim]" if hit_observations_count is None else str(hit_observations_count)
     )
     table.add_row("Hits", hits_display)
     table.add_row("Hit Observations", obs_display)
@@ -984,9 +980,7 @@ def state_sample(
 
         for upload in upload_history:
             # Truncate hash for display
-            short_hash = (
-                upload.content_hash[:12] + "..." if upload.content_hash else "-"
-            )
+            short_hash = upload.content_hash[:12] + "..." if upload.content_hash else "-"
 
             table.add_row(
                 upload.upload_type,
@@ -2151,9 +2145,7 @@ def _validate_archive(archive_path: Path) -> tuple[dict, Path]:
 
             # Show local vs incoming
             local_str = ", ".join(f"{k}={v}" for k, v in conflict["local"].items())
-            incoming_str = ", ".join(
-                f"{k}={v}" for k, v in conflict["incoming"].items()
-            )
+            incoming_str = ", ".join(f"{k}={v}" for k, v in conflict["incoming"].items())
             console.print(f"    Local:    {local_str}")
             console.print(f"    Incoming: {incoming_str}")
 
@@ -2182,8 +2174,7 @@ def _do_merge_import(conn, backup_db_path: Path) -> dict[str, int]:
         for table_name, pk_cols, _ in _IMPORT_TABLES:
             # Build WHERE NOT EXISTS to skip records that already exist
             pk_match = " AND ".join(
-                f"main.{table_name}.{col} = backup.{table_name}.{col}"
-                for col in pk_cols
+                f"main.{table_name}.{col} = backup.{table_name}.{col}" for col in pk_cols
             )
 
             # Get column names for this table
@@ -3040,9 +3031,7 @@ def state_cleanup(
     results["expired_locks_removed"] = state.cleanup_expired_locks()
 
     if mark_failed:
-        results["stale_runs_marked_failed"] = state.mark_stale_runs_failed(
-            ttl_hours=stale_after
-        )
+        results["stale_runs_marked_failed"] = state.mark_stale_runs_failed(ttl_hours=stale_after)
 
     if json_output:
         _output_json({"success": True, **results})
@@ -3053,13 +3042,9 @@ def state_cleanup(
         else:
             success("Cleanup complete")
             if results["expired_locks_removed"] > 0:
-                console.print(
-                    f"  Expired locks removed: {results['expired_locks_removed']}"
-                )
+                console.print(f"  Expired locks removed: {results['expired_locks_removed']}")
             if results["stale_runs_marked_failed"] > 0:
-                console.print(
-                    f"  Stale runs marked failed: {results['stale_runs_marked_failed']}"
-                )
+                console.print(f"  Stale runs marked failed: {results['stale_runs_marked_failed']}")
         console.print()
 
 
@@ -3113,8 +3098,7 @@ def _verify_copy(source: Path, dest: Path) -> tuple[bool, str]:
 
     if len(source_meta) != len(dest_meta):
         return False, (
-            f"File count mismatch: source has {len(source_meta)}, "
-            f"dest has {len(dest_meta)}"
+            f"File count mismatch: source has {len(source_meta)}, dest has {len(dest_meta)}"
         )
 
     missing_in_dest = set(source_meta.keys()) - set(dest_meta.keys())
@@ -3324,9 +3308,7 @@ def state_move(
     console.print()
 
     if uncompacted_hits > 100:
-        warning(
-            f"Found {uncompacted_hits:,} uncompacted hit files. This may take a while."
-        )
+        warning(f"Found {uncompacted_hits:,} uncompacted hit files. This may take a while.")
         console.print()
 
     # Remove existing destination if force
