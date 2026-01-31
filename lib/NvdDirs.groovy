@@ -9,7 +9,7 @@
  * Usage in workflow:
  *     dirs = NvdDirs.resolve(params, log)
  *     // dirs.state_dir    - null in stateless mode, absolute path string otherwise
- *     // dirs.taxonomy_dir - absolute path string if explicit, null to derive from state_dir
+ *     // dirs.taxonomy_dir - absolute path string if explicit, empty string "" to derive from state_dir
  *     // dirs.hits_dir     - absolute path string for parquet output
  */
 class NvdDirs {
@@ -17,7 +17,7 @@ class NvdDirs {
     /** State directory path (null in stateless mode) */
     final String state_dir
 
-    /** Taxonomy directory path (null if derived from state_dir) */
+    /** Taxonomy directory path (empty string "" if derived from state_dir) */
     final String taxonomy_dir
 
     /** Hits directory path for parquet output */
@@ -106,8 +106,10 @@ class NvdDirs {
         ensureDirectoryExists(state_dir_file, 'state', nfParams.state_dir.toString())
         def state_dir_str = state_dir_file.getAbsolutePath()
 
-        // taxonomy_dir: use explicit param if set, otherwise null (scripts derive from state_dir)
-        def taxonomy_dir_str = null
+        // taxonomy_dir: use explicit param if set, otherwise empty string (scripts derive from state_dir)
+        // NOTE: We use "" instead of null because Channel.value(null) in Nextflow hangs forever.
+        // Empty string is falsy in both Groovy and Python, so downstream conditionals work unchanged.
+        def taxonomy_dir_str = ""
         if (nfParams.taxonomy_dir) {
             def taxonomy_dir_file = new File(nfParams.taxonomy_dir.toString())
             if (!taxonomy_dir_file.exists()) {
