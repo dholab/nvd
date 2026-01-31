@@ -176,7 +176,7 @@ process SCRUB_HOST_READS {
      */
 
     tag "${sample_id}"
-    label "high"
+    label "high_disk"
 
     errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
     maxRetries 2
@@ -215,7 +215,7 @@ process SCRUB_HUMAN_READS {
      */
 
     tag "${sample_id}"
-    label "high"
+    label "high_disk"
 
     errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
     maxRetries 2
