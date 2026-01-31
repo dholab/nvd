@@ -229,12 +229,13 @@ process NOTIFY_SLACK {
     params.slack_enabled && params.slack_channel
 
     script:
+    def state_dir_arg = state_dir ? "--state-dir '${state_dir}'" : ""
     """
     notify_slack.py \\
         --run-id '${workflow.runName}' \\
         --experiment-id '${params.experiment_id}' \\
         --channel '${params.slack_channel}' \\
-        --state-dir '${state_dir}' \\
+        ${state_dir_arg} \\
         --sample-set-id '${sample_set_id}' \\
         --labkey-url '${labkey_url}' \\
         -v || echo "Slack notification failed (non-fatal)"

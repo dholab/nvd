@@ -8,13 +8,13 @@
  *
  * Usage in workflow:
  *     dirs = NvdDirs.resolve(params, log)
- *     // dirs.state_dir    - null in stateless mode, absolute path string otherwise
+ *     // dirs.state_dir    - empty string "" in stateless mode, absolute path string otherwise
  *     // dirs.taxonomy_dir - absolute path string if explicit, empty string "" to derive from state_dir
  *     // dirs.hits_dir     - absolute path string for parquet output
  */
 class NvdDirs {
 
-    /** State directory path (null in stateless mode) */
+    /** State directory path (empty string "" in stateless mode) */
     final String state_dir
 
     /** Taxonomy directory path (empty string "" if derived from state_dir) */
@@ -37,7 +37,7 @@ class NvdDirs {
      * Resolve directory paths based on pipeline parameters.
      *
      * In stateless mode:
-     *   - state_dir is null (no state tracking)
+     *   - state_dir is empty string "" (no state tracking)
      *   - taxonomy_dir is required and must exist
      *   - hits_dir is {results}/hits
      *
@@ -89,8 +89,10 @@ class NvdDirs {
 
         nfLog.info "Running in STATELESS mode: no state tracking, taxonomy from ${taxonomy_dir_str}"
 
+        // NOTE: We use "" instead of null because Channel.value(null) in Nextflow hangs forever.
+        // Empty string is falsy in both Groovy and Python, so downstream conditionals work unchanged.
         return new NvdDirs(
-            null,            // state_dir is null in stateless mode
+            "",              // state_dir is empty string in stateless mode
             taxonomy_dir_str,
             hits_dir_str,
             true
