@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Annotated
 
@@ -295,7 +295,9 @@ def state_info(
 
         # Get lock counts (handle case where table doesn't exist yet)
         try:
-            locks_count = conn.execute("SELECT COUNT(*) FROM sample_locks").fetchone()[0]
+            locks_count = conn.execute("SELECT COUNT(*) FROM sample_locks").fetchone()[
+                0
+            ]
             expired_locks_count = conn.execute(
                 "SELECT COUNT(*) FROM sample_locks WHERE expires_at < datetime('now')",
             ).fetchone()[0]
@@ -379,7 +381,9 @@ def state_info(
     table.add_row("Taxonomy Versions", str(taxonomy_count))
     hits_display = "[dim]skipped[/dim]" if hits_count is None else str(hits_count)
     obs_display = (
-        "[dim]skipped[/dim]" if hit_observations_count is None else str(hit_observations_count)
+        "[dim]skipped[/dim]"
+        if hit_observations_count is None
+        else str(hit_observations_count)
     )
     table.add_row("Hits", hits_display)
     table.add_row("Hit Observations", obs_display)
@@ -488,7 +492,7 @@ def state_runs(
         # List the 5 most recent failed runs
         nvd state runs --status failed --limit 5
     """
-    db_path = ensure_db_exists(json_output)
+    ensure_db_exists(json_output)
 
     # Validate and convert status
     status_filter: Status | None = None
@@ -577,7 +581,7 @@ def state_runs(
             f"\n[dim]Duration stats ({len(durations)} completed): "
             f"min {format_duration(min_dur)} | "
             f"avg {format_duration(avg_dur)} | "
-            f"max {format_duration(max_dur)}[/dim]"
+            f"max {format_duration(max_dur)}[/dim]",
         )
 
     console.print(f"\n[dim]Showing {len(runs)} run(s)[/dim]")
@@ -611,7 +615,7 @@ def state_run(
         # Output as JSON for scripting
         nvd state run friendly_turing --json
     """
-    db_path = ensure_db_exists(json_output)
+    ensure_db_exists(json_output)
 
     run = state.get_run(run_id)
     if run is None:
@@ -788,7 +792,7 @@ def state_samples(
         # List the 10 most recent samples
         nvd state samples --limit 10
     """
-    db_path = ensure_db_exists(json_output)
+    ensure_db_exists(json_output)
 
     # Validate status
     status_filter: ProcessedSampleStatus | None = None
@@ -884,7 +888,7 @@ def state_sample(
         # Output as JSON for scripting
         nvd state sample sample_a --json
     """
-    db_path = ensure_db_exists(json_output)
+    ensure_db_exists(json_output)
 
     processing_history = state.get_sample_history(sample_id)
     upload_history = state.get_uploads_for_sample(sample_id)
@@ -980,7 +984,9 @@ def state_sample(
 
         for upload in upload_history:
             # Truncate hash for display
-            short_hash = upload.content_hash[:12] + "..." if upload.content_hash else "-"
+            short_hash = (
+                upload.content_hash[:12] + "..." if upload.content_hash else "-"
+            )
 
             table.add_row(
                 upload.upload_type,
@@ -1061,7 +1067,7 @@ def state_uploads(
         # List the 10 most recent uploads
         nvd state uploads --limit 10
     """
-    db_path = ensure_db_exists(json_output)
+    ensure_db_exists(json_output)
 
     # Validate upload_type
     type_filter: UploadType | None = None
@@ -1144,7 +1150,7 @@ def database_list(
         nvd state database list
         nvd state database list --json
     """
-    db_path = ensure_db_exists(json_output)
+    ensure_db_exists(json_output)
 
     databases = state.list_databases()
 
@@ -1228,7 +1234,7 @@ def database_show(
         nvd state database show blast core-nt_2024-12
         nvd state database show blast --json
     """
-    db_path = ensure_db_exists(json_output)
+    ensure_db_exists(json_output)
 
     # Validate db_type
     valid_types = ["blast", "stat", "gottcha2"]
@@ -1641,9 +1647,9 @@ def state_prune(
         # Prune without confirmation
         nvd state prune --older-than 90d --yes
     """
-    from datetime import timedelta, timezone
+    from datetime import timedelta
 
-    db_path = ensure_db_exists(json_output)
+    ensure_db_exists(json_output)
 
     # Parse duration
     try:
@@ -1672,7 +1678,7 @@ def state_prune(
             raise typer.Exit(1)
 
     # Calculate cutoff date (UTC for consistent comparison with stored timestamps)
-    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    cutoff = datetime.now(UTC) - timedelta(days=days)
     cutoff_str = cutoff.isoformat().replace("+00:00", "Z")
 
     with connect() as conn:
@@ -2099,6 +2105,9 @@ def _validate_archive(archive_path: Path) -> tuple[dict, Path]:
             if "manifest.json" not in names:
                 error("Invalid archive: missing manifest.json")
 
+            # Extract archive contents to temp directory
+            tar.extractall(tmpdir_path, filter="data")
+
     except tarfile.TarError as e:
         error(f"Failed to read archive: {e}")
 
@@ -2115,6 +2124,87 @@ def _validate_archive(archive_path: Path) -> tuple[dict, Path]:
         if field not in manifest:
             error(f"Invalid manifest: missing '{field}'")
 
+    return manifest, tmpdir_path
+
+
+def _find_conflicts(conn, backup_db_path: Path) -> dict[str, list[dict]]:
+    """
+    Find primary-key conflicts between the local database and a backup.
+
+    ATTACHes the backup database and, for each table in _IMPORT_TABLES,
+    finds rows where the primary key exists in both databases but the
+    display columns differ.
+
+    Returns:
+        Dict mapping table names to lists of conflict details. Only tables
+        with conflicts are included. Each conflict dict has keys "pk",
+        "local", and "incoming" describing the differing rows.
+    """
+    validated_path = _validate_path_for_sql(backup_db_path)
+    conflicts: dict[str, list[dict]] = {}
+
+    conn.execute(f"ATTACH DATABASE '{validated_path}' AS backup")
+
+    try:
+        for table_name, pk_cols, display_cols in _IMPORT_TABLES:
+            # Join on primary key columns
+            pk_join = " AND ".join(
+                f"main.{table_name}.{col} = backup.{table_name}.{col}"
+                for col in pk_cols
+            )
+
+            # Build WHERE clause: at least one display column differs
+            diff_conditions = " OR ".join(
+                f"main.{table_name}.{col} IS NOT backup.{table_name}.{col}"
+                for col in display_cols
+            )
+
+            # Select PK + display columns from both sides
+            local_cols = ", ".join(
+                f"main.{table_name}.{col} AS local_{col}" for col in display_cols
+            )
+            incoming_cols = ", ".join(
+                f"backup.{table_name}.{col} AS incoming_{col}" for col in display_cols
+            )
+            pk_select = ", ".join(
+                f"main.{table_name}.{col} AS pk_{col}" for col in pk_cols
+            )
+
+            # All interpolated identifiers come from _IMPORT_TABLES constants
+            query = f"""
+                SELECT {pk_select}, {local_cols}, {incoming_cols}
+                FROM main.{table_name}
+                INNER JOIN backup.{table_name} ON {pk_join}
+                WHERE {diff_conditions}
+            """  # noqa: S608
+
+            rows = conn.execute(query).fetchall()
+            if rows:
+                table_conflicts = []
+                for row in rows:
+                    table_conflicts.append(
+                        {
+                            "pk": {col: row[f"pk_{col}"] for col in pk_cols},
+                            "local": {col: row[f"local_{col}"] for col in display_cols},
+                            "incoming": {
+                                col: row[f"incoming_{col}"] for col in display_cols
+                            },
+                        },
+                    )
+                conflicts[table_name] = table_conflicts
+
+    finally:
+        conn.execute("DETACH DATABASE backup")
+
+    return conflicts
+
+
+def _print_conflicts(conflicts: dict[str, list[dict]], json_output: bool) -> None:
+    """
+    Print a conflict report for a merge import that found PK collisions.
+
+    Supports both JSON and human-readable output formats.
+    """
     if json_output:
         _output_json(
             {
@@ -2126,7 +2216,6 @@ def _validate_archive(archive_path: Path) -> tuple[dict, Path]:
         return
 
     total = sum(len(v) for v in conflicts.values())
-    # Don't use error() here as it calls sys.exit()
     console.print(
         f"[red]✗ Error:[/red] Merge aborted due to {total} conflict(s) "
         f"in {len(conflicts)} table(s)",
@@ -2139,13 +2228,13 @@ def _validate_archive(archive_path: Path) -> tuple[dict, Path]:
         )
 
         for conflict in table_conflicts:
-            # Format primary key
             pk_str = ", ".join(f"{k}={v}" for k, v in conflict["pk"].items())
             console.print(f"  [cyan]{pk_str}[/cyan]")
 
-            # Show local vs incoming
             local_str = ", ".join(f"{k}={v}" for k, v in conflict["local"].items())
-            incoming_str = ", ".join(f"{k}={v}" for k, v in conflict["incoming"].items())
+            incoming_str = ", ".join(
+                f"{k}={v}" for k, v in conflict["incoming"].items()
+            )
             console.print(f"    Local:    {local_str}")
             console.print(f"    Incoming: {incoming_str}")
 
@@ -2174,7 +2263,8 @@ def _do_merge_import(conn, backup_db_path: Path) -> dict[str, int]:
         for table_name, pk_cols, _ in _IMPORT_TABLES:
             # Build WHERE NOT EXISTS to skip records that already exist
             pk_match = " AND ".join(
-                f"main.{table_name}.{col} = backup.{table_name}.{col}" for col in pk_cols
+                f"main.{table_name}.{col} = backup.{table_name}.{col}"
+                for col in pk_cols
             )
 
             # Get column names for this table
@@ -2182,7 +2272,7 @@ def _do_merge_import(conn, backup_db_path: Path) -> dict[str, int]:
             col_names = [col["name"] for col in cols_info]
             cols_str = ", ".join(col_names)
 
-            # Insert records that don't exist in main
+            # All interpolated identifiers come from _IMPORT_TABLES constants
             query = f"""
                 INSERT INTO main.{table_name} ({cols_str})
                 SELECT {cols_str} FROM backup.{table_name}
@@ -2190,7 +2280,7 @@ def _do_merge_import(conn, backup_db_path: Path) -> dict[str, int]:
                     SELECT 1 FROM main.{table_name}
                     WHERE {pk_match}
                 )
-            """
+            """  # noqa: S608
 
             cursor = conn.execute(query)
             imported[table_name] = cursor.rowcount
@@ -2534,7 +2624,7 @@ def state_reset(
         # JSON output for scripting
         nvd state reset --json --yes-i-really-mean-it
     """
-    db_path = ensure_db_exists(json_output)
+    ensure_db_exists(json_output)
 
     with connect() as conn:
         counts = _get_table_counts(conn)
@@ -2623,13 +2713,12 @@ def state_reset(
 
 def _format_time_remaining(expires_at: str) -> str:
     """Format time remaining until lock expires."""
-    from datetime import timezone
 
     try:
         expires = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
         if expires.tzinfo is None:
-            expires = expires.replace(tzinfo=timezone.utc)
-        now = datetime.now(timezone.utc)
+            expires = expires.replace(tzinfo=UTC)
+        now = datetime.now(UTC)
         remaining = expires - now
 
         if remaining.total_seconds() <= 0:
@@ -2642,10 +2731,9 @@ def _format_time_remaining(expires_at: str) -> str:
             days = hours // 24
             hours = hours % 24
             return f"{days}d {hours}h"
-        elif hours > 0:
+        if hours > 0:
             return f"{hours}h {minutes}m"
-        else:
-            return f"{minutes}m"
+        return f"{minutes}m"
     except (ValueError, TypeError):
         return "unknown"
 
@@ -2716,7 +2804,7 @@ def state_locks(
                     "is_expired": lock.is_expired,
                 }
                 for lock in locks
-            ]
+            ],
         )
         return
 
@@ -2868,7 +2956,7 @@ def state_unlock(
     if not json_output and not force:
         console.print()
         console.print(
-            f"[bold yellow]Warning:[/bold yellow] About to release {len(locks_to_release)} lock(s):"
+            f"[bold yellow]Warning:[/bold yellow] About to release {len(locks_to_release)} lock(s):",
         )
         console.print()
 
@@ -2904,18 +2992,17 @@ def state_unlock(
                     "DELETE FROM sample_locks WHERE sample_id = ?",
                     (lock.sample_id,),
                 )
+            # Only delete if we "own" it (same run_id as specified, or any if only sample_id given)
+            elif run_id:
+                cursor = conn.execute(
+                    "DELETE FROM sample_locks WHERE sample_id = ? AND run_id = ?",
+                    (lock.sample_id, run_id),
+                )
             else:
-                # Only delete if we "own" it (same run_id as specified, or any if only sample_id given)
-                if run_id:
-                    cursor = conn.execute(
-                        "DELETE FROM sample_locks WHERE sample_id = ? AND run_id = ?",
-                        (lock.sample_id, run_id),
-                    )
-                else:
-                    cursor = conn.execute(
-                        "DELETE FROM sample_locks WHERE sample_id = ?",
-                        (lock.sample_id,),
-                    )
+                cursor = conn.execute(
+                    "DELETE FROM sample_locks WHERE sample_id = ?",
+                    (lock.sample_id,),
+                )
             released_count += cursor.rowcount
         conn.commit()
 
@@ -2925,7 +3012,7 @@ def state_unlock(
                 "success": True,
                 "released_count": released_count,
                 "samples": [lock.sample_id for lock in locks_to_release],
-            }
+            },
         )
     else:
         success(f"Released {released_count} lock(s)")
@@ -2998,15 +3085,15 @@ def state_cleanup(
 
         if mark_failed:
             # Count stale running runs
-            from datetime import timedelta, timezone
+            from datetime import timedelta
 
-            cutoff = datetime.now(timezone.utc) - timedelta(hours=stale_after)
+            cutoff = datetime.now(UTC) - timedelta(hours=stale_after)
             runs = state.list_runs(status="running")
             stale_runs = []
             for run in runs:
                 started = datetime.fromisoformat(run.started_at.replace("Z", "+00:00"))
                 if started.tzinfo is None:
-                    started = started.replace(tzinfo=timezone.utc)
+                    started = started.replace(tzinfo=UTC)
                 if started < cutoff:
                     stale_runs.append(run)
             results["stale_runs_marked_failed"] = len(stale_runs)
@@ -3018,11 +3105,11 @@ def state_cleanup(
             info("Dry run - no changes made")
             console.print()
             console.print(
-                f"  Expired locks that would be removed: {results['expired_locks_removed']}"
+                f"  Expired locks that would be removed: {results['expired_locks_removed']}",
             )
             if mark_failed:
                 console.print(
-                    f"  Stale runs that would be marked failed: {results['stale_runs_marked_failed']}"
+                    f"  Stale runs that would be marked failed: {results['stale_runs_marked_failed']}",
                 )
             console.print()
         return
@@ -3031,7 +3118,9 @@ def state_cleanup(
     results["expired_locks_removed"] = state.cleanup_expired_locks()
 
     if mark_failed:
-        results["stale_runs_marked_failed"] = state.mark_stale_runs_failed(ttl_hours=stale_after)
+        results["stale_runs_marked_failed"] = state.mark_stale_runs_failed(
+            ttl_hours=stale_after,
+        )
 
     if json_output:
         _output_json({"success": True, **results})
@@ -3042,9 +3131,13 @@ def state_cleanup(
         else:
             success("Cleanup complete")
             if results["expired_locks_removed"] > 0:
-                console.print(f"  Expired locks removed: {results['expired_locks_removed']}")
+                console.print(
+                    f"  Expired locks removed: {results['expired_locks_removed']}",
+                )
             if results["stale_runs_marked_failed"] > 0:
-                console.print(f"  Stale runs marked failed: {results['stale_runs_marked_failed']}")
+                console.print(
+                    f"  Stale runs marked failed: {results['stale_runs_marked_failed']}",
+                )
         console.print()
 
 
@@ -3279,7 +3372,7 @@ def state_move(
         if uncompacted_hits > 100:
             warning(
                 f"Found {uncompacted_hits:,} uncompacted hit files. "
-                "Consider running 'nvd hits compact' before moving to reduce transfer time."
+                "Consider running 'nvd hits compact' before moving to reduce transfer time.",
             )
             console.print()
 
@@ -3287,12 +3380,12 @@ def state_move(
             console.print("  [green]✓[/green] ~/.nvd/setup.conf will be updated")
         else:
             console.print(
-                "  [yellow]![/yellow] No ~/.nvd/setup.conf found (config won't be updated)"
+                "  [yellow]![/yellow] No ~/.nvd/setup.conf found (config won't be updated)",
             )
 
         if dest.exists():
             console.print(
-                "  [yellow]![/yellow] Destination exists and will be overwritten (--force)"
+                "  [yellow]![/yellow] Destination exists and will be overwritten (--force)",
             )
 
         console.print()
@@ -3308,7 +3401,9 @@ def state_move(
     console.print()
 
     if uncompacted_hits > 100:
-        warning(f"Found {uncompacted_hits:,} uncompacted hit files. This may take a while.")
+        warning(
+            f"Found {uncompacted_hits:,} uncompacted hit files. This may take a while.",
+        )
         console.print()
 
     # Remove existing destination if force
