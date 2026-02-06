@@ -98,9 +98,8 @@ module-name = ["py_nvd"]
 "nvd-fingerprint" = "py_nvd.fingerprint:main"
 
 [tool.ruff.lint]
-select = []
-ignore = ["G004", "PTH"]
-# extend-ignore = ["ALL"]
+select = ["ALL"]
+ignore = ["D", "S101", "E501", "PTH", "TD003", "G004"]
 
 [tool.pytest.ini_options]
 pythonpath = ["bin", "lib"]
