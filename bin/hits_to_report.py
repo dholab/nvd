@@ -101,7 +101,7 @@ def iterate_merged_spots(file, collated):
         if collated:
             yield hits, 1
         elif spot == last_spot:
-            last_hits |= hits
+            last_hits |= hits  # ty:ignore[unsupported-operator]
         else:
             if last_spot:
                 yield last_hits, 1
@@ -151,7 +151,7 @@ def iterate_merged_spots_compact(file, collated):
             if collated:
                 yield hits, 1
             elif spot == last_spot:
-                last_hits |= hits
+                last_hits |= hits  # ty:ignore[unsupported-operator]
             else:
                 if last_spot:
                     yield last_hits, 1
@@ -251,7 +251,9 @@ def format_tax_tree(tree, args):
     if args.no_padding:
         res = [
             f"{name}{args.separator}{stats}"
-            for name, stats in (line.split("\t", 1) for line in res if isinstance(line, str))
+            for name, stats in (
+                line.split("\t", 1) for line in res if isinstance(line, str)
+            )
         ]
     else:
         res = list(pad_tree(res, args.separator))

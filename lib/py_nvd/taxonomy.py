@@ -534,9 +534,7 @@ def format_taxonomy_warning(
 
         # Provide more helpful explanations for common errors
         if isinstance(error, PermissionError):
-            explanation = (
-                "The taxonomy directory or files are not readable/writable by the current user."
-            )
+            explanation = "The taxonomy directory or files are not readable/writable by the current user."
         elif isinstance(error, sqlite3.DatabaseError):
             explanation = (
                 "The taxonomy.sqlite file appears to be corrupted or is not "

@@ -119,7 +119,9 @@ class ContigClassification:
 
     def __post_init__(self) -> None:
         assert self.contig_id, "contig_id cannot be empty"
-        assert isinstance(self.contig_id, str), f"contig_id must be str, got {type(self.contig_id)}"
+        assert isinstance(self.contig_id, str), (
+            f"contig_id must be str, got {type(self.contig_id)}"
+        )
 
 
 def parse_blast_classifications(

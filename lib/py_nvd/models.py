@@ -225,7 +225,9 @@ class Upload:
     upload_target: str  # 'labkey', 'local', 'globus', etc.
     content_hash: str  # SHA256 of uploaded data
     uploaded_at: str
-    target_metadata: dict | None = None  # Target-specific data (e.g., experiment_id, row_id)
+    target_metadata: dict | None = (
+        None  # Target-specific data (e.g., experiment_id, row_id)
+    )
 
     @field_validator("target_metadata", mode="before")
     @classmethod

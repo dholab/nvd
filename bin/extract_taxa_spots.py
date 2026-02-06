@@ -5,6 +5,7 @@
 #     "snakemake",
 # ]
 # ///
+
 """
 Taxonomic Read Filter for Snakemake
 
@@ -65,7 +66,12 @@ def resolve_taxa(taxa_list: list[str], tax) -> set[int]:
     return resolved_taxa
 
 
-def is_in_target_lineage(tax_id: int, target_taxa: set[int], tax, include_children: bool) -> bool:
+def is_in_target_lineage(
+    tax_id: int,
+    target_taxa: set[int],
+    tax,
+    include_children: bool,
+) -> bool:
     """
     Check if a given tax_id is in the target lineage based on the filtering options.
 
@@ -167,9 +173,23 @@ def parse_command_line_args() -> argparse.Namespace:
         help="(Deprecated) Path to SQLite taxonomy DB - now handled automatically",
     )
     parser.add_argument("--hits_file", required=True, help="Path to hits file")
-    parser.add_argument("--output_file", required=True, help="Where to write filtered results")
-    parser.add_argument("--taxa", required=True, nargs="+", help="List of taxa to include")
-    parser.add_argument("--stringency", type=float, default=0.9, help="Stringency threshold")
+    parser.add_argument(
+        "--output_file",
+        required=True,
+        help="Where to write filtered results",
+    )
+    parser.add_argument(
+        "--taxa",
+        required=True,
+        nargs="+",
+        help="List of taxa to include",
+    )
+    parser.add_argument(
+        "--stringency",
+        type=float,
+        default=0.9,
+        help="Stringency threshold",
+    )
     parser.add_argument(
         "--include_children",
         action="store_true",
@@ -208,7 +228,11 @@ def execute(
 ) -> None:
     """Execute the taxa filtering pipeline."""
     try:
-        with taxonomy.open(state_dir=state_dir, taxonomy_dir=taxonomy_dir, sync=sync) as tax:
+        with taxonomy.open(
+            state_dir=state_dir,
+            taxonomy_dir=taxonomy_dir,
+            sync=sync,
+        ) as tax:
             resolved_taxa = resolve_taxa(taxa, tax)
             if not resolved_taxa:
                 logger.error("No valid taxa specified. Exiting.")

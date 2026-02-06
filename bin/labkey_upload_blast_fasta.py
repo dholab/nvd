@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+# /// script
+# requires-python = ">=3.12"
+# dependencies = [
+#     "labkey>=4.0.1",
+#     "more-itertools>=10.8.0",
+# ]
+# ///
 
 import argparse
 import csv
@@ -13,7 +20,9 @@ def main():
     parser.add_argument("--experiment-id", required=True)
     parser.add_argument("--run-id", required=True)
     parser.add_argument(
-        "--sample-set-id", required=False, help="Sample set ID for upload tracking"
+        "--sample-set-id",
+        required=False,
+        help="Sample set ID for upload tracking",
     )
     parser.add_argument(
         "--state-dir",
@@ -38,7 +47,7 @@ def main():
     ]
 
     upload_enabled = bool(
-        args.labkey_server and args.labkey_project_name and args.labkey_api_key
+        args.labkey_server and args.labkey_project_name and args.labkey_api_key,
     )
     if upload_enabled:
         try:
@@ -56,7 +65,7 @@ def main():
             upload_enabled = False
     else:
         log_entries.append(
-            "No LabKey credentials provided - running in simulation mode"
+            "No LabKey credentials provided - running in simulation mode",
         )
 
     csv_files = [
@@ -115,13 +124,13 @@ def main():
                 if record_count > 0:
                     log_entries.append(f"  Records: {record_count}")
                     log_entries.append(
-                        f"  Sample fields: {', '.join(list(records[0].keys())[:5])}"
+                        f"  Sample fields: {', '.join(list(records[0].keys())[:5])}",
                     )
 
                     if upload_enabled:
                         batch_size = 1000
                         record_chunks = list(
-                            more_itertools.chunked(records, batch_size)
+                            more_itertools.chunked(records, batch_size),
                         )
                         success_count = 0
                         for i, chunk in enumerate(record_chunks, 1):
@@ -152,11 +161,11 @@ def main():
                             try:
                                 import py_nvd.state as nvd_state
 
-                                uploaded_samples = set(
+                                uploaded_samples = {
                                     r.get("sample_id")
                                     for r in records
                                     if r.get("sample_id")
-                                )
+                                }
                                 for sample_id in uploaded_samples:
                                     sample_records = [
                                         r
@@ -164,7 +173,7 @@ def main():
                                         if r.get("sample_id") == sample_id
                                     ]
                                     content_hash = nvd_state.hash_upload_content(
-                                        sample_records
+                                        sample_records,
                                     )
                                     nvd_state.record_upload(
                                         sample_id=str(sample_id),
@@ -202,7 +211,7 @@ def main():
                                 )
                             except Exception as e:
                                 log_entries.append(
-                                    f"  WARNING: Failed to record uploads: {e!s}"
+                                    f"  WARNING: Failed to record uploads: {e!s}",
                                 )
                     else:
                         num_batches = (record_count + 999) // 1000

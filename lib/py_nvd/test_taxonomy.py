@@ -802,7 +802,9 @@ class TestOfflineMode:
         attempting to write and getting "unable to write to readonly database".
         """
         # Verify preconditions: .dmp files exist but no SQLite yet
-        assert (minimal_taxdump / "nodes.dmp").exists(), "Test fixture should have .dmp files"
+        assert (minimal_taxdump / "nodes.dmp").exists(), (
+            "Test fixture should have .dmp files"
+        )
         sqlite_path = minimal_taxdump / "taxonomy.sqlite"
         assert not sqlite_path.exists()
 
