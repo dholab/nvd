@@ -152,7 +152,7 @@ def prompt_with_timeout(
                 if choice.lower() == response.lower():
                     return choice
             console.print(
-                f"[red]Invalid choice.[/red] Please select from: {', '.join(choices)}"
+                f"[red]Invalid choice.[/red] Please select from: {', '.join(choices)}",
             )
             continue
 

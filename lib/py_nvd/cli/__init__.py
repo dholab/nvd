@@ -12,6 +12,10 @@ Usage:
 """
 
 from py_nvd.cli.app import app, main
+from py_nvd.cli.commands.config import config_app
+from py_nvd.cli.commands.params import params_app
+from py_nvd.cli.commands.preset import preset_app
+from py_nvd.cli.commands.validate import validate_app
 from py_nvd.cli.utils import (
     DEFAULT_CONFIG,
     MAX_PREVIEW_ITEMS,
@@ -28,19 +32,8 @@ from py_nvd.cli.utils import (
     success,
     warning,
 )
-from py_nvd.cli.commands.config import config_app
-from py_nvd.cli.commands.params import params_app
-from py_nvd.cli.commands.preset import preset_app
-from py_nvd.cli.commands.validate import validate_app
 
 __all__ = [
-    "app",
-    "main",
-    "console",
-    "error",
-    "info",
-    "success",
-    "warning",
     "DEFAULT_CONFIG",
     "MAX_PREVIEW_ITEMS",
     "PANEL_ANALYSIS",
@@ -50,8 +43,15 @@ __all__ = [
     "PANEL_PREPROCESSING",
     "PANEL_SRA",
     "VALID_TOOLS",
+    "app",
     "config_app",
+    "console",
+    "error",
+    "info",
+    "main",
     "params_app",
     "preset_app",
+    "success",
     "validate_app",
+    "warning",
 ]

@@ -10,7 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Literal
 
@@ -587,7 +587,10 @@ def resolve_database_versions(
 
     # Resolve BLAST
     blast_resolved, blast_warning, blast_reg = _resolve_single_database(
-        "blast", blast_db, blast_db_version, state_dir
+        "blast",
+        blast_db,
+        blast_db_version,
+        state_dir,
     )
     resolution.blast_db_version = blast_resolved
     if blast_warning:
@@ -597,7 +600,10 @@ def resolve_database_versions(
 
     # Resolve GOTTCHA2
     gottcha2_resolved, gottcha2_warning, gottcha2_reg = _resolve_single_database(
-        "gottcha2", gottcha2_db, gottcha2_db_version, state_dir
+        "gottcha2",
+        gottcha2_db,
+        gottcha2_db_version,
+        state_dir,
     )
     resolution.gottcha2_db_version = gottcha2_resolved
     if gottcha2_warning:
@@ -607,7 +613,10 @@ def resolve_database_versions(
 
     # Resolve STAT (uses stat_index as canonical path)
     stat_resolved, stat_warning, stat_reg = _resolve_single_database(
-        "stat", stat_index, stat_db_version, state_dir
+        "stat",
+        stat_index,
+        stat_db_version,
+        state_dir,
     )
     resolution.stat_db_version = stat_resolved
     if stat_warning:
@@ -1389,7 +1398,7 @@ def list_locks(
     """
     with connect(state_dir) as conn:
         rows = conn.execute(
-            "SELECT * FROM sample_locks ORDER BY locked_at DESC"
+            "SELECT * FROM sample_locks ORDER BY locked_at DESC",
         ).fetchall()
 
         locks = [SampleLock.from_row(row) for row in rows]
@@ -1426,7 +1435,7 @@ def acquire_sample_lock(
         None if acquired successfully, or the blocking SampleLock if blocked
     """
     hostname, username = get_machine_fingerprint()
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     expires = now + timedelta(hours=ttl_hours)
 
     now_str = now.isoformat().replace("+00:00", "Z")
@@ -1475,9 +1484,8 @@ def acquire_sample_lock(
             )
             conn.commit()
             return None
-        else:
-            # Active lock held by different user/host - blocked
-            return existing_lock
+        # Active lock held by different user/host - blocked
+        return existing_lock
 
 
 def acquire_sample_locks(
@@ -1666,7 +1674,7 @@ def mark_stale_runs_failed(
         Count of runs updated
     """
     cutoff = datetime.now(__import__("datetime").timezone.utc) - __import__(
-        "datetime"
+        "datetime",
     ).timedelta(hours=ttl_hours)
     cutoff_str = cutoff.isoformat()
 

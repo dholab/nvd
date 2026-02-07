@@ -100,7 +100,11 @@ module-name = ["py_nvd"]
 
 [tool.ruff.lint]
 select = ["ALL"]
-ignore = ["D", "S101", "E501", "PTH", "TD003", "G004"]
+ignore = ["D", "S101", "E501", "PTH", "TD003", "G004", "TC003"]
+
+[tool.ruff.lint.per-file-ignores]
+"lib/py_nvd/test_*.py" = ["PLR2004", "SLF001"]
+"lib/py_nvd/cli/test_*.py" = ["PLR2004", "SLF001"]
 
 [tool.pytest.ini_options]
 pythonpath = ["bin", "lib"]

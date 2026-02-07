@@ -1,12 +1,13 @@
 """Smoke tests for CLI commands - verify they don't crash."""
 
+from datetime import UTC
+
 from typer.testing import CliRunner
 
 from py_nvd.cli.app import app
 from py_nvd.cli.commands.resume import EDITOR_MIN_DURATION_SECONDS
 from py_nvd.cli.utils import PIPELINE_ROOT, RESUME_FILE, get_editor
-from py_nvd.db import connect
-from py_nvd.db import get_hits_dir
+from py_nvd.db import connect, get_hits_dir
 from py_nvd.hits import (
     HitRecord,
     _compaction_lock,
@@ -236,7 +237,7 @@ class TestStateCommands:
         # Insert 3 completed runs with known durations: 20m, 30m, 40m
         with connect() as conn:
             for i, (run_id, duration_mins) in enumerate(
-                [("run_a", 20), ("run_b", 30), ("run_c", 40)]
+                [("run_a", 20), ("run_b", 30), ("run_c", 40)],
             ):
                 sample_set_id = compute_sample_set_id([f"sample_{i}"])
                 conn.execute(
@@ -330,16 +331,14 @@ class TestStateCommands:
 
     def test_state_prune_cascades_to_hit_observations(self, tmp_path, monkeypatch):
         """Pruning a run deletes its hit observations (parquet files)."""
-        from datetime import datetime, timedelta, timezone
+        from datetime import datetime, timedelta
 
         monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
         runner.invoke(app, ["state", "init"])
 
         # Create an old run and mark it completed
         old_date = (
-            (datetime.now(timezone.utc) - timedelta(days=100))
-            .isoformat()
-            .replace("+00:00", "Z")
+            (datetime.now(UTC) - timedelta(days=100)).isoformat().replace("+00:00", "Z")
         )
         register_run("old_run", "old_set", state_dir=tmp_path)
         complete_run("old_run", "completed", state_dir=tmp_path)
@@ -368,15 +367,13 @@ class TestStateCommands:
 
     def test_state_prune_deletes_sample_set_hits(self, tmp_path, monkeypatch):
         """Pruning a run deletes all hits for that sample set."""
-        from datetime import datetime, timedelta, timezone
+        from datetime import datetime, timedelta
 
         monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
         runner.invoke(app, ["state", "init"])
 
         old_date = (
-            (datetime.now(timezone.utc) - timedelta(days=100))
-            .isoformat()
-            .replace("+00:00", "Z")
+            (datetime.now(UTC) - timedelta(days=100)).isoformat().replace("+00:00", "Z")
         )
         register_run("old_run", "old_set", state_dir=tmp_path)
         complete_run("old_run", "completed", state_dir=tmp_path)
@@ -403,17 +400,15 @@ class TestStateCommands:
 
     def test_state_prune_preserves_other_sample_sets(self, tmp_path, monkeypatch):
         """Pruning one run preserves hits from other runs."""
-        from datetime import datetime, timedelta, timezone
+        from datetime import datetime, timedelta
 
         monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
         runner.invoke(app, ["state", "init"])
 
         old_date = (
-            (datetime.now(timezone.utc) - timedelta(days=100))
-            .isoformat()
-            .replace("+00:00", "Z")
+            (datetime.now(UTC) - timedelta(days=100)).isoformat().replace("+00:00", "Z")
         )
-        new_date = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        new_date = datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
         # Create old run and new run, mark both completed
         register_run("old_run", "old_set", state_dir=tmp_path)

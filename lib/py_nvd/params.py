@@ -205,9 +205,8 @@ def _format_commented_param(name: str, prop: dict) -> str:
 
     if default is not None:
         return f"# {name}: {_format_yaml_value(default)}  # {desc}"
-    else:
-        # No default - just show the param name, user must fill in
-        return f"# {name}:  # {desc}"
+    # No default - just show the param name, user must fill in
+    return f"# {name}:  # {desc}"
 
 
 def _generate_yaml_template(path: Path, schema: dict, schema_url: str) -> None:

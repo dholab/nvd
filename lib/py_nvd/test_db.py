@@ -7,8 +7,6 @@ Tests for database connection, schema management, and graceful degradation helpe
 import sqlite3
 from pathlib import Path
 
-import pytest
-
 from py_nvd.db import (
     SchemaMismatchError,
     StateUnavailableError,
@@ -315,7 +313,9 @@ class TestGetTaxdumpDir:
         assert result == env_dir
 
     def test_state_dir_fallback_when_no_taxonomy_dir_or_env_var(
-        self, tmp_path, monkeypatch
+        self,
+        tmp_path,
+        monkeypatch,
     ):
         """Falls back to {state_dir}/taxdump when no taxonomy_dir or env var."""
         # Ensure env var is not set

@@ -2004,7 +2004,7 @@ def get_taxon_history(
 
     # Get total runs in system
     total_runs_result = con.execute(
-        "SELECT COUNT(DISTINCT sample_set_id) FROM hits"
+        "SELECT COUNT(DISTINCT sample_set_id) FROM hits",
     ).fetchone()
     total_runs_in_system = total_runs_result[0] if total_runs_result else 0
 

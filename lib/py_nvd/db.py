@@ -38,7 +38,7 @@ import shutil
 import sqlite3
 import sys
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from importlib.resources import files
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -75,7 +75,7 @@ def utc_now_iso() -> str:
     Returns:
         ISO8601 timestamp string like "2026-01-26T15:30:00Z"
     """
-    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
 
 class SchemaMismatchError(Exception):
@@ -107,7 +107,7 @@ class SchemaMismatchError(Exception):
             f"existing state (runs, samples, uploads). To proceed, either:\n"
             f"  1. Run interactively and confirm when prompted\n"
             f"  2. Pass --update-db-destructive to explicitly allow destruction\n"
-            f"  3. Manually backup and delete: {db_path}"
+            f"  3. Manually backup and delete: {db_path}",
         )
 
 
@@ -147,7 +147,7 @@ class ResourceUnavailableError(Exception):
             f"{self.resource_type} unavailable during '{operation}': {reason}\n"
             f"Path: {resource_path}\n"
             f"The --sync flag requires this resource to be available.\n"
-            f"To continue without it, {self.recovery_hint}."
+            f"To continue without it, {self.recovery_hint}.",
         )
 
 
@@ -448,7 +448,7 @@ def _configure_connection(conn: sqlite3.Connection) -> None:
 
 def _get_backup_path(db_path: Path) -> Path:
     """Generate a timestamped backup path for the database."""
-    timestamp = datetime.now(tz=timezone.utc).strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now(tz=UTC).strftime("%Y%m%d_%H%M%S")
     return db_path.with_suffix(f".backup_{timestamp}.sqlite")
 
 
@@ -505,7 +505,7 @@ def _get_db_stats(db_path: Path) -> dict:
 
         # Get list of tables
         tables = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'",
         ).fetchall()
 
         for (table_name,) in tables:
@@ -569,7 +569,9 @@ def _prompt_for_confirmation(db_path: Path, timeout_seconds: int) -> bool:
     print("\nA backup will be created before deletion.", file=sys.stderr)
     print(f"You have {timeout_seconds // 60} minutes to respond.", file=sys.stderr)
     print(
-        "\nType 'yes' to proceed, or anything else to abort: ", file=sys.stderr, end=""
+        "\nType 'yes' to proceed, or anything else to abort: ",
+        file=sys.stderr,
+        end="",
     )
     sys.stderr.flush()
 
@@ -626,9 +628,8 @@ def _handle_schema_mismatch(
             print("Proceeding with schema update...\n", file=sys.stderr)
             db_path.unlink()
             return backup_path
-        else:
-            print("\nAborted. Database unchanged.", file=sys.stderr)
-            raise SchemaMismatchError(db_path, current_version, EXPECTED_VERSION)
+        print("\nAborted. Database unchanged.", file=sys.stderr)
+        raise SchemaMismatchError(db_path, current_version, EXPECTED_VERSION)
 
     # Non-interactive and no explicit opt-in: refuse
     raise SchemaMismatchError(db_path, current_version, EXPECTED_VERSION)

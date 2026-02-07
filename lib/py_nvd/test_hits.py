@@ -31,11 +31,11 @@ from py_nvd.hits import (
     decompress_sequence,
     delete_sample_hits,
     delete_sample_set_hits,
+    get_contig_quality,
     get_discovery_timeline,
+    get_highlights_string,
     get_hit,
     get_hit_sequence,
-    get_contig_quality,
-    get_highlights_string,
     get_hit_stats,
     get_negative_samples,
     get_novel_taxa,
@@ -64,14 +64,8 @@ from py_nvd.models import (
     CategorySummary,
     ContigQuality,
     DeleteResult,
-    NovelTaxon,
-    RareTaxon,
-    RunComparison,
     RunReport,
     SampleSummary,
-    TaxonChange,
-    TaxonHistory,
-    TaxonRunPresence,
     TaxonSummary,
 )
 
@@ -360,7 +354,8 @@ class TestGetHitClassification:
         assert hit.top_taxid_rank is None
 
     def test_multiple_observations_returns_most_recent_classification(
-        self, temp_state_dir
+        self,
+        temp_state_dir,
     ):
         """Most recent classification is returned when multiple observations exist."""
         # Older observation with taxid=111
@@ -552,7 +547,10 @@ class TestListHitsClassification:
             adjusted_taxid_rank="genus",
         )
         write_hits_parquet(
-            [hit1_old, hit1_new, hit2], "sample_a", "set_001", temp_state_dir
+            [hit1_old, hit1_new, hit2],
+            "sample_a",
+            "set_001",
+            temp_state_dir,
         )
 
         hits = list_hits(state_dir=temp_state_dir)
@@ -602,7 +600,10 @@ class TestListHitsClassification:
             "2024-01-02T00:00:00Z",
         )
         write_hits_parquet(
-            [classified, unclassified], "sample_a", "set_001", temp_state_dir
+            [classified, unclassified],
+            "sample_a",
+            "set_001",
+            temp_state_dir,
         )
 
         hits = list_hits(state_dir=temp_state_dir)
@@ -938,7 +939,10 @@ class TestListHitsWithObservationsClassification:
             "2024-06-01T00:00:00Z",
         )
         write_hits_parquet(
-            [classified, unclassified], "sample_a", "set_001", temp_state_dir
+            [classified, unclassified],
+            "sample_a",
+            "set_001",
+            temp_state_dir,
         )
 
         result = list_hits_with_observations(state_dir=temp_state_dir)
@@ -2819,7 +2823,7 @@ class TestGetTopTaxa:
                     adjusted_taxid=111,
                     adjusted_taxid_name="Taxon A",
                     adjusted_taxid_rank="species",
-                )
+                ),
             ],
             "sample_a",
             "set_001",
@@ -2835,7 +2839,7 @@ class TestGetTopTaxa:
                     adjusted_taxid=222,
                     adjusted_taxid_name="Taxon B",
                     adjusted_taxid_rank="species",
-                )
+                ),
             ],
             "sample_b",
             "set_002",
@@ -2859,7 +2863,7 @@ class TestGetTopTaxa:
                     adjusted_taxid=111,
                     adjusted_taxid_name="Taxon A",
                     adjusted_taxid_rank="species",
-                )
+                ),
             ],
             "sample_a",
             "set_001",
@@ -2875,7 +2879,7 @@ class TestGetTopTaxa:
                     adjusted_taxid=222,
                     adjusted_taxid_name="Taxon B",
                     adjusted_taxid_rank="species",
-                )
+                ),
             ],
             "sample_b",
             "set_002",
@@ -3193,7 +3197,7 @@ class TestGetHighlightsString:
                     adjusted_taxid=111,
                     adjusted_taxid_name="Taxon A",
                     adjusted_taxid_rank="species",
-                )
+                ),
             ],
             "sample_a",
             "set_001",
@@ -3209,7 +3213,7 @@ class TestGetHighlightsString:
                     adjusted_taxid=222,
                     adjusted_taxid_name="Taxon B",
                     adjusted_taxid_rank="species",
-                )
+                ),
             ],
             "sample_b",
             "set_002",
@@ -3217,7 +3221,8 @@ class TestGetHighlightsString:
         )
 
         result = get_highlights_string(
-            sample_set_id="set_001", state_dir=temp_state_dir
+            sample_set_id="set_001",
+            state_dir=temp_state_dir,
         )
 
         assert "Taxon A" in result
@@ -3516,7 +3521,7 @@ class TestGetSampleSummaries:
                     adjusted_taxid=111,
                     adjusted_taxid_name="Taxon A",
                     adjusted_taxid_rank="species",
-                )
+                ),
             ],
             "sample_a",
             "set_001",
@@ -3532,7 +3537,7 @@ class TestGetSampleSummaries:
                     adjusted_taxid=222,
                     adjusted_taxid_name="Taxon B",
                     adjusted_taxid_rank="species",
-                )
+                ),
             ],
             "sample_b",
             "set_002",
@@ -3620,7 +3625,7 @@ class TestGetNegativeSamples:
                     adjusted_taxid=111,
                     adjusted_taxid_name="Taxon A",
                     adjusted_taxid_rank="species",
-                )
+                ),
             ],
             "sample_a",
             "set_001",
@@ -3636,7 +3641,7 @@ class TestGetNegativeSamples:
                     adjusted_taxid=222,
                     adjusted_taxid_name="Taxon B",
                     adjusted_taxid_rank="species",
-                )
+                ),
             ],
             "sample_b",
             "set_001",
@@ -3692,7 +3697,7 @@ class TestGetNegativeSamples:
                     adjusted_taxid=1,
                     adjusted_taxid_name="root",
                     adjusted_taxid_rank="no rank",
-                )
+                ),
             ],
             "sample_a",
             "set_001",
@@ -3709,7 +3714,7 @@ class TestGetNegativeSamples:
                     adjusted_taxid=111,
                     adjusted_taxid_name="Taxon A",
                     adjusted_taxid_rank="species",
-                )
+                ),
             ],
             "sample_b",
             "set_001",
@@ -3726,7 +3731,7 @@ class TestGetNegativeSamples:
                     adjusted_taxid=9606,
                     adjusted_taxid_name="Homo sapiens",
                     adjusted_taxid_rank="species",
-                )
+                ),
             ],
             "sample_c",
             "set_001",
@@ -3751,7 +3756,7 @@ class TestGetNegativeSamples:
                         adjusted_taxid=1,
                         adjusted_taxid_name="root",
                         adjusted_taxid_rank="no rank",
-                    )
+                    ),
                 ],
                 sample_id,
                 "set_001",
@@ -3775,7 +3780,7 @@ class TestGetNegativeSamples:
                     adjusted_taxid=1,
                     adjusted_taxid_name="root",
                     adjusted_taxid_rank="no rank",
-                )
+                ),
             ],
             "sample_a",
             "set_001",
@@ -3792,7 +3797,7 @@ class TestGetNegativeSamples:
                     adjusted_taxid=1,
                     adjusted_taxid_name="root",
                     adjusted_taxid_rank="no rank",
-                )
+                ),
             ],
             "sample_b",
             "set_002",
@@ -3814,7 +3819,7 @@ class TestGetNegativeSamples:
                     "sample_a",
                     "2024-01-01T00:00:00Z",
                     # No classification
-                )
+                ),
             ],
             "sample_a",
             "set_001",
@@ -3849,7 +3854,7 @@ class TestGetContigQuality:
                     "set_001",
                     "sample_a",
                     "2024-01-01T00:00:00Z",
-                )
+                ),
             ],
             "sample_a",
             "set_001",
@@ -4135,7 +4140,7 @@ class TestGetTaxaByCategory:
                     adjusted_taxid=10376,
                     adjusted_taxid_name="Human gammaherpesvirus 4",
                     adjusted_taxid_rank="species",
-                )
+                ),
             ],
             "sample_a",
             "set_001",
@@ -4416,7 +4421,7 @@ class TestGetTaxaByCategory:
                     adjusted_taxid=10376,
                     adjusted_taxid_name="Human gammaherpesvirus 4",
                     adjusted_taxid_rank="species",
-                )
+                ),
             ],
             "sample_a",
             "set_001",
@@ -4432,7 +4437,7 @@ class TestGetTaxaByCategory:
                     adjusted_taxid=12814,
                     adjusted_taxid_name="Rhinovirus A",
                     adjusted_taxid_rank="species",
-                )
+                ),
             ],
             "sample_b",
             "set_002",
@@ -4526,7 +4531,7 @@ class TestGetRunReport:
                     adjusted_taxid=10376,
                     adjusted_taxid_name="Human gammaherpesvirus 4",
                     adjusted_taxid_rank="species",
-                )
+                ),
             ],
             "sample_a",
             "set_001",
@@ -4806,7 +4811,7 @@ class TestGetRunReport:
                     adjusted_taxid=10376,
                     adjusted_taxid_name="Human gammaherpesvirus 4",
                     adjusted_taxid_rank="species",
-                )
+                ),
             ],
             "sample_a",
             "set_001",
@@ -4822,7 +4827,7 @@ class TestGetRunReport:
                     adjusted_taxid=12814,
                     adjusted_taxid_name="Rhinovirus A",
                     adjusted_taxid_rank="species",
-                )
+                ),
             ],
             "sample_b",
             "set_002",
@@ -4896,7 +4901,7 @@ class TestGetNovelTaxa:
                     adjusted_taxid=10376,
                     adjusted_taxid_name="Human gammaherpesvirus 4",
                     adjusted_taxid_rank="species",
-                )
+                ),
             ],
             "sample_a",
             "set_001",
@@ -4955,7 +4960,7 @@ class TestGetNovelTaxa:
                     adjusted_taxid=10376,
                     adjusted_taxid_name="Human gammaherpesvirus 4",
                     adjusted_taxid_rank="species",
-                )
+                ),
             ],
             "sample_a",
             "set_001",
@@ -5010,7 +5015,7 @@ class TestGetNovelTaxa:
                     adjusted_taxid=10376,
                     adjusted_taxid_name="Human gammaherpesvirus 4",
                     adjusted_taxid_rank="species",
-                )
+                ),
             ],
             "sample_a",
             "set_001",
@@ -5060,7 +5065,7 @@ class TestGetNovelTaxa:
                     adjusted_taxid=10376,
                     adjusted_taxid_name="Human gammaherpesvirus 4",
                     adjusted_taxid_rank="species",
-                )
+                ),
             ],
             "sample_a",
             "set_001",
@@ -5127,7 +5132,7 @@ class TestGetNovelTaxa:
                     adjusted_taxid=10376,
                     adjusted_taxid_name="Human gammaherpesvirus 4",
                     adjusted_taxid_rank="species",
-                )
+                ),
             ],
             "sample_a",
             "set_001",
@@ -5193,7 +5198,7 @@ class TestGetTopMovers:
                     adjusted_taxid=10376,
                     adjusted_taxid_name="Human gammaherpesvirus 4",
                     adjusted_taxid_rank="species",
-                )
+                ),
             ],
             "sample_a",
             "set_001",
@@ -5283,7 +5288,7 @@ class TestGetTopMovers:
                     adjusted_taxid=10376,
                     adjusted_taxid_name="Human gammaherpesvirus 4",
                     adjusted_taxid_rank="species",
-                )
+                ),
             ],
             "sample_a",
             "set_001",
@@ -5301,7 +5306,7 @@ class TestGetTopMovers:
                     adjusted_taxid=12814,
                     adjusted_taxid_name="Rhinovirus A",
                     adjusted_taxid_rank="species",
-                )
+                ),
             ],
             "sample_b",
             "set_002",
@@ -5397,7 +5402,7 @@ class TestGetTopMovers:
                     adjusted_taxid=10376,
                     adjusted_taxid_name="Human gammaherpesvirus 4",
                     adjusted_taxid_rank="species",
-                )
+                ),
             ],
             "sample_a",
             "set_001",
@@ -5450,7 +5455,7 @@ class TestGetTopMovers:
                     adjusted_taxid=10376,
                     adjusted_taxid_name="Human gammaherpesvirus 4",
                     adjusted_taxid_rank="species",
-                )
+                ),
             ],
             "sample_a",
             "set_001",
@@ -5468,7 +5473,7 @@ class TestGetTopMovers:
                     adjusted_taxid=1,
                     adjusted_taxid_name="root",
                     adjusted_taxid_rank="no rank",
-                )
+                ),
             ],
             "sample_b",
             "set_002",
@@ -5583,7 +5588,7 @@ class TestGetRareTaxa:
                     adjusted_taxid=10376,
                     adjusted_taxid_name="Human gammaherpesvirus 4",
                     adjusted_taxid_rank="species",
-                )
+                ),
             ],
             "sample_a",
             "set_001",
@@ -5601,7 +5606,7 @@ class TestGetRareTaxa:
                     adjusted_taxid=10376,
                     adjusted_taxid_name="Human gammaherpesvirus 4",
                     adjusted_taxid_rank="species",
-                )
+                ),
             ],
             "sample_b",
             "set_002",
@@ -5656,7 +5661,7 @@ class TestGetRareTaxa:
                     adjusted_taxid=10376,
                     adjusted_taxid_name="Human gammaherpesvirus 4",
                     adjusted_taxid_rank="species",
-                )
+                ),
             ],
             "sample_a",
             "set_001",
@@ -5673,7 +5678,7 @@ class TestGetRareTaxa:
                     adjusted_taxid=12814,
                     adjusted_taxid_name="Rhinovirus A",
                     adjusted_taxid_rank="species",
-                )
+                ),
             ],
             "sample_b",
             "set_002",
@@ -5729,7 +5734,7 @@ class TestGetRareTaxa:
                     adjusted_taxid=10376,
                     adjusted_taxid_name="Human gammaherpesvirus 4",
                     adjusted_taxid_rank="species",
-                )
+                ),
             ],
             "sample_b",
             "set_002",
@@ -5792,7 +5797,7 @@ class TestGetRareTaxa:
                     adjusted_taxid=1,
                     adjusted_taxid_name="root",
                     adjusted_taxid_rank="no rank",
-                )
+                ),
             ],
             "sample_a",
             "set_001",
@@ -5814,7 +5819,7 @@ class TestGetRareTaxa:
                     adjusted_taxid=10376,
                     adjusted_taxid_name="Human gammaherpesvirus 4",
                     adjusted_taxid_rank="species",
-                )
+                ),
             ],
             "sample_a",
             "set_001",
@@ -5857,7 +5862,7 @@ class TestGetTaxonHistory:
                     adjusted_taxid=10376,
                     adjusted_taxid_name="Human gammaherpesvirus 4",
                     adjusted_taxid_rank="species",
-                )
+                ),
             ],
             "sample_a",
             "set_001",
@@ -5957,7 +5962,7 @@ class TestGetTaxonHistory:
                     adjusted_taxid=10376,
                     adjusted_taxid_name="Human gammaherpesvirus 4",
                     adjusted_taxid_rank="species",
-                )
+                ),
             ],
             "sample_b",
             "set_002",
@@ -5974,7 +5979,7 @@ class TestGetTaxonHistory:
                     adjusted_taxid=10376,
                     adjusted_taxid_name="Human gammaherpesvirus 4",
                     adjusted_taxid_rank="species",
-                )
+                ),
             ],
             "sample_a",
             "set_001",
@@ -6001,7 +6006,7 @@ class TestGetTaxonHistory:
                     adjusted_taxid=10376,
                     adjusted_taxid_name="Human gammaherpesvirus 4",
                     adjusted_taxid_rank="species",
-                )
+                ),
             ],
             "sample_a",
             "set_001",
@@ -6019,7 +6024,7 @@ class TestGetTaxonHistory:
                     adjusted_taxid=12814,
                     adjusted_taxid_name="Rhinovirus A",
                     adjusted_taxid_rank="species",
-                )
+                ),
             ],
             "sample_b",
             "set_002",
@@ -6037,7 +6042,7 @@ class TestGetTaxonHistory:
                     adjusted_taxid=10376,
                     adjusted_taxid_name="Human gammaherpesvirus 4",
                     adjusted_taxid_rank="species",
-                )
+                ),
             ],
             "sample_c",
             "set_003",
@@ -6077,7 +6082,7 @@ class TestGetRunComparison:
                     adjusted_taxid=10376,
                     adjusted_taxid_name="Human gammaherpesvirus 4",
                     adjusted_taxid_rank="species",
-                )
+                ),
             ],
             "sample_a",
             "set_001",
@@ -6218,7 +6223,7 @@ class TestGetRunComparison:
                     adjusted_taxid=10376,
                     adjusted_taxid_name="Human gammaherpesvirus 4",
                     adjusted_taxid_rank="species",
-                )
+                ),
             ],
             "sample_a",
             "set_001",

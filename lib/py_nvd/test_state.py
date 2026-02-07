@@ -2,6 +2,7 @@
 
 import tempfile
 from dataclasses import dataclass
+from datetime import UTC
 from pathlib import Path
 
 import pytest
@@ -288,7 +289,8 @@ class TestRegisterRun:
 
         # Filter since noon
         runs = list_runs(
-            since=datetime(2024, 12, 20, 12, 0, 0), state_dir=temp_state_dir
+            since=datetime(2024, 12, 20, 12, 0, 0),
+            state_dir=temp_state_dir,
         )
         assert len(runs) == 1
         assert runs[0].run_id == "run_afternoon"
@@ -306,7 +308,7 @@ class TestRegisterRun:
                     ("run_c", compute_sample_set_id(["c"]), "2024-06-20", "failed"),
                     ("run_d", compute_sample_set_id(["d"]), "2024-12-01", "completed"),
                     ("run_e", compute_sample_set_id(["e"]), "2024-12-15", "completed"),
-                ]
+                ],
             ):
                 conn.execute(
                     """INSERT INTO runs (run_id, sample_set_id, started_at, status)
@@ -407,7 +409,10 @@ class TestRegisterRun:
         # Create records in all referencing tables
         acquire_sample_locks(["s1", "s2"], "old_run", state_dir=temp_state_dir)
         register_processed_sample(
-            "s1", sample_set_id, "old_run", state_dir=temp_state_dir
+            "s1",
+            sample_set_id,
+            "old_run",
+            state_dir=temp_state_dir,
         )
         record_taxonomy_version(
             "old_run",
@@ -458,7 +463,9 @@ class TestProcessedSamples:
         run = register_run("run_001", sample_set_id, state_dir=temp_state_dir)
         assert run is not None
         return RunContext(
-            run=run, sample_set_id=sample_set_id, state_dir=temp_state_dir
+            run=run,
+            sample_set_id=sample_set_id,
+            state_dir=temp_state_dir,
         )
 
     def test_register_processed_sample(self, registered_run: RunContext):
@@ -571,7 +578,10 @@ class TestProcessedSamples:
 
         # Mark as uploaded (after LabKey upload)
         complete_sample(
-            "s1", ctx.sample_set_id, status="uploaded", state_dir=ctx.state_dir
+            "s1",
+            ctx.sample_set_id,
+            status="uploaded",
+            state_dir=ctx.state_dir,
         )
 
         sample = get_processed_sample("s1", ctx.sample_set_id, state_dir=ctx.state_dir)
@@ -590,7 +600,10 @@ class TestProcessedSamples:
         )
 
         complete_sample(
-            "s1", ctx.sample_set_id, status="failed", state_dir=ctx.state_dir
+            "s1",
+            ctx.sample_set_id,
+            status="failed",
+            state_dir=ctx.state_dir,
         )
 
         sample = get_processed_sample("s1", ctx.sample_set_id, state_dir=ctx.state_dir)
@@ -703,7 +716,9 @@ class TestProcessedSamples:
 
         # Uploaded samples from run_001
         samples = list_samples(
-            run_id="run_001", status="uploaded", state_dir=temp_state_dir
+            run_id="run_001",
+            status="uploaded",
+            state_dir=temp_state_dir,
         )
         assert len(samples) == 1
         assert samples[0].sample_id == "s1"
@@ -758,7 +773,6 @@ class TestPerSampleStateTracking:
 
     def test_mark_sample_uploaded_success(self, temp_state_dir):
         """mark_sample_uploaded transitions sample from completed to uploaded."""
-        from py_nvd.state import mark_sample_uploaded
 
         set1 = compute_sample_set_id(["s1"])
         run = register_run("run_001", set1, state_dir=temp_state_dir)
@@ -781,16 +795,16 @@ class TestPerSampleStateTracking:
 
     def test_mark_sample_uploaded_not_found(self, temp_state_dir):
         """mark_sample_uploaded returns False for non-existent sample."""
-        from py_nvd.state import mark_sample_uploaded
 
         result = mark_sample_uploaded(
-            "nonexistent", "fake_set", state_dir=temp_state_dir
+            "nonexistent",
+            "fake_set",
+            state_dir=temp_state_dir,
         )
         assert result is False
 
     def test_get_samples_needing_upload(self, temp_state_dir):
         """get_samples_needing_upload returns only samples with status='completed'."""
-        from py_nvd.state import get_samples_needing_upload, mark_sample_uploaded
 
         set1 = compute_sample_set_id(["s1", "s2", "s3"])
         run = register_run("run_001", set1, state_dir=temp_state_dir)
@@ -824,16 +838,15 @@ class TestPerSampleStateTracking:
 
     def test_get_samples_needing_upload_empty_set(self, temp_state_dir):
         """get_samples_needing_upload returns empty list for unknown sample set."""
-        from py_nvd.state import get_samples_needing_upload
 
         needing_upload = get_samples_needing_upload(
-            "nonexistent_set", state_dir=temp_state_dir
+            "nonexistent_set",
+            state_dir=temp_state_dir,
         )
         assert needing_upload == []
 
     def test_get_uploaded_sample_ids(self, temp_state_dir):
         """get_uploaded_sample_ids returns IDs of samples with status='uploaded'."""
-        from py_nvd.state import get_uploaded_sample_ids, mark_sample_uploaded
 
         set1 = compute_sample_set_id(["s1", "s2"])
         set2 = compute_sample_set_id(["s3", "s4"])
@@ -851,7 +864,8 @@ class TestPerSampleStateTracking:
 
         # Initially none are uploaded
         uploaded = get_uploaded_sample_ids(
-            ["s1", "s2", "s3", "s4"], state_dir=temp_state_dir
+            ["s1", "s2", "s3", "s4"],
+            state_dir=temp_state_dir,
         )
         assert uploaded == set()
 
@@ -861,7 +875,8 @@ class TestPerSampleStateTracking:
 
         # Check uploaded samples
         uploaded = get_uploaded_sample_ids(
-            ["s1", "s2", "s3", "s4"], state_dir=temp_state_dir
+            ["s1", "s2", "s3", "s4"],
+            state_dir=temp_state_dir,
         )
         assert uploaded == {"s1", "s3"}
 
@@ -875,7 +890,6 @@ class TestPerSampleStateTracking:
 
     def test_get_uploaded_sample_ids_empty_list(self, temp_state_dir):
         """get_uploaded_sample_ids returns empty set for empty input."""
-        from py_nvd.state import get_uploaded_sample_ids
 
         uploaded = get_uploaded_sample_ids([], state_dir=temp_state_dir)
         assert uploaded == set()
@@ -886,7 +900,6 @@ class TestPerSampleStateTracking:
         This is important for the run-start check: if a sample was uploaded
         in a previous run (different sample_set_id), we should still detect it.
         """
-        from py_nvd.state import get_uploaded_sample_ids, mark_sample_uploaded
 
         # Same sample in two different sample sets (reprocessed)
         set1 = compute_sample_set_id(["s1", "s2"])
@@ -1007,7 +1020,8 @@ class TestUploads:
         assert result == "not_uploaded"
 
     def test_check_upload_already_uploaded(
-        self, processed_sample: ProcessedSampleContext
+        self,
+        processed_sample: ProcessedSampleContext,
     ):
         """check_upload returns 'already_uploaded' for same content."""
         ctx = processed_sample
@@ -1032,7 +1046,8 @@ class TestUploads:
         assert result == "already_uploaded"
 
     def test_check_upload_content_changed(
-        self, processed_sample: ProcessedSampleContext
+        self,
+        processed_sample: ProcessedSampleContext,
     ):
         """check_upload returns 'content_changed' for different content."""
         ctx = processed_sample
@@ -1084,14 +1099,16 @@ class TestUploads:
         assert upload_types == {"blast", "blast_fasta"}
 
     def test_was_sample_ever_uploaded_false(
-        self, processed_sample: ProcessedSampleContext
+        self,
+        processed_sample: ProcessedSampleContext,
     ):
         """was_sample_ever_uploaded returns False for un-uploaded samples."""
         ctx = processed_sample
         assert was_sample_ever_uploaded(ctx.sample_id, state_dir=ctx.state_dir) is False
 
     def test_was_sample_ever_uploaded_true(
-        self, processed_sample: ProcessedSampleContext
+        self,
+        processed_sample: ProcessedSampleContext,
     ):
         """was_sample_ever_uploaded returns True for uploaded samples."""
         ctx = processed_sample
@@ -1108,7 +1125,8 @@ class TestUploads:
         assert was_sample_ever_uploaded(ctx.sample_id, state_dir=ctx.state_dir) is True
 
     def test_was_sample_ever_uploaded_with_filters(
-        self, processed_sample: ProcessedSampleContext
+        self,
+        processed_sample: ProcessedSampleContext,
     ):
         """was_sample_ever_uploaded respects upload_type and upload_target filters."""
         ctx = processed_sample
@@ -1217,7 +1235,12 @@ class TestUploads:
 
         record_upload("s1", set1, "blast", "labkey", "hash1", state_dir=temp_state_dir)
         record_upload(
-            "s1", set1, "blast_fasta", "labkey", "hash2", state_dir=temp_state_dir
+            "s1",
+            set1,
+            "blast_fasta",
+            "labkey",
+            "hash2",
+            state_dir=temp_state_dir,
         )
         record_upload("s2", set1, "blast", "labkey", "hash3", state_dir=temp_state_dir)
 
@@ -1250,10 +1273,20 @@ class TestUploads:
 
         record_upload("s1", set1, "blast", "labkey", "hash1", state_dir=temp_state_dir)
         record_upload(
-            "s1", set1, "blast_fasta", "labkey", "hash2", state_dir=temp_state_dir
+            "s1",
+            set1,
+            "blast_fasta",
+            "labkey",
+            "hash2",
+            state_dir=temp_state_dir,
         )
         record_upload(
-            "s1", set1, "gottcha2", "labkey", "hash3", state_dir=temp_state_dir
+            "s1",
+            set1,
+            "gottcha2",
+            "labkey",
+            "hash3",
+            state_dir=temp_state_dir,
         )
 
         uploads = list_uploads(upload_type="blast", state_dir=temp_state_dir)
@@ -1270,7 +1303,12 @@ class TestUploads:
 
         record_upload("s1", set1, "blast", "labkey", "hash1", state_dir=temp_state_dir)
         record_upload(
-            "s1", set1, "blast_fasta", "local", "hash2", state_dir=temp_state_dir
+            "s1",
+            set1,
+            "blast_fasta",
+            "local",
+            "hash2",
+            state_dir=temp_state_dir,
         )
 
         uploads = list_uploads(upload_target="labkey", state_dir=temp_state_dir)
@@ -1287,10 +1325,20 @@ class TestUploads:
 
         record_upload("s1", set1, "blast", "labkey", "hash1", state_dir=temp_state_dir)
         record_upload(
-            "s1", set1, "blast_fasta", "labkey", "hash2", state_dir=temp_state_dir
+            "s1",
+            set1,
+            "blast_fasta",
+            "labkey",
+            "hash2",
+            state_dir=temp_state_dir,
         )
         record_upload(
-            "s1", set1, "gottcha2", "labkey", "hash3", state_dir=temp_state_dir
+            "s1",
+            set1,
+            "gottcha2",
+            "labkey",
+            "hash3",
+            state_dir=temp_state_dir,
         )
 
         uploads = list_uploads(limit=2, state_dir=temp_state_dir)
@@ -1673,7 +1721,9 @@ class TestTaxonomyDrift:
 
         # Order shouldn't matter
         assert check_taxonomy_drift(
-            "run_001", "run_002", temp_state_dir
+            "run_001",
+            "run_002",
+            temp_state_dir,
         ) == check_taxonomy_drift("run_002", "run_001", temp_state_dir)
 
 
@@ -1704,14 +1754,14 @@ class TestSchemaMigrationSafety:
         with connect(temp_state_dir) as conn:
             conn.execute(
                 "INSERT INTO runs (run_id, sample_set_id, started_at, status) "
-                "VALUES ('test_run', 'abc123', datetime('now'), 'running')"
+                "VALUES ('test_run', 'abc123', datetime('now'), 'running')",
             )
             conn.commit()
 
         # Second connection should work fine
         with connect(temp_state_dir) as conn:
             row = conn.execute(
-                "SELECT * FROM runs WHERE run_id = 'test_run'"
+                "SELECT * FROM runs WHERE run_id = 'test_run'",
             ).fetchone()
             assert row is not None
 
@@ -1809,7 +1859,7 @@ class TestSchemaMigrationSafety:
 
         # Create database with wrong version
         conn = sqlite3.connect(db_path)
-        conn.execute(f"PRAGMA user_version = 999")
+        conn.execute("PRAGMA user_version = 999")
         conn.close()
 
         with pytest.raises(SchemaMismatchError) as exc_info:
@@ -1858,7 +1908,9 @@ class TestDatabasePathLookup:
         assert warning is None
 
     def test_get_database_by_path_multiple_versions_returns_newest(
-        self, temp_state_dir, temp_db_path
+        self,
+        temp_state_dir,
+        temp_db_path,
     ):
         """When multiple versions share a path, returns newest with warning."""
         import time
@@ -1880,12 +1932,17 @@ class TestDatabasePathLookup:
         assert "Multiple versions" in warning
 
     def test_get_database_by_path_canonicalizes_path(
-        self, temp_state_dir, temp_db_path
+        self,
+        temp_state_dir,
+        temp_db_path,
     ):
         """Path is canonicalized before lookup."""
         # Register with absolute path
         register_database(
-            "blast", "v1.0", str(temp_db_path.resolve()), state_dir=temp_state_dir
+            "blast",
+            "v1.0",
+            str(temp_db_path.resolve()),
+            state_dir=temp_state_dir,
         )
 
         # Look up with relative path (from temp_state_dir)
@@ -1901,14 +1958,22 @@ class TestDatabasePathLookup:
         assert db.version == "v1.0"
 
     def test_get_database_by_path_different_types_independent(
-        self, temp_state_dir, temp_db_path
+        self,
+        temp_state_dir,
+        temp_db_path,
     ):
         """Different db_types at same path are independent."""
         register_database(
-            "blast", "blast-v1", str(temp_db_path), state_dir=temp_state_dir
+            "blast",
+            "blast-v1",
+            str(temp_db_path),
+            state_dir=temp_state_dir,
         )
         register_database(
-            "gottcha2", "gottcha-v1", str(temp_db_path), state_dir=temp_state_dir
+            "gottcha2",
+            "gottcha-v1",
+            str(temp_db_path),
+            state_dir=temp_state_dir,
         )
 
         blast_db, _ = get_database_by_path("blast", temp_db_path, temp_state_dir)
@@ -1920,7 +1985,9 @@ class TestDatabasePathLookup:
         assert gottcha_db.version == "gottcha-v1"
 
     def test_get_databases_by_path_returns_all_versions(
-        self, temp_state_dir, temp_db_path
+        self,
+        temp_state_dir,
+        temp_db_path,
     ):
         """get_databases_by_path returns all versions at a path."""
         import time
@@ -1940,7 +2007,9 @@ class TestDatabasePathLookup:
         assert databases[2].version == "v1.0"
 
     def test_get_databases_by_path_empty_when_not_found(
-        self, temp_state_dir, temp_db_path
+        self,
+        temp_state_dir,
+        temp_db_path,
     ):
         """get_databases_by_path returns empty list when path not registered."""
         databases = get_databases_by_path("blast", temp_db_path, temp_state_dir)
@@ -2030,7 +2099,9 @@ class TestResolveDatabaseVersions:
         assert db.version == "core-nt_2025-01"
 
     def test_path_and_version_same_as_registered_is_noop(
-        self, temp_state_dir, temp_db_paths
+        self,
+        temp_state_dir,
+        temp_db_paths,
     ):
         """Path + version matching registry is a no-op."""
         # Pre-register
@@ -2054,7 +2125,9 @@ class TestResolveDatabaseVersions:
         assert resolution.auto_registered == []
 
     def test_path_and_version_different_from_registered_warns_and_updates(
-        self, temp_state_dir, temp_db_paths
+        self,
+        temp_state_dir,
+        temp_db_paths,
     ):
         """Path + version different from registry warns and updates."""
         # Pre-register with old version
@@ -2092,7 +2165,9 @@ class TestResolveDatabaseVersions:
         assert old_db is not None
 
     def test_path_without_version_resolves_from_registry(
-        self, temp_state_dir, temp_db_paths
+        self,
+        temp_state_dir,
+        temp_db_paths,
     ):
         """Path without version resolves from registry."""
         # Pre-register
@@ -2115,7 +2190,9 @@ class TestResolveDatabaseVersions:
         assert resolution.auto_registered == []
 
     def test_path_without_version_not_registered_warns(
-        self, temp_state_dir, temp_db_paths
+        self,
+        temp_state_dir,
+        temp_db_paths,
     ):
         """Path without version, not in registry, warns."""
         resolution = resolve_database_versions(
@@ -2211,15 +2288,23 @@ class TestResolveDatabaseVersions:
         assert resolution.warnings == []
 
     def test_multiple_versions_at_path_uses_newest_with_warning(
-        self, temp_state_dir, temp_db_paths
+        self,
+        temp_state_dir,
+        temp_db_paths,
     ):
         """When multiple versions at path, uses newest and warns."""
         # Register multiple versions at same path
         register_database(
-            "blast", "v1.0", str(temp_db_paths["blast"]), state_dir=temp_state_dir
+            "blast",
+            "v1.0",
+            str(temp_db_paths["blast"]),
+            state_dir=temp_state_dir,
         )
         register_database(
-            "blast", "v2.0", str(temp_db_paths["blast"]), state_dir=temp_state_dir
+            "blast",
+            "v2.0",
+            str(temp_db_paths["blast"]),
+            state_dir=temp_state_dir,
         )
 
         resolution = resolve_database_versions(
@@ -2255,7 +2340,9 @@ class TestSampleLocks:
         run = register_run("run_001", sample_set_id, state_dir=temp_state_dir)
         assert run is not None
         return RunContext(
-            run=run, sample_set_id=sample_set_id, state_dir=temp_state_dir
+            run=run,
+            sample_set_id=sample_set_id,
+            state_dir=temp_state_dir,
         )
 
     def test_acquire_sample_lock_basic(self, registered_run: RunContext):
@@ -2279,7 +2366,7 @@ class TestSampleLocks:
 
     def test_acquire_sample_lock_blocked_by_different_user(self, temp_state_dir):
         """Lock acquisition fails when blocked by a different user's active lock."""
-        from datetime import datetime, timedelta, timezone
+        from datetime import datetime, timedelta
 
         from py_nvd.state import acquire_sample_lock
 
@@ -2289,7 +2376,7 @@ class TestSampleLocks:
         assert run1 is not None
 
         # Insert a lock with different fingerprint (simulating another user)
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         expires = now + timedelta(hours=72)
         with connect(temp_state_dir) as conn:
             conn.execute(
@@ -2317,7 +2404,7 @@ class TestSampleLocks:
 
     def test_acquire_sample_lock_overwrites_expired(self, temp_state_dir):
         """Lock acquisition succeeds when existing lock is expired."""
-        from datetime import datetime, timedelta, timezone
+        from datetime import datetime, timedelta
 
         from py_nvd.state import acquire_sample_lock, get_lock
 
@@ -2327,7 +2414,7 @@ class TestSampleLocks:
         assert run is not None
 
         # Insert an expired lock directly
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         expired = now - timedelta(hours=1)
         with connect(temp_state_dir) as conn:
             conn.execute(
@@ -2355,7 +2442,8 @@ class TestSampleLocks:
         assert lock.run_id == "run_001"
 
     def test_acquire_sample_lock_same_run_same_fingerprint_refreshes(
-        self, registered_run: RunContext
+        self,
+        registered_run: RunContext,
     ):
         """Same run + same fingerprint refreshes TTL (legitimate resume)."""
         from py_nvd.state import acquire_sample_lock, get_lock
@@ -2385,7 +2473,8 @@ class TestSampleLocks:
         assert lock2.expires_at >= expires1
 
     def test_acquire_sample_lock_different_run_same_fingerprint_allows_resume(
-        self, registered_run: RunContext
+        self,
+        registered_run: RunContext,
     ):
         """Different run_id + same fingerprint = allowed (Nextflow -resume scenario).
 
@@ -2420,10 +2509,11 @@ class TestSampleLocks:
         assert lock2.run_id == "new_run_name"
 
     def test_acquire_sample_lock_same_run_different_fingerprint_active_conflict(
-        self, temp_state_dir
+        self,
+        temp_state_dir,
     ):
         """Same run + different fingerprint + active lock = conflict."""
-        from datetime import datetime, timedelta, timezone
+        from datetime import datetime, timedelta
 
         from py_nvd.state import acquire_sample_lock
 
@@ -2433,7 +2523,7 @@ class TestSampleLocks:
         assert run is not None
 
         # Insert a lock with different fingerprint (simulating another machine)
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         expires = now + timedelta(hours=72)
         with connect(temp_state_dir) as conn:
             conn.execute(
@@ -2459,10 +2549,11 @@ class TestSampleLocks:
         assert result.username == "other_user"
 
     def test_acquire_sample_lock_same_run_different_fingerprint_expired_acquires(
-        self, temp_state_dir
+        self,
+        temp_state_dir,
     ):
         """Same run + different fingerprint + expired = crash recovery."""
-        from datetime import datetime, timedelta, timezone
+        from datetime import datetime, timedelta
 
         from py_nvd.state import acquire_sample_lock, get_lock
 
@@ -2472,7 +2563,7 @@ class TestSampleLocks:
         assert run is not None
 
         # Insert an expired lock with different fingerprint
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         expired = now - timedelta(hours=1)
         with connect(temp_state_dir) as conn:
             conn.execute(
@@ -2503,7 +2594,7 @@ class TestSampleLocks:
 
     def test_acquire_sample_locks_batch_mixed_results(self, temp_state_dir):
         """Batch acquisition returns acquired and conflicts separately."""
-        from datetime import datetime, timedelta, timezone
+        from datetime import datetime, timedelta
 
         from py_nvd.state import acquire_sample_locks
 
@@ -2516,7 +2607,7 @@ class TestSampleLocks:
         assert run2 is not None
 
         # Run 1 locks s1 and s2
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         expires = now + timedelta(hours=72)
         with connect(temp_state_dir) as conn:
             for sample_id in ["s1", "s2"]:
@@ -2537,7 +2628,9 @@ class TestSampleLocks:
 
         # Run 2 tries to acquire s1, s2, s3 (s1, s2 blocked, s3 available)
         acquired, conflicts = acquire_sample_locks(
-            ["s1", "s2", "s3"], "run_002", state_dir=temp_state_dir
+            ["s1", "s2", "s3"],
+            "run_002",
+            state_dir=temp_state_dir,
         )
 
         assert acquired == ["s3"]
@@ -2611,7 +2704,7 @@ class TestSampleLocks:
 
     def test_get_lock_returns_none_for_expired(self, temp_state_dir):
         """get_lock returns None for expired locks by default."""
-        from datetime import datetime, timedelta, timezone
+        from datetime import datetime, timedelta
 
         from py_nvd.state import get_lock
 
@@ -2621,7 +2714,7 @@ class TestSampleLocks:
         assert run is not None
 
         # Insert an expired lock
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         expired = now - timedelta(hours=1)
         with connect(temp_state_dir) as conn:
             conn.execute(
@@ -2642,7 +2735,7 @@ class TestSampleLocks:
 
     def test_cleanup_expired_locks_removes_only_expired(self, temp_state_dir):
         """cleanup_expired_locks removes only expired locks."""
-        from datetime import datetime, timedelta, timezone
+        from datetime import datetime, timedelta
 
         from py_nvd.state import cleanup_expired_locks, list_locks
 
@@ -2652,7 +2745,7 @@ class TestSampleLocks:
         assert run is not None
 
         # Use UTC to match cleanup_expired_locks implementation
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         expired = now - timedelta(hours=1)
         active = now + timedelta(hours=72)
 
@@ -2733,7 +2826,8 @@ class TestEffectiveRunStatus:
         assert effective == "running"
 
     def test_get_effective_run_status_returns_actual_for_completed(
-        self, temp_state_dir
+        self,
+        temp_state_dir,
     ):
         """get_effective_run_status returns actual status for non-running runs."""
         from py_nvd.state import get_effective_run_status
@@ -2755,7 +2849,7 @@ class TestEffectiveRunStatus:
 
     def test_mark_stale_runs_failed_updates_only_stale(self, temp_state_dir):
         """mark_stale_runs_failed updates only stale 'running' runs."""
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         from py_nvd.state import mark_stale_runs_failed
 
@@ -2774,7 +2868,7 @@ class TestEffectiveRunStatus:
                 (
                     "fresh_run",
                     "set2",
-                    datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                    datetime.now(UTC).isoformat().replace("+00:00", "Z"),
                     "running",
                 ),
             )
