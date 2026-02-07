@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# ruff: noqa: TC003
 """
 labkey_upload_gottcha_fasta.py — keep one taxonomic level per read: STRAIN if present, else SPECIES
 

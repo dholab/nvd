@@ -1,4 +1,3 @@
-# ruff: noqa: B008
 """
 Preset management commands for the NVD CLI.
 
@@ -15,9 +14,13 @@ Commands:
 
 from __future__ import annotations
 
-from pathlib import Path
+import json as json_module
+from collections.abc import Callable  # noqa: TC003
+from pathlib import Path  # noqa: TC003
+from typing import Any
 
 import typer
+import yaml
 from pydantic import ValidationError
 from rich.panel import Panel
 from rich.table import Table
@@ -29,6 +32,7 @@ from py_nvd.cli.utils import (
     info,
     success,
 )
+from py_nvd.db import utc_now_iso
 from py_nvd.models import (
     PARAM_CATEGORIES,
     NvdParams,
@@ -36,6 +40,12 @@ from py_nvd.models import (
     get_field_category,
     trace_merge,
 )
+
+# Display/truncation thresholds
+_MAX_VALUE_DISPLAY_LENGTH = 40
+_MAX_OVERRIDE_DISPLAY_LENGTH = 20
+_MAX_LIST_PREVIEW_ITEMS = 3
+_MAX_VALUE_DISPLAY_LENGTH_SHORT = 30
 
 preset_app = typer.Typer(
     name="preset",
@@ -95,6 +105,8 @@ def preset_show(
     if not preset:
         error(f"Preset not found: {name}")
 
+    assert preset is not None  # narrowing: guarded by error() [NoReturn] above
+
     console.print(f"\n[bold cyan]Preset: {preset.name}[/bold cyan]\n")
 
     if preset.description:
@@ -113,7 +125,7 @@ def preset_show(
 
 @preset_app.command("register")
 @preset_app.command("reg", hidden=True)  # Alias
-def preset_register(  # noqa: PLR0913
+def preset_register(
     name: str = typer.Argument(..., help="Name for the preset"),
     description: str | None = typer.Option(
         None,
@@ -130,35 +142,55 @@ def preset_register(  # noqa: PLR0913
     ),
     # Common inline parameter options
     cutoff_percent: float | None = typer.Option(
-        None, "--cutoff-percent", help="Minimum abundance threshold"
+        None,
+        "--cutoff-percent",
+        help="Minimum abundance threshold",
     ),
     tax_stringency: float | None = typer.Option(
-        None, "--tax-stringency", help="Taxonomy stringency"
+        None,
+        "--tax-stringency",
+        help="Taxonomy stringency",
     ),
     entropy: float | None = typer.Option(None, "--entropy", help="Entropy threshold"),
     preprocess: bool | None = typer.Option(
-        None, "--preprocess/--no-preprocess", help="Enable preprocessing"
+        None,
+        "--preprocess/--no-preprocess",
+        help="Enable preprocessing",
     ),
     dedup: bool | None = typer.Option(
-        None, "--dedup/--no-dedup", help="Deduplicate reads"
+        None,
+        "--dedup/--no-dedup",
+        help="Deduplicate reads",
     ),
     trim_adapters: bool | None = typer.Option(
-        None, "--trim-adapters/--no-trim-adapters", help="Trim adapters"
+        None,
+        "--trim-adapters/--no-trim-adapters",
+        help="Trim adapters",
     ),
     scrub_host_reads: bool | None = typer.Option(
-        None, "--scrub-host-reads/--no-scrub-host-reads", help="Scrub host reads"
+        None,
+        "--scrub-host-reads/--no-scrub-host-reads",
+        help="Scrub host reads",
     ),
     filter_reads: bool | None = typer.Option(
-        None, "--filter-reads/--no-filter-reads", help="Filter reads"
+        None,
+        "--filter-reads/--no-filter-reads",
+        help="Filter reads",
     ),
     min_gottcha_reads: int | None = typer.Option(
-        None, "--min-gottcha-reads", help="Minimum GOTTCHA2 reads"
+        None,
+        "--min-gottcha-reads",
+        help="Minimum GOTTCHA2 reads",
     ),
     max_blast_targets: int | None = typer.Option(
-        None, "--max-blast-targets", help="Maximum BLAST targets"
+        None,
+        "--max-blast-targets",
+        help="Maximum BLAST targets",
     ),
     blast_retention_count: int | None = typer.Option(
-        None, "--blast-retention-count", help="BLAST hits to retain"
+        None,
+        "--blast-retention-count",
+        help="BLAST hits to retain",
     ),
 ) -> None:
     """
@@ -264,7 +296,7 @@ def preset_merge(
         # Merge three presets
         nvd preset merge defaults team-settings my-overrides --name final
     """
-    if len(presets) < 2:
+    if len(presets) < 2:  # noqa: PLR2004
         error("At least two presets are required for merging")
         raise typer.Exit(1)
 
@@ -299,7 +331,7 @@ def preset_merge(
     if existing:
         console.print(f"[yellow]Preset '{name}' already exists.[/yellow]")
         if not typer.confirm("Overwrite?"):
-            raise typer.Abort()
+            raise typer.Abort
 
     # Build merged params dict (only explicitly set values, not defaults)
     explicitly_set = set()
@@ -368,14 +400,14 @@ def _display_preset_merge_summary(
 
             # Format value (truncate long values)
             value_str = str(src.value)
-            if len(value_str) > 40:
+            if len(value_str) > _MAX_VALUE_DISPLAY_LENGTH:
                 value_str = value_str[:37] + "..."
 
             # Format source with override info
             source_str = f"← {src.source}"
             if src.overridden_value is not None:
                 ov = str(src.overridden_value)
-                if len(ov) > 20:
+                if len(ov) > _MAX_OVERRIDE_DISPLAY_LENGTH:
                     ov = ov[:17] + "..."
                 source_str += f" [dim](was {src.overridden_source}: {ov})[/dim]"
 
@@ -427,22 +459,15 @@ def preset_export(
         nvd preset export production -o production.yaml
         nvd preset export production -o production.json --format json
     """
-    import json as json_module
-
-    import yaml
-
-    from py_nvd.db import utc_now_iso
-
     preset = state.get_preset(name)
     if not preset:
         error(f"Preset not found: {name}")
 
+    assert preset is not None  # narrowing: guarded by error() [NoReturn] above
+
     # Determine format
     if output_format is None:
-        if output.suffix == ".json":
-            output_format = "json"
-        else:
-            output_format = "yaml"
+        output_format = "json" if output.suffix == ".json" else "yaml"
 
     schema_url = params.get_schema_url()
 
@@ -530,11 +555,11 @@ def preset_import(
 
     if existing:
         success(
-            f"Updated preset '{preset.name}' from {path} ({len(preset.params)} parameters)"
+            f"Updated preset '{preset.name}' from {path} ({len(preset.params)} parameters)",
         )
     else:
         success(
-            f"Imported preset '{preset.name}' from {path} ({len(preset.params)} parameters)"
+            f"Imported preset '{preset.name}' from {path} ({len(preset.params)} parameters)",
         )
 
 
@@ -562,11 +587,13 @@ def preset_delete(
     if not preset:
         error(f"Preset not found: {name}")
 
+    assert preset is not None  # narrowing: guarded by error() [NoReturn] above
+
     # Confirm unless forced
     if not force:
         console.print(f"Delete preset '{name}' ({len(preset.params)} parameters)?")
         if not typer.confirm("Continue?"):
-            raise typer.Abort()
+            raise typer.Abort
 
     deleted = state.delete_preset(name)
     if deleted:
@@ -645,9 +672,9 @@ def preset_diff(
 
     # Group by category for display
     def add_section(
-        items,  # list of tuples: (category, field, ...)
-        format_fn,
-    ):
+        items: list[tuple[Any, ...]],
+        format_fn: Callable[..., str],
+    ) -> None:
         """Add items grouped by category."""
         by_category: dict[str, list] = {cat: [] for cat in PARAM_CATEGORIES}
         for item in items:
@@ -670,7 +697,9 @@ def preset_diff(
         table.add_row("", "")
         add_section(
             changed,
-            lambda x: f"[red]{_format_diff_value(x[2])}[/red] → [green]{_format_diff_value(x[3])}[/green]",
+            lambda x: (
+                f"[red]{_format_diff_value(x[2])}[/red] → [green]{_format_diff_value(x[3])}[/green]"
+            ),
         )
 
     # Only in first
@@ -719,10 +748,12 @@ def _format_diff_value(value: object) -> str:
     if isinstance(value, bool):
         return "true" if value else "false"
     if isinstance(value, list):
-        if len(value) > 3:
-            return f"[{', '.join(str(v) for v in value[:3])}, ...]"
+        if len(value) > _MAX_LIST_PREVIEW_ITEMS:
+            return (
+                f"[{', '.join(str(v) for v in value[:_MAX_LIST_PREVIEW_ITEMS])}, ...]"
+            )
         return f"[{', '.join(str(v) for v in value)}]"
     s = str(value)
-    if len(s) > 30:
+    if len(s) > _MAX_VALUE_DISPLAY_LENGTH_SHORT:
         return s[:27] + "..."
     return s

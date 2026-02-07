@@ -25,6 +25,7 @@ import os
 import sqlite3
 import sys
 import tarfile
+import urllib.error
 import urllib.request
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
@@ -41,7 +42,7 @@ from py_nvd.models import Taxon
 _open = builtins.open
 
 if TYPE_CHECKING:
-    from collections.abc import Generator
+    from collections.abc import Callable, Generator
     from pathlib import Path
 
 # NCBI taxdump URL and configuration
@@ -335,7 +336,7 @@ class TaxonomyDB:
         """
         return [t.tax_id for t in self.get_lineage(tax_id)]
 
-    def get_lineage_string(self, tax_id: int, include_unranked: bool = False) -> str:
+    def get_lineage_string(self, tax_id: int, *, include_unranked: bool = False) -> str:
         """
         Get lineage as formatted string "rank:name; rank:name; ...".
 
@@ -485,7 +486,7 @@ class TaxonomyUnavailableError(ResourceUnavailableError):
         operation: str,
         reason: str,
         original_error: Exception | None = None,
-    ):
+    ) -> None:
         super().__init__(
             resource_path=taxdump_dir,
             operation=operation,
@@ -542,7 +543,7 @@ def format_taxonomy_warning(
             )
         elif isinstance(error, (OSError, IOError)) and "readonly" in str(error).lower():
             explanation = "The taxonomy directory is on a read-only filesystem."
-        elif isinstance(error, urllib.request.URLError):
+        elif isinstance(error, urllib.error.URLError):
             explanation = "Failed to download taxonomy data from NCBI (network error)."
         elif isinstance(error, TaxonomyOfflineError):
             explanation = (
@@ -600,13 +601,13 @@ Resolution:
 
 
 @contextmanager
-def open(  # noqa: A001
+def open(  # noqa: A001, C901, PLR0912, PLR0915
     state_dir: Path | str | None = None,
-    offline: bool | None = None,
+    offline: bool | None = None,  # noqa: FBT001
     *,
     taxonomy_dir: Path | str | None = None,
     sync: bool = False,
-    warn_callback: callable | None = None,
+    warn_callback: Callable[[str], None] | None = None,
 ) -> Generator[TaxonomyDB, None, None]:
     """
     Context manager for taxonomy database access.
@@ -667,7 +668,7 @@ def open(  # noqa: A001
         if warn_callback is not None:
             warn_callback(msg)
         else:
-            print(msg, file=sys.stderr)
+            print(msg, file=sys.stderr)  # noqa: T201  # fallback warning output to stderr
 
     # Resolve offline mode from env var if not explicitly set
     if offline is None:
@@ -682,11 +683,12 @@ def open(  # noqa: A001
             # Don't attempt to build from .dmp files - distributed workers on
             # read-only filesystems can't write, and attempting to do so causes
             # "unable to write to readonly database" errors.
-            raise TaxonomyOfflineError(
+            msg = (
                 f"Taxonomy database not found at {sqlite_path} and offline mode is enabled. "
                 f"Run 'nvd taxonomy ensure' or ensure CHECK_RUN_STATE runs locally before "
-                f"launching distributed jobs.",
+                f"launching distributed jobs."
             )
+            raise TaxonomyOfflineError(msg)
     else:
         # Check if we need to download/rebuild
         needs_download = _is_taxdump_stale(taxdump_dir)

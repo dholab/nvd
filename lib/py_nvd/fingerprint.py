@@ -1,3 +1,4 @@
+# ruff: noqa: T201
 """
 Pipeline fingerprint generation and verification.
 
@@ -25,6 +26,9 @@ FINGERPRINT_FILE = Path(__file__).parent / "_fingerprint.json"
 # Files to include in the fingerprint
 FINGERPRINTED_FILES = ["main.nf", "nextflow.config"]
 
+# Expected length of a blake3 hex digest
+_BLAKE3_HEX_DIGEST_LENGTH = 64
+
 
 def hash_file(path: Path) -> str:
     """
@@ -47,7 +51,9 @@ def hash_file(path: Path) -> str:
 
     result = hasher.hexdigest()
     assert isinstance(result, str), "blake3 hexdigest should return str"
-    assert len(result) == 64, f"blake3 hex digest should be 64 chars, got {len(result)}"
+    assert len(result) == _BLAKE3_HEX_DIGEST_LENGTH, (
+        f"blake3 hex digest should be 64 chars, got {len(result)}"
+    )
     return result
 
 
@@ -128,7 +134,7 @@ def load_fingerprint(fingerprint_path: Path | None = None) -> dict[str, str] | N
 def verify_pipeline(
     candidate: Path,
     fingerprint_path: Path | None = None,
-    strict: bool = True,
+    strict: bool = True,  # noqa: FBT001, FBT002
 ) -> bool:
     """
     Verify a candidate directory is the authentic NVD pipeline.
@@ -174,10 +180,7 @@ def is_dev_mode() -> bool:
 
     # Check if we're in an editable install (source dir has .git)
     source_dir = Path(__file__).parent.parent.parent  # lib/py_nvd -> lib -> repo root
-    if (source_dir / ".git").exists():
-        return True
-
-    return False
+    return (source_dir / ".git").exists()
 
 
 def _find_pipeline_root_for_fingerprint() -> Path | None:
@@ -216,29 +219,39 @@ def main() -> None:
     if len(sys.argv) > 1:
         pipeline_root = Path(sys.argv[1]).resolve()
         if not pipeline_root.is_dir():
-            print(f"Error: Not a directory: {pipeline_root}")
+            print(f"Error: Not a directory: {pipeline_root}")  # CLI entry point output
             sys.exit(1)
         if not (pipeline_root / "main.nf").exists():
-            print(f"Error: No main.nf found in {pipeline_root}")
-            print("Are you sure this is the NVD pipeline root?")
+            print(
+                f"Error: No main.nf found in {pipeline_root}",
+            )  # CLI entry point output
+            print(
+                "Are you sure this is the NVD pipeline root?",
+            )  # CLI entry point output
             sys.exit(1)
     else:
         pipeline_root = _find_pipeline_root_for_fingerprint()
         if pipeline_root is None:
-            print("Error: Could not find pipeline root (main.nf not found)")
-            print()
-            print("Try one of:")
-            print("  - Run from the NVD repository root directory")
-            print("  - Pass the path explicitly: nvd-fingerprint /path/to/nvd")
+            print(
+                "Error: Could not find pipeline root (main.nf not found)",
+            )  # CLI entry point output
+            print()  # CLI entry point output
+            print("Try one of:")  # CLI entry point output
+            print(
+                "  - Run from the NVD repository root directory",
+            )  # CLI entry point output
+            print(
+                "  - Pass the path explicitly: nvd-fingerprint /path/to/nvd",
+            )  # CLI entry point output
             sys.exit(1)
 
     try:
-        output = save_fingerprint(pipeline_root)
+        output = save_fingerprint(pipeline_root)  # ty:ignore[invalid-argument-type]
         fingerprint = load_fingerprint(output)
-        print(f"Fingerprint saved to: {output}")
-        print("Hashes:")
+        print(f"Fingerprint saved to: {output}")  # CLI entry point output
+        print("Hashes:")  # CLI entry point output
         for filename, file_hash in (fingerprint or {}).items():
-            print(f"  {filename}: {file_hash[:16]}...")
+            print(f"  {filename}: {file_hash[:16]}...")  # CLI entry point output
     except FileNotFoundError as e:
-        print(f"Error: {e}")
+        print(f"Error: {e}")  # CLI entry point output
         sys.exit(1)

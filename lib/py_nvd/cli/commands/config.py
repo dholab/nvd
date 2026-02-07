@@ -1,4 +1,3 @@
-# ruff: noqa: B008
 """
 Configuration management commands for the NVD CLI.
 
@@ -12,7 +11,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
-from pathlib import Path
+from pathlib import Path  # noqa: TC003
 
 import typer
 from rich.table import Table
@@ -63,6 +62,8 @@ def config_show(
         warning(f"No config file found at {DEFAULT_CONFIG}")
         info("Run 'nvd setup' to create a configuration file")
         sys.exit(1)
+
+    assert config_file is not None  # narrowing: guarded by sys.exit above
 
     console.print(f"\n[bold]Configuration File:[/bold] {config_file}\n")
 
@@ -143,11 +144,11 @@ def config_edit(
     info(f"Opening {config_file} in {editor}...")
 
     try:
-        subprocess.run([editor, str(config_file)], check=True)
+        subprocess.run([editor, str(config_file)], check=True)  # noqa: S603
     except FileNotFoundError:
         error(f"Editor '{editor}' not found")
         info("Set $VISUAL or $EDITOR to your preferred editor")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     except subprocess.CalledProcessError as e:
         error(f"Editor exited with error: {e.returncode}")
-        raise typer.Exit(e.returncode)
+        raise typer.Exit(e.returncode) from None

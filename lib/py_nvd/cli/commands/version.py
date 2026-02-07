@@ -20,7 +20,7 @@ from py_nvd.cli.utils import (
 )
 
 
-def version() -> None:  # noqa: PLR0912
+def version() -> None:
     """Show version information."""
     console.print(
         Panel.fit(

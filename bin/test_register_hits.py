@@ -9,7 +9,6 @@ import tempfile
 from pathlib import Path
 
 import pytest
-
 from register_hits import (
     ContigClassification,
     HitRegistrationContext,
@@ -118,12 +117,12 @@ class TestParseBlastClassifications:
         """Parses BLAST results TSV and extracts classifications per contig."""
         with tempfile.NamedTemporaryFile(mode="w", suffix=".tsv", delete=False) as f:
             f.write(
-                "sample\ttask\tqseqid\tsseqid\tpident\tadjusted_taxid\tadjusted_taxid_name\tadjusted_taxid_rank\n"
+                "sample\ttask\tqseqid\tsseqid\tpident\tadjusted_taxid\tadjusted_taxid_name\tadjusted_taxid_rank\n",
             )
             f.write("s1\tblast\tNODE_1\tNC_001\t99.5\t12345\tHuman virus\tspecies\n")
             f.write("s1\tblast\tNODE_2\tNC_002\t98.0\t67890\tOther virus\tgenus\n")
             f.write(
-                "s1\tblast\tNODE_1\tNC_003\t97.0\t12345\tHuman virus\tspecies\n"
+                "s1\tblast\tNODE_1\tNC_003\t97.0\t12345\tHuman virus\tspecies\n",
             )  # duplicate qseqid
             tsv_path = Path(f.name)
 
@@ -154,7 +153,7 @@ class TestParseBlastClassifications:
         """Parses TSV with header only (no data rows)."""
         with tempfile.NamedTemporaryFile(mode="w", suffix=".tsv", delete=False) as f:
             f.write(
-                "sample\ttask\tqseqid\tsseqid\tadjusted_taxid\tadjusted_taxid_name\tadjusted_taxid_rank\n"
+                "sample\ttask\tqseqid\tsseqid\tadjusted_taxid\tadjusted_taxid_name\tadjusted_taxid_rank\n",
             )
             tsv_path = Path(f.name)
 
@@ -168,7 +167,7 @@ class TestParseBlastClassifications:
         """Handles rows with null/empty classification values."""
         with tempfile.NamedTemporaryFile(mode="w", suffix=".tsv", delete=False) as f:
             f.write(
-                "sample\ttask\tqseqid\tsseqid\tpident\tadjusted_taxid\tadjusted_taxid_name\tadjusted_taxid_rank\n"
+                "sample\ttask\tqseqid\tsseqid\tpident\tadjusted_taxid\tadjusted_taxid_name\tadjusted_taxid_rank\n",
             )
             f.write("s1\tblast\tNODE_1\tNC_001\t99.5\t\t\t\n")
             tsv_path = Path(f.name)
@@ -284,7 +283,7 @@ class TestBuildHitRecords:
                 adjusted_taxid=99999,
                 adjusted_taxid_name="Special virus",
                 adjusted_taxid_rank="genus",
-            )
+            ),
         }
         context = HitRegistrationContext(
             state_dir=Path("/tmp"),

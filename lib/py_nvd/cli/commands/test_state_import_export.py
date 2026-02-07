@@ -73,7 +73,7 @@ def _seed_lab_data(
 class TestGetTableCounts:
     """Tests for _get_table_counts helper."""
 
-    def test_empty_database(self, tmp_path):
+    def test_empty_database(self, tmp_path: Path) -> None:
         """All counts are zero in a freshly initialized database."""
         with connect(tmp_path) as conn:
             counts = _get_table_counts(conn)
@@ -83,7 +83,7 @@ class TestGetTableCounts:
         assert "processed_samples" in counts
         assert "uploads" in counts
 
-    def test_reflects_seeded_data(self, tmp_path):
+    def test_reflects_seeded_data(self, tmp_path: Path) -> None:
         """Counts reflect data inserted into the database."""
         _seed_lab_data(tmp_path, "run_001", ["s1", "s2", "s3"])
 
@@ -97,7 +97,7 @@ class TestGetTableCounts:
 class TestBuildExportManifest:
     """Tests for _build_export_manifest helper."""
 
-    def test_contains_required_fields(self, tmp_path):
+    def test_contains_required_fields(self, tmp_path: Path) -> None:
         """Manifest contains all fields required by _validate_archive."""
         with connect(tmp_path) as conn:
             manifest = _build_export_manifest(conn)
@@ -105,21 +105,21 @@ class TestBuildExportManifest:
         for field in ("schema_version", "exported_at", "nvd_version", "counts"):
             assert field in manifest
 
-    def test_schema_version_matches_expected(self, tmp_path):
+    def test_schema_version_matches_expected(self, tmp_path: Path) -> None:
         """Manifest schema_version matches the current EXPECTED_VERSION."""
         with connect(tmp_path) as conn:
             manifest = _build_export_manifest(conn)
 
         assert manifest["schema_version"] == EXPECTED_VERSION
 
-    def test_nvd_version_matches_package(self, tmp_path):
+    def test_nvd_version_matches_package(self, tmp_path: Path) -> None:
         """Manifest nvd_version matches the installed package version."""
         with connect(tmp_path) as conn:
             manifest = _build_export_manifest(conn)
 
         assert manifest["nvd_version"] == __version__
 
-    def test_counts_reflect_data(self, tmp_path):
+    def test_counts_reflect_data(self, tmp_path: Path) -> None:
         """Manifest counts reflect the actual database contents."""
         _seed_lab_data(tmp_path, "run_001", ["s1", "s2"])
 
@@ -133,7 +133,7 @@ class TestBuildExportManifest:
 class TestValidateArchive:
     """Tests for _validate_archive — archive extraction and validation."""
 
-    def test_extracts_and_returns_manifest(self, tmp_path):
+    def test_extracts_and_returns_manifest(self, tmp_path: Path) -> None:
         """Valid archive is extracted and manifest is returned."""
         _seed_lab_data(tmp_path / "source", "run_001", ["s1"])
         archive_path = _make_archive(tmp_path, tmp_path / "source")
@@ -148,12 +148,12 @@ class TestValidateArchive:
         finally:
             shutil.rmtree(tmpdir_path)
 
-    def test_fails_when_archive_missing(self, tmp_path):
+    def test_fails_when_archive_missing(self, tmp_path: Path) -> None:
         """Raises SystemExit when archive file does not exist."""
         with pytest.raises(SystemExit):
             _validate_archive(tmp_path / "nonexistent.nvd-state")
 
-    def test_fails_when_state_sqlite_missing(self, tmp_path):
+    def test_fails_when_state_sqlite_missing(self, tmp_path: Path) -> None:
         """Raises SystemExit when archive lacks state.sqlite."""
         archive_path = tmp_path / "bad.nvd-state"
         manifest = {
@@ -175,7 +175,7 @@ class TestValidateArchive:
         with pytest.raises(SystemExit):
             _validate_archive(archive_path)
 
-    def test_fails_when_manifest_missing(self, tmp_path):
+    def test_fails_when_manifest_missing(self, tmp_path: Path) -> None:
         """Raises SystemExit when archive lacks manifest.json."""
         # Create a DB to bundle
         with connect(tmp_path / "source"):
@@ -194,7 +194,7 @@ class TestValidateArchive:
         with pytest.raises(SystemExit):
             _validate_archive(archive_path)
 
-    def test_fails_on_malformed_manifest(self, tmp_path):
+    def test_fails_on_malformed_manifest(self, tmp_path: Path) -> None:
         """Raises SystemExit when manifest.json is not valid JSON."""
         with connect(tmp_path / "source"):
             pass
@@ -214,7 +214,7 @@ class TestValidateArchive:
         with pytest.raises(SystemExit):
             _validate_archive(archive_path)
 
-    def test_fails_on_missing_manifest_fields(self, tmp_path):
+    def test_fails_on_missing_manifest_fields(self, tmp_path: Path) -> None:
         """Raises SystemExit when manifest is missing required fields."""
         with connect(tmp_path / "source"):
             pass
@@ -238,7 +238,7 @@ class TestValidateArchive:
 class TestFindConflicts:
     """Tests for _find_conflicts — PK collision detection between databases."""
 
-    def test_no_conflicts_with_disjoint_data(self, tmp_path):
+    def test_no_conflicts_with_disjoint_data(self, tmp_path: Path) -> None:
         """Two databases with completely different data produce no conflicts."""
         local_dir = tmp_path / "local"
         backup_dir = tmp_path / "backup"
@@ -251,7 +251,10 @@ class TestFindConflicts:
 
         assert conflicts == {}
 
-    def test_no_conflicts_when_pk_matches_with_identical_data(self, tmp_path):
+    def test_no_conflicts_when_pk_matches_with_identical_data(
+        self,
+        tmp_path: Path,
+    ) -> None:
         """Matching PKs with identical display columns are not conflicts."""
         local_dir = tmp_path / "local"
         backup_dir = tmp_path / "backup"
@@ -264,7 +267,7 @@ class TestFindConflicts:
 
         assert conflicts == {}
 
-    def test_detects_run_conflict(self, tmp_path):
+    def test_detects_run_conflict(self, tmp_path: Path) -> None:
         """Detects conflict when same run_id has different status."""
         local_dir = tmp_path / "local"
         backup_dir = tmp_path / "backup"
@@ -280,7 +283,7 @@ class TestFindConflicts:
         # Manually change the status in the backup to force a display-column diff
         with connect(backup_dir) as conn:
             conn.execute(
-                "UPDATE runs SET status = 'completed' WHERE run_id = 'shared_run'"
+                "UPDATE runs SET status = 'completed' WHERE run_id = 'shared_run'",
             )
             conn.commit()
 
@@ -291,7 +294,7 @@ class TestFindConflicts:
         assert len(conflicts["runs"]) == 1
         assert conflicts["runs"][0]["pk"] == {"run_id": "shared_run"}
 
-    def test_detects_composite_pk_conflict(self, tmp_path):
+    def test_detects_composite_pk_conflict(self, tmp_path: Path) -> None:
         """Detects conflict on a table with composite primary key."""
         local_dir = tmp_path / "local"
         backup_dir = tmp_path / "backup"
@@ -306,7 +309,7 @@ class TestFindConflicts:
         # Change status in backup to create a conflict on (sample_id, sample_set_id)
         with connect(backup_dir) as conn:
             conn.execute(
-                "UPDATE processed_samples SET status = 'failed' WHERE sample_id = 's1'"
+                "UPDATE processed_samples SET status = 'failed' WHERE sample_id = 's1'",
             )
             conn.commit()
 
@@ -320,7 +323,7 @@ class TestFindConflicts:
         assert conflict["local"]["status"] == "completed"
         assert conflict["incoming"]["status"] == "failed"
 
-    def test_empty_databases_no_conflicts(self, tmp_path):
+    def test_empty_databases_no_conflicts(self, tmp_path: Path) -> None:
         """Two empty databases produce no conflicts."""
         local_dir = tmp_path / "local"
         backup_dir = tmp_path / "backup"
@@ -340,7 +343,7 @@ class TestFindConflicts:
 class TestPrintConflicts:
     """Tests for _print_conflicts — conflict report formatting."""
 
-    def test_json_output_structure(self, capsys):
+    def test_json_output_structure(self, capsys: pytest.CaptureFixture[str]) -> None:
         """JSON output contains error, conflicts, and conflict_count."""
         conflicts = {
             "runs": [
@@ -360,7 +363,10 @@ class TestPrintConflicts:
         assert data["conflict_count"] == 1
         assert "runs" in data["conflicts"]
 
-    def test_human_output_contains_details(self, capsys):
+    def test_human_output_contains_details(
+        self,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
         """Human-readable output includes table name, PK, and local/incoming values."""
         conflicts = {
             "runs": [
@@ -384,7 +390,7 @@ class TestPrintConflicts:
 class TestDoMergeImport:
     """Tests for _do_merge_import — INSERT WHERE NOT EXISTS semantics."""
 
-    def test_imports_new_rows(self, tmp_path):
+    def test_imports_new_rows(self, tmp_path: Path) -> None:
         """New rows from backup are inserted into the local database."""
         local_dir = tmp_path / "local"
         backup_dir = tmp_path / "backup"
@@ -398,7 +404,7 @@ class TestDoMergeImport:
         assert imported["runs"] == 1
         assert imported["processed_samples"] == 1
 
-    def test_skips_existing_rows(self, tmp_path):
+    def test_skips_existing_rows(self, tmp_path: Path) -> None:
         """Rows that already exist in local are not duplicated."""
         local_dir = tmp_path / "local"
         backup_dir = tmp_path / "backup"
@@ -412,7 +418,7 @@ class TestDoMergeImport:
         assert imported["runs"] == 0
         assert imported["processed_samples"] == 0
 
-    def test_mixed_new_and_existing(self, tmp_path):
+    def test_mixed_new_and_existing(self, tmp_path: Path) -> None:
         """Only new rows are imported when backup has both new and existing data."""
         local_dir = tmp_path / "local"
         backup_dir = tmp_path / "backup"
@@ -434,7 +440,7 @@ class TestDoMergeImport:
         assert imported["runs"] == 1  # new_run
         assert imported["processed_samples"] == 1  # s2
 
-    def test_returns_per_table_counts(self, tmp_path):
+    def test_returns_per_table_counts(self, tmp_path: Path) -> None:
         """Return dict has an entry for every table in _IMPORT_TABLES."""
         local_dir = tmp_path / "local"
         backup_dir = tmp_path / "backup"
@@ -455,7 +461,7 @@ class TestDoMergeImport:
         assert "sra_cache" in imported
         assert "sample_locks" in imported
 
-    def test_local_data_unchanged_after_merge(self, tmp_path):
+    def test_local_data_unchanged_after_merge(self, tmp_path: Path) -> None:
         """Existing local rows are not modified by the merge."""
         local_dir = tmp_path / "local"
         backup_dir = tmp_path / "backup"
@@ -466,14 +472,14 @@ class TestDoMergeImport:
         with connect(local_dir) as conn:
             # Capture local state before merge
             local_run_before = conn.execute(
-                "SELECT * FROM runs WHERE run_id = 'run_local'"
+                "SELECT * FROM runs WHERE run_id = 'run_local'",
             ).fetchone()
 
             _do_merge_import(conn, backup_dir / "state.sqlite")
 
             # Verify local run is unchanged
             local_run_after = conn.execute(
-                "SELECT * FROM runs WHERE run_id = 'run_local'"
+                "SELECT * FROM runs WHERE run_id = 'run_local'",
             ).fetchone()
 
         assert dict(local_run_before) == dict(local_run_after)
@@ -482,7 +488,7 @@ class TestDoMergeImport:
 class TestDoReplaceImport:
     """Tests for _do_replace_import — database file swap."""
 
-    def test_replaces_database(self, tmp_path):
+    def test_replaces_database(self, tmp_path: Path) -> None:
         """Backup database replaces the current one."""
         local_dir = tmp_path / "local"
         backup_dir = tmp_path / "backup"
@@ -500,7 +506,7 @@ class TestDoReplaceImport:
         assert "run_backup" in run_ids
         assert "run_local" not in run_ids
 
-    def test_bak_cleaned_up_on_success(self, tmp_path):
+    def test_bak_cleaned_up_on_success(self, tmp_path: Path) -> None:
         """The .bak file is removed after successful replace."""
         local_dir = tmp_path / "local"
         backup_dir = tmp_path / "backup"
@@ -514,7 +520,7 @@ class TestDoReplaceImport:
 
         assert not (local_dir / "state.sqlite.bak").exists()
 
-    def test_creates_db_when_current_missing(self, tmp_path):
+    def test_creates_db_when_current_missing(self, tmp_path: Path) -> None:
         """Replace works even when no current database exists."""
         local_dir = tmp_path / "local"
         local_dir.mkdir(parents=True)
@@ -533,7 +539,11 @@ class TestDoReplaceImport:
 class TestExportImportRoundTrip:
     """End-to-end round-trip tests: export from one lab, import into another."""
 
-    def test_merge_round_trip(self, tmp_path, monkeypatch):
+    def test_merge_round_trip(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         """Data exported from lab A can be merge-imported into lab B."""
         lab_a = tmp_path / "lab_a"
         lab_b = tmp_path / "lab_b"
@@ -566,7 +576,11 @@ class TestExportImportRoundTrip:
         assert run_ids == {"run_a", "run_b"}
         assert sample_ids == {"s1", "s2", "s3", "s4"}
 
-    def test_replace_round_trip(self, tmp_path, monkeypatch):
+    def test_replace_round_trip(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         """Replace import discards local data and adopts the archive."""
         lab_a = tmp_path / "lab_a"
         lab_b = tmp_path / "lab_b"
@@ -585,7 +599,8 @@ class TestExportImportRoundTrip:
         # Replace import into lab B
         monkeypatch.setenv("NVD_STATE_DIR", str(lab_b))
         result = runner.invoke(
-            app, ["state", "import", str(archive), "--replace", "--yes"]
+            app,
+            ["state", "import", str(archive), "--replace", "--yes"],
         )
         assert result.exit_code == 0
 
@@ -597,7 +612,11 @@ class TestExportImportRoundTrip:
         assert run_ids == {"run_a"}
         assert "run_b" not in run_ids
 
-    def test_merge_aborts_on_conflict(self, tmp_path, monkeypatch):
+    def test_merge_aborts_on_conflict(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         """Merge import aborts cleanly when conflicts are detected."""
         lab_a = tmp_path / "lab_a"
         lab_b = tmp_path / "lab_b"
@@ -610,7 +629,7 @@ class TestExportImportRoundTrip:
         # Change status in lab_a to create a conflict
         with connect(lab_a) as conn:
             conn.execute(
-                "UPDATE runs SET status = 'completed' WHERE run_id = 'shared_run'"
+                "UPDATE runs SET status = 'completed' WHERE run_id = 'shared_run'",
             )
             conn.commit()
 
@@ -628,7 +647,7 @@ class TestExportImportRoundTrip:
         # Lab B data should be unchanged
         with connect(lab_b) as conn:
             run = conn.execute(
-                "SELECT status FROM runs WHERE run_id = 'shared_run'"
+                "SELECT status FROM runs WHERE run_id = 'shared_run'",
             ).fetchone()
         assert run["status"] == "running"
 
@@ -636,7 +655,11 @@ class TestExportImportRoundTrip:
 class TestExportCommand:
     """Tests for the nvd state export CLI command."""
 
-    def test_json_outputs_manifest(self, tmp_path, monkeypatch):
+    def test_json_outputs_manifest(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         """--json outputs manifest without creating an archive."""
         _seed_lab_data(tmp_path, "run_001", ["s1"])
         monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
@@ -649,18 +672,27 @@ class TestExportCommand:
         assert "counts" in data
         assert data["counts"]["runs"] == 1
 
-    def test_rejects_json_with_path(self, tmp_path, monkeypatch):
+    def test_rejects_json_with_path(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         """Cannot specify both --json and a path."""
         monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
         with connect(tmp_path):
             pass
 
         result = runner.invoke(
-            app, ["state", "export", "--json", str(tmp_path / "out.nvd-state")]
+            app,
+            ["state", "export", "--json", str(tmp_path / "out.nvd-state")],
         )
         assert result.exit_code != 0
 
-    def test_requires_path_without_json(self, tmp_path, monkeypatch):
+    def test_requires_path_without_json(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         """Path is required when --json is not specified."""
         monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
         with connect(tmp_path):
@@ -669,7 +701,11 @@ class TestExportCommand:
         result = runner.invoke(app, ["state", "export"])
         assert result.exit_code != 0
 
-    def test_appends_extension(self, tmp_path, monkeypatch):
+    def test_appends_extension(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         """Auto-appends .nvd-state extension if missing."""
         _seed_lab_data(tmp_path, "run_001", ["s1"])
         monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
@@ -678,7 +714,11 @@ class TestExportCommand:
         assert result.exit_code == 0
         assert (tmp_path / "backup.nvd-state").exists()
 
-    def test_refuses_overwrite_without_force(self, tmp_path, monkeypatch):
+    def test_refuses_overwrite_without_force(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         """Refuses to overwrite an existing archive without --force."""
         _seed_lab_data(tmp_path, "run_001", ["s1"])
         monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
@@ -689,7 +729,11 @@ class TestExportCommand:
         result = runner.invoke(app, ["state", "export", str(archive)])
         assert result.exit_code != 0
 
-    def test_force_overwrites(self, tmp_path, monkeypatch):
+    def test_force_overwrites(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         """--force allows overwriting an existing archive."""
         _seed_lab_data(tmp_path, "run_001", ["s1"])
         monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
@@ -701,7 +745,11 @@ class TestExportCommand:
         assert result.exit_code == 0
         assert archive.stat().st_size > 0
 
-    def test_archive_contains_expected_files(self, tmp_path, monkeypatch):
+    def test_archive_contains_expected_files(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         """Archive contains state.sqlite and manifest.json."""
         _seed_lab_data(tmp_path, "run_001", ["s1"])
         monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
@@ -719,7 +767,11 @@ class TestExportCommand:
 class TestImportCommand:
     """Tests for the nvd state import CLI command."""
 
-    def test_schema_mismatch_aborts(self, tmp_path, monkeypatch):
+    def test_schema_mismatch_aborts(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         """Import aborts when archive schema version doesn't match."""
         # Create an archive with a wrong schema version
         with connect(tmp_path / "source"):
@@ -751,7 +803,11 @@ class TestImportCommand:
         result = runner.invoke(app, ["state", "import", str(archive), "--yes"])
         assert result.exit_code != 0
 
-    def test_merge_requires_existing_db(self, tmp_path, monkeypatch):
+    def test_merge_requires_existing_db(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         """Merge import fails when local database does not exist."""
         source = tmp_path / "source"
         _seed_lab_data(source, "run_001", ["s1"])
@@ -765,7 +821,11 @@ class TestImportCommand:
         result = runner.invoke(app, ["state", "import", str(archive), "--yes"])
         assert result.exit_code != 0
 
-    def test_merge_json_output(self, tmp_path, monkeypatch):
+    def test_merge_json_output(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         """Merge import with --json produces structured output."""
         lab_a = tmp_path / "lab_a"
         lab_b = tmp_path / "lab_b"
@@ -777,7 +837,8 @@ class TestImportCommand:
         monkeypatch.setenv("NVD_STATE_DIR", str(lab_b))
 
         result = runner.invoke(
-            app, ["state", "import", str(archive), "--yes", "--json"]
+            app,
+            ["state", "import", str(archive), "--yes", "--json"],
         )
         assert result.exit_code == 0
 
@@ -786,7 +847,11 @@ class TestImportCommand:
         assert data["success"] is True
         assert "imported" in data
 
-    def test_replace_json_output(self, tmp_path, monkeypatch):
+    def test_replace_json_output(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         """Replace import with --json produces structured output."""
         lab_a = tmp_path / "lab_a"
         lab_b = tmp_path / "lab_b"
@@ -807,7 +872,11 @@ class TestImportCommand:
         assert data["mode"] == "replace"
         assert data["success"] is True
 
-    def test_import_nonexistent_archive(self, tmp_path, monkeypatch):
+    def test_import_nonexistent_archive(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         """Import fails cleanly when archive file does not exist."""
         monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
         with connect(tmp_path):

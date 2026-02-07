@@ -15,6 +15,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import NoReturn
 
 import typer
 from rich.console import Console
@@ -151,7 +152,7 @@ PANEL_NOTIFICATIONS = "Notifications"
 console = Console()
 
 
-def error(message: str, exit_code: int = 1) -> None:
+def error(message: str, exit_code: int = 1) -> NoReturn:
     """Print error message and exit."""
     console.print(f"[red]✗ Error:[/red] {message}")
     sys.exit(exit_code)
@@ -209,7 +210,7 @@ def format_duration(seconds: float) -> str:
     return f"{hours}h {minutes}m"
 
 
-def ensure_db_exists(json_output: bool = False) -> Path:
+def ensure_db_exists(json_output: bool = False) -> Path:  # noqa: FBT001, FBT002
     """
     Ensure the state database exists, exiting with a helpful error if not.
 
@@ -329,8 +330,8 @@ def get_default_profile() -> str | None:
     if not setup_conf.exists():
         return None
 
-    for line in setup_conf.read_text().splitlines():
-        line = line.strip()
+    for raw_line in setup_conf.read_text().splitlines():
+        line = raw_line.strip()
         if line.startswith("NVD_DEFAULT_PROFILE="):
             value = line.split("=", 1)[1].strip()
             if value:

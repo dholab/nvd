@@ -1,4 +1,3 @@
-# ruff: noqa: B008
 """
 Samplesheet commands for the NVD CLI.
 
@@ -15,6 +14,7 @@ from __future__ import annotations
 
 import csv
 import re
+import sqlite3
 import sys
 from collections import Counter
 from dataclasses import dataclass, field
@@ -25,12 +25,13 @@ from rich.table import Table
 
 from py_nvd.cli.prompts import (
     PROMPT_TIMEOUT_SECONDS,
-    PromptTimeout,
+    PromptTimeoutError,
     confirm_with_timeout,
     is_interactive,
     prompt_with_timeout,
 )
 from py_nvd.cli.utils import console, error, info, success, warning
+from py_nvd.db import SchemaMismatchError
 from py_nvd.state import get_sample_history, was_sample_ever_uploaded
 
 REQUIRED_COLUMNS = ("sample_id", "srr", "platform", "fastq1", "fastq2")
@@ -114,7 +115,7 @@ def validate_samplesheet(path: Path) -> SamplesheetValidationResult:
             missing_cols = required - fieldnames
             if missing_cols:
                 result.errors.append(
-                    f"Missing required columns: {', '.join(sorted(missing_cols))}"
+                    f"Missing required columns: {', '.join(sorted(missing_cols))}",
                 )
                 return result
 
@@ -138,7 +139,7 @@ def validate_samplesheet(path: Path) -> SamplesheetValidationResult:
                 platform = row.get("platform", "").strip().lower()
                 if platform and platform not in VALID_PLATFORMS:
                     result.errors.append(
-                        f"Line {i} ({sample_id}): invalid platform '{platform}'"
+                        f"Line {i} ({sample_id}): invalid platform '{platform}'",
                     )
 
                 # Check that either SRR or FASTQ files are provided
@@ -147,7 +148,7 @@ def validate_samplesheet(path: Path) -> SamplesheetValidationResult:
 
                 if not srr and not fastq1:
                     result.errors.append(
-                        f"Line {i} ({sample_id}): must provide either 'srr' or 'fastq1'"
+                        f"Line {i} ({sample_id}): must provide either 'srr' or 'fastq1'",
                     )
 
                 samples.append(sample_id)
@@ -158,7 +159,7 @@ def validate_samplesheet(path: Path) -> SamplesheetValidationResult:
             duplicates = [s for s, count in Counter(samples).items() if count > 1]
             if duplicates:
                 result.warnings.append(
-                    f"Duplicate sample_id found: {', '.join(duplicates)}"
+                    f"Duplicate sample_id found: {', '.join(duplicates)}",
                 )
 
             # Valid if no errors
@@ -209,7 +210,7 @@ def _get_fastq_files(directory: Path) -> list[Path]:
 
     for ext in FASTQ_EXTENSIONS:
         # Handle double extensions like .fastq.gz
-        if ext.startswith(".fastq") or ext.startswith(".fq"):
+        if ext.startswith((".fastq", ".fq")):
             fastq_files.extend(directory.glob(f"*{ext}"))
 
     # Deduplicate (glob patterns may overlap) and sort
@@ -243,11 +244,11 @@ def _extract_stem(filename: str) -> str | None:
     # Fallback: strip known extensions for single-end files
     name = filename
     for ext in sorted(FASTQ_EXTENSIONS, key=len, reverse=True):
-        if name.lower().endswith(ext):
+        if name.lower().endswith(ext):  # ty:ignore[invalid-argument-type]
             name = name[: -len(ext)]
             break
 
-    return name if name else None
+    return name or None
 
 
 def _get_read_number(filename: str) -> int | None:
@@ -307,7 +308,7 @@ def scan_fastq_directory(directory: Path) -> tuple[list[SampleEntry], list[str]]
                 SampleEntry(
                     sample_id=stem,
                     fastq1=str(files[0]),
-                )
+                ),
             )
         elif len(files) == PAIRED_END_FILE_COUNT:
             # Paired-end: determine which is R1 and R2
@@ -316,7 +317,7 @@ def scan_fastq_directory(directory: Path) -> tuple[list[SampleEntry], list[str]]
                 read_num = _get_read_number(f.name)
                 if read_num == 1:
                     r1 = f
-                elif read_num == 2:
+                elif read_num == 2:  # noqa: PLR2004
                     r2 = f
 
             if r1 and r2:
@@ -325,12 +326,12 @@ def scan_fastq_directory(directory: Path) -> tuple[list[SampleEntry], list[str]]
                         sample_id=stem,
                         fastq1=str(r1),
                         fastq2=str(r2),
-                    )
+                    ),
                 )
             else:
                 # Couldn't determine pairing, use alphabetical order
                 warnings_list.append(
-                    f"Could not determine R1/R2 for {stem}, using alphabetical order"
+                    f"Could not determine R1/R2 for {stem}, using alphabetical order",
                 )
                 sorted_files = sorted(files, key=lambda p: p.name)
                 samples.append(
@@ -338,12 +339,12 @@ def scan_fastq_directory(directory: Path) -> tuple[list[SampleEntry], list[str]]
                         sample_id=stem,
                         fastq1=str(sorted_files[0]),
                         fastq2=str(sorted_files[1]),
-                    )
+                    ),
                 )
         else:
             # More than 2 files - ambiguous
             warnings_list.append(
-                f"Sample {stem} has {len(files)} FASTQ files (expected 1-2), skipping"
+                f"Sample {stem} has {len(files)} FASTQ files (expected 1-2), skipping",
             )
 
     return samples, warnings_list
@@ -368,7 +369,7 @@ def parse_sra_accessions(path: Path) -> tuple[list[SampleEntry], list[str]]:
     try:
         with path.open() as f:
             for line_num, line in enumerate(f, start=1):
-                line = line.strip()
+                line = line.strip()  # noqa: PLW2901
 
                 # Skip empty lines and comments
                 if not line or line.startswith("#"):
@@ -377,7 +378,7 @@ def parse_sra_accessions(path: Path) -> tuple[list[SampleEntry], list[str]]:
                 # Basic SRA accession validation (SRR, ERR, DRR followed by digits)
                 if not re.match(r"^[SED]RR\d+$", line, re.IGNORECASE):
                     warnings_list.append(
-                        f"Line {line_num}: '{line}' doesn't look like an SRA accession"
+                        f"Line {line_num}: '{line}' doesn't look like an SRA accession",
                     )
 
                 # Use accession as sample_id
@@ -385,7 +386,7 @@ def parse_sra_accessions(path: Path) -> tuple[list[SampleEntry], list[str]]:
                     SampleEntry(
                         sample_id=line,
                         srr=line,
-                    )
+                    ),
                 )
 
     except OSError as e:
@@ -415,7 +416,7 @@ def write_samplesheet(samples: list[SampleEntry], output: Path, platform: str) -
                     platform,
                     sample.fastq1,
                     sample.fastq2,
-                ]
+                ],
             )
 
 
@@ -505,10 +506,14 @@ def check_samples_against_state(
                     sample_id=sid,
                     run_ids=run_ids,
                     was_uploaded=was_uploaded,
-                )
+                ),
             )
 
     return previously_processed
+
+
+_MAX_DISPLAYED_SAMPLES = 10
+_MAX_DISPLAYED_RUNS = 3
 
 
 def format_state_warnings(previously_processed: list[PreviousProcessingInfo]) -> None:
@@ -518,25 +523,27 @@ def format_state_warnings(previously_processed: list[PreviousProcessingInfo]) ->
 
     console.print()
     warning(
-        f"[bold]{len(previously_processed)} sample(s) were previously processed:[/bold]"
+        f"[bold]{len(previously_processed)} sample(s) were previously processed:[/bold]",
     )
 
     # Show details for each previously processed sample
-    for prev in previously_processed[:10]:  # Show first 10
-        run_str = ", ".join(prev.run_ids[:3])  # Show first 3 runs
-        if len(prev.run_ids) > 3:
-            run_str += f" (+{len(prev.run_ids) - 3} more)"
+    for prev in previously_processed[:_MAX_DISPLAYED_SAMPLES]:
+        run_str = ", ".join(prev.run_ids[:_MAX_DISPLAYED_RUNS])
+        if len(prev.run_ids) > _MAX_DISPLAYED_RUNS:
+            run_str += f" (+{len(prev.run_ids) - _MAX_DISPLAYED_RUNS} more)"
 
         upload_marker = " [dim](uploaded)[/dim]" if prev.was_uploaded else ""
         console.print(f"  • [cyan]{prev.sample_id}[/cyan] → {run_str}{upload_marker}")
 
-    if len(previously_processed) > 10:
-        console.print(f"  [dim]... and {len(previously_processed) - 10} more[/dim]")
+    if len(previously_processed) > _MAX_DISPLAYED_SAMPLES:
+        console.print(
+            f"  [dim]... and {len(previously_processed) - _MAX_DISPLAYED_SAMPLES} more[/dim]",
+        )
 
     console.print()
     info(
         "These samples may be skipped or cause duplicate detection errors. "
-        "Use --force to proceed anyway."
+        "Use --force to proceed anyway.",
     )
 
 
@@ -549,7 +556,7 @@ samplesheet_app = typer.Typer(
 
 @samplesheet_app.command("generate")
 @samplesheet_app.command("gen", hidden=True)  # Alias
-def generate(  # noqa: PLR0912, PLR0913, C901
+def generate(
     from_dir: Path | None = typer.Option(
         None,
         "--from-dir",
@@ -645,11 +652,11 @@ def generate(  # noqa: PLR0912, PLR0913, C901
                 timeout_seconds=PROMPT_TIMEOUT_SECONDS,
             )
             console.print()
-        except PromptTimeout:
+        except PromptTimeoutError:
             console.print()
             error(
                 f"Prompt timed out after {PROMPT_TIMEOUT_SECONDS // 60} minutes. "
-                "Use --platform to specify non-interactively."
+                "Use --platform to specify non-interactively.",
             )
         except KeyboardInterrupt:
             console.print("\n[yellow]Cancelled[/yellow]")
@@ -681,9 +688,10 @@ def generate(  # noqa: PLR0912, PLR0913, C901
         previously_processed = check_samples_against_state(sample_ids)
         if previously_processed:
             format_state_warnings(previously_processed)
-    except Exception:
-        # State database may not exist yet - that's fine, just skip the check
-        pass
+    except (SchemaMismatchError, sqlite3.OperationalError, PermissionError):
+        warning(
+            "Could not check for previously processed samples (state database unavailable)",
+        )
 
     # Display preview
     console.print()
@@ -723,7 +731,7 @@ def generate(  # noqa: PLR0912, PLR0913, C901
             ):
                 info("Aborted")
                 raise typer.Abort from None
-        except PromptTimeout:
+        except PromptTimeoutError:
             console.print()
             error("Confirmation timed out. Use --force to overwrite.")
         except KeyboardInterrupt:
@@ -742,7 +750,7 @@ def generate(  # noqa: PLR0912, PLR0913, C901
             ):
                 info("Aborted")
                 raise typer.Abort from None
-        except PromptTimeout:
+        except PromptTimeoutError:
             console.print()
             error("Confirmation timed out. Use --force to skip confirmation.")
         except KeyboardInterrupt:

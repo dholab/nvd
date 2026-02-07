@@ -25,9 +25,9 @@ from __future__ import annotations
 
 import sys
 from dataclasses import asdict
-from datetime import datetime, timedelta
-from pathlib import Path
-from typing import Annotated
+from datetime import UTC, datetime, timedelta
+from pathlib import Path  # noqa: TC003
+from typing import Annotated, Literal, cast
 
 import polars as pl
 import typer
@@ -61,7 +61,9 @@ from py_nvd.hits import (
 )
 from py_nvd.models import (
     CategorySummary,
+    CompactionResult,
     ContigQuality,
+    Hit,
     HitStats,
     NovelTaxon,
     RareTaxon,
@@ -75,6 +77,16 @@ from py_nvd.models import (
     TimelineBucket,
 )
 from py_nvd.state import get_run, get_run_ids_for_sample_sets
+
+_DATE_PREFIX_LENGTH = 10
+_MAX_PREVIEW_TAXA = 5
+_MAX_PREVIEW_CATEGORIES = 3
+_MAX_NEGATIVE_SAMPLES_DISPLAY = 10
+_QUERY_DISPLAY_TRUNCATION = 50
+_MONTH_FORMAT_LENGTH = 7
+_MONTHS_IN_YEAR = 12
+_DIFF_HIGHLIGHT_THRESHOLD = 10
+_MONTH_RANGE_ERROR = "Month must be 1-12"
 
 
 def resolve_run_identifier(identifier: str) -> str:
@@ -198,14 +210,14 @@ def hits_stats(
         _print_stats_rich(stats, top_recurring)
 
 
-def _stats_to_dict(stats, top_recurring: list) -> dict:
+def _stats_to_dict(stats: HitStats, top_recurring: list) -> dict:
     """Convert stats and recurring hits to JSON-serializable dict."""
     result = asdict(stats)
     result["top_recurring"] = [asdict(hit) for hit in top_recurring]
     return result
 
 
-def _print_stats_rich(stats: HitStats, top_recurring: list[RecurringHit]) -> None:
+def _print_stats_rich(_stats: HitStats, _top_recurring: list[RecurringHit]) -> None:
     """Print stats with Rich formatting."""
     console.print("\n[bold]Hit Statistics[/bold]")
     console.print("─" * 40)
@@ -310,7 +322,9 @@ def _print_report_rich(report: RunReport) -> None:
     if report.run_date:
         # Extract just the date part
         date_str = (
-            report.run_date[:10] if len(report.run_date) >= 10 else report.run_date
+            report.run_date[:_DATE_PREFIX_LENGTH]
+            if len(report.run_date) >= _DATE_PREFIX_LENGTH
+            else report.run_date
         )
         console.print(f"[dim]Date: {date_str}[/dim]")
     console.print()
@@ -322,7 +336,7 @@ def _print_report_rich(report: RunReport) -> None:
     if report.samples_analyzed > 0:
         pct = report.samples_with_viral_hits / report.samples_analyzed * 100
         console.print(
-            f"  Samples with hits:     {report.samples_with_viral_hits:,} ({pct:.0f}%)"
+            f"  Samples with hits:     {report.samples_with_viral_hits:,} ({pct:.0f}%)",
         )
     else:
         console.print(f"  Samples with hits:     {report.samples_with_viral_hits:,}")
@@ -331,7 +345,7 @@ def _print_report_rich(report: RunReport) -> None:
     console.print(f"  Taxa identified:       {report.viral_taxa_found:,}")
 
     # Top findings
-    console.print(f"\n[bold]Top Findings[/bold] (by sample prevalence)")
+    console.print("\n[bold]Top Findings[/bold] (by sample prevalence)")
     console.print("─" * 40)
     if report.top_findings:
         table = Table(show_header=True, header_style="bold", box=None, padding=(0, 2))
@@ -362,7 +376,7 @@ def _print_report_rich(report: RunReport) -> None:
     if report.unique_hits > 0:
         pct_500 = report.contigs_over_500bp / report.unique_hits * 100
         console.print(
-            f"  Contigs ≥500 bp:       {report.contigs_over_500bp:,} ({pct_500:.1f}%)"
+            f"  Contigs ≥500 bp:       {report.contigs_over_500bp:,} ({pct_500:.1f}%)",
         )
     else:
         console.print(f"  Contigs ≥500 bp:       {report.contigs_over_500bp:,}")
@@ -373,12 +387,14 @@ def _print_report_rich(report: RunReport) -> None:
         console.print("\n[bold]Samples with No Viral Hits[/bold]")
         console.print("─" * 40)
         # Display as comma-separated list, wrapping if needed
-        if len(negative) <= 10:
+        if len(negative) <= _MAX_NEGATIVE_SAMPLES_DISPLAY:
             console.print(f"  {', '.join(negative)}")
         else:
-            # Show first 10 with count
-            console.print(f"  {', '.join(negative[:10])}")
-            console.print(f"  [dim]...and {len(negative) - 10} more[/dim]")
+            # Show first N with count
+            console.print(f"  {', '.join(negative[:_MAX_NEGATIVE_SAMPLES_DISPLAY])}")
+            console.print(
+                f"  [dim]...and {len(negative) - _MAX_NEGATIVE_SAMPLES_DISPLAY} more[/dim]",
+            )
 
     console.print()
 
@@ -555,9 +571,11 @@ def _print_samples_rich(summaries: list[SampleSummary], run: str) -> None:
 
     for s in summaries:
         # Truncate taxa list if too long
-        taxa_str = ", ".join(s.taxa_detected[:5])
-        if len(s.taxa_detected) > 5:
-            taxa_str += f" [dim](+{len(s.taxa_detected) - 5} more)[/dim]"
+        taxa_str = ", ".join(s.taxa_detected[:_MAX_PREVIEW_TAXA])
+        if len(s.taxa_detected) > _MAX_PREVIEW_TAXA:
+            taxa_str += (
+                f" [dim](+{len(s.taxa_detected) - _MAX_PREVIEW_TAXA} more)[/dim]"
+            )
         elif not s.taxa_detected:
             taxa_str = "[dim]-[/dim]"
 
@@ -646,9 +664,9 @@ def _print_categories_rich(categories: list[CategorySummary], run: str) -> None:
 
     for c in categories:
         # Truncate taxa list if too long
-        taxa_str = ", ".join(c.taxa[:3])
-        if len(c.taxa) > 3:
-            taxa_str += f" [dim](+{len(c.taxa) - 3} more)[/dim]"
+        taxa_str = ", ".join(c.taxa[:_MAX_PREVIEW_CATEGORIES])
+        if len(c.taxa) > _MAX_PREVIEW_CATEGORIES:
+            taxa_str += f" [dim](+{len(c.taxa) - _MAX_PREVIEW_CATEGORIES} more)[/dim]"
 
         table.add_row(
             c.category,
@@ -747,10 +765,10 @@ def _print_quality_rich(quality: ContigQuality, run: str) -> None:
         pct_500 = quality.contigs_500bp_plus / quality.total_contigs * 100
         pct_1k = quality.contigs_1kb_plus / quality.total_contigs * 100
         console.print(
-            f"  Contigs ≥500 bp:       {quality.contigs_500bp_plus:,} ({pct_500:.1f}%)"
+            f"  Contigs ≥500 bp:       {quality.contigs_500bp_plus:,} ({pct_500:.1f}%)",
         )
         console.print(
-            f"  Contigs ≥1 kb:         {quality.contigs_1kb_plus:,} ({pct_1k:.1f}%)"
+            f"  Contigs ≥1 kb:         {quality.contigs_1kb_plus:,} ({pct_1k:.1f}%)",
         )
     else:
         console.print(f"  Contigs ≥500 bp:       {quality.contigs_500bp_plus:,}")
@@ -825,7 +843,7 @@ def _novel_taxon_to_dict(t: NovelTaxon) -> dict:
 def _print_novel_taxa_rich(taxa: list[NovelTaxon], run: str) -> None:
     """Print novel taxa with Rich formatting."""
     console.print(
-        f"\n[bold]Novel Taxa (First-Time Sightings):[/bold] [cyan]{run}[/cyan]"
+        f"\n[bold]Novel Taxa (First-Time Sightings):[/bold] [cyan]{run}[/cyan]",
     )
     console.print("─" * 50)
 
@@ -934,14 +952,14 @@ def _print_movers_rich(movers: list[TaxonChange], run: str, limit: int) -> None:
     if not movers:
         console.print("  [dim]No movers to show[/dim]")
         console.print(
-            "  [dim](This may be the first run, or no taxa in this run)[/dim]\n"
+            "  [dim](This may be the first run, or no taxa in this run)[/dim]\n",
         )
         return
 
     # Show baseline info
     if movers:
         console.print(
-            f"  [dim]Baseline: {movers[0].baseline_run_count} prior run(s)[/dim]\n"
+            f"  [dim]Baseline: {movers[0].baseline_run_count} prior run(s)[/dim]\n",
         )
 
     table = Table(show_header=True, header_style="bold", box=None, padding=(0, 2))
@@ -1025,7 +1043,7 @@ def hits_rare(
         error(f"Database not found: {db_path}\nRun 'nvd state init' to create it.")
         raise typer.Exit(1)
 
-    if threshold <= 0 or threshold > 100:
+    if threshold <= 0 or threshold > 100:  # noqa: PLR2004
         error("Threshold must be between 0 and 100")
         raise typer.Exit(1)
 
@@ -1053,7 +1071,7 @@ def _rare_taxon_to_dict(t: RareTaxon) -> dict:
 def _print_rare_taxa_rich(taxa: list[RareTaxon], run: str, threshold: float) -> None:
     """Print rare taxa with Rich formatting."""
     console.print(
-        f"\n[bold]Rare Taxa (<{threshold:.0f}% of runs):[/bold] [cyan]{run}[/cyan]"
+        f"\n[bold]Rare Taxa (<{threshold:.0f}% of runs):[/bold] [cyan]{run}[/cyan]",
     )
     console.print("─" * 50)
 
@@ -1169,10 +1187,10 @@ def _print_taxon_history_rich(history: TaxonHistory) -> None:
 
     # Summary
     console.print(
-        f"  Runs with taxon:       {history.total_runs_seen} / {history.total_runs_in_system}"
+        f"  Runs with taxon:       {history.total_runs_seen} / {history.total_runs_in_system}",
     )
     console.print(
-        f"  Overall prevalence:    {history.overall_prevalence_pct:.1f}% of runs"
+        f"  Overall prevalence:    {history.overall_prevalence_pct:.1f}% of runs",
     )
     console.print(f"  First seen:            {history.first_seen_date[:10]}")
     console.print(f"  Last seen:             {history.last_seen_date[:10]}")
@@ -1188,7 +1206,11 @@ def _print_taxon_history_rich(history: TaxonHistory) -> None:
         table.add_column("Prevalence", justify="right")
 
         for r in history.run_history:
-            date_str = r.run_date[:10] if len(r.run_date) >= 10 else r.run_date
+            date_str = (
+                r.run_date[:_DATE_PREFIX_LENGTH]
+                if len(r.run_date) >= _DATE_PREFIX_LENGTH
+                else r.run_date
+            )
             table.add_row(
                 date_str,
                 r.sample_set_id,
@@ -1276,12 +1298,12 @@ def _run_comparison_to_dict(c: RunComparison) -> dict:
 def _print_run_comparison_rich(comparison: RunComparison) -> None:
     """Print run comparison with Rich formatting."""
     console.print(
-        f"\n[bold]Run Comparison:[/bold] [cyan]{comparison.sample_set_id}[/cyan]"
+        f"\n[bold]Run Comparison:[/bold] [cyan]{comparison.sample_set_id}[/cyan]",
     )
     if comparison.run_date:
         date_str = (
-            comparison.run_date[:10]
-            if len(comparison.run_date) >= 10
+            comparison.run_date[:_DATE_PREFIX_LENGTH]
+            if len(comparison.run_date) >= _DATE_PREFIX_LENGTH
             else comparison.run_date
         )
         console.print(f"[dim]Date: {date_str}[/dim]")
@@ -1294,13 +1316,13 @@ def _print_run_comparison_rich(comparison: RunComparison) -> None:
         console.print(f"  Unique hits:           {comparison.unique_hits:,}")
         console.print(f"  Taxa found:            {comparison.taxa_found:,}")
         console.print(
-            f"  Median contig length:  {comparison.median_contig_length:,} bp"
+            f"  Median contig length:  {comparison.median_contig_length:,} bp",
         )
         console.print()
         return
 
     console.print(
-        f"  [dim]Baseline: {comparison.historical_run_count} prior run(s)[/dim]\n"
+        f"  [dim]Baseline: {comparison.historical_run_count} prior run(s)[/dim]\n",
     )
 
     # Build comparison table
@@ -1315,12 +1337,11 @@ def _print_run_comparison_rich(comparison: RunComparison) -> None:
         if avg == 0:
             return "-"
         diff_pct = ((current - avg) / avg) * 100
-        if diff_pct > 10:
+        if diff_pct > _DIFF_HIGHLIGHT_THRESHOLD:
             return f"[green]+{diff_pct:.0f}%[/green]"
-        elif diff_pct < -10:
+        if diff_pct < -_DIFF_HIGHLIGHT_THRESHOLD:
             return f"[red]{diff_pct:.0f}%[/red]"
-        else:
-            return f"{diff_pct:+.0f}%"
+        return f"{diff_pct:+.0f}%"
 
     table.add_row(
         "Samples",
@@ -1365,7 +1386,7 @@ def _print_stats_rich(stats: HitStats, top_recurring: list[RecurringHit]) -> Non
     # Date range
     if stats.date_first and stats.date_last:
         console.print(
-            f"  Date range:            {stats.date_first} → {stats.date_last}"
+            f"  Date range:            {stats.date_first} → {stats.date_last}",
         )
 
     # Length distribution
@@ -1374,23 +1395,25 @@ def _print_stats_rich(stats: HitStats, top_recurring: list[RecurringHit]) -> Non
         console.print(
             f"  Min: {stats.length_min:,} bp  │  "
             f"Median: {stats.length_median:,.0f} bp  │  "
-            f"Max: {stats.length_max:,} bp"
+            f"Max: {stats.length_max:,} bp",
         )
 
     # GC distribution
     if stats.gc_min is not None:
+        assert stats.gc_median is not None  # narrowing: set together with gc_min
+        assert stats.gc_max is not None  # narrowing: set together with gc_min
         console.print("\n[bold]GC content:[/bold]")
         console.print(
             f"  Min: {stats.gc_min * 100:.1f}%  │  "
             f"Median: {stats.gc_median * 100:.1f}%  │  "
-            f"Max: {stats.gc_max * 100:.1f}%"
+            f"Max: {stats.gc_max * 100:.1f}%",
         )
 
     # Top recurring hits
     console.print(f"\n[bold]Top {len(top_recurring)} recurring hits:[/bold]")
     if not top_recurring:
         console.print(
-            "  [dim]No recurring hits found (all hits appear in only 1 sample)[/dim]"
+            "  [dim]No recurring hits found (all hits appear in only 1 sample)[/dim]",
         )
     else:
         table = Table(show_header=True, header_style="bold", box=None, padding=(0, 2))
@@ -1473,7 +1496,7 @@ def hits_lookup(
             console.print_json(data={"found": False, "query": query[:50]})
         else:
             info(
-                f"Hit not found for query: {query[:50]}{'...' if len(query) > 50 else ''}"
+                f"Hit not found for query: {query[:_QUERY_DISPLAY_TRUNCATION]}{'...' if len(query) > _QUERY_DISPLAY_TRUNCATION else ''}",
             )
         return
 
@@ -1487,7 +1510,7 @@ def hits_lookup(
         _print_lookup_rich(hit, observations)
 
 
-def _lookup_to_dict(hit, observations: list) -> dict:
+def _lookup_to_dict(hit: Hit, observations: list) -> dict:
     """Convert lookup result to JSON-serializable dict."""
     result = {
         "found": True,
@@ -1499,19 +1522,22 @@ def _lookup_to_dict(hit, observations: list) -> dict:
     return result
 
 
-def _print_lookup_rich(hit, observations: list) -> None:
+def _print_lookup_rich(hit: Hit, observations: list) -> None:
     """Print lookup result with Rich formatting."""
     console.print(f"\n[bold green]Hit found:[/bold green] [cyan]{hit.hit_key}[/cyan]")
     console.print()
     console.print(
         f"  Length: {hit.sequence_length:,} bp  │  "
         f"GC: {hit.gc_content * 100:.1f}%  │  "
-        f"First seen: {hit.first_seen_date}"
+        f"First seen: {hit.first_seen_date}",
     )
 
     # Classification
     classification = _format_classification(
-        hit.top_taxid_name, hit.top_taxid_rank, hit.top_taxid, include_taxid=True
+        hit.top_taxid_name,
+        hit.top_taxid_rank,
+        hit.top_taxid,
+        include_taxid=True,
     )
     if hit.top_taxid_name:
         console.print(f"  Classification: {classification}")
@@ -1611,7 +1637,7 @@ def hits_trace(
         _print_trace_rich(hit, observations, sequence)
 
 
-def _trace_to_dict(hit, observations: list, sequence: str) -> dict:
+def _trace_to_dict(hit: Hit, observations: list, sequence: str) -> dict:
     """Convert trace result to JSON-serializable dict."""
     result = {
         "found": True,
@@ -1623,7 +1649,7 @@ def _trace_to_dict(hit, observations: list, sequence: str) -> dict:
     return result
 
 
-def _print_trace_rich(hit, observations: list, sequence: str) -> None:
+def _print_trace_rich(hit: Hit, observations: list, sequence: str) -> None:
     """Print trace result with Rich formatting."""
     # Reuse lookup display for metadata + observations
     _print_lookup_rich(hit, observations)
@@ -1679,11 +1705,12 @@ def hits_timeline(
     if granularity not in valid_granularities:
         error(
             f"Invalid granularity: {granularity!r}. "
-            f"Must be one of: {', '.join(valid_granularities)}"
+            f"Must be one of: {', '.join(valid_granularities)}",
         )
         raise typer.Exit(1)
 
-    buckets = get_discovery_timeline(granularity=granularity)
+    _granularity = cast("Literal['day', 'week', 'month', 'year']", granularity)
+    buckets = get_discovery_timeline(granularity=_granularity)
 
     if json_output:
         console.print_json(data=[asdict(b) for b in buckets])
@@ -1699,7 +1726,9 @@ def _fill_timeline_gaps(buckets: list, granularity: str) -> list[TimelineBucket]
 
     existing = {b.period: b.new_hits for b in buckets}
     all_periods = _generate_period_range(
-        buckets[0].period, buckets[-1].period, granularity
+        buckets[0].period,
+        buckets[-1].period,
+        granularity,
     )
 
     return [TimelineBucket(period=p, new_hits=existing.get(p, 0)) for p in all_periods]
@@ -1711,25 +1740,25 @@ def _generate_period_range(start: str, end: str, granularity: str) -> list[str]:
         start_year, end_year = int(start), int(end)
         return [str(y) for y in range(start_year, end_year + 1)]
 
-    elif granularity == "month":
+    if granularity == "month":
         # Parse "YYYY-MM"
-        start_dt = datetime.strptime(start, "%Y-%m")
-        end_dt = datetime.strptime(end, "%Y-%m")
+        start_dt = datetime.strptime(start, "%Y-%m").replace(tzinfo=UTC)
+        end_dt = datetime.strptime(end, "%Y-%m").replace(tzinfo=UTC)
         periods = []
         current = start_dt
         while current <= end_dt:
             periods.append(current.strftime("%Y-%m"))
             # Advance to next month
-            if current.month == 12:
+            if current.month == _MONTHS_IN_YEAR:
                 current = current.replace(year=current.year + 1, month=1)
             else:
                 current = current.replace(month=current.month + 1)
         return periods
 
-    elif granularity == "week":
+    if granularity == "week":
         # Parse "YYYY-Www" (ISO week)
-        start_dt = datetime.strptime(start + "-1", "%Y-W%W-%w")
-        end_dt = datetime.strptime(end + "-1", "%Y-W%W-%w")
+        start_dt = datetime.strptime(start + "-1", "%Y-W%W-%w").replace(tzinfo=UTC)
+        end_dt = datetime.strptime(end + "-1", "%Y-W%W-%w").replace(tzinfo=UTC)
         periods = []
         current = start_dt
         while current <= end_dt:
@@ -1737,10 +1766,10 @@ def _generate_period_range(start: str, end: str, granularity: str) -> list[str]:
             current += timedelta(weeks=1)
         return periods
 
-    elif granularity == "day":
+    if granularity == "day":
         # Parse "YYYY-MM-DD"
-        start_dt = datetime.strptime(start, "%Y-%m-%d")
-        end_dt = datetime.strptime(end, "%Y-%m-%d")
+        start_dt = datetime.strptime(start, "%Y-%m-%d").replace(tzinfo=UTC)
+        end_dt = datetime.strptime(end, "%Y-%m-%d").replace(tzinfo=UTC)
         periods = []
         current = start_dt
         while current <= end_dt:
@@ -1856,7 +1885,9 @@ def hits_recur(
 
 
 def _print_recur_rich(
-    hits: list[RecurringHit], min_samples: int, min_runs: int | None
+    hits: list[RecurringHit],
+    min_samples: int,
+    min_runs: int | None,
 ) -> None:
     """Print recurring hits with Rich formatting."""
     # Build filter description
@@ -1900,7 +1931,7 @@ def _print_recur_rich(
 
 @hits_app.command("export")
 def hits_export(
-    format: Annotated[
+    format: Annotated[  # noqa: A002
         str,
         typer.Option(
             "--format",
@@ -1969,7 +2000,7 @@ def hits_export(
 
 
 def _export_tabular(
-    format: str,
+    format: str,  # noqa: A002
     output: Path | None,
     include_sequence: bool,
 ) -> None:
@@ -2057,8 +2088,7 @@ def _export_fasta(output: Path | None) -> None:
         sequence = get_hit_sequence(hit)
         lines.append(f">{hit.hit_key}")
         # Wrap sequence at 80 characters
-        for i in range(0, len(sequence), 80):
-            lines.append(sequence[i : i + 80])
+        lines.extend(sequence[i : i + 80] for i in range(0, len(sequence), 80))
 
     content = "\n".join(lines) + "\n"
 
@@ -2134,23 +2164,23 @@ def hits_compact(
 
     # Validate month format
     if month is not None:
-        if len(month) != 7 or month[4] != "-":
+        if len(month) != _MONTH_FORMAT_LENGTH or month[4] != "-":
             error(f"Invalid month format: {month!r}. Expected YYYY-MM (e.g., 2024-01)")
             raise typer.Exit(1)
         try:
-            year, mon = int(month[:4]), int(month[5:])
-            if not (1 <= mon <= 12):
-                raise ValueError("Month must be 1-12")
+            _year, mon = int(month[:4]), int(month[5:])
+            if not (1 <= mon <= _MONTHS_IN_YEAR):
+                raise ValueError(_MONTH_RANGE_ERROR)  # noqa: TRY301
         except ValueError as e:
             error(f"Invalid month format: {month!r}. {e}")
-            raise typer.Exit(1)
+            raise typer.Exit(1) from None
 
     # Run compaction
     try:
         result = compact_hits(month=month, dry_run=dry_run, keep_source=keep_source)
     except RuntimeError as e:
         error(str(e))
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
 
     # Output
     if json_output:
@@ -2159,7 +2189,7 @@ def hits_compact(
         _print_compact_rich(result, dry_run, keep_source)
 
 
-def _compact_to_dict(result) -> dict:
+def _compact_to_dict(result: CompactionResult) -> dict:
     """Convert compaction result to JSON-serializable dict."""
     return {
         "dry_run": result.dry_run,
@@ -2179,7 +2209,11 @@ def _compact_to_dict(result) -> dict:
     }
 
 
-def _print_compact_rich(result, dry_run: bool, keep_source: bool) -> None:
+def _print_compact_rich(
+    result: CompactionResult,
+    dry_run: bool,
+    keep_source: bool,
+) -> None:
     """Print compaction result with Rich formatting."""
     if not result.months:
         info("No uncompacted data to compact")

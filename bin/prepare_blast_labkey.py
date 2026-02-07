@@ -7,14 +7,14 @@ import argparse
 import csv
 import logging
 import sys
-from pathlib import Path
-from typing import Dict, List, Optional, Any, Union
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass
 from enum import Enum
+from pathlib import Path
+from typing import Any
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
 
@@ -56,12 +56,12 @@ class BlastRecord:
     mapped_reads: int
     total_reads: int
     stat_db_version: str
-    adjusted_taxid: Optional[int] = None
-    adjustment_method: Optional[str] = None
-    adjusted_taxid_name: Optional[str] = None
-    adjusted_taxid_rank: Optional[str] = None
+    adjusted_taxid: int | None = None
+    adjustment_method: str | None = None
+    adjusted_taxid_name: str | None = None
+    adjusted_taxid_rank: str | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for CSV writing."""
         data = asdict(self)
         # Convert None values to empty strings for CSV
@@ -76,8 +76,8 @@ class DataValidator:
 
     @staticmethod
     def validate_int(
-        value: Any, field_name: str, allow_empty: bool = False
-    ) -> Optional[int]:
+        value: Any, field_name: str, allow_empty: bool = False,
+    ) -> int | None:
         """Validate and convert to integer."""
         if value is None or value == "":
             if allow_empty:
@@ -91,8 +91,8 @@ class DataValidator:
 
     @staticmethod
     def validate_float(
-        value: Any, field_name: str, allow_empty: bool = False
-    ) -> Optional[float]:
+        value: Any, field_name: str, allow_empty: bool = False,
+    ) -> float | None:
         """Validate and convert to float."""
         if value is None or value == "":
             if allow_empty:
@@ -113,11 +113,11 @@ class DataValidator:
             return task.value
         except ValueError:
             raise ValueError(
-                f"blast_task must be 'blastn' or 'megablast', got '{value}'"
+                f"blast_task must be 'blastn' or 'megablast', got '{value}'",
             )
 
     @staticmethod
-    def validate_adjustment_method(value: str) -> Optional[str]:
+    def validate_adjustment_method(value: str) -> str | None:
         """Validate adjustment method."""
         if value is None or value == "":
             return None
@@ -128,7 +128,7 @@ class DataValidator:
             return method.value
         except ValueError:
             raise ValueError(
-                f"adjustment_method must be 'dominant' or 'lca', got '{value}'"
+                f"adjustment_method must be 'dominant' or 'lca', got '{value}'",
             )
 
     @staticmethod
@@ -145,7 +145,7 @@ class DataValidator:
         return value_str
 
 
-def read_contig_counts(filepath: Path) -> Dict[str, int]:
+def read_contig_counts(filepath: Path) -> dict[str, int]:
     """
     Read contig mapped read counts from TSV file.
 
@@ -158,7 +158,7 @@ def read_contig_counts(filepath: Path) -> Dict[str, int]:
     contig_counts = {}
 
     try:
-        with open(filepath, "r") as f:
+        with open(filepath) as f:
             for line_num, line in enumerate(f, 1):
                 line = line.strip()
                 if not line:
@@ -172,11 +172,11 @@ def read_contig_counts(filepath: Path) -> Dict[str, int]:
                         contig_counts[contig_id] = count
                     except ValueError:
                         logger.warning(
-                            f"Line {line_num}: Invalid count value '{parts[1]}' for contig '{contig_id}'"
+                            f"Line {line_num}: Invalid count value '{parts[1]}' for contig '{contig_id}'",
                         )
                 else:
                     logger.warning(
-                        f"Line {line_num}: Invalid format in contig counts file"
+                        f"Line {line_num}: Invalid format in contig counts file",
                     )
 
     except FileNotFoundError:
@@ -191,8 +191,8 @@ def read_contig_counts(filepath: Path) -> Dict[str, int]:
 
 
 def validate_and_convert_blast_row(
-    row: Dict[str, str],
-    contig_counts: Dict[str, int],
+    row: dict[str, str],
+    contig_counts: dict[str, int],
     experiment_id: int,
     run_id: str,
     blast_db_version: str,
@@ -200,7 +200,7 @@ def validate_and_convert_blast_row(
     total_reads: int,
     sample_id: str,
     validator: DataValidator,
-) -> Optional[BlastRecord]:
+) -> BlastRecord | None:
     """
     Validate and convert a BLAST result row.
 
@@ -230,7 +230,7 @@ def validate_and_convert_blast_row(
             blast_task=blast_task,
             sample_id=sample_id
             or validator.validate_string(
-                row.get("sample", ""), "sample_id", allow_empty=False
+                row.get("sample", ""), "sample_id", allow_empty=False,
             ),
             qseqid=validator.validate_string(qseqid, "qseqid", allow_empty=False),
             qlen=validator.validate_string(row.get("qlen", ""), "qlen"),
@@ -249,16 +249,16 @@ def validate_and_convert_blast_row(
             total_reads=total_reads,
             stat_db_version=stat_db_version,
             adjusted_taxid=validator.validate_int(
-                row.get("adjusted_taxid", ""), "adjusted_taxid", allow_empty=True
+                row.get("adjusted_taxid", ""), "adjusted_taxid", allow_empty=True,
             ),
             adjustment_method=validator.validate_adjustment_method(
-                row.get("adjustment_method", "")
+                row.get("adjustment_method", ""),
             ),
             adjusted_taxid_name=validator.validate_string(
-                row.get("adjusted_taxid_name", ""), "adjusted_taxid_name"
+                row.get("adjusted_taxid_name", ""), "adjusted_taxid_name",
             ),
             adjusted_taxid_rank=validator.validate_string(
-                row.get("adjusted_taxid_rank", ""), "adjusted_taxid_rank"
+                row.get("adjusted_taxid_rank", ""), "adjusted_taxid_rank",
             ),
         )
 
@@ -272,14 +272,14 @@ def validate_and_convert_blast_row(
 
 def process_blast_data(
     blast_csv: Path,
-    contig_counts: Dict[str, int],
+    contig_counts: dict[str, int],
     experiment_id: int,
     run_id: str,
     blast_db_version: str,
     stat_db_version: str,
     total_reads: int,
     meta: str,
-) -> List[BlastRecord]:
+) -> list[BlastRecord]:
     """
     Process BLAST CSV file and return validated records.
     """
@@ -291,7 +291,7 @@ def process_blast_data(
     error_count = 0
 
     try:
-        with open(blast_csv, "r") as f:
+        with open(blast_csv) as f:
             reader = csv.DictReader(f, delimiter="\t")
 
             for row_num, row in enumerate(reader, 1):
@@ -333,19 +333,19 @@ def process_blast_data(
     # Validate that all records have the same sample ID
     if len(sample_ids) > 1:
         logger.warning(
-            f"Multiple sample IDs found: {sample_ids}. Expected only one sample per upload."
+            f"Multiple sample IDs found: {sample_ids}. Expected only one sample per upload.",
         )
         # You might want to make this an error instead:
         # raise ValueError(f"Multiple sample IDs found: {sample_ids}. Expected only one sample per upload.")
 
     logger.info(
-        f"Processed {row_count} rows: {len(blast_records)} valid, {skipped_count} skipped, {error_count} errors"
+        f"Processed {row_count} rows: {len(blast_records)} valid, {skipped_count} skipped, {error_count} errors",
     )
 
     return blast_records
 
 
-def write_output(blast_records: List[BlastRecord], output_path: Path) -> None:
+def write_output(blast_records: list[BlastRecord], output_path: Path) -> None:
     """
     Write validated BLAST records to CSV file.
     """
@@ -371,7 +371,7 @@ def main():
     parser = argparse.ArgumentParser(description="Prepare BLAST data for LabKey upload")
 
     parser.add_argument(
-        "--blast-csv", type=Path, required=True, help="Path to BLAST results CSV file"
+        "--blast-csv", type=Path, required=True, help="Path to BLAST results CSV file",
     )
     parser.add_argument(
         "--contig-counts",
@@ -380,21 +380,21 @@ def main():
         help="Path to contig mapped read counts file",
     )
     parser.add_argument(
-        "--output", type=Path, required=True, help="Path to output CSV file"
+        "--output", type=Path, required=True, help="Path to output CSV file",
     )
     parser.add_argument("--meta", type=str, required=True, help="Sample metadata/ID")
     parser.add_argument(
-        "--experiment-id", type=int, required=True, help="Experiment ID"
+        "--experiment-id", type=int, required=True, help="Experiment ID",
     )
     parser.add_argument("--run-id", type=str, required=True, help="Snakemake run ID")
     parser.add_argument(
-        "--total-reads", type=int, required=True, help="Total number of reads"
+        "--total-reads", type=int, required=True, help="Total number of reads",
     )
     parser.add_argument(
-        "--blast-db-version", type=str, required=True, help="BLAST database version"
+        "--blast-db-version", type=str, required=True, help="BLAST database version",
     )
     parser.add_argument(
-        "--stat-db-version", type=str, required=True, help="Statistics database version"
+        "--stat-db-version", type=str, required=True, help="Statistics database version",
     )
 
     args = parser.parse_args()

@@ -4,14 +4,14 @@ Simple functional WebDAV client for LabKey
 Usage: python webdav_client.py
 """
 
-import urllib.request
-import urllib.parse
-import urllib.error
 import base64
-from functools import partial, wraps
-from typing import Optional, Callable, Dict, List
 import os
 import sys
+import urllib.error
+import urllib.parse
+import urllib.request
+from collections.abc import Callable
+from functools import partial, wraps
 
 
 # Pure functions for authentication
@@ -26,8 +26,8 @@ def create_request(
     url: str,
     method: str,
     auth_header: str,
-    data: Optional[bytes] = None,
-    headers: Optional[dict] = None,
+    data: bytes | None = None,
+    headers: dict | None = None,
 ) -> urllib.request.Request:
     """Create a urllib Request object with authentication"""
     req = urllib.request.Request(url, data=data, method=method)
@@ -61,12 +61,11 @@ def handle_exists_error(e: Exception, url: str, auth_header: str) -> bool:
     if isinstance(e, urllib.error.HTTPError):
         if e.code == 404:
             return False  # Directory doesn't exist
-        elif e.code == 403:
+        if e.code == 403:
             print(f"Access forbidden for {url} - assuming it exists")
             return True  # Might exist but no permission
-        else:
-            print(f"HTTP {e.code} error checking {url}")
-            return False
+        print(f"HTTP {e.code} error checking {url}")
+        return False
     print(f"URL error checking {url}: {e}")
     return False
 
@@ -77,18 +76,17 @@ def handle_create_error(e: Exception, url: str, auth_header: str) -> bool:
         if e.code == 405:
             print(f"Directory might already exist: {url}")
             return True
-        elif e.code == 409:
+        if e.code == 409:
             print(f"Parent directory doesn't exist for: {url}")
             return False
-        else:
-            print(f"Failed to create directory. HTTP {e.code}: {e.reason}")
-            return False
+        print(f"Failed to create directory. HTTP {e.code}: {e.reason}")
+        return False
     print(f"URL error creating directory at {url}: {e}")
     return False
 
 
 def handle_upload_error(
-    e: Exception, local_path: str, remote_url: str, auth_header: str
+    e: Exception, local_path: str, remote_url: str, auth_header: str,
 ) -> bool:
     """Handle errors when uploading file"""
     if isinstance(e, urllib.error.HTTPError):
@@ -179,8 +177,8 @@ def create_directory_recursive(url: str, auth_header: str) -> bool:
 
 # High-level operations
 def upload_files_to_directory(
-    directory_url: str, file_paths: List[str], auth_header: str, create_dir: bool = True
-) -> Dict[str, bool]:
+    directory_url: str, file_paths: list[str], auth_header: str, create_dir: bool = True,
+) -> dict[str, bool]:
     """Upload multiple files to a directory"""
     results = {}
     directory_url = ensure_trailing_slash(directory_url)
@@ -264,7 +262,7 @@ def main():
         print(f"   {'✓' if success else '✗'} {file_path}")
 
     # Example 4: Check if paths exist
-    print(f"\n4. Checking paths:")
+    print("\n4. Checking paths:")
     paths = [
         urllib.parse.urljoin(client["base_url"], "my_folder/"),
         urllib.parse.urljoin(client["base_url"], "my_folder/test.txt"),
@@ -332,7 +330,7 @@ Examples:
 
     # Authentication
     parser.add_argument(
-        "--server", default="https://Placeholder", help="WebDAV server URL"
+        "--server", default="https://Placeholder", help="WebDAV server URL",
     )
     parser.add_argument("--user", default="apikey", help="Username")
     parser.add_argument("--password", required=True, help="Password or API key")
@@ -378,7 +376,7 @@ Examples:
     elif args.command == "upload-dir":
         if len(args.args) < 2:
             print(
-                "Error: upload-dir requires at least 2 arguments: target_dir file1 [file2 ...]"
+                "Error: upload-dir requires at least 2 arguments: target_dir file1 [file2 ...]",
             )
             sys.exit(1)
         target_dir = args.args[0]
@@ -420,7 +418,7 @@ def debug_test():
         auth2 = create_auth_header(USERNAME, password_from_cli)
         print(f"\nAuth headers match: {auth1 == auth2}")
         print(
-            f"Password lengths - Hardcoded: {len(API_KEY)}, CLI: {len(password_from_cli)}"
+            f"Password lengths - Hardcoded: {len(API_KEY)}, CLI: {len(password_from_cli)}",
         )
 
         # Try upload with both
@@ -431,13 +429,13 @@ def debug_test():
 
         print("\nTesting upload with hardcoded client:")
         result1 = client1["upload"](
-            test_file, urllib.parse.urljoin(BASE_URL, "debug1.txt")
+            test_file, urllib.parse.urljoin(BASE_URL, "debug1.txt"),
         )
         print(f"Result: {'Success' if result1 else 'Failed'}")
 
         print("\nTesting upload with CLI client:")
         result2 = client2["upload"](
-            test_file, urllib.parse.urljoin(BASE_URL, "debug2.txt")
+            test_file, urllib.parse.urljoin(BASE_URL, "debug2.txt"),
         )
         print(f"Result: {'Success' if result2 else 'Failed'}")
     else:

@@ -7,12 +7,9 @@ they need thorough coverage to ensure silent failures stay silent.
 
 from __future__ import annotations
 
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-from slack_sdk.errors import SlackApiError, SlackClientError
-
 from notify_slack import (
     build_message,
     format_byte_size,
@@ -20,6 +17,7 @@ from notify_slack import (
     get_run_stats,
     send_notification,
 )
+from slack_sdk.errors import SlackApiError, SlackClientError
 
 
 class TestFormatByteSize:
@@ -197,7 +195,7 @@ class TestGetRunStats:
     def test_returns_zeros_when_stats_is_none(self, tmp_path):
         """When get_stats_for_sample_set returns None, returns zeros."""
         with patch(
-            "notify_slack.get_stats_for_sample_set", return_value=None
+            "notify_slack.get_stats_for_sample_set", return_value=None,
         ) as mock_get:
             result = get_run_stats(tmp_path, "nonexistent_sample_set")
 
@@ -389,7 +387,7 @@ class TestSendNotification:
         mock_client.chat_postMessage.return_value = {"ts": "123"}
 
         with patch(
-            "notify_slack.WebClient", return_value=mock_client
+            "notify_slack.WebClient", return_value=mock_client,
         ) as mock_webclient:
             result = send_notification("C123", "test", token=None)
 

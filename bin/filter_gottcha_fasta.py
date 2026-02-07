@@ -20,7 +20,7 @@ def filter_fasta_strain_or_species(input_fasta: str) -> str:
                 if level_match:
                     level = level_match.group(1).lower()
                     record_map[read_id].setdefault(level, []).append(
-                        (current_header, current_seq)
+                        (current_header, current_seq),
                     )
             current_header = line.strip()
             current_seq = []
@@ -33,7 +33,7 @@ def filter_fasta_strain_or_species(input_fasta: str) -> str:
         if level_match:
             level = level_match.group(1).lower()
             record_map[read_id].setdefault(level, []).append(
-                (current_header, current_seq)
+                (current_header, current_seq),
             )
 
     output_lines = []
@@ -53,16 +53,16 @@ def filter_fasta_strain_or_species(input_fasta: str) -> str:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Filter a GOTTCHA2-style FASTA to strain/species only."
+        description="Filter a GOTTCHA2-style FASTA to strain/species only.",
     )
     parser.add_argument("-i", "--input", required=True, help="Input FASTA file")
     parser.add_argument(
-        "-o", "--output", required=True, help="Output FASTA file (filtered)"
+        "-o", "--output", required=True, help="Output FASTA file (filtered)",
     )
 
     args = parser.parse_args()
 
-    with open(args.input, "r") as infile:
+    with open(args.input) as infile:
         fasta_data = infile.read()
 
     filtered = filter_fasta_strain_or_species(fasta_data)

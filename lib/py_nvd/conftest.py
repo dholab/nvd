@@ -1,13 +1,14 @@
 """Shared pytest fixtures for py_nvd tests."""
 
 import tempfile
+from collections.abc import Generator
 from pathlib import Path
 
 import pytest
 
 
 @pytest.fixture
-def temp_state_dir():
+def temp_state_dir() -> Generator[Path, None, None]:
     """Create a temporary directory for state database."""
     with tempfile.TemporaryDirectory() as tmpdir:
         yield Path(tmpdir)

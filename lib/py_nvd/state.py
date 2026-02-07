@@ -1,3 +1,4 @@
+# ruff: noqa: S608
 """
 Run state management.
 
@@ -9,6 +10,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import socket
 import sqlite3
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
@@ -34,7 +37,7 @@ from py_nvd.models import (
 class RunNotFoundError(Exception):
     """Raised when a run_id is not found in the database."""
 
-    def __init__(self, run_id: str):
+    def __init__(self, run_id: str) -> None:
         self.run_id = run_id
         super().__init__(f"Run not found: {run_id}")
 
@@ -42,7 +45,7 @@ class RunNotFoundError(Exception):
 class SampleNotFoundError(Exception):
     """Raised when a sample is not found in the database."""
 
-    def __init__(self, sample_id: str, sample_set_id: str):
+    def __init__(self, sample_id: str, sample_set_id: str) -> None:
         self.sample_id = sample_id
         self.sample_set_id = sample_set_id
         super().__init__(f"Sample not found: {sample_id} in sample set {sample_set_id}")
@@ -145,7 +148,7 @@ def get_run_ids_for_sample_sets(
     with connect(state_dir) as conn:
         placeholders = ",".join("?" * len(sample_set_ids))
         rows = conn.execute(
-            f"SELECT sample_set_id, run_id FROM runs WHERE sample_set_id IN ({placeholders})",
+            f"SELECT sample_set_id, run_id FROM runs WHERE sample_set_id IN ({placeholders})",  # SQL uses module constants, not user input
             sample_set_ids,
         ).fetchall()
         return {row[0]: row[1] for row in rows}
@@ -321,7 +324,7 @@ def register_database(
 
     with connect(state_dir) as conn:
         conn.execute(
-            """INSERT OR REPLACE INTO databases 
+            """INSERT OR REPLACE INTO databases
                (db_type, version, path, checksum, registered_at)
                VALUES (?, ?, ?, NULL, datetime('now'))""",
             (db_type, version, canonical_path),
@@ -391,8 +394,8 @@ def get_database_by_path(
     with connect(state_dir) as conn:
         # Use rowid as tiebreaker when timestamps are equal (same second)
         rows = conn.execute(
-            """SELECT * FROM databases 
-               WHERE db_type = ? AND path = ? 
+            """SELECT * FROM databases
+               WHERE db_type = ? AND path = ?
                ORDER BY registered_at DESC, rowid DESC""",
             (db_type, canonical_path),
         ).fetchall()
@@ -440,8 +443,8 @@ def get_databases_by_path(
     with connect(state_dir) as conn:
         # Use rowid as tiebreaker when timestamps are equal (same second)
         rows = conn.execute(
-            """SELECT * FROM databases 
-               WHERE db_type = ? AND path = ? 
+            """SELECT * FROM databases
+               WHERE db_type = ? AND path = ?
                ORDER BY registered_at DESC, rowid DESC""",
             (db_type, canonical_path),
         ).fetchall()
@@ -547,7 +550,7 @@ def _resolve_single_database(
     return None, warning, None
 
 
-def resolve_database_versions(
+def resolve_database_versions(  # noqa: PLR0913
     blast_db: Path | None = None,
     blast_db_version: str | None = None,
     gottcha2_db: Path | None = None,
@@ -627,7 +630,7 @@ def resolve_database_versions(
     return resolution
 
 
-def mark_sample_completed(
+def mark_sample_completed(  # noqa: PLR0913
     sample_id: str,
     sample_set_id: str,
     run_id: str,
@@ -841,7 +844,7 @@ def get_uploaded_sample_ids(
     placeholders = ",".join("?" * len(sample_ids))
     with connect(state_dir) as conn:
         rows = conn.execute(
-            f"SELECT DISTINCT sample_id FROM processed_samples "  # noqa: S608
+            f"SELECT DISTINCT sample_id FROM processed_samples "
             f"WHERE sample_id IN ({placeholders}) AND status = 'uploaded'",
             sample_ids,
         ).fetchall()
@@ -915,7 +918,7 @@ def mark_sample_uploaded(
         return cursor.rowcount > 0
 
 
-def record_upload(
+def record_upload(  # noqa: PLR0913
     sample_id: str,
     sample_set_id: str,
     upload_type: UploadType,
@@ -941,8 +944,8 @@ def record_upload(
     metadata_json = json.dumps(target_metadata) if target_metadata else None
     with connect(state_dir) as conn:
         conn.execute(
-            """INSERT INTO uploads 
-               (sample_id, sample_set_id, upload_type, upload_target, content_hash, 
+            """INSERT INTO uploads
+               (sample_id, sample_set_id, upload_type, upload_target, content_hash,
                 uploaded_at, target_metadata)
                VALUES (?, ?, ?, ?, ?, datetime('now'), ?)""",
             (
@@ -976,7 +979,7 @@ def get_upload(
     """Get a specific upload record."""
     with connect(state_dir) as conn:
         row = conn.execute(
-            """SELECT * FROM uploads 
+            """SELECT * FROM uploads
                WHERE sample_id = ? AND sample_set_id = ? AND upload_type = ? AND upload_target = ?""",
             (sample_id, sample_set_id, upload_type, upload_target),
         ).fetchone()
@@ -985,7 +988,7 @@ def get_upload(
         return None
 
 
-def check_upload(
+def check_upload(  # noqa: PLR0913
     sample_id: str,
     sample_set_id: str,
     upload_type: UploadType,
@@ -1130,7 +1133,7 @@ def hash_upload_content(data: dict | list) -> str:
     return hashlib.sha256(content.encode()).hexdigest()
 
 
-def record_taxonomy_version(
+def record_taxonomy_version(  # noqa: PLR0913
     run_id: str,
     file_hash: str,
     ncbi_rebuild_timestamp: str | None,
@@ -1145,7 +1148,7 @@ def record_taxonomy_version(
     """
     with connect(state_dir) as conn:
         conn.execute(
-            """INSERT OR REPLACE INTO taxonomy_versions 
+            """INSERT OR REPLACE INTO taxonomy_versions
                (run_id, file_hash, ncbi_rebuild_timestamp, file_size, downloaded_at, recorded_at)
                VALUES (?, ?, ?, ?, ?, datetime('now'))""",
             (run_id, file_hash, ncbi_rebuild_timestamp, file_size, downloaded_at),
@@ -1221,7 +1224,7 @@ def register_preset(
         if existing:
             # Update existing preset
             conn.execute(
-                """UPDATE presets 
+                """UPDATE presets
                    SET params = ?, description = ?, updated_at = datetime('now')
                    WHERE name = ?""",
                 (params_json, description, name),
@@ -1294,10 +1297,6 @@ def delete_preset(name: str, state_dir: Path | str | None = None) -> bool:
         return cursor.rowcount > 0
 
 
-# =============================================================================
-# Sample Locks
-# =============================================================================
-
 DEFAULT_LOCK_TTL_HOURS = 72
 
 
@@ -1308,8 +1307,6 @@ def get_machine_fingerprint() -> tuple[str, str]:
     Used to detect when the same run_id is resumed from different machines,
     which would indicate a conflict (two users resuming the same run).
     """
-    import os
-    import socket
 
     hostname = socket.gethostname()
     username = os.environ.get("USER") or os.getlogin()
@@ -1450,7 +1447,7 @@ def acquire_sample_lock(
         if existing is None:
             # No lock - acquire
             conn.execute(
-                """INSERT INTO sample_locks 
+                """INSERT INTO sample_locks
                    (sample_id, run_id, hostname, username, locked_at, expires_at)
                    VALUES (?, ?, ?, ?, ?, ?)""",
                 (sample_id, run_id, hostname, username, now_str, expires_str),
@@ -1465,7 +1462,7 @@ def acquire_sample_lock(
         if existing_lock.fingerprint == (hostname, username):
             # Same user/host - allow acquisition, update run_id and refresh TTL
             conn.execute(
-                """UPDATE sample_locks 
+                """UPDATE sample_locks
                    SET run_id = ?, locked_at = ?, expires_at = ?
                    WHERE sample_id = ?""",
                 (run_id, now_str, expires_str, sample_id),
@@ -1477,7 +1474,7 @@ def acquire_sample_lock(
         if existing_lock.is_expired:
             # Expired lock from another user - steal it
             conn.execute(
-                """UPDATE sample_locks 
+                """UPDATE sample_locks
                    SET run_id = ?, hostname = ?, username = ?, locked_at = ?, expires_at = ?
                    WHERE sample_id = ?""",
                 (run_id, hostname, username, now_str, expires_str, sample_id),
@@ -1568,7 +1565,7 @@ def release_sample_locks(
     placeholders = ",".join("?" * len(sample_ids))
     with connect(state_dir) as conn:
         cursor = conn.execute(
-            f"DELETE FROM sample_locks WHERE sample_id IN ({placeholders}) AND run_id = ?",  # noqa: S608
+            f"DELETE FROM sample_locks WHERE sample_id IN ({placeholders}) AND run_id = ?",
             [*sample_ids, run_id],
         )
         conn.commit()
@@ -1618,11 +1615,6 @@ def cleanup_expired_locks(state_dir: Path | str | None = None) -> int:
         return cursor.rowcount
 
 
-# =============================================================================
-# Run Status (with TTL-based failure detection)
-# =============================================================================
-
-
 def get_effective_run_status(
     run: Run,
     ttl_hours: int = DEFAULT_LOCK_TTL_HOURS,
@@ -1643,7 +1635,7 @@ def get_effective_run_status(
     if run.status != "running":
         return run.status
 
-    started = datetime.fromisoformat(run.started_at.replace("Z", "+00:00"))
+    started = datetime.fromisoformat(run.started_at)
     if started.tzinfo is None:
         started = started.replace(tzinfo=__import__("datetime").timezone.utc)
 

@@ -27,7 +27,7 @@ def setup_logger(log_file: str | None) -> logging.Logger:
     logger = logging.getLogger("remove_megablast_mapped_contigs")
     logger.setLevel(logging.INFO)
     formatter = logging.Formatter(
-        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
     if not log_file:
         return logger
@@ -48,8 +48,7 @@ def extract_unique_ids(input_file, output_file, logger):
 
     logger.info(f"Writing classified contigs to {output_file}")
     with open(output_file, "w") as f:
-        for contig_id in unique_ids:
-            f.write(contig_id)
+        f.writelines(unique_ids)
     logger.info(f"Wrote {len(unique_ids)} unique contig IDs")
 
 
@@ -79,14 +78,14 @@ def run_filterbyname(input_fasta, output_fasta, names_file, logger):
 def parse_args() -> SimpleNamespace:
     if MODE == "snakemake":
         return SimpleNamespace(
-            input=snakemake.input, output=snakemake.output, log=snakemake.log
+            input=snakemake.input, output=snakemake.output, log=snakemake.log,
         )
     parser = argparse.ArgumentParser(description="Remove contigs mapped by megablast")
     parser.add_argument(
-        "--megablast_results", required=True, help="Path to megablast results"
+        "--megablast_results", required=True, help="Path to megablast results",
     )
     parser.add_argument(
-        "--contigs_fasta", required=True, help="Path to original contigs FASTA"
+        "--contigs_fasta", required=True, help="Path to original contigs FASTA",
     )
     parser.add_argument(
         "--classified_contigs",
@@ -94,7 +93,7 @@ def parse_args() -> SimpleNamespace:
         help="Path to output classified contigs list",
     )
     parser.add_argument(
-        "--pruned_contigs", required=True, help="Path to output pruned FASTA"
+        "--pruned_contigs", required=True, help="Path to output pruned FASTA",
     )
     parser.add_argument("--log", default=None, required=False, help="Path to log file")
     args = parser.parse_args()

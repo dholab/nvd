@@ -81,7 +81,7 @@ dev = [
   "pre-commit>=4.5.1",
   "pyarrow>=19.0.1",
   "pytest>=8.3.5",
-  "ruff>=0.11.7",
+  "ruff>=0.15.0",
   "tox>=4.24.2",
   "ty>=0.0.15",
 ]
@@ -100,11 +100,23 @@ module-name = ["py_nvd"]
 
 [tool.ruff.lint]
 select = ["ALL"]
-ignore = ["D", "S101", "E501", "PTH", "TD003", "G004", "TC003"]
+ignore = ["D", "S101", "E501", "PTH", "TD003", "G004", "TRY300"]
 
 [tool.ruff.lint.per-file-ignores]
 "lib/py_nvd/test_*.py" = ["PLR2004", "SLF001"]
 "lib/py_nvd/cli/test_*.py" = ["PLR2004", "SLF001"]
+"lib/py_nvd/cli/commands/test_*.py" = ["PLR2004", "SLF001"]
+"lib/py_nvd/cli/commands/*.py" = [
+  "FBT001",
+  "FBT002",
+  "FBT003",  # Typer uses booleans as positional args
+  "B008",    # typer.Option()/typer.Argument() in defaults
+  "C901",
+  "PLR0911",
+  "PLR0912", # CLI commands are inherently complex
+  "PLR0913",
+  "PLR0915",
+]
 
 [tool.pytest.ini_options]
 pythonpath = ["bin", "lib"]

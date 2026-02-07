@@ -14,7 +14,6 @@ from pathlib import Path
 import polars as pl
 import polars.exceptions
 import pytest
-
 from annotate_blast_lca import (
     LcaParams,
     _find_lca_list,

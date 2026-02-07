@@ -64,7 +64,7 @@ def process_blast_file(filepath: str | Path) -> pl.LazyFrame:
 
 
 def concat_blast_tables(
-    megablast_hits: str | Path, blastn_hits: str | Path
+    megablast_hits: str | Path, blastn_hits: str | Path,
 ) -> pl.LazyFrame | None:
     """Concatenate BLAST tables, handling empty files gracefully."""
     mb_has_data = has_data(megablast_hits)
@@ -76,17 +76,16 @@ def concat_blast_tables(
             [
                 process_blast_file(megablast_hits),
                 process_blast_file(blastn_hits),
-            ]
+            ],
         ).sort(["sample", "qseqid", "task"])
-    elif mb_has_data:
+    if mb_has_data:
         # Only megablast has data
         return process_blast_file(megablast_hits).sort(["sample", "qseqid", "task"])
-    elif bn_has_data:
+    if bn_has_data:
         # Only blastn has data
         return process_blast_file(blastn_hits).sort(["sample", "qseqid", "task"])
-    else:
-        # Neither has data
-        return None
+    # Neither has data
+    return None
 
 
 def main() -> None:
@@ -98,7 +97,7 @@ def main() -> None:
     else:
         # Create empty file with header
         Path(args.output_file).write_text(
-            "task\tsample\tqseqid\tqlen\tsseqid\tstitle\tlength\tpident\tevalue\tbitscore\tsscinames\tstaxids\trank\n"
+            "task\tsample\tqseqid\tqlen\tsseqid\tstitle\tlength\tpident\tevalue\tbitscore\tsscinames\tstaxids\trank\n",
         )
 
 

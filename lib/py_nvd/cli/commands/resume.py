@@ -16,7 +16,7 @@ from typing import Annotated
 import typer
 
 from py_nvd.cli.prompts import (
-    PromptTimeout,
+    PromptTimeoutError,
     confirm_with_timeout,
     is_interactive,
 )
@@ -160,7 +160,7 @@ def _interactive_resume(command: str) -> None:
             info("Resume cancelled.")
             raise typer.Exit(0)
 
-    except PromptTimeout:
+    except PromptTimeoutError:
         console.print("\n")
         warning("Prompt timed out after 5 minutes. Resume cancelled.")
         raise typer.Exit(1) from None

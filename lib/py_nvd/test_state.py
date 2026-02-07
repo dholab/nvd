@@ -1,8 +1,12 @@
+# ruff: noqa: S608
 """Tests for py_nvd.state module."""
 
+import sqlite3
 import tempfile
+import time
+from collections.abc import Generator
 from dataclasses import dataclass
-from datetime import UTC
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -10,15 +14,19 @@ import pytest
 from py_nvd.db import EXPECTED_VERSION, SchemaMismatchError, connect
 from py_nvd.models import Run
 from py_nvd.state import (
+    acquire_sample_lock,
     acquire_sample_locks,
     check_taxonomy_drift,
     check_upload,
+    cleanup_expired_locks,
     complete_run,
     complete_sample,
     compute_sample_set_id,
     get_database_by_path,
     get_database_by_version,
     get_databases_by_path,
+    get_effective_run_status,
+    get_lock,
     get_locks_for_run,
     get_processed_sample,
     get_run,
@@ -31,15 +39,19 @@ from py_nvd.state import (
     get_uploaded_sample_ids,
     get_uploads_for_sample,
     hash_upload_content,
+    list_locks,
     list_runs,
     list_samples,
     list_uploads,
     mark_sample_uploaded,
+    mark_stale_runs_failed,
     record_taxonomy_version,
     record_upload,
     register_database,
     register_processed_sample,
     register_run,
+    release_all_locks_for_run,
+    release_sample_lock,
     resolve_database_versions,
     update_run_id,
     was_sample_ever_processed,
@@ -69,39 +81,39 @@ class ProcessedSampleContext:
 class TestComputeSampleSetId:
     """Tests for compute_sample_set_id()."""
 
-    def test_deterministic(self):
+    def test_deterministic(self) -> None:
         """Same input produces same output."""
         samples = ["sample_a", "sample_b", "sample_c"]
         id1 = compute_sample_set_id(samples)
         id2 = compute_sample_set_id(samples)
         assert id1 == id2
 
-    def test_order_independent(self):
+    def test_order_independent(self) -> None:
         """Order of samples doesn't affect the ID."""
         id1 = compute_sample_set_id(["a", "b", "c"])
         id2 = compute_sample_set_id(["c", "a", "b"])
         id3 = compute_sample_set_id(["b", "c", "a"])
         assert id1 == id2 == id3
 
-    def test_duplicates_ignored(self):
+    def test_duplicates_ignored(self) -> None:
         """Duplicate sample IDs are deduplicated."""
         id1 = compute_sample_set_id(["a", "b", "c"])
         id2 = compute_sample_set_id(["a", "a", "b", "b", "c", "c"])
         assert id1 == id2
 
-    def test_different_samples_different_id(self):
+    def test_different_samples_different_id(self) -> None:
         """Different samples produce different IDs."""
         id1 = compute_sample_set_id(["a", "b", "c"])
         id2 = compute_sample_set_id(["a", "b", "d"])
         assert id1 != id2
 
-    def test_returns_16_char_hex(self):
+    def test_returns_16_char_hex(self) -> None:
         """Returns a 16-character hex string."""
         result = compute_sample_set_id(["sample1", "sample2"])
         assert len(result) == 16
         assert all(c in "0123456789abcdef" for c in result)
 
-    def test_empty_list(self):
+    def test_empty_list(self) -> None:
         """Empty list produces a valid ID."""
         result = compute_sample_set_id([])
         assert len(result) == 16
@@ -111,12 +123,12 @@ class TestRegisterRun:
     """Tests for register_run() and related functions."""
 
     @pytest.fixture
-    def temp_state_dir(self):
+    def temp_state_dir(self) -> Generator[Path, None, None]:
         """Create a temporary directory for state database."""
         with tempfile.TemporaryDirectory() as tmpdir:
             yield Path(tmpdir)
 
-    def test_register_new_run(self, temp_state_dir):
+    def test_register_new_run(self, temp_state_dir: Path) -> None:
         """Registering a new run succeeds."""
         sample_set_id = compute_sample_set_id(["s1", "s2"])
         run = register_run("run_001", sample_set_id, state_dir=temp_state_dir)
@@ -127,7 +139,7 @@ class TestRegisterRun:
         assert run.status == "running"
         assert run.experiment_id is None
 
-    def test_register_with_experiment_id(self, temp_state_dir):
+    def test_register_with_experiment_id(self, temp_state_dir: Path) -> None:
         """Registering with optional experiment_id stores it."""
         sample_set_id = compute_sample_set_id(["s1", "s2"])
         run = register_run(
@@ -140,7 +152,7 @@ class TestRegisterRun:
         assert run is not None
         assert run.experiment_id == 12345
 
-    def test_duplicate_sample_set_returns_none(self, temp_state_dir):
+    def test_duplicate_sample_set_returns_none(self, temp_state_dir: Path) -> None:
         """Attempting to register same sample_set_id returns None."""
         sample_set_id = compute_sample_set_id(["s1", "s2"])
 
@@ -150,7 +162,7 @@ class TestRegisterRun:
         assert run1 is not None
         assert run2 is None  # Duplicate sample set rejected
 
-    def test_different_sample_sets_allowed(self, temp_state_dir):
+    def test_different_sample_sets_allowed(self, temp_state_dir: Path) -> None:
         """Different sample sets can be registered."""
         set1 = compute_sample_set_id(["s1", "s2"])
         set2 = compute_sample_set_id(["s3", "s4"])
@@ -161,7 +173,7 @@ class TestRegisterRun:
         assert run1 is not None
         assert run2 is not None
 
-    def test_get_run(self, temp_state_dir):
+    def test_get_run(self, temp_state_dir: Path) -> None:
         """get_run retrieves a registered run."""
         sample_set_id = compute_sample_set_id(["s1"])
         register_run("run_001", sample_set_id, state_dir=temp_state_dir)
@@ -170,12 +182,12 @@ class TestRegisterRun:
         assert run is not None
         assert run.run_id == "run_001"
 
-    def test_get_run_not_found(self, temp_state_dir):
+    def test_get_run_not_found(self, temp_state_dir: Path) -> None:
         """get_run returns None for unknown run_id."""
         run = get_run("nonexistent", state_dir=temp_state_dir)
         assert run is None
 
-    def test_get_run_by_sample_set(self, temp_state_dir):
+    def test_get_run_by_sample_set(self, temp_state_dir: Path) -> None:
         """get_run_by_sample_set retrieves by sample_set_id."""
         sample_set_id = compute_sample_set_id(["s1", "s2"])
         register_run("run_001", sample_set_id, state_dir=temp_state_dir)
@@ -184,7 +196,7 @@ class TestRegisterRun:
         assert run is not None
         assert run.run_id == "run_001"
 
-    def test_list_runs(self, temp_state_dir):
+    def test_list_runs(self, temp_state_dir: Path) -> None:
         """list_runs returns all registered runs."""
         set1 = compute_sample_set_id(["s1"])
         set2 = compute_sample_set_id(["s2"])
@@ -197,7 +209,7 @@ class TestRegisterRun:
         run_ids = {r.run_id for r in runs}
         assert run_ids == {"run_001", "run_002"}
 
-    def test_list_runs_filter_by_status(self, temp_state_dir):
+    def test_list_runs_filter_by_status(self, temp_state_dir: Path) -> None:
         """list_runs filters by status."""
         set1 = compute_sample_set_id(["s1"])
         set2 = compute_sample_set_id(["s2"])
@@ -224,7 +236,7 @@ class TestRegisterRun:
         assert len(running) == 1
         assert running[0].run_id == "run_003"
 
-    def test_list_runs_filter_by_limit(self, temp_state_dir):
+    def test_list_runs_filter_by_limit(self, temp_state_dir: Path) -> None:
         """list_runs respects limit parameter."""
         for i in range(5):
             set_id = compute_sample_set_id([f"s{i}"])
@@ -236,10 +248,8 @@ class TestRegisterRun:
         runs = list_runs(limit=1, state_dir=temp_state_dir)
         assert len(runs) == 1
 
-    def test_list_runs_filter_by_since_date(self, temp_state_dir):
+    def test_list_runs_filter_by_since_date(self, temp_state_dir: Path) -> None:
         """list_runs filters by since with a date."""
-        from datetime import date
-
         set1 = compute_sample_set_id(["s1"])
         set2 = compute_sample_set_id(["s2"])
 
@@ -266,10 +276,8 @@ class TestRegisterRun:
         runs = list_runs(since=date(2024, 1, 1), state_dir=temp_state_dir)
         assert len(runs) == 2
 
-    def test_list_runs_filter_by_since_datetime(self, temp_state_dir):
+    def test_list_runs_filter_by_since_datetime(self, temp_state_dir: Path) -> None:
         """list_runs filters by since with a datetime."""
-        from datetime import datetime
-
         set1 = compute_sample_set_id(["s1"])
         set2 = compute_sample_set_id(["s2"])
 
@@ -289,19 +297,17 @@ class TestRegisterRun:
 
         # Filter since noon
         runs = list_runs(
-            since=datetime(2024, 12, 20, 12, 0, 0),
+            since=datetime(2024, 12, 20, 12, 0, 0, tzinfo=UTC),
             state_dir=temp_state_dir,
         )
         assert len(runs) == 1
         assert runs[0].run_id == "run_afternoon"
 
-    def test_list_runs_combined_filters(self, temp_state_dir):
+    def test_list_runs_combined_filters(self, temp_state_dir: Path) -> None:
         """list_runs combines multiple filters."""
-        from datetime import date
-
         # Create runs with different dates and statuses
         with connect(temp_state_dir) as conn:
-            for i, (run_id, set_id, started, status) in enumerate(
+            for _i, (run_id, set_id, started, status) in enumerate(
                 [
                     ("run_a", compute_sample_set_id(["a"]), "2024-01-10", "completed"),
                     ("run_b", compute_sample_set_id(["b"]), "2024-06-15", "completed"),
@@ -329,7 +335,7 @@ class TestRegisterRun:
         assert runs[0].run_id == "run_e"
         assert runs[1].run_id == "run_d"
 
-    def test_update_run_id_success(self, temp_state_dir):
+    def test_update_run_id_success(self, temp_state_dir: Path) -> None:
         """update_run_id updates run_id for existing sample_set_id."""
         sample_set_id = compute_sample_set_id(["s1", "s2"])
         register_run("old_run_name", sample_set_id, state_dir=temp_state_dir)
@@ -352,12 +358,12 @@ class TestRegisterRun:
         assert by_set is not None
         assert by_set.run_id == "new_run_name"
 
-    def test_update_run_id_not_found(self, temp_state_dir):
+    def test_update_run_id_not_found(self, temp_state_dir: Path) -> None:
         """update_run_id returns None when sample_set_id doesn't exist."""
         result = update_run_id("nonexistent_set", "new_run", state_dir=temp_state_dir)
         assert result is None
 
-    def test_update_run_id_preserves_other_fields(self, temp_state_dir):
+    def test_update_run_id_preserves_other_fields(self, temp_state_dir: Path) -> None:
         """update_run_id preserves experiment_id and other fields."""
         sample_set_id = compute_sample_set_id(["s1", "s2"])
         original = register_run(
@@ -376,7 +382,7 @@ class TestRegisterRun:
         assert updated.started_at == original.started_at
         assert updated.status == original.status
 
-    def test_update_run_id_updates_sample_locks(self, temp_state_dir):
+    def test_update_run_id_updates_sample_locks(self, temp_state_dir: Path) -> None:
         """update_run_id also updates sample_locks table to keep in sync."""
         sample_set_id = compute_sample_set_id(["s1", "s2"])
         register_run("old_run", sample_set_id, state_dir=temp_state_dir)
@@ -401,7 +407,10 @@ class TestRegisterRun:
         old_locks_after = get_locks_for_run("old_run", state_dir=temp_state_dir)
         assert len(old_locks_after) == 0
 
-    def test_update_run_id_updates_all_referencing_tables(self, temp_state_dir):
+    def test_update_run_id_updates_all_referencing_tables(
+        self,
+        temp_state_dir: Path,
+    ) -> None:
         """update_run_id updates all tables that reference runs.run_id."""
         sample_set_id = compute_sample_set_id(["s1", "s2"])
         register_run("old_run", sample_set_id, state_dir=temp_state_dir)
@@ -451,13 +460,13 @@ class TestProcessedSamples:
     """Tests for processed sample tracking functions."""
 
     @pytest.fixture
-    def temp_state_dir(self):
+    def temp_state_dir(self) -> Generator[Path, None, None]:
         """Create a temporary directory for state database."""
         with tempfile.TemporaryDirectory() as tmpdir:
             yield Path(tmpdir)
 
     @pytest.fixture
-    def registered_run(self, temp_state_dir) -> RunContext:
+    def registered_run(self, temp_state_dir: Path) -> RunContext:
         """Register a run and return RunContext."""
         sample_set_id = compute_sample_set_id(["s1", "s2", "s3"])
         run = register_run("run_001", sample_set_id, state_dir=temp_state_dir)
@@ -468,7 +477,7 @@ class TestProcessedSamples:
             state_dir=temp_state_dir,
         )
 
-    def test_register_processed_sample(self, registered_run: RunContext):
+    def test_register_processed_sample(self, registered_run: RunContext) -> None:
         """Registering a processed sample succeeds with 'completed' status.
 
         Note: register_processed_sample is an alias for mark_sample_completed.
@@ -494,7 +503,7 @@ class TestProcessedSamples:
         assert sample.blast_db_version == "core-nt_2025-01-01"
         assert sample.stat_db_version == "v1.0"
 
-    def test_get_processed_sample(self, registered_run: RunContext):
+    def test_get_processed_sample(self, registered_run: RunContext) -> None:
         """get_processed_sample retrieves a registered sample."""
         ctx = registered_run
 
@@ -509,7 +518,7 @@ class TestProcessedSamples:
         assert sample is not None
         assert sample.sample_id == "s1"
 
-    def test_get_processed_sample_not_found(self, temp_state_dir):
+    def test_get_processed_sample_not_found(self, temp_state_dir: Path) -> None:
         """get_processed_sample returns None for unknown sample."""
         sample = get_processed_sample(
             "nonexistent",
@@ -518,7 +527,7 @@ class TestProcessedSamples:
         )
         assert sample is None
 
-    def test_get_samples_for_run(self, registered_run: RunContext):
+    def test_get_samples_for_run(self, registered_run: RunContext) -> None:
         """get_samples_for_run returns all samples for a run."""
         ctx = registered_run
 
@@ -535,7 +544,7 @@ class TestProcessedSamples:
         sample_ids = {s.sample_id for s in samples}
         assert sample_ids == {"s1", "s2", "s3"}
 
-    def test_was_sample_ever_processed(self, registered_run: RunContext):
+    def test_was_sample_ever_processed(self, registered_run: RunContext) -> None:
         """was_sample_ever_processed returns True for processed samples."""
         ctx = registered_run
 
@@ -555,7 +564,7 @@ class TestProcessedSamples:
         # Other samples still not processed
         assert was_sample_ever_processed("s2", state_dir=ctx.state_dir) is False
 
-    def test_complete_sample(self, registered_run: RunContext):
+    def test_complete_sample(self, registered_run: RunContext) -> None:
         """complete_sample can transition sample to 'uploaded' status.
 
         Note: Samples now start as 'completed' (after REGISTER_HITS).
@@ -588,7 +597,7 @@ class TestProcessedSamples:
         assert sample is not None
         assert sample.status == "uploaded"
 
-    def test_complete_sample_failed(self, registered_run: RunContext):
+    def test_complete_sample_failed(self, registered_run: RunContext) -> None:
         """complete_sample can mark a sample as failed."""
         ctx = registered_run
 
@@ -610,7 +619,7 @@ class TestProcessedSamples:
         assert sample is not None
         assert sample.status == "failed"
 
-    def test_list_samples(self, temp_state_dir):
+    def test_list_samples(self, temp_state_dir: Path) -> None:
         """list_samples returns all processed samples."""
         set1 = compute_sample_set_id(["s1", "s2"])
         set2 = compute_sample_set_id(["s3"])
@@ -629,7 +638,7 @@ class TestProcessedSamples:
         sample_ids = {s.sample_id for s in samples}
         assert sample_ids == {"s1", "s2", "s3"}
 
-    def test_list_samples_filter_by_run(self, temp_state_dir):
+    def test_list_samples_filter_by_run(self, temp_state_dir: Path) -> None:
         """list_samples filters by run_id."""
         set1 = compute_sample_set_id(["s1", "s2"])
         set2 = compute_sample_set_id(["s3"])
@@ -648,7 +657,7 @@ class TestProcessedSamples:
         sample_ids = {s.sample_id for s in samples}
         assert sample_ids == {"s1", "s2"}
 
-    def test_list_samples_filter_by_status(self, temp_state_dir):
+    def test_list_samples_filter_by_status(self, temp_state_dir: Path) -> None:
         """list_samples filters by status.
 
         Note: Samples now start as 'completed' (not 'processing').
@@ -679,7 +688,7 @@ class TestProcessedSamples:
         assert len(completed) == 1
         assert completed[0].sample_id == "s3"
 
-    def test_list_samples_filter_by_limit(self, temp_state_dir):
+    def test_list_samples_filter_by_limit(self, temp_state_dir: Path) -> None:
         """list_samples respects limit parameter."""
         set1 = compute_sample_set_id(["s1", "s2", "s3", "s4", "s5"])
         run = register_run("run_001", set1, state_dir=temp_state_dir)
@@ -691,7 +700,7 @@ class TestProcessedSamples:
         samples = list_samples(limit=3, state_dir=temp_state_dir)
         assert len(samples) == 3
 
-    def test_list_samples_combined_filters(self, temp_state_dir):
+    def test_list_samples_combined_filters(self, temp_state_dir: Path) -> None:
         """list_samples combines multiple filters.
 
         Note: Samples now start as 'completed'. We transition some to
@@ -723,7 +732,7 @@ class TestProcessedSamples:
         assert len(samples) == 1
         assert samples[0].sample_id == "s1"
 
-    def test_get_sample_history(self, temp_state_dir):
+    def test_get_sample_history(self, temp_state_dir: Path) -> None:
         """get_sample_history returns all processing records for a sample across runs."""
         # Sample s1 appears in two different runs
         set1 = compute_sample_set_id(["s1", "s2"])
@@ -750,7 +759,7 @@ class TestProcessedSamples:
         assert len(history) == 1
         assert history[0].run_id == "run_001"
 
-    def test_get_sample_history_not_found(self, temp_state_dir):
+    def test_get_sample_history_not_found(self, temp_state_dir: Path) -> None:
         """get_sample_history returns empty list for unknown sample."""
         history = get_sample_history("nonexistent", state_dir=temp_state_dir)
         assert history == []
@@ -766,12 +775,12 @@ class TestPerSampleStateTracking:
     """
 
     @pytest.fixture
-    def temp_state_dir(self):
+    def temp_state_dir(self) -> Generator[Path, None, None]:
         """Create a temporary directory for state database."""
         with tempfile.TemporaryDirectory() as tmpdir:
             yield Path(tmpdir)
 
-    def test_mark_sample_uploaded_success(self, temp_state_dir):
+    def test_mark_sample_uploaded_success(self, temp_state_dir: Path) -> None:
         """mark_sample_uploaded transitions sample from completed to uploaded."""
 
         set1 = compute_sample_set_id(["s1"])
@@ -793,7 +802,7 @@ class TestPerSampleStateTracking:
         assert sample is not None
         assert sample.status == "uploaded"
 
-    def test_mark_sample_uploaded_not_found(self, temp_state_dir):
+    def test_mark_sample_uploaded_not_found(self, temp_state_dir: Path) -> None:
         """mark_sample_uploaded returns False for non-existent sample."""
 
         result = mark_sample_uploaded(
@@ -803,7 +812,7 @@ class TestPerSampleStateTracking:
         )
         assert result is False
 
-    def test_get_samples_needing_upload(self, temp_state_dir):
+    def test_get_samples_needing_upload(self, temp_state_dir: Path) -> None:
         """get_samples_needing_upload returns only samples with status='completed'."""
 
         set1 = compute_sample_set_id(["s1", "s2", "s3"])
@@ -836,7 +845,7 @@ class TestPerSampleStateTracking:
         assert len(needing_upload) == 1
         assert needing_upload[0].sample_id == "s3"
 
-    def test_get_samples_needing_upload_empty_set(self, temp_state_dir):
+    def test_get_samples_needing_upload_empty_set(self, temp_state_dir: Path) -> None:
         """get_samples_needing_upload returns empty list for unknown sample set."""
 
         needing_upload = get_samples_needing_upload(
@@ -845,7 +854,7 @@ class TestPerSampleStateTracking:
         )
         assert needing_upload == []
 
-    def test_get_uploaded_sample_ids(self, temp_state_dir):
+    def test_get_uploaded_sample_ids(self, temp_state_dir: Path) -> None:
         """get_uploaded_sample_ids returns IDs of samples with status='uploaded'."""
 
         set1 = compute_sample_set_id(["s1", "s2"])
@@ -888,13 +897,16 @@ class TestPerSampleStateTracking:
         uploaded = get_uploaded_sample_ids(["s5", "s6"], state_dir=temp_state_dir)
         assert uploaded == set()
 
-    def test_get_uploaded_sample_ids_empty_list(self, temp_state_dir):
+    def test_get_uploaded_sample_ids_empty_list(self, temp_state_dir: Path) -> None:
         """get_uploaded_sample_ids returns empty set for empty input."""
 
         uploaded = get_uploaded_sample_ids([], state_dir=temp_state_dir)
         assert uploaded == set()
 
-    def test_get_uploaded_sample_ids_cross_sample_set(self, temp_state_dir):
+    def test_get_uploaded_sample_ids_cross_sample_set(
+        self,
+        temp_state_dir: Path,
+    ) -> None:
         """get_uploaded_sample_ids finds uploads across different sample sets.
 
         This is important for the run-start check: if a sample was uploaded
@@ -926,13 +938,13 @@ class TestUploads:
     """Tests for upload tracking functions."""
 
     @pytest.fixture
-    def temp_state_dir(self):
+    def temp_state_dir(self) -> Generator[Path, None, None]:
         """Create a temporary directory for state database."""
         with tempfile.TemporaryDirectory() as tmpdir:
             yield Path(tmpdir)
 
     @pytest.fixture
-    def processed_sample(self, temp_state_dir) -> ProcessedSampleContext:
+    def processed_sample(self, temp_state_dir: Path) -> ProcessedSampleContext:
         """Register a run and processed sample, return context."""
         sample_set_id = compute_sample_set_id(["s1"])
         run = register_run("run_001", sample_set_id, state_dir=temp_state_dir)
@@ -950,7 +962,7 @@ class TestUploads:
             state_dir=temp_state_dir,
         )
 
-    def test_record_upload(self, processed_sample: ProcessedSampleContext):
+    def test_record_upload(self, processed_sample: ProcessedSampleContext) -> None:
         """record_upload creates an upload record."""
         ctx = processed_sample
 
@@ -971,7 +983,7 @@ class TestUploads:
         assert upload.content_hash == "abc123"
         assert upload.target_metadata == {"experiment_id": 42, "labkey_row_id": 100}
 
-    def test_get_upload(self, processed_sample: ProcessedSampleContext):
+    def test_get_upload(self, processed_sample: ProcessedSampleContext) -> None:
         """get_upload retrieves a specific upload."""
         ctx = processed_sample
 
@@ -994,7 +1006,7 @@ class TestUploads:
         assert upload is not None
         assert upload.content_hash == "abc123"
 
-    def test_get_upload_not_found(self, temp_state_dir):
+    def test_get_upload_not_found(self, temp_state_dir: Path) -> None:
         """get_upload returns None for unknown upload."""
         upload = get_upload(
             "s1",
@@ -1005,7 +1017,10 @@ class TestUploads:
         )
         assert upload is None
 
-    def test_check_upload_not_uploaded(self, processed_sample: ProcessedSampleContext):
+    def test_check_upload_not_uploaded(
+        self,
+        processed_sample: ProcessedSampleContext,
+    ) -> None:
         """check_upload returns 'not_uploaded' for new uploads."""
         ctx = processed_sample
 
@@ -1022,7 +1037,7 @@ class TestUploads:
     def test_check_upload_already_uploaded(
         self,
         processed_sample: ProcessedSampleContext,
-    ):
+    ) -> None:
         """check_upload returns 'already_uploaded' for same content."""
         ctx = processed_sample
 
@@ -1048,7 +1063,7 @@ class TestUploads:
     def test_check_upload_content_changed(
         self,
         processed_sample: ProcessedSampleContext,
-    ):
+    ) -> None:
         """check_upload returns 'content_changed' for different content."""
         ctx = processed_sample
 
@@ -1071,7 +1086,10 @@ class TestUploads:
         )
         assert result == "content_changed"
 
-    def test_get_uploads_for_sample(self, processed_sample: ProcessedSampleContext):
+    def test_get_uploads_for_sample(
+        self,
+        processed_sample: ProcessedSampleContext,
+    ) -> None:
         """get_uploads_for_sample returns all uploads for a sample."""
         ctx = processed_sample
 
@@ -1101,7 +1119,7 @@ class TestUploads:
     def test_was_sample_ever_uploaded_false(
         self,
         processed_sample: ProcessedSampleContext,
-    ):
+    ) -> None:
         """was_sample_ever_uploaded returns False for un-uploaded samples."""
         ctx = processed_sample
         assert was_sample_ever_uploaded(ctx.sample_id, state_dir=ctx.state_dir) is False
@@ -1109,7 +1127,7 @@ class TestUploads:
     def test_was_sample_ever_uploaded_true(
         self,
         processed_sample: ProcessedSampleContext,
-    ):
+    ) -> None:
         """was_sample_ever_uploaded returns True for uploaded samples."""
         ctx = processed_sample
 
@@ -1127,7 +1145,7 @@ class TestUploads:
     def test_was_sample_ever_uploaded_with_filters(
         self,
         processed_sample: ProcessedSampleContext,
-    ):
+    ) -> None:
         """was_sample_ever_uploaded respects upload_type and upload_target filters."""
         ctx = processed_sample
 
@@ -1180,7 +1198,7 @@ class TestUploads:
             is False
         )
 
-    def test_cross_run_deduplication(self, temp_state_dir):
+    def test_cross_run_deduplication(self, temp_state_dir: Path) -> None:
         """was_sample_ever_uploaded detects uploads across different runs."""
         # First run
         set1 = compute_sample_set_id(["s1", "s2"])
@@ -1223,7 +1241,7 @@ class TestUploads:
             is False
         )
 
-    def test_list_uploads(self, temp_state_dir):
+    def test_list_uploads(self, temp_state_dir: Path) -> None:
         """list_uploads returns all uploads."""
         # Set up two samples with uploads
         set1 = compute_sample_set_id(["s1", "s2"])
@@ -1247,7 +1265,7 @@ class TestUploads:
         uploads = list_uploads(state_dir=temp_state_dir)
         assert len(uploads) == 3
 
-    def test_list_uploads_filter_by_sample(self, temp_state_dir):
+    def test_list_uploads_filter_by_sample(self, temp_state_dir: Path) -> None:
         """list_uploads filters by sample_id."""
         set1 = compute_sample_set_id(["s1", "s2"])
         run = register_run("run_001", set1, state_dir=temp_state_dir)
@@ -1263,7 +1281,7 @@ class TestUploads:
         assert len(uploads) == 1
         assert uploads[0].sample_id == "s1"
 
-    def test_list_uploads_filter_by_type(self, temp_state_dir):
+    def test_list_uploads_filter_by_type(self, temp_state_dir: Path) -> None:
         """list_uploads filters by upload_type."""
         set1 = compute_sample_set_id(["s1"])
         run = register_run("run_001", set1, state_dir=temp_state_dir)
@@ -1293,7 +1311,7 @@ class TestUploads:
         assert len(uploads) == 1
         assert uploads[0].upload_type == "blast"
 
-    def test_list_uploads_filter_by_target(self, temp_state_dir):
+    def test_list_uploads_filter_by_target(self, temp_state_dir: Path) -> None:
         """list_uploads filters by upload_target."""
         set1 = compute_sample_set_id(["s1"])
         run = register_run("run_001", set1, state_dir=temp_state_dir)
@@ -1315,7 +1333,7 @@ class TestUploads:
         assert len(uploads) == 1
         assert uploads[0].upload_target == "labkey"
 
-    def test_list_uploads_with_limit(self, temp_state_dir):
+    def test_list_uploads_with_limit(self, temp_state_dir: Path) -> None:
         """list_uploads respects limit parameter."""
         set1 = compute_sample_set_id(["s1"])
         run = register_run("run_001", set1, state_dir=temp_state_dir)
@@ -1348,26 +1366,26 @@ class TestUploads:
 class TestHashUploadContent:
     """Tests for hash_upload_content()."""
 
-    def test_deterministic(self):
+    def test_deterministic(self) -> None:
         """Same input produces same hash."""
         data = {"key": "value", "number": 42}
         hash1 = hash_upload_content(data)
         hash2 = hash_upload_content(data)
         assert hash1 == hash2
 
-    def test_order_independent_for_dicts(self):
+    def test_order_independent_for_dicts(self) -> None:
         """Dict key order doesn't affect hash (sorted keys)."""
         data1 = {"b": 2, "a": 1}
         data2 = {"a": 1, "b": 2}
         assert hash_upload_content(data1) == hash_upload_content(data2)
 
-    def test_different_data_different_hash(self):
+    def test_different_data_different_hash(self) -> None:
         """Different data produces different hashes."""
         hash1 = hash_upload_content({"key": "value1"})
         hash2 = hash_upload_content({"key": "value2"})
         assert hash1 != hash2
 
-    def test_handles_lists(self):
+    def test_handles_lists(self) -> None:
         """Can hash lists of dicts."""
         data = [{"id": 1}, {"id": 2}]
         result = hash_upload_content(data)
@@ -1385,13 +1403,13 @@ class TestCrossRunDeduplicationE2E:
     """
 
     @pytest.fixture
-    def temp_state_dir(self, tmp_path):
+    def temp_state_dir(self, tmp_path: Path) -> Path:
         """Create a temporary state directory."""
         state_dir = tmp_path / "state"
         state_dir.mkdir()
         return state_dir
 
-    def test_upload_workflow_first_run(self, temp_state_dir):
+    def test_upload_workflow_first_run(self, temp_state_dir: Path) -> None:
         """First run: all samples are uploaded."""
         samples = ["sample_A", "sample_B", "sample_C"]
         sample_set_id = compute_sample_set_id(samples)
@@ -1436,7 +1454,10 @@ class TestCrossRunDeduplicationE2E:
                 state_dir=temp_state_dir,
             )
 
-    def test_upload_workflow_second_run_with_overlap(self, temp_state_dir):
+    def test_upload_workflow_second_run_with_overlap(
+        self,
+        temp_state_dir: Path,
+    ) -> None:
         """Second run: overlapping samples are skipped."""
         # First run: upload A, B, C
         samples_run1 = ["sample_A", "sample_B", "sample_C"]
@@ -1493,7 +1514,7 @@ class TestCrossRunDeduplicationE2E:
         # Only D should be uploaded
         assert samples_to_upload == ["sample_D"]
 
-    def test_dedup_respects_upload_type(self, temp_state_dir):
+    def test_dedup_respects_upload_type(self, temp_state_dir: Path) -> None:
         """Deduplication is per upload_type - blast and gottcha2 are independent."""
         sample_id = "sample_X"
         sample_set_id = compute_sample_set_id([sample_id])
@@ -1533,7 +1554,7 @@ class TestCrossRunDeduplicationE2E:
             state_dir=temp_state_dir,
         )
 
-    def test_dedup_respects_upload_target(self, temp_state_dir):
+    def test_dedup_respects_upload_target(self, temp_state_dir: Path) -> None:
         """Deduplication is per upload_target - labkey and local are independent."""
         sample_id = "sample_Y"
         sample_set_id = compute_sample_set_id([sample_id])
@@ -1578,12 +1599,12 @@ class TestTaxonomyDrift:
     """Tests for taxonomy version tracking and drift detection."""
 
     @pytest.fixture
-    def temp_state_dir(self):
+    def temp_state_dir(self) -> Generator[Path, None, None]:
         """Create a temporary directory for state database."""
         with tempfile.TemporaryDirectory() as tmpdir:
             yield Path(tmpdir)
 
-    def test_record_and_get_taxonomy_version(self, temp_state_dir):
+    def test_record_and_get_taxonomy_version(self, temp_state_dir: Path) -> None:
         """Can record and retrieve taxonomy version for a run."""
         # Register a run first (required for foreign key)
         sample_set_id = compute_sample_set_id(["s1"])
@@ -1608,12 +1629,12 @@ class TestTaxonomyDrift:
         assert version.file_size == 500_000_000
         assert version.downloaded_at == "2024-01-20T10:30:00"
 
-    def test_get_taxonomy_version_not_found(self, temp_state_dir):
+    def test_get_taxonomy_version_not_found(self, temp_state_dir: Path) -> None:
         """Returns None for non-existent run."""
         version = get_taxonomy_version("nonexistent_run", state_dir=temp_state_dir)
         assert version is None
 
-    def test_same_version_no_drift(self, temp_state_dir):
+    def test_same_version_no_drift(self, temp_state_dir: Path) -> None:
         """Same taxonomy hash means no drift."""
         # Register two runs
         set1 = compute_sample_set_id(["s1"])
@@ -1642,7 +1663,7 @@ class TestTaxonomyDrift:
         # No drift detected
         assert check_taxonomy_drift("run_001", "run_002", temp_state_dir) is False
 
-    def test_different_version_drift_detected(self, temp_state_dir):
+    def test_different_version_drift_detected(self, temp_state_dir: Path) -> None:
         """Different taxonomy hash means drift detected."""
         # Register two runs
         set1 = compute_sample_set_id(["s1"])
@@ -1671,7 +1692,7 @@ class TestTaxonomyDrift:
         # Drift detected
         assert check_taxonomy_drift("run_001", "run_002", temp_state_dir) is True
 
-    def test_missing_version_assumes_drift(self, temp_state_dir):
+    def test_missing_version_assumes_drift(self, temp_state_dir: Path) -> None:
         """Missing version info conservatively assumes drift."""
         # Register only one run with taxonomy
         set1 = compute_sample_set_id(["s1"])
@@ -1689,12 +1710,12 @@ class TestTaxonomyDrift:
         # run_002 doesn't exist - should assume drift (conservative)
         assert check_taxonomy_drift("run_001", "run_002", temp_state_dir) is True
 
-    def test_both_missing_assumes_drift(self, temp_state_dir):
+    def test_both_missing_assumes_drift(self, temp_state_dir: Path) -> None:
         """Both versions missing conservatively assumes drift."""
         # Neither run has taxonomy recorded
         assert check_taxonomy_drift("run_001", "run_002", temp_state_dir) is True
 
-    def test_drift_check_is_symmetric(self, temp_state_dir):
+    def test_drift_check_is_symmetric(self, temp_state_dir: Path) -> None:
         """Drift check gives same result regardless of argument order."""
         # Register two runs with different taxonomy
         set1 = compute_sample_set_id(["s1"])
@@ -1731,12 +1752,12 @@ class TestSchemaMigrationSafety:
     """Tests for schema migration safety in db.py."""
 
     @pytest.fixture
-    def temp_state_dir(self):
+    def temp_state_dir(self) -> Generator[Path, None, None]:
         """Create a temporary directory for state database."""
         with tempfile.TemporaryDirectory() as tmpdir:
             yield Path(tmpdir)
 
-    def test_new_database_created_without_prompts(self, temp_state_dir):
+    def test_new_database_created_without_prompts(self, temp_state_dir: Path) -> None:
         """Creating a new database doesn't require any prompts."""
         db_path = temp_state_dir / "state.sqlite"
         assert not db_path.exists()
@@ -1748,7 +1769,10 @@ class TestSchemaMigrationSafety:
 
         assert db_path.exists()
 
-    def test_matching_schema_version_proceeds_normally(self, temp_state_dir):
+    def test_matching_schema_version_proceeds_normally(
+        self,
+        temp_state_dir: Path,
+    ) -> None:
         """Database with matching schema version works without prompts."""
         # Create database with correct schema
         with connect(temp_state_dir) as conn:
@@ -1765,10 +1789,11 @@ class TestSchemaMigrationSafety:
             ).fetchone()
             assert row is not None
 
-    def test_schema_mismatch_raises_error_in_non_interactive(self, temp_state_dir):
+    def test_schema_mismatch_raises_error_in_non_interactive(
+        self,
+        temp_state_dir: Path,
+    ) -> None:
         """Schema mismatch raises SchemaMismatchError when not interactive."""
-        import sqlite3
-
         db_path = temp_state_dir / "state.sqlite"
 
         # Create a database with wrong schema version
@@ -1779,18 +1804,18 @@ class TestSchemaMigrationSafety:
         conn.close()
 
         # In non-interactive mode (tests), should raise error
-        with pytest.raises(SchemaMismatchError) as exc_info:
-            with connect(temp_state_dir):
-                pass
+        with pytest.raises(SchemaMismatchError) as exc_info, connect(temp_state_dir):
+            pass
 
         assert exc_info.value.current_version == EXPECTED_VERSION + 1
         assert exc_info.value.expected_version == EXPECTED_VERSION
         assert exc_info.value.db_path == db_path
 
-    def test_allow_destructive_update_creates_backup(self, temp_state_dir):
+    def test_allow_destructive_update_creates_backup(
+        self,
+        temp_state_dir: Path,
+    ) -> None:
         """allow_destructive_update=True creates backup before deletion."""
-        import sqlite3
-
         db_path = temp_state_dir / "state.sqlite"
 
         # Create a database with wrong schema version and some data
@@ -1800,8 +1825,6 @@ class TestSchemaMigrationSafety:
         conn.execute("INSERT INTO old_data VALUES ('important')")
         conn.commit()
         conn.close()
-
-        original_size = db_path.stat().st_size
 
         # Connect with allow_destructive_update=True
         with connect(temp_state_dir, allow_destructive_update=True) as conn:
@@ -1821,10 +1844,11 @@ class TestSchemaMigrationSafety:
         assert row[0] == "important"
         backup_conn.close()
 
-    def test_allow_destructive_update_preserves_data_in_backup(self, temp_state_dir):
+    def test_allow_destructive_update_preserves_data_in_backup(
+        self,
+        temp_state_dir: Path,
+    ) -> None:
         """Backup contains all original data before schema migration."""
-        import sqlite3
-
         db_path = temp_state_dir / "state.sqlite"
 
         # Create database with old schema and multiple tables of data
@@ -1851,10 +1875,11 @@ class TestSchemaMigrationSafety:
         assert sample_count == 10
         backup_conn.close()
 
-    def test_schema_mismatch_error_message_is_helpful(self, temp_state_dir):
+    def test_schema_mismatch_error_message_is_helpful(
+        self,
+        temp_state_dir: Path,
+    ) -> None:
         """SchemaMismatchError message tells user what to do."""
-        import sqlite3
-
         db_path = temp_state_dir / "state.sqlite"
 
         # Create database with wrong version
@@ -1862,9 +1887,8 @@ class TestSchemaMigrationSafety:
         conn.execute("PRAGMA user_version = 999")
         conn.close()
 
-        with pytest.raises(SchemaMismatchError) as exc_info:
-            with connect(temp_state_dir):
-                pass
+        with pytest.raises(SchemaMismatchError) as exc_info, connect(temp_state_dir):
+            pass
 
         error_msg = str(exc_info.value)
         assert "999" in error_msg  # Current version
@@ -1877,26 +1901,34 @@ class TestDatabasePathLookup:
     """Tests for get_database_by_path() and get_databases_by_path()."""
 
     @pytest.fixture
-    def temp_state_dir(self):
+    def temp_state_dir(self) -> Generator[Path, None, None]:
         """Create a temporary directory for state database."""
         with tempfile.TemporaryDirectory() as tmpdir:
             yield Path(tmpdir)
 
     @pytest.fixture
-    def temp_db_path(self, temp_state_dir):
+    def temp_db_path(self, temp_state_dir: Path) -> Path:
         """Create a temporary 'database' directory to register."""
         db_dir = temp_state_dir / "fake_blast_db"
         db_dir.mkdir()
         return db_dir
 
-    def test_get_database_by_path_not_found(self, temp_state_dir, temp_db_path):
+    def test_get_database_by_path_not_found(
+        self,
+        temp_state_dir: Path,
+        temp_db_path: Path,
+    ) -> None:
         """Looking up unregistered path returns (None, None)."""
         db, warning = get_database_by_path("blast", temp_db_path, temp_state_dir)
 
         assert db is None
         assert warning is None
 
-    def test_get_database_by_path_single_match(self, temp_state_dir, temp_db_path):
+    def test_get_database_by_path_single_match(
+        self,
+        temp_state_dir: Path,
+        temp_db_path: Path,
+    ) -> None:
         """Looking up registered path returns (database, None)."""
         register_database("blast", "v1.0", str(temp_db_path), state_dir=temp_state_dir)
 
@@ -1909,12 +1941,10 @@ class TestDatabasePathLookup:
 
     def test_get_database_by_path_multiple_versions_returns_newest(
         self,
-        temp_state_dir,
-        temp_db_path,
-    ):
+        temp_state_dir: Path,
+        temp_db_path: Path,
+    ) -> None:
         """When multiple versions share a path, returns newest with warning."""
-        import time
-
         # Register first version
         register_database("blast", "v1.0", str(temp_db_path), state_dir=temp_state_dir)
         # Small delay to ensure different timestamps
@@ -1933,9 +1963,9 @@ class TestDatabasePathLookup:
 
     def test_get_database_by_path_canonicalizes_path(
         self,
-        temp_state_dir,
-        temp_db_path,
-    ):
+        temp_state_dir: Path,
+        temp_db_path: Path,
+    ) -> None:
         """Path is canonicalized before lookup."""
         # Register with absolute path
         register_database(
@@ -1946,22 +1976,22 @@ class TestDatabasePathLookup:
         )
 
         # Look up with relative path (from temp_state_dir)
-        relative_path = temp_db_path.relative_to(temp_state_dir.parent)
+        temp_db_path.relative_to(temp_state_dir.parent)
         # We need to be in the right directory for relative paths to work
         # Instead, test with a symlink
         symlink_path = temp_state_dir / "symlink_to_db"
         symlink_path.symlink_to(temp_db_path)
 
-        db, warning = get_database_by_path("blast", symlink_path, temp_state_dir)
+        db, _warning = get_database_by_path("blast", symlink_path, temp_state_dir)
 
         assert db is not None
         assert db.version == "v1.0"
 
     def test_get_database_by_path_different_types_independent(
         self,
-        temp_state_dir,
-        temp_db_path,
-    ):
+        temp_state_dir: Path,
+        temp_db_path: Path,
+    ) -> None:
         """Different db_types at same path are independent."""
         register_database(
             "blast",
@@ -1986,12 +2016,10 @@ class TestDatabasePathLookup:
 
     def test_get_databases_by_path_returns_all_versions(
         self,
-        temp_state_dir,
-        temp_db_path,
-    ):
+        temp_state_dir: Path,
+        temp_db_path: Path,
+    ) -> None:
         """get_databases_by_path returns all versions at a path."""
-        import time
-
         register_database("blast", "v1.0", str(temp_db_path), state_dir=temp_state_dir)
         time.sleep(0.1)
         register_database("blast", "v2.0", str(temp_db_path), state_dir=temp_state_dir)
@@ -2008,15 +2036,19 @@ class TestDatabasePathLookup:
 
     def test_get_databases_by_path_empty_when_not_found(
         self,
-        temp_state_dir,
-        temp_db_path,
-    ):
+        temp_state_dir: Path,
+        temp_db_path: Path,
+    ) -> None:
         """get_databases_by_path returns empty list when path not registered."""
         databases = get_databases_by_path("blast", temp_db_path, temp_state_dir)
 
         assert databases == []
 
-    def test_get_database_by_version_still_works(self, temp_state_dir, temp_db_path):
+    def test_get_database_by_version_still_works(
+        self,
+        temp_state_dir: Path,
+        temp_db_path: Path,
+    ) -> None:
         """Renamed get_database_by_version still works correctly."""
         register_database("blast", "v1.0", str(temp_db_path), state_dir=temp_state_dir)
 
@@ -2039,13 +2071,13 @@ class TestResolveDatabaseVersions:
     """Tests for resolve_database_versions() and _resolve_single_database()."""
 
     @pytest.fixture
-    def temp_state_dir(self):
+    def temp_state_dir(self) -> Generator[Path, None, None]:
         """Create a temporary directory for state database."""
         with tempfile.TemporaryDirectory() as tmpdir:
             yield Path(tmpdir)
 
     @pytest.fixture
-    def temp_db_paths(self, temp_state_dir):
+    def temp_db_paths(self, temp_state_dir: Path) -> dict[str, Path]:
         """Create temporary 'database' directories for each type."""
         paths = {}
         for db_type in ["blast", "gottcha2", "stat"]:
@@ -2054,7 +2086,7 @@ class TestResolveDatabaseVersions:
             paths[db_type] = db_dir
         return paths
 
-    def test_no_paths_returns_empty_resolution(self, temp_state_dir):
+    def test_no_paths_returns_empty_resolution(self, temp_state_dir: Path) -> None:
         """When no paths provided, returns empty resolution."""
         resolution = resolve_database_versions(state_dir=temp_state_dir)
 
@@ -2064,7 +2096,7 @@ class TestResolveDatabaseVersions:
         assert resolution.warnings == []
         assert resolution.auto_registered == []
 
-    def test_version_without_path_passes_through(self, temp_state_dir):
+    def test_version_without_path_passes_through(self, temp_state_dir: Path) -> None:
         """Version provided without path is returned as-is (unusual but valid)."""
         resolution = resolve_database_versions(
             blast_db_version="v1.0",
@@ -2076,7 +2108,11 @@ class TestResolveDatabaseVersions:
         assert resolution.warnings == []
         assert resolution.auto_registered == []
 
-    def test_path_and_version_auto_registers_new(self, temp_state_dir, temp_db_paths):
+    def test_path_and_version_auto_registers_new(
+        self,
+        temp_state_dir: Path,
+        temp_db_paths: dict[str, Path],
+    ) -> None:
         """Path + version auto-registers when not in registry."""
         resolution = resolve_database_versions(
             blast_db=temp_db_paths["blast"],
@@ -2100,9 +2136,9 @@ class TestResolveDatabaseVersions:
 
     def test_path_and_version_same_as_registered_is_noop(
         self,
-        temp_state_dir,
-        temp_db_paths,
-    ):
+        temp_state_dir: Path,
+        temp_db_paths: dict[str, Path],
+    ) -> None:
         """Path + version matching registry is a no-op."""
         # Pre-register
         register_database(
@@ -2126,9 +2162,9 @@ class TestResolveDatabaseVersions:
 
     def test_path_and_version_different_from_registered_warns_and_updates(
         self,
-        temp_state_dir,
-        temp_db_paths,
-    ):
+        temp_state_dir: Path,
+        temp_db_paths: dict[str, Path],
+    ) -> None:
         """Path + version different from registry warns and updates."""
         # Pre-register with old version
         register_database(
@@ -2166,9 +2202,9 @@ class TestResolveDatabaseVersions:
 
     def test_path_without_version_resolves_from_registry(
         self,
-        temp_state_dir,
-        temp_db_paths,
-    ):
+        temp_state_dir: Path,
+        temp_db_paths: dict[str, Path],
+    ) -> None:
         """Path without version resolves from registry."""
         # Pre-register
         register_database(
@@ -2191,9 +2227,9 @@ class TestResolveDatabaseVersions:
 
     def test_path_without_version_not_registered_warns(
         self,
-        temp_state_dir,
-        temp_db_paths,
-    ):
+        temp_state_dir: Path,
+        temp_db_paths: dict[str, Path],
+    ) -> None:
         """Path without version, not in registry, warns."""
         resolution = resolve_database_versions(
             blast_db=temp_db_paths["blast"],
@@ -2213,7 +2249,11 @@ class TestResolveDatabaseVersions:
         # No registrations
         assert resolution.auto_registered == []
 
-    def test_resolves_all_database_types(self, temp_state_dir, temp_db_paths):
+    def test_resolves_all_database_types(
+        self,
+        temp_state_dir: Path,
+        temp_db_paths: dict[str, Path],
+    ) -> None:
         """Resolves all three database types independently."""
         resolution = resolve_database_versions(
             blast_db=temp_db_paths["blast"],
@@ -2231,7 +2271,11 @@ class TestResolveDatabaseVersions:
         assert resolution.warnings == []
         assert len(resolution.auto_registered) == 3
 
-    def test_mixed_resolution_scenarios(self, temp_state_dir, temp_db_paths):
+    def test_mixed_resolution_scenarios(
+        self,
+        temp_state_dir: Path,
+        temp_db_paths: dict[str, Path],
+    ) -> None:
         """Different resolution scenarios for different db types."""
         # Pre-register BLAST
         register_database(
@@ -2263,7 +2307,11 @@ class TestResolveDatabaseVersions:
         assert resolution.stat_db_version is None
         assert any("stat" in w and "not registered" in w for w in resolution.warnings)
 
-    def test_path_canonicalization_in_resolution(self, temp_state_dir, temp_db_paths):
+    def test_path_canonicalization_in_resolution(
+        self,
+        temp_state_dir: Path,
+        temp_db_paths: dict[str, Path],
+    ) -> None:
         """Paths are canonicalized during resolution."""
         # Register with absolute path
         register_database(
@@ -2289,9 +2337,9 @@ class TestResolveDatabaseVersions:
 
     def test_multiple_versions_at_path_uses_newest_with_warning(
         self,
-        temp_state_dir,
-        temp_db_paths,
-    ):
+        temp_state_dir: Path,
+        temp_db_paths: dict[str, Path],
+    ) -> None:
         """When multiple versions at path, uses newest and warns."""
         # Register multiple versions at same path
         register_database(
@@ -2328,13 +2376,13 @@ class TestSampleLocks:
     """
 
     @pytest.fixture
-    def temp_state_dir(self):
+    def temp_state_dir(self) -> Generator[Path, None, None]:
         """Create a temporary directory for state database."""
         with tempfile.TemporaryDirectory() as tmpdir:
             yield Path(tmpdir)
 
     @pytest.fixture
-    def registered_run(self, temp_state_dir) -> RunContext:
+    def registered_run(self, temp_state_dir: Path) -> RunContext:
         """Register a run and return RunContext."""
         sample_set_id = compute_sample_set_id(["s1", "s2", "s3"])
         run = register_run("run_001", sample_set_id, state_dir=temp_state_dir)
@@ -2345,10 +2393,8 @@ class TestSampleLocks:
             state_dir=temp_state_dir,
         )
 
-    def test_acquire_sample_lock_basic(self, registered_run: RunContext):
+    def test_acquire_sample_lock_basic(self, registered_run: RunContext) -> None:
         """Basic lock acquisition succeeds and returns None."""
-        from py_nvd.state import acquire_sample_lock, get_lock
-
         ctx = registered_run
 
         # Acquire lock
@@ -2364,12 +2410,11 @@ class TestSampleLocks:
         assert lock.run_id == ctx.run.run_id
         assert not lock.is_expired
 
-    def test_acquire_sample_lock_blocked_by_different_user(self, temp_state_dir):
+    def test_acquire_sample_lock_blocked_by_different_user(
+        self,
+        temp_state_dir: Path,
+    ) -> None:
         """Lock acquisition fails when blocked by a different user's active lock."""
-        from datetime import datetime, timedelta
-
-        from py_nvd.state import acquire_sample_lock
-
         # Register a run
         set1 = compute_sample_set_id(["s1"])
         run1 = register_run("run_001", set1, state_dir=temp_state_dir)
@@ -2380,7 +2425,7 @@ class TestSampleLocks:
         expires = now + timedelta(hours=72)
         with connect(temp_state_dir) as conn:
             conn.execute(
-                """INSERT INTO sample_locks 
+                """INSERT INTO sample_locks
                    (sample_id, run_id, hostname, username, locked_at, expires_at)
                    VALUES (?, ?, ?, ?, ?, ?)""",
                 (
@@ -2402,12 +2447,8 @@ class TestSampleLocks:
         assert result.hostname == "other_host"
         assert result.username == "other_user"
 
-    def test_acquire_sample_lock_overwrites_expired(self, temp_state_dir):
+    def test_acquire_sample_lock_overwrites_expired(self, temp_state_dir: Path) -> None:
         """Lock acquisition succeeds when existing lock is expired."""
-        from datetime import datetime, timedelta
-
-        from py_nvd.state import acquire_sample_lock, get_lock
-
         # Register a run
         set1 = compute_sample_set_id(["s1"])
         run = register_run("run_001", set1, state_dir=temp_state_dir)
@@ -2418,7 +2459,7 @@ class TestSampleLocks:
         expired = now - timedelta(hours=1)
         with connect(temp_state_dir) as conn:
             conn.execute(
-                """INSERT INTO sample_locks 
+                """INSERT INTO sample_locks
                    (sample_id, run_id, hostname, username, locked_at, expires_at)
                    VALUES (?, ?, ?, ?, ?, ?)""",
                 (
@@ -2444,10 +2485,8 @@ class TestSampleLocks:
     def test_acquire_sample_lock_same_run_same_fingerprint_refreshes(
         self,
         registered_run: RunContext,
-    ):
+    ) -> None:
         """Same run + same fingerprint refreshes TTL (legitimate resume)."""
-        from py_nvd.state import acquire_sample_lock, get_lock
-
         ctx = registered_run
 
         # First acquisition
@@ -2459,8 +2498,6 @@ class TestSampleLocks:
         expires1 = lock1.expires_at
 
         # Small delay to ensure different timestamp
-        import time
-
         time.sleep(0.1)
 
         # Second acquisition (same run, same machine) - should refresh TTL
@@ -2475,15 +2512,13 @@ class TestSampleLocks:
     def test_acquire_sample_lock_different_run_same_fingerprint_allows_resume(
         self,
         registered_run: RunContext,
-    ):
+    ) -> None:
         """Different run_id + same fingerprint = allowed (Nextflow -resume scenario).
 
         Nextflow generates a new run name on every invocation, even with -resume.
         The same user on the same host should be able to re-acquire their own locks
         with a new run_id.
         """
-        from py_nvd.state import acquire_sample_lock, get_lock
-
         ctx = registered_run
 
         # First run acquires lock
@@ -2510,13 +2545,9 @@ class TestSampleLocks:
 
     def test_acquire_sample_lock_same_run_different_fingerprint_active_conflict(
         self,
-        temp_state_dir,
-    ):
+        temp_state_dir: Path,
+    ) -> None:
         """Same run + different fingerprint + active lock = conflict."""
-        from datetime import datetime, timedelta
-
-        from py_nvd.state import acquire_sample_lock
-
         # Register a run
         set1 = compute_sample_set_id(["s1"])
         run = register_run("run_001", set1, state_dir=temp_state_dir)
@@ -2527,7 +2558,7 @@ class TestSampleLocks:
         expires = now + timedelta(hours=72)
         with connect(temp_state_dir) as conn:
             conn.execute(
-                """INSERT INTO sample_locks 
+                """INSERT INTO sample_locks
                    (sample_id, run_id, hostname, username, locked_at, expires_at)
                    VALUES (?, ?, ?, ?, ?, ?)""",
                 (
@@ -2550,13 +2581,9 @@ class TestSampleLocks:
 
     def test_acquire_sample_lock_same_run_different_fingerprint_expired_acquires(
         self,
-        temp_state_dir,
-    ):
+        temp_state_dir: Path,
+    ) -> None:
         """Same run + different fingerprint + expired = crash recovery."""
-        from datetime import datetime, timedelta
-
-        from py_nvd.state import acquire_sample_lock, get_lock
-
         # Register a run
         set1 = compute_sample_set_id(["s1"])
         run = register_run("run_001", set1, state_dir=temp_state_dir)
@@ -2567,7 +2594,7 @@ class TestSampleLocks:
         expired = now - timedelta(hours=1)
         with connect(temp_state_dir) as conn:
             conn.execute(
-                """INSERT INTO sample_locks 
+                """INSERT INTO sample_locks
                    (sample_id, run_id, hostname, username, locked_at, expires_at)
                    VALUES (?, ?, ?, ?, ?, ?)""",
                 (
@@ -2592,12 +2619,11 @@ class TestSampleLocks:
         # Fingerprint should be updated to current machine
         assert lock.hostname != "crashed_host"
 
-    def test_acquire_sample_locks_batch_mixed_results(self, temp_state_dir):
+    def test_acquire_sample_locks_batch_mixed_results(
+        self,
+        temp_state_dir: Path,
+    ) -> None:
         """Batch acquisition returns acquired and conflicts separately."""
-        from datetime import datetime, timedelta
-
-        from py_nvd.state import acquire_sample_locks
-
         # Register two runs
         set1 = compute_sample_set_id(["s1", "s2", "s3"])
         set2 = compute_sample_set_id(["s4"])
@@ -2612,7 +2638,7 @@ class TestSampleLocks:
         with connect(temp_state_dir) as conn:
             for sample_id in ["s1", "s2"]:
                 conn.execute(
-                    """INSERT INTO sample_locks 
+                    """INSERT INTO sample_locks
                        (sample_id, run_id, hostname, username, locked_at, expires_at)
                        VALUES (?, ?, ?, ?, ?, ?)""",
                     (
@@ -2638,10 +2664,8 @@ class TestSampleLocks:
         conflict_samples = {c.sample_id for c in conflicts}
         assert conflict_samples == {"s1", "s2"}
 
-    def test_release_sample_lock_releases_own(self, registered_run: RunContext):
+    def test_release_sample_lock_releases_own(self, registered_run: RunContext) -> None:
         """release_sample_lock releases lock held by this run."""
-        from py_nvd.state import acquire_sample_lock, get_lock, release_sample_lock
-
         ctx = registered_run
 
         # Acquire lock
@@ -2655,10 +2679,11 @@ class TestSampleLocks:
         # Lock should be gone
         assert get_lock("s1", state_dir=ctx.state_dir) is None
 
-    def test_release_sample_lock_wont_release_others(self, temp_state_dir):
+    def test_release_sample_lock_wont_release_others(
+        self,
+        temp_state_dir: Path,
+    ) -> None:
         """release_sample_lock won't release another run's lock."""
-        from py_nvd.state import acquire_sample_lock, get_lock, release_sample_lock
-
         # Register two runs
         set1 = compute_sample_set_id(["s1"])
         set2 = compute_sample_set_id(["s2"])
@@ -2679,14 +2704,8 @@ class TestSampleLocks:
         assert lock is not None
         assert lock.run_id == "run_001"
 
-    def test_release_all_locks_for_run(self, registered_run: RunContext):
+    def test_release_all_locks_for_run(self, registered_run: RunContext) -> None:
         """release_all_locks_for_run releases all locks for a run."""
-        from py_nvd.state import (
-            acquire_sample_lock,
-            get_locks_for_run,
-            release_all_locks_for_run,
-        )
-
         ctx = registered_run
 
         # Acquire multiple locks
@@ -2702,12 +2721,8 @@ class TestSampleLocks:
         # All locks should be gone
         assert len(get_locks_for_run(ctx.run.run_id, state_dir=ctx.state_dir)) == 0
 
-    def test_get_lock_returns_none_for_expired(self, temp_state_dir):
+    def test_get_lock_returns_none_for_expired(self, temp_state_dir: Path) -> None:
         """get_lock returns None for expired locks by default."""
-        from datetime import datetime, timedelta
-
-        from py_nvd.state import get_lock
-
         # Register a run
         set1 = compute_sample_set_id(["s1"])
         run = register_run("run_001", set1, state_dir=temp_state_dir)
@@ -2718,7 +2733,7 @@ class TestSampleLocks:
         expired = now - timedelta(hours=1)
         with connect(temp_state_dir) as conn:
             conn.execute(
-                """INSERT INTO sample_locks 
+                """INSERT INTO sample_locks
                    (sample_id, run_id, hostname, username, locked_at, expires_at)
                    VALUES (?, ?, ?, ?, ?, ?)""",
                 ("s1", "run_001", "host", "user", now.isoformat(), expired.isoformat()),
@@ -2733,12 +2748,11 @@ class TestSampleLocks:
         assert lock is not None
         assert lock.is_expired
 
-    def test_cleanup_expired_locks_removes_only_expired(self, temp_state_dir):
+    def test_cleanup_expired_locks_removes_only_expired(
+        self,
+        temp_state_dir: Path,
+    ) -> None:
         """cleanup_expired_locks removes only expired locks."""
-        from datetime import datetime, timedelta
-
-        from py_nvd.state import cleanup_expired_locks, list_locks
-
         # Register a run
         set1 = compute_sample_set_id(["s1", "s2"])
         run = register_run("run_001", set1, state_dir=temp_state_dir)
@@ -2755,13 +2769,13 @@ class TestSampleLocks:
         # Insert one expired and one active lock
         with connect(temp_state_dir) as conn:
             conn.execute(
-                """INSERT INTO sample_locks 
+                """INSERT INTO sample_locks
                    (sample_id, run_id, hostname, username, locked_at, expires_at)
                    VALUES (?, ?, ?, ?, ?, ?)""",
                 ("s1", "run_001", "host", "user", to_iso(now), to_iso(expired)),
             )
             conn.execute(
-                """INSERT INTO sample_locks 
+                """INSERT INTO sample_locks
                    (sample_id, run_id, hostname, username, locked_at, expires_at)
                    VALUES (?, ?, ?, ?, ?, ?)""",
                 ("s2", "run_001", "host", "user", to_iso(now), to_iso(active)),
@@ -2786,15 +2800,16 @@ class TestEffectiveRunStatus:
     """Tests for run status with TTL-based failure detection."""
 
     @pytest.fixture
-    def temp_state_dir(self):
+    def temp_state_dir(self) -> Generator[Path, None, None]:
         """Create a temporary directory for state database."""
         with tempfile.TemporaryDirectory() as tmpdir:
             yield Path(tmpdir)
 
-    def test_get_effective_run_status_returns_failed_for_stale(self, temp_state_dir):
+    def test_get_effective_run_status_returns_failed_for_stale(
+        self,
+        temp_state_dir: Path,
+    ) -> None:
         """get_effective_run_status returns 'failed' for stale 'running' runs."""
-        from py_nvd.state import get_effective_run_status
-
         # Insert a run that started long ago
         with connect(temp_state_dir) as conn:
             conn.execute(
@@ -2812,10 +2827,11 @@ class TestEffectiveRunStatus:
         effective = get_effective_run_status(run, ttl_hours=72)
         assert effective == "failed"
 
-    def test_get_effective_run_status_returns_running_for_fresh(self, temp_state_dir):
+    def test_get_effective_run_status_returns_running_for_fresh(
+        self,
+        temp_state_dir: Path,
+    ) -> None:
         """get_effective_run_status returns 'running' for fresh runs."""
-        from py_nvd.state import get_effective_run_status
-
         set1 = compute_sample_set_id(["s1"])
         run = register_run("fresh_run", set1, state_dir=temp_state_dir)
         assert run is not None
@@ -2827,11 +2843,9 @@ class TestEffectiveRunStatus:
 
     def test_get_effective_run_status_returns_actual_for_completed(
         self,
-        temp_state_dir,
-    ):
+        temp_state_dir: Path,
+    ) -> None:
         """get_effective_run_status returns actual status for non-running runs."""
-        from py_nvd.state import get_effective_run_status
-
         set1 = compute_sample_set_id(["s1"])
         run = register_run("completed_run", set1, state_dir=temp_state_dir)
         assert run is not None
@@ -2847,12 +2861,11 @@ class TestEffectiveRunStatus:
         effective = get_effective_run_status(run, ttl_hours=72)
         assert effective == "completed"
 
-    def test_mark_stale_runs_failed_updates_only_stale(self, temp_state_dir):
+    def test_mark_stale_runs_failed_updates_only_stale(
+        self,
+        temp_state_dir: Path,
+    ) -> None:
         """mark_stale_runs_failed updates only stale 'running' runs."""
-        from datetime import datetime
-
-        from py_nvd.state import mark_stale_runs_failed
-
         # Insert runs with different ages
         with connect(temp_state_dir) as conn:
             # Very old run (should be marked failed)

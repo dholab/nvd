@@ -1,4 +1,3 @@
-# ruff: noqa: B008
 """
 State management commands for the NVD CLI.
 
@@ -18,7 +17,13 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import UTC, date, datetime
+import re
+import shutil
+import socket
+import sqlite3
+import tarfile
+import tempfile
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Annotated
 
@@ -53,6 +58,11 @@ from py_nvd.hits import (
 )
 from py_nvd.models import ProcessedSampleStatus, Status, UploadType  # noqa: TC001
 
+_SIZE_UNIT_THRESHOLD = 1024
+_MAX_PATH_DISPLAY_LENGTH = 40
+_HOURS_IN_DAY = 24
+_UNCOMPACTED_HITS_WARNING_THRESHOLD = 100
+
 state_app = typer.Typer(
     name="state",
     help="Inspect and manage pipeline state (runs, samples, uploads, databases)",
@@ -72,9 +82,9 @@ def _format_size(size_bytes: int) -> str:
     """Format bytes as human-readable size."""
     size = float(size_bytes)
     for unit in ("B", "KB", "MB", "GB"):
-        if size < 1024:
+        if size < _SIZE_UNIT_THRESHOLD:
             return f"{size:.1f} {unit}"
-        size /= 1024
+        size /= _SIZE_UNIT_THRESHOLD
     return f"{size:.1f} TB"
 
 
@@ -102,10 +112,11 @@ def _validate_path_for_sql(path: Path) -> Path:
     resolved = path.resolve()
     path_str = str(resolved)
     if "'" in path_str:
-        raise ValueError(
+        msg = (
             f"Path contains single quote which cannot be safely used in SQL: {path_str}\n"
-            "Please rename the file to remove the quote.",
+            "Please rename the file to remove the quote."
         )
+        raise ValueError(msg)
     return resolved
 
 
@@ -302,7 +313,7 @@ def state_info(
                 "SELECT COUNT(*) FROM sample_locks WHERE expires_at < datetime('now')",
             ).fetchone()[0]
             active_locks_count = locks_count - expired_locks_count
-        except Exception:
+        except sqlite3.OperationalError:
             locks_count = 0
             expired_locks_count = 0
             active_locks_count = 0
@@ -430,9 +441,8 @@ def _parse_since(value: str) -> date | datetime:
     try:
         return date.fromisoformat(value)
     except ValueError:
-        raise typer.BadParameter(
-            f"Invalid date format: {value!r}. Use ISO format: YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS",
-        )
+        msg = f"Invalid date format: {value!r}. Use ISO format: YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS"
+        raise typer.BadParameter(msg) from None
 
 
 # Status values for CLI validation
@@ -573,7 +583,7 @@ def state_runs(
     console.print()
     console.print(table)
 
-    if len(durations) >= 2:
+    if len(durations) >= 2:  # noqa: PLR2004
         min_dur = min(durations)
         max_dur = max(durations)
         avg_dur = sum(durations) / len(durations)
@@ -623,6 +633,8 @@ def state_run(
             _output_json({"error": "Run not found", "run_id": run_id})
             raise typer.Exit(1)
         error(f"Run not found: {run_id}")
+
+    assert run is not None  # Narrowing hint: guarded by error() above
 
     samples = state.get_samples_for_run(run_id)
     taxonomy = state.get_taxonomy_version(run_id)
@@ -1191,7 +1203,7 @@ def database_list(
 
         # Truncate path if too long
         display_path = db.path
-        if len(display_path) > 40:
+        if len(display_path) > _MAX_PATH_DISPLAY_LENGTH:
             display_path = "..." + display_path[-37:]
 
         table.add_row(
@@ -1263,6 +1275,8 @@ def database_show(
             error(f"Database not found: {db_type} version {version}")
         else:
             error(f"No {db_type} database registered")
+
+    assert db is not None  # Narrowing hint: guarded by error() above
 
     path_exists = Path(db.path).exists()
 
@@ -1341,12 +1355,11 @@ def database_register(
         raise typer.Exit(1)
 
     # Warn if path doesn't exist (but allow registration)
-    if not path.exists():
-        if not json_output:
-            warning(f"Path does not exist: {path}")
-            warning(
-                "Registering anyway - ensure path is correct before running pipeline",
-            )
+    if not path.exists() and not json_output:
+        warning(f"Path does not exist: {path}")
+        warning(
+            "Registering anyway - ensure path is correct before running pipeline",
+        )
 
     # Register the database (path is canonicalized by register_database)
     db = state.register_database(
@@ -1427,6 +1440,8 @@ def database_unregister(
             )
             raise typer.Exit(1)
         error(f"Database not found: {db_type} version {version}")
+
+    assert db is not None  # Narrowing hint: guarded by error() above
 
     # Confirm unless --yes
     if not yes and not json_output:
@@ -1555,13 +1570,12 @@ def _parse_duration(value: str) -> int:
     Raises:
         typer.BadParameter: If the string cannot be parsed
     """
-    import re
-
     match = re.match(r"^(\d+)([dwm])$", value.lower())
     if not match:
-        raise typer.BadParameter(
-            f"Invalid duration format: {value!r}. Use format like '30d', '12w', or '6m'",
+        msg = (
+            f"Invalid duration format: {value!r}. Use format like '30d', '12w', or '6m'"
         )
+        raise typer.BadParameter(msg)
 
     amount = int(match.group(1))
     unit = match.group(2)
@@ -1572,7 +1586,8 @@ def _parse_duration(value: str) -> int:
         return amount * 7
     if unit == "m":
         return amount * 30  # Approximate
-    raise typer.BadParameter(f"Unknown duration unit: {unit}")
+    msg = f"Unknown duration unit: {unit}"
+    raise typer.BadParameter(msg)
 
 
 @state_app.command("prune")
@@ -1647,8 +1662,6 @@ def state_prune(
         # Prune without confirmation
         nvd state prune --older-than 90d --yes
     """
-    from datetime import timedelta
-
     ensure_db_exists(json_output)
 
     # Parse duration
@@ -1657,25 +1670,28 @@ def state_prune(
     except typer.BadParameter as e:
         if json_output:
             _output_json({"error": str(e)})
-            raise typer.Exit(1)
+            raise typer.Exit(1) from None
         error(str(e))
 
     # Validate status filter
     valid_statuses = ["completed", "failed"]
-    if status is not None and status not in valid_statuses:
-        if not include_running or status != "running":
-            if json_output:
-                _output_json(
-                    {
-                        "error": f"Invalid status: {status}",
-                        "valid_statuses": valid_statuses,
-                    },
-                )
-                raise typer.Exit(1)
-            error(
-                f"Invalid status: {status!r}. Must be one of: {', '.join(valid_statuses)}",
+    if (
+        status is not None
+        and status not in valid_statuses
+        and (not include_running or status != "running")
+    ):
+        if json_output:
+            _output_json(
+                {
+                    "error": f"Invalid status: {status}",
+                    "valid_statuses": valid_statuses,
+                },
             )
             raise typer.Exit(1)
+        error(
+            f"Invalid status: {status!r}. Must be one of: {', '.join(valid_statuses)}",
+        )
+        raise typer.Exit(1)
 
     # Calculate cutoff date (UTC for consistent comparison with stored timestamps)
     cutoff = datetime.now(UTC) - timedelta(days=days)
@@ -1901,7 +1917,7 @@ def state_prune(
         )
 
 
-def _get_table_counts(conn) -> dict[str, int]:
+def _get_table_counts(conn: sqlite3.Connection) -> dict[str, int]:
     """Get counts for all tables in the state database."""
     return {
         "runs": conn.execute("SELECT COUNT(*) FROM runs").fetchone()[0],
@@ -1921,10 +1937,8 @@ def _get_table_counts(conn) -> dict[str, int]:
     }
 
 
-def _build_export_manifest(conn) -> dict:
+def _build_export_manifest(conn: sqlite3.Connection) -> dict:
     """Build the manifest for a state export."""
-    import socket
-
     schema_version = conn.execute("PRAGMA user_version").fetchone()[0]
     counts = _get_table_counts(conn)
 
@@ -1985,9 +1999,6 @@ def state_export(
         # Overwrite existing archive
         nvd state export backup.nvd-state --force
     """
-    import shutil
-    import tarfile
-    import tempfile
 
     # Validate arguments
     if json_output and path is not None:
@@ -2086,9 +2097,6 @@ def _validate_archive(archive_path: Path) -> tuple[dict, Path]:
     Raises:
         typer.Exit: If archive is invalid
     """
-    import tarfile
-    import tempfile
-
     if not archive_path.exists():
         error(f"Archive not found: {archive_path}")
 
@@ -2127,7 +2135,10 @@ def _validate_archive(archive_path: Path) -> tuple[dict, Path]:
     return manifest, tmpdir_path
 
 
-def _find_conflicts(conn, backup_db_path: Path) -> dict[str, list[dict]]:
+def _find_conflicts(
+    conn: sqlite3.Connection,
+    backup_db_path: Path,
+) -> dict[str, list[dict]]:
     """
     Find primary-key conflicts between the local database and a backup.
 
@@ -2180,17 +2191,16 @@ def _find_conflicts(conn, backup_db_path: Path) -> dict[str, list[dict]]:
 
             rows = conn.execute(query).fetchall()
             if rows:
-                table_conflicts = []
-                for row in rows:
-                    table_conflicts.append(
-                        {
-                            "pk": {col: row[f"pk_{col}"] for col in pk_cols},
-                            "local": {col: row[f"local_{col}"] for col in display_cols},
-                            "incoming": {
-                                col: row[f"incoming_{col}"] for col in display_cols
-                            },
+                table_conflicts = [
+                    {
+                        "pk": {col: row[f"pk_{col}"] for col in pk_cols},
+                        "local": {col: row[f"local_{col}"] for col in display_cols},
+                        "incoming": {
+                            col: row[f"incoming_{col}"] for col in display_cols
                         },
-                    )
+                    }
+                    for row in rows
+                ]
                 conflicts[table_name] = table_conflicts
 
     finally:
@@ -2243,7 +2253,7 @@ def _print_conflicts(conflicts: dict[str, list[dict]], json_output: bool) -> Non
     console.print("[dim]Resolve conflicts manually, then retry import.[/dim]")
 
 
-def _do_merge_import(conn, backup_db_path: Path) -> dict[str, int]:
+def _do_merge_import(conn: sqlite3.Connection, backup_db_path: Path) -> dict[str, int]:
     """
     Perform merge import from backup database.
 
@@ -2299,8 +2309,6 @@ def _do_replace_import(backup_db_path: Path, current_db_path: Path) -> None:
 
     Uses atomic rename for safety.
     """
-    import shutil
-
     # Backup current DB just in case (to .bak)
     backup_path = current_db_path.with_suffix(".sqlite.bak")
     if current_db_path.exists():
@@ -2375,8 +2383,6 @@ def state_import(
         # JSON output (useful for scripting)
         nvd state import backup.nvd-state --json
     """
-    import shutil
-
     # Validate archive and extract to temp directory
     manifest, tmpdir_path = _validate_archive(path)
 
@@ -2715,7 +2721,7 @@ def _format_time_remaining(expires_at: str) -> str:
     """Format time remaining until lock expires."""
 
     try:
-        expires = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+        expires = datetime.fromisoformat(expires_at)
         if expires.tzinfo is None:
             expires = expires.replace(tzinfo=UTC)
         now = datetime.now(UTC)
@@ -2727,9 +2733,9 @@ def _format_time_remaining(expires_at: str) -> str:
         hours = int(remaining.total_seconds() // 3600)
         minutes = int((remaining.total_seconds() % 3600) // 60)
 
-        if hours > 24:
-            days = hours // 24
-            hours = hours % 24
+        if hours > _HOURS_IN_DAY:
+            days = hours // _HOURS_IN_DAY
+            hours = hours % _HOURS_IN_DAY
             return f"{days}d {hours}h"
         if hours > 0:
             return f"{hours}h {minutes}m"
@@ -3085,13 +3091,11 @@ def state_cleanup(
 
         if mark_failed:
             # Count stale running runs
-            from datetime import timedelta
-
             cutoff = datetime.now(UTC) - timedelta(hours=stale_after)
             runs = state.list_runs(status="running")
             stale_runs = []
             for run in runs:
-                started = datetime.fromisoformat(run.started_at.replace("Z", "+00:00"))
+                started = datetime.fromisoformat(run.started_at)
                 if started.tzinfo is None:
                     started = started.replace(tzinfo=UTC)
                 if started < cutoff:
@@ -3227,7 +3231,7 @@ def _update_setup_conf(new_state_dir: Path) -> bool:
     Returns:
         True if setup.conf was updated, False if it doesn't exist.
     """
-    from py_nvd.cli.commands.setup import NVD_HOME
+    from py_nvd.cli.commands.setup import NVD_HOME  # noqa: PLC0415
 
     setup_conf = NVD_HOME / "setup.conf"
     if not setup_conf.exists():
@@ -3303,8 +3307,6 @@ def state_move(
         # Overwrite existing destination
         nvd state move /scratch/nvd-state --force
     """
-    import shutil
-
     source = get_state_dir()
     dest = destination.expanduser().resolve()
 
@@ -3351,8 +3353,7 @@ def state_move(
     file_count, dir_count, total_size = _get_directory_stats(source)
     uncompacted_hits = _count_uncompacted_hits(source)
 
-    # Check for setup.conf
-    from py_nvd.cli.commands.setup import NVD_HOME
+    from py_nvd.cli.commands.setup import NVD_HOME  # noqa: PLC0415
 
     setup_conf_exists = (NVD_HOME / "setup.conf").exists()
 
@@ -3369,7 +3370,7 @@ def state_move(
         console.print(f"  Total size: {_format_size(total_size)}")
         console.print()
 
-        if uncompacted_hits > 100:
+        if uncompacted_hits > _UNCOMPACTED_HITS_WARNING_THRESHOLD:
             warning(
                 f"Found {uncompacted_hits:,} uncompacted hit files. "
                 "Consider running 'nvd hits compact' before moving to reduce transfer time.",
@@ -3400,7 +3401,7 @@ def state_move(
     console.print(f"  Size: {_format_size(total_size)} ({file_count:,} files)")
     console.print()
 
-    if uncompacted_hits > 100:
+    if uncompacted_hits > _UNCOMPACTED_HITS_WARNING_THRESHOLD:
         warning(
             f"Found {uncompacted_hits:,} uncompacted hit files. This may take a while.",
         )
@@ -3414,9 +3415,9 @@ def state_move(
     # Copy the directory
     try:
         shutil.copytree(source, dest)
-    except Exception as e:
+    except OSError as e:
         error(f"Copy failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
 
     # Verify the copy
     info("Verifying copy...")
@@ -3443,7 +3444,7 @@ def state_move(
         try:
             shutil.rmtree(source)
             success(f"Removed: {source}")
-        except Exception as e:
+        except OSError as e:
             warning(f"Could not remove source: {e}")
             console.print("  Move completed but source remains")
 

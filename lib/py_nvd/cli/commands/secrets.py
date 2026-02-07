@@ -23,17 +23,20 @@ import typer
 
 from py_nvd.cli.prompts import (
     PROMPT_TIMEOUT_SECONDS,
-    PromptTimeout,
+    PromptTimeoutError,
     confirm_with_timeout,
     is_interactive,
 )
 from py_nvd.cli.utils import console, error, info, success, warning
 
 # The secret name used by the pipeline for LabKey API key
-LABKEY_SECRET_NAME = "LABKEY_API_KEY"
+LABKEY_SECRET_NAME = "LABKEY_API_KEY"  # noqa: S105
 
 # The secret name used by the pipeline for Slack notifications
-SLACK_SECRET_NAME = "SLACK_BOT_TOKEN"
+SLACK_SECRET_NAME = "SLACK_BOT_TOKEN"  # noqa: S105
+
+# Number of trailing characters to show when masking a secret value
+_MASK_VISIBLE_CHARS = 4
 
 # All secret names we recognize
 KNOWN_SECRETS = {
@@ -44,6 +47,7 @@ KNOWN_SECRETS = {
 
 def _run_nextflow_secrets(
     args: list[str],
+    *,
     capture: bool = True,
 ) -> subprocess.CompletedProcess[str]:
     """
@@ -61,7 +65,7 @@ def _run_nextflow_secrets(
     """
     cmd = ["nextflow", "secrets", *args]
     try:
-        return subprocess.run(
+        return subprocess.run(  # noqa: S603
             cmd,
             capture_output=capture,
             text=True,
@@ -156,9 +160,12 @@ def list_secrets(
 
         if show_values:
             value = _get_secret(name)
-            # Mask all but last 4 characters for display
-            if value and len(value) > 4:
-                masked = "*" * (len(value) - 4) + value[-4:]
+            # Mask all but last few characters for display
+            if value and len(value) > _MASK_VISIBLE_CHARS:
+                masked = (
+                    "*" * (len(value) - _MASK_VISIBLE_CHARS)
+                    + value[-_MASK_VISIBLE_CHARS:]
+                )
             else:
                 masked = "****"
             console.print(f"  [cyan]{name}[/cyan] = {masked}")
@@ -178,7 +185,7 @@ def list_secrets(
         console.print(f"  [cyan]nvd secrets set {LABKEY_SECRET_NAME}[/cyan]")
     else:
         success(
-            f"'{LABKEY_SECRET_NAME}' is configured - pipeline ready for LabKey uploads"
+            f"'{LABKEY_SECRET_NAME}' is configured - pipeline ready for LabKey uploads",
         )
 
 
@@ -250,7 +257,7 @@ def set_secret(
                 ):
                     info("Aborted")
                     raise typer.Abort from None
-            except PromptTimeout:
+            except PromptTimeoutError:
                 error("Confirmation timed out.")
             except KeyboardInterrupt:
                 console.print("\n[yellow]Cancelled[/yellow]")
@@ -281,7 +288,7 @@ def get_secret(
 
     # Deprecation warning
     warning(
-        "[bold]This command is deprecated[/bold] and will be removed in a future release."
+        "[bold]This command is deprecated[/bold] and will be removed in a future release.",
     )
     info("Use [cyan]nvd secrets list --show-values[/cyan] for a masked view instead.")
     console.print()
@@ -310,7 +317,7 @@ def get_secret(
         ):
             info("Aborted.")
             raise typer.Abort from None
-    except PromptTimeout:
+    except PromptTimeoutError:
         console.print()
         error(
             f"Confirmation timed out after {PROMPT_TIMEOUT_SECONDS // 60} minutes. "
@@ -362,7 +369,7 @@ def delete_secret(
                 ):
                     info("Aborted")
                     raise typer.Abort from None
-            except PromptTimeout:
+            except PromptTimeoutError:
                 error("Confirmation timed out.")
             except KeyboardInterrupt:
                 console.print("\n[yellow]Cancelled[/yellow]")
@@ -398,7 +405,7 @@ def check_secrets() -> None:
         success("Secret configuration is valid - pipeline ready for LabKey uploads")
     else:
         console.print(
-            f"[red]✗[/red] '{LABKEY_SECRET_NAME}' is [bold]not configured[/bold]"
+            f"[red]✗[/red] '{LABKEY_SECRET_NAME}' is [bold]not configured[/bold]",
         )
         console.print()
         info("LabKey uploads will fail without this secret.")

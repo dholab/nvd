@@ -7,6 +7,7 @@ All data crossing API boundaries uses these models.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import logging
 import re
@@ -71,19 +72,17 @@ def _from_row(cls: type[T], row: Row) -> T:
         AssertionError: If cls is not a dataclass or row is missing required columns
         ValidationError: If Pydantic validation fails
     """
-    assert hasattr(cls, "__dataclass_fields__"), (
-        f"_from_row requires a dataclass, got {cls.__name__}"
-    )
+    assert dataclasses.is_dataclass(cls), f"_from_row requires a dataclass, got {cls.__name__}"
 
-    fields = cls.__dataclass_fields__  # type: ignore[attr-defined]
+    field_names = [f.name for f in dataclasses.fields(cls)]
     row_keys = set(row.keys())
 
-    missing = [f for f in fields if f not in row_keys]
+    missing = [f for f in field_names if f not in row_keys]
     assert not missing, (
         f"Row missing columns for {cls.__name__}: {missing}. Available: {sorted(row_keys)}"
     )
 
-    return cls(**{f: row[f] for f in fields})
+    return cls(**{f: row[f] for f in field_names})
 
 
 # Type aliases for constrained values
@@ -129,14 +128,15 @@ class Run:
 
             if duration < 0:
                 logger.warning(
-                    f"Run {self.run_id} has negative duration "
-                    f"(completed_at before started_at): {duration}s",
+                    "Run %s has negative duration (completed_at before started_at): %ss",
+                    self.run_id,
+                    duration,
                 )
                 return None
 
-            return duration
+            return duration  # return in try is clearer here
         except ValueError as e:
-            logger.warning(f"Failed to parse timestamps for run {self.run_id}: {e}")
+            logger.warning("Failed to parse timestamps for run %s: %s", self.run_id, e)
             return None
 
     @classmethod
@@ -225,9 +225,7 @@ class Upload:
     upload_target: str  # 'labkey', 'local', 'globus', etc.
     content_hash: str  # SHA256 of uploaded data
     uploaded_at: str
-    target_metadata: dict | None = (
-        None  # Target-specific data (e.g., experiment_id, row_id)
-    )
+    target_metadata: dict | None = None  # Target-specific data (e.g., experiment_id, row_id)
 
     @field_validator("target_metadata", mode="before")
     @classmethod
@@ -916,7 +914,7 @@ class NvdParams(BaseModel):
     # Preprocessing
     # =========================================================================
     preprocess: bool = Field(
-        False,
+        default=False,
         description="Enable all preprocessing steps",
         json_schema_extra={"category": "Preprocessing"},
     )
@@ -1005,7 +1003,7 @@ class NvdParams(BaseModel):
         json_schema_extra={"category": "Analysis"},
     )
     include_children: bool = Field(
-        True,
+        default=True,
         description="Include child taxa in analysis",
         json_schema_extra={"category": "Analysis"},
     )
@@ -1034,7 +1032,7 @@ class NvdParams(BaseModel):
     # LabKey Integration
     # =========================================================================
     labkey: bool = Field(
-        False,
+        default=False,
         description="Enable LabKey integration",
         json_schema_extra={"category": "LabKey"},
     )
@@ -1093,7 +1091,7 @@ class NvdParams(BaseModel):
     # Slack Notifications
     # =========================================================================
     slack_enabled: bool = Field(
-        False,
+        default=False,
         description="Enable Slack notifications for run completion",
         json_schema_extra={"category": "Notifications"},
     )
@@ -1107,7 +1105,7 @@ class NvdParams(BaseModel):
     # Stateless Mode
     # =========================================================================
     stateless: bool = Field(
-        False,
+        default=False,
         description="Run without state management (disables run tracking, LabKey, Slack)",
         json_schema_extra={"category": "Core"},
     )
@@ -1159,7 +1157,8 @@ class NvdParams(BaseModel):
         tools_list = [t.strip() for t in v.split(",")]
         invalid = [t for t in tools_list if t not in VALID_TOOLS]
         if invalid:
-            raise ValueError(f"Invalid tools: {invalid}. Valid: {sorted(VALID_TOOLS)}")
+            msg = f"Invalid tools: {invalid}. Valid: {sorted(VALID_TOOLS)}"
+            raise ValueError(msg)
         return v
 
     @field_validator("cutoff_percent", "entropy", "tax_stringency")
@@ -1167,7 +1166,8 @@ class NvdParams(BaseModel):
     def validate_zero_to_one(cls, v: float) -> float:
         """Validate that value is in 0-1 range."""
         if not 0 <= v <= 1:
-            raise ValueError(f"Must be between 0 and 1, got {v}")
+            msg = f"Must be between 0 and 1, got {v}"
+            raise ValueError(msg)
         return v
 
     @field_validator(
@@ -1182,7 +1182,8 @@ class NvdParams(BaseModel):
     def validate_positive_int(cls, v: int) -> int:
         """Validate that value is a positive integer (>= 1)."""
         if v < 1:
-            raise ValueError(f"Must be >= 1, got {v}")
+            msg = f"Must be >= 1, got {v}"
+            raise ValueError(msg)
         return v
 
     @field_validator("min_read_quality_illumina", "min_read_quality_nanopore")
@@ -1190,7 +1191,8 @@ class NvdParams(BaseModel):
     def validate_non_negative_int(cls, v: int) -> int:
         """Validate that value is non-negative (>= 0)."""
         if v < 0:
-            raise ValueError(f"Must be >= 0, got {v}")
+            msg = f"Must be >= 0, got {v}"
+            raise ValueError(msg)
         return v
 
     @field_validator("max_read_length")
@@ -1198,7 +1200,8 @@ class NvdParams(BaseModel):
     def validate_max_read_length(cls, v: int | None) -> int | None:
         """Validate max_read_length is positive if set."""
         if v is not None and v < 1:
-            raise ValueError(f"Must be >= 1, got {v}")
+            msg = f"Must be >= 1, got {v}"
+            raise ValueError(msg)
         return v
 
     @field_validator("slack_channel")
@@ -1206,10 +1209,11 @@ class NvdParams(BaseModel):
     def validate_slack_channel(cls, v: str | None) -> str | None:
         """Validate Slack channel ID format."""
         if v is not None and not re.match(r"^C[A-Z0-9]+$", v):
-            raise ValueError(
+            msg = (
                 f"Invalid Slack channel ID: {v}. "
-                "Must match pattern C[A-Z0-9]+ (e.g., 'C0123456789')",
+                "Must match pattern C[A-Z0-9]+ (e.g., 'C0123456789')"
             )
+            raise ValueError(msg)
         return v
 
     # =========================================================================
@@ -1241,10 +1245,10 @@ class NvdParams(BaseModel):
             if source is None:
                 continue
             if isinstance(source, NvdParams):
-                source = source.model_dump(exclude_none=True)
-            for key, value in source.items():
-                if value is not None:
-                    merged[key] = value
+                as_dict = source.model_dump(exclude_none=True)
+            else:
+                as_dict = source
+            merged.update({k: v for k, v in as_dict.items() if v is not None})
         return cls.model_validate(merged)
 
     # =========================================================================
@@ -1325,6 +1329,51 @@ class TracedParams:
     defaults_used: int
 
 
+def _build_source_annotations(
+    merged: NvdParams,
+    field_values: dict[str, tuple[Any, str]],
+    field_history: dict[str, list[tuple[Any, str]]],
+) -> tuple[list[ParamSource], int]:
+    """Build per-field source annotations from merge tracking data."""
+    source_list: list[ParamSource] = []
+    defaults_used = 0
+
+    for field in NvdParams.model_fields:
+        value = getattr(merged, field)
+
+        if field in field_values:
+            # Value came from one of the sources
+            _, source_label = field_values[field]
+
+            # Check if it overrode something
+            overridden_value = None
+            overridden_source = None
+            if field_history.get(field):
+                overridden_value, overridden_source = field_history[field][-1]
+
+            source_list.append(
+                ParamSource(
+                    field=field,
+                    value=value,
+                    source=source_label,
+                    overridden_value=overridden_value,
+                    overridden_source=overridden_source,
+                ),
+            )
+        # Value is the default
+        elif value is not None:
+            defaults_used += 1
+            source_list.append(
+                ParamSource(
+                    field=field,
+                    value=value,
+                    source="default",
+                ),
+            )
+
+    return source_list, defaults_used
+
+
 def trace_merge(
     *sources: tuple[str, dict[str, Any] | NvdParams | None],
 ) -> TracedParams:
@@ -1365,10 +1414,9 @@ def trace_merge(
         if params is None:
             continue
 
-        if isinstance(params, NvdParams):
-            params = params.model_dump(exclude_none=True)
+        as_dict = params.model_dump(exclude_none=True) if isinstance(params, NvdParams) else params
 
-        for field, value in params.items():
+        for field, value in as_dict.items():
             if value is None:
                 continue
 
@@ -1385,41 +1433,11 @@ def trace_merge(
     merged = NvdParams.merge(*source_dicts)
 
     # Build source annotations
-    source_list: list[ParamSource] = []
-    defaults_used = 0
-
-    for field in NvdParams.model_fields:
-        value = getattr(merged, field)
-
-        if field in field_values:
-            # Value came from one of the sources
-            _, source_label = field_values[field]
-
-            # Check if it overrode something
-            overridden_value = None
-            overridden_source = None
-            if field_history.get(field):
-                overridden_value, overridden_source = field_history[field][-1]
-
-            source_list.append(
-                ParamSource(
-                    field=field,
-                    value=value,
-                    source=source_label,
-                    overridden_value=overridden_value,
-                    overridden_source=overridden_source,
-                ),
-            )
-        # Value is the default
-        elif value is not None:
-            defaults_used += 1
-            source_list.append(
-                ParamSource(
-                    field=field,
-                    value=value,
-                    source="default",
-                ),
-            )
+    source_list, defaults_used = _build_source_annotations(
+        merged,
+        field_values,
+        field_history,
+    )
 
     return TracedParams(
         params=merged,

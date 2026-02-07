@@ -1,4 +1,3 @@
-# ruff: noqa: B008, FBT001, FBT003
 """
 Run command for the NVD CLI.
 
@@ -41,6 +40,8 @@ from py_nvd.models import NvdParams
 from py_nvd.params import load_params_file
 from py_nvd.state import resolve_database_versions
 
+_MIN_CMD_PARTS_FOR_CONTINUATION = 3
+
 
 def _format_command_for_display(cmd: list[str]) -> str:
     """
@@ -49,7 +50,7 @@ def _format_command_for_display(cmd: list[str]) -> str:
     Each argument pair (--flag value) gets its own line, indented and
     with shell continuation characters for copy-paste compatibility.
     """
-    if len(cmd) < 3:
+    if len(cmd) < _MIN_CMD_PARTS_FOR_CONTINUATION:
         return " ".join(cmd)
 
     lines = []
@@ -81,7 +82,7 @@ def _format_command_for_display(cmd: list[str]) -> str:
     return "\n".join(lines)
 
 
-def run(  # noqa: PLR0913, PLR0912, PLR0915, C901
+def run(
     # Complexity/boolean/B008 warnings are acceptable for CLI with many options
     ctx: typer.Context,
     # -------------------------------------------------------------------------

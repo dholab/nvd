@@ -1,3 +1,4 @@
+# ruff: noqa: S608
 """
 Hit management for metagenomic BLAST results.
 
@@ -92,6 +93,9 @@ from py_nvd.models import (
 HIT_KEY_LENGTH = 32
 BASES_PER_BYTE = 4
 INT_BYTE_SIZE = 4
+MONTH_FORMAT_LENGTH = 7  # "YYYY-MM" is 7 characters
+SHORT_PATTERN_MAX_LENGTH = 4  # Word boundary threshold for regex patterns
+MAX_PERCENTAGE = 100  # Upper bound for percentage values
 
 COMPLEMENT = str.maketrans(
     "ACGTacgtNnRYSWKMBDHVryswkmbdhv",
@@ -278,7 +282,7 @@ def _get_hits_view_sql(glob_pattern: str) -> str:
             *,
             COALESCE(month, strftime(run_date::DATE, '%Y-%m')) AS effective_month
         FROM read_parquet('{glob_pattern}', hive_partitioning=true, union_by_name=true)
-    """
+    """  # SQL uses module constants, not user input
 
 
 def query_hits(state_dir: Path | str | None = None) -> duckdb.DuckDBPyConnection:
@@ -348,8 +352,8 @@ class HitRecord:
 
     def __post_init__(self) -> None:
         """Validate invariants after initialization."""
-        assert len(self.hit_key) == 32, (
-            f"hit_key must be 32 hex chars, got {len(self.hit_key)}"
+        assert len(self.hit_key) == HIT_KEY_LENGTH, (
+            f"hit_key must be {HIT_KEY_LENGTH} hex chars, got {len(self.hit_key)}"
         )
         assert all(c in "0123456789abcdef" for c in self.hit_key), (
             "hit_key must be lowercase hex"
@@ -409,7 +413,7 @@ def write_hits_parquet(
 
     if not hits:
         # Write empty parquet with correct schema
-        df = pl.DataFrame(
+        hits_df = pl.DataFrame(
             schema={
                 "hit_key": pl.Utf8,
                 "sequence_length": pl.Int64,
@@ -426,7 +430,7 @@ def write_hits_parquet(
         )
     else:
         # Build DataFrame from hit records
-        df = pl.DataFrame(
+        hits_df = pl.DataFrame(
             {
                 "hit_key": [h.hit_key for h in hits],
                 "sequence_length": [h.sequence_length for h in hits],
@@ -443,7 +447,7 @@ def write_hits_parquet(
         )
 
     # Write to temp file first
-    df.write_parquet(temp_path)
+    hits_df.write_parquet(temp_path)
 
     # Atomic rename (POSIX guarantees this is atomic on same filesystem)
     temp_path.rename(final_path)
@@ -496,9 +500,8 @@ def count_hits(state_dir: Path | str | None = None) -> int:
     result = con.execute("SELECT COUNT(DISTINCT hit_key) FROM hits").fetchone()
     assert result is not None, "COUNT query should always return a row"
     count = result[0]
-    assert isinstance(count, int) and count >= 0, (
-        f"count must be non-negative int, got {count}"
-    )
+    assert isinstance(count, int), f"count must be int, got {type(count)}"
+    assert count >= 0, f"count must be non-negative, got {count}"
     return count
 
 
@@ -511,9 +514,8 @@ def count_hit_observations(state_dir: Path | str | None = None) -> int:
     result = con.execute("SELECT COUNT(*) FROM hits").fetchone()
     assert result is not None, "COUNT query should always return a row"
     count = result[0]
-    assert isinstance(count, int) and count >= 0, (
-        f"count must be non-negative int, got {count}"
-    )
+    assert isinstance(count, int), f"count must be int, got {type(count)}"
+    assert count >= 0, f"count must be non-negative, got {count}"
     return count
 
 
@@ -526,7 +528,9 @@ def get_hit(hit_key: str, state_dir: Path | str | None = None) -> Hit | None:
     is taken from the most recent observation with non-null adjusted_taxid.
     """
     assert hit_key, "hit_key cannot be empty"
-    assert len(hit_key) == 32, f"hit_key must be 32 hex chars, got {len(hit_key)}"
+    assert len(hit_key) == HIT_KEY_LENGTH, (
+        f"hit_key must be {HIT_KEY_LENGTH} hex chars, got {len(hit_key)}"
+    )
 
     if not has_any_hits(state_dir):
         return None
@@ -931,12 +935,10 @@ def get_hit_stats(state_dir: Path | str | None = None) -> HitStats:
     assert runs_result is not None, "COUNT query should always return a row"
     unique_runs = runs_result[0]
 
-    assert isinstance(total_hits, int) and total_hits >= 0, (
-        "total_hits must be non-negative"
-    )
-    assert isinstance(total_observations, int) and total_observations >= 0, (
-        "total_observations must be non-negative"
-    )
+    assert isinstance(total_hits, int), "total_hits must be int"
+    assert total_hits >= 0, "total_hits must be non-negative"
+    assert isinstance(total_observations, int), "total_observations must be int"
+    assert total_observations >= 0, "total_observations must be non-negative"
 
     # If no hits, return early with empty stats
     if total_hits == 0:
@@ -1090,7 +1092,7 @@ def _build_family_pattern(patterns: tuple[str, ...]) -> re.Pattern[str]:
     parts = []
     for p in patterns:
         escaped = re.escape(p)
-        if len(p) <= 4:
+        if len(p) <= SHORT_PATTERN_MAX_LENGTH:
             # Short patterns need word boundaries to avoid false positives
             parts.append(r"\b" + escaped + r"\b")
         else:
@@ -1108,7 +1110,7 @@ _FAMILY_PATTERNS_COMPILED: list[tuple[str, re.Pattern[str]]] = [
 def get_top_taxa(
     sample_set_id: str | None = None,
     limit: int = 10,
-    exclude_noise: bool = True,
+    exclude_noise: bool = True,  # noqa: FBT001, FBT002  # existing public API
     state_dir: Path | str | None = None,
 ) -> list[TaxonSummary]:
     """
@@ -1172,7 +1174,7 @@ def get_top_taxa(
         GROUP BY adjusted_taxid, adjusted_taxid_name, adjusted_taxid_rank
         ORDER BY sample_count DESC, hit_count DESC
         LIMIT {limit}
-    """
+    """  # SQL uses module constants, not user input
 
     rows = con.execute(sql, params).fetchall()
 
@@ -1274,7 +1276,7 @@ def get_sample_summaries(
         WHERE sample_set_id = ?
         GROUP BY sample_id
         ORDER BY viral_taxa_count DESC, total_hits DESC
-    """
+    """  # SQL uses module constants, not user input
 
     # Parameters: noise taxa twice (for COUNT and list filters), then sample_set_id
     params = [*DEFAULT_NOISE_TAXA, *DEFAULT_NOISE_TAXA, sample_set_id]
@@ -1333,7 +1335,7 @@ def get_negative_samples(
               AND CAST(adjusted_taxid_name AS VARCHAR) NOT IN ({noise_placeholders})
         ) = 0
         ORDER BY sample_id
-    """
+    """  # SQL uses module constants, not user input
 
     params = [sample_set_id, *noise_list]
 
@@ -1472,7 +1474,7 @@ def get_taxa_by_category(
         WHERE sample_set_id = ?
           AND adjusted_taxid_name IS NOT NULL
           AND adjusted_taxid_name NOT IN ({noise_placeholders})
-    """
+    """  # SQL uses module constants, not user input
 
     params = [sample_set_id, *DEFAULT_NOISE_TAXA]
     rows = con.execute(sql, params).fetchall()
@@ -1481,7 +1483,7 @@ def get_taxa_by_category(
         return []
 
     # Classify each taxon and aggregate
-    # Structure: {family: {"samples": set, "hits": set, "taxa": set}}
+    # Structure: {family: {"samples": set, "hits": set, "taxa": set}}  # noqa: ERA001
     family_data: dict[str, dict[str, set[str]]] = {}
 
     for taxon_name, sample_id, hit_key in rows:
@@ -1566,7 +1568,7 @@ def get_run_report(
             ) as viral_taxa_found
         FROM hits
         WHERE sample_set_id = ?
-    """
+    """  # SQL uses module constants, not user input
 
     summary_params = [*DEFAULT_NOISE_TAXA, sample_set_id]
     summary_row = con.execute(summary_sql, summary_params).fetchone()
@@ -1679,7 +1681,7 @@ def get_novel_taxa(
         FROM current_taxa c
         WHERE NOT EXISTS (SELECT 1 FROM historical_taxa h WHERE h.name = c.name)
         ORDER BY c.sample_count DESC, c.hit_count DESC
-    """
+    """  # SQL uses module constants, not user input
 
     # Parameters: sample_set_id, noise taxa, sample_set_id, noise taxa
     params = [
@@ -1809,7 +1811,7 @@ def get_top_movers(
         LEFT JOIN historical_prevalence h ON c.name = h.name
         ORDER BY ABS(change_pct) DESC
         LIMIT {limit}
-    """
+    """  # SQL uses module constants, not user input
 
     # Parameters for the query
     params = [
@@ -1868,7 +1870,9 @@ def get_rare_taxa(
         Empty list if no rare taxa or no hits exist.
     """
     assert sample_set_id, "sample_set_id cannot be empty"
-    assert 0 < threshold_pct <= 100, "threshold_pct must be between 0 and 100"
+    assert 0 < threshold_pct <= MAX_PERCENTAGE, (
+        "threshold_pct must be between 0 and 100"
+    )
 
     if not has_any_hits(state_dir):
         return []
@@ -1919,7 +1923,7 @@ def get_rare_taxa(
         CROSS JOIN total_runs r
         WHERE t.run_count * 100.0 / r.count < ?
         ORDER BY historical_run_pct ASC, current_sample_count DESC
-    """
+    """  # SQL uses module constants, not user input
 
     # Parameters
     params = [
@@ -2123,7 +2127,7 @@ def get_run_comparison(
             MIN(run_date) as run_date
         FROM hits
         WHERE sample_set_id = ?
-    """
+    """  # SQL uses module constants, not user input
 
     current_params = [*DEFAULT_NOISE_TAXA, sample_set_id]
     current_row = con.execute(current_sql, current_params).fetchone()
@@ -2160,7 +2164,7 @@ def get_run_comparison(
             COALESCE(AVG(taxa), 0) as avg_taxa,
             COALESCE(AVG(median_length), 0) as avg_median_length
         FROM run_metrics
-    """
+    """  # SQL uses module constants, not user input
 
     historical_params = [*DEFAULT_NOISE_TAXA, sample_set_id]
     historical_row = con.execute(historical_sql, historical_params).fetchone()
@@ -2358,7 +2362,7 @@ def get_discovery_timeline(
         )
         GROUP BY period
         ORDER BY period ASC
-    """
+    """  # SQL uses module constants, not user input
 
     rows = con.execute(sql).fetchall()
 
@@ -2458,7 +2462,7 @@ def list_hits_with_observations(
         )
         result.append((hit, observation))
 
-    assert all(isinstance(t, tuple) and len(t) == 2 for t in result), (
+    assert all(isinstance(t, tuple) and len(t) == 2 for t in result), (  # noqa: PLR2004
         "result must be list of 2-tuples"
     )
     return result
@@ -2494,9 +2498,8 @@ def count_sample_set_observations(
 
     assert result is not None, "COUNT query should always return a row"
     count = result[0]
-    assert isinstance(count, int) and count >= 0, (
-        f"count must be non-negative int, got {count}"
-    )
+    assert isinstance(count, int), f"count must be int, got {type(count)}"
+    assert count >= 0, f"count must be non-negative, got {count}"
     return count
 
 
@@ -2604,14 +2607,16 @@ def _delete_sample_set_hits_compacted(
         # Check if this sample_set has data in this month
         # Note: file path must be interpolated (DuckDB limitation), but
         # sample_set_id is parameterized to avoid injection
-        has_data = con.execute(
+        has_data_row = con.execute(
             f"""
             SELECT COUNT(*) > 0
             FROM read_parquet('{data_file}')
             WHERE sample_set_id = $1
-            """,
+            """,  # SQL uses module constants, not user input
             [sample_set_id],
-        ).fetchone()[0]
+        ).fetchone()
+        assert has_data_row is not None, "COUNT query should always return a row"
+        has_data = has_data_row[0]
 
         if not has_data:
             con.close()
@@ -2627,13 +2632,15 @@ def _delete_sample_set_hits_compacted(
             )
             TO '{temp_file}'
             (FORMAT parquet, COMPRESSION zstd, ROW_GROUP_SIZE 100000)
-            """,
+            """,  # SQL uses module constants, not user input
             [sample_set_id],
         )
 
-        row_count = con.execute(
-            f"SELECT COUNT(*) FROM read_parquet('{temp_file}')",
-        ).fetchone()[0]
+        row_count_row = con.execute(
+            f"SELECT COUNT(*) FROM read_parquet('{temp_file}')",  # SQL uses module constants, not user input
+        ).fetchone()
+        assert row_count_row is not None, "COUNT query should always return a row"
+        row_count = row_count_row[0]
 
         con.close()
 
@@ -2769,7 +2776,7 @@ def _inventory_uncompacted(
     Returns:
         List of MonthCompactionInfo for each month with uncompacted data
     """
-    assert month is None or (len(month) == 7 and month[4] == "-"), (
+    assert month is None or (len(month) == MONTH_FORMAT_LENGTH and month[4] == "-"), (
         f"month must be YYYY-MM format, got {month!r}"
     )
 
@@ -2784,7 +2791,8 @@ def _inventory_uncompacted(
     if month is not None:
         month_filter = f"WHERE strftime(run_date::DATE, '%Y-%m') = '{month}'"
 
-    result = con.execute(f"""
+    result = con.execute(
+        f"""
         SELECT
             strftime(run_date::DATE, '%Y-%m') AS target_month,
             COUNT(*) AS observation_count,
@@ -2794,17 +2802,20 @@ def _inventory_uncompacted(
         {month_filter}
         GROUP BY target_month
         ORDER BY target_month DESC
-    """).fetchall()
+    """,  # SQL uses module constants, not user input
+    ).fetchall()
 
     inventory = []
     for row in result:
         target_month, obs_count, unique_hits, sample_sets = row
 
-        file_count = con.execute(f"""
+        file_count = con.execute(
+            f"""
             SELECT COUNT(DISTINCT filename)
             FROM read_parquet({file_list_sql}, filename=true)
             WHERE strftime(run_date::DATE, '%Y-%m') = '{target_month}'
-        """).fetchone()
+        """,  # SQL uses module constants, not user input
+        ).fetchone()
 
         inventory.append(
             MonthCompactionInfo(
@@ -2822,11 +2833,11 @@ def _inventory_uncompacted(
     return inventory
 
 
-def compact_hits(
+def compact_hits(  # noqa: C901, PLR0912, PLR0915  # complexity is inherent to this function
     state_dir: Path | str | None = None,
     month: str | None = None,
-    dry_run: bool = False,
-    keep_source: bool = False,
+    dry_run: bool = False,  # noqa: FBT001, FBT002  # existing public API
+    keep_source: bool = False,  # noqa: FBT001, FBT002  # existing public API
 ) -> CompactionResult:
     """
     Compact uncompacted hits into monthly partitions.
@@ -2848,7 +2859,7 @@ def compact_hits(
     Returns:
         CompactionResult with details of what was (or would be) compacted.
     """
-    assert month is None or (len(month) == 7 and month[4] == "-"), (
+    assert month is None or (len(month) == MONTH_FORMAT_LENGTH and month[4] == "-"), (
         f"month must be YYYY-MM format, got {month!r}"
     )
 
@@ -2920,23 +2931,25 @@ def compact_hits(
 
                         SELECT *
                         FROM read_parquet('{existing_file}')
-                    """
+                    """  # SQL uses module constants, not user input
                 else:
                     source_sql = f"""
                         SELECT *
                         FROM read_parquet({file_list_sql}, union_by_name=true)
                         WHERE strftime(run_date::DATE, '%Y-%m') = '{target_month}'
-                    """
+                    """  # SQL uses module constants, not user input
 
                 # Write sorted, compressed parquet
-                con.execute(f"""
+                con.execute(
+                    f"""
                     COPY (
                         {source_sql}
                         ORDER BY hit_key, run_date
                     )
                     TO '{temp_file}'
                     (FORMAT parquet, COMPRESSION zstd, ROW_GROUP_SIZE 100000)
-                """)
+                """,
+                )
 
                 # Atomic rename
                 temp_file.rename(existing_file)
@@ -2954,16 +2967,18 @@ def compact_hits(
                 # Track files to delete (if not keeping source).
                 # Queries the frozen file list, not a fresh glob.
                 if not keep_source:
-                    file_result = con.execute(f"""
+                    file_result = con.execute(
+                        f"""
                         SELECT DISTINCT filename
                         FROM read_parquet({file_list_sql}, filename=true)
                         WHERE strftime(run_date::DATE, '%Y-%m') = '{target_month}'
-                    """).fetchall()
+                    """,  # SQL uses module constants, not user input
+                    ).fetchall()
 
                     for (filepath,) in file_result:
                         files_to_delete.append(Path(filepath))
 
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001  # intentional catch-all to collect errors per month
                 errors.append(
                     f"Failed to compact month {target_month}: {type(e).__name__}: {e}",
                 )

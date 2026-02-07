@@ -1,4 +1,3 @@
-# ruff: noqa: B008
 """
 Validation commands for the NVD CLI.
 
@@ -44,7 +43,7 @@ validate_app = typer.Typer(
 
 @validate_app.command("deps")
 @validate_app.command("d", hidden=True)  # Alias
-def validate_deps() -> None:  # noqa: PLR0915, PLR0912, C901
+def validate_deps() -> None:
     """Validate dependencies (Java, Nextflow, Docker/Apptainer)."""
     console.print("\n[bold]Checking Dependencies[/bold]\n")
 
@@ -129,7 +128,7 @@ def validate_deps() -> None:  # noqa: PLR0915, PLR0912, C901
 
 @validate_app.command("samplesheet")
 @validate_app.command("s", hidden=True)  # Alias
-def validate_samplesheet_cmd(  # noqa: PLR0912, C901
+def validate_samplesheet_cmd(
     samplesheet: Path = typer.Argument(..., help="Path to samplesheet CSV"),
 ) -> None:
     """Validate samplesheet format and content."""
@@ -230,11 +229,12 @@ def validate_databases(
 
     # Find config
     config_file = find_config_file(config)
-    if not config_file:
+    if config_file is None:
         warning(f"No config file found at {DEFAULT_CONFIG}")
         info("Run install.sh to set up database configuration")
         sys.exit(1)
 
+    assert config_file is not None  # Narrowing hint: guarded by sys.exit above
     info(f"Using config: {config_file}")
 
     # Parse config

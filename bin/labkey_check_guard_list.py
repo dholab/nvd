@@ -45,7 +45,7 @@ def experiment_exists(labkey, guard_list_name, experiment_id) -> bool:
     if result is None:
         logger.info("Falling back to client-side filtering")
         result = labkey.query.select_rows(
-            schema_name="lists", query_name=guard_list_name
+            schema_name="lists", query_name=guard_list_name,
         )
         if result["rows"]:
             original_rows = result["rows"]
@@ -56,7 +56,7 @@ def experiment_exists(labkey, guard_list_name, experiment_id) -> bool:
             ]
             result["rows"] = filtered_rows
             logger.info(
-                f"Filtered {len(original_rows)} rows down to {len(filtered_rows)} matching rows"
+                f"Filtered {len(original_rows)} rows down to {len(filtered_rows)} matching rows",
             )
 
     return bool(result and result["rows"])
@@ -79,12 +79,11 @@ def check_experiment(labkey, guard_list_name, experiment_id) -> bool:
 
         if experiment_exists(labkey, guard_list_name, experiment_id):
             logger.error(
-                f"Experiment ID {experiment_id} already exists in guard list - data has already been uploaded"
+                f"Experiment ID {experiment_id} already exists in guard list - data has already been uploaded",
             )
             return False
-        else:
-            logger.info(f"Experiment ID {experiment_id} is available - safe to proceed")
-            return True
+        logger.info(f"Experiment ID {experiment_id} is available - safe to proceed")
+        return True
 
     except Exception as e:
         error_msg = str(e).lower()
@@ -93,12 +92,11 @@ def check_experiment(labkey, guard_list_name, experiment_id) -> bool:
             for x in ["does not exist", "table", "querynotfound", "not found"]
         ):
             logger.warning(
-                f"Guard list '{guard_list_name}' doesn't exist - assuming safe to proceed"
+                f"Guard list '{guard_list_name}' doesn't exist - assuming safe to proceed",
             )
             return True
-        else:
-            logger.error(f"Error checking guard list: {e}")
-            return False
+        logger.error(f"Error checking guard list: {e}")
+        return False
 
 
 def register_experiment(labkey, guard_list_name, experiment_id) -> bool:
@@ -119,7 +117,7 @@ def register_experiment(labkey, guard_list_name, experiment_id) -> bool:
         # Double-check it doesn't already exist
         if experiment_exists(labkey, guard_list_name, experiment_id):
             logger.warning(
-                f"Experiment ID {experiment_id} already exists - skipping registration"
+                f"Experiment ID {experiment_id} already exists - skipping registration",
             )
             return True
 
@@ -128,7 +126,7 @@ def register_experiment(labkey, guard_list_name, experiment_id) -> bool:
         insert_result = labkey.query.insert_rows("lists", guard_list_name, [guard_row])
         inserted_row = insert_result["rows"][0]
         logger.info(
-            f"Successfully registered experiment ID {experiment_id} (Key={inserted_row.get('Key', 'N/A')})"
+            f"Successfully registered experiment ID {experiment_id} (Key={inserted_row.get('Key', 'N/A')})",
         )
         return True
 
@@ -143,16 +141,16 @@ def register_experiment(labkey, guard_list_name, experiment_id) -> bool:
             try:
                 guard_row = {"experiment_id": experiment_id}
                 insert_result = labkey.query.insert_rows(
-                    "lists", guard_list_name, [guard_row]
+                    "lists", guard_list_name, [guard_row],
                 )
                 logger.info(
-                    f"Successfully created guard list entry for experiment ID {experiment_id}"
+                    f"Successfully created guard list entry for experiment ID {experiment_id}",
                 )
                 return True
             except Exception as create_error:
                 logger.error(f"Failed to create guard list entry: {create_error}")
                 logger.error(
-                    "Please create the guard list manually with column: experiment_id (integer)"
+                    "Please create the guard list manually with column: experiment_id (integer)",
                 )
                 return False
         else:
@@ -162,7 +160,7 @@ def register_experiment(labkey, guard_list_name, experiment_id) -> bool:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Check and manage LabKey experiment ID guard list"
+        description="Check and manage LabKey experiment ID guard list",
     )
     parser.add_argument(
         "--mode",
@@ -177,10 +175,10 @@ def main() -> None:
         help="LabKey container path (e.g., project folder)",
     )
     parser.add_argument(
-        "--guard_list", required=True, help="Name of the LabKey guard list"
+        "--guard_list", required=True, help="Name of the LabKey guard list",
     )
     parser.add_argument(
-        "--api_key", required=True, help="API key with insert permissions"
+        "--api_key", required=True, help="API key with insert permissions",
     )
     parser.add_argument(
         "--experiment_id",
@@ -215,12 +213,12 @@ def main() -> None:
         logger.info("=" * 80)
         if args.mode == "check":
             logger.error(
-                f"Experiment ID {args.experiment_id} has already been uploaded to LabKey"
+                f"Experiment ID {args.experiment_id} has already been uploaded to LabKey",
             )
             logger.info("Options:")
-            logger.info(f"   - Use a different experiment_id")
+            logger.info("   - Use a different experiment_id")
             logger.info(
-                f"   - Remove the entry from guard list '{args.guard_list}' if re-upload is intended"
+                f"   - Remove the entry from guard list '{args.guard_list}' if re-upload is intended",
             )
         sys.exit(1)
     else:

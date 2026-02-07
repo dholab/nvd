@@ -1,3 +1,4 @@
+# ruff: noqa: T201
 """
 Database connection and initialization.
 
@@ -63,6 +64,9 @@ EXPECTED_VERSION = 2
 # Timeout for interactive confirmation prompt (seconds)
 CONFIRMATION_TIMEOUT_SECONDS = 300  # 5 minutes
 
+# Bytes per kibibyte (used for human-readable file size formatting)
+_BYTES_PER_KIBIBYTE = 1024
+
 
 def utc_now_iso() -> str:
     """
@@ -97,7 +101,7 @@ class SchemaMismatchError(Exception):
         db_path: Path,
         current_version: int,
         expected_version: int,
-    ):
+    ) -> None:
         self.db_path = db_path
         self.current_version = current_version
         self.expected_version = expected_version
@@ -136,7 +140,7 @@ class ResourceUnavailableError(Exception):
         operation: str,
         reason: str,
         original_error: Exception | None = None,
-    ):
+    ) -> None:
         self.resource_path = (
             Path(resource_path) if isinstance(resource_path, str) else resource_path
         )
@@ -178,7 +182,7 @@ class StateUnavailableError(ResourceUnavailableError):
         operation: str,
         reason: str,
         original_error: Exception | None = None,
-    ):
+    ) -> None:
         super().__init__(
             resource_path=db_path,
             operation=operation,
@@ -521,9 +525,9 @@ def _format_file_size(size_bytes: int) -> str:
     """Format bytes as human-readable size."""
     size = float(size_bytes)
     for unit in ("B", "KB", "MB", "GB"):
-        if size < 1024:
+        if size < _BYTES_PER_KIBIBYTE:
             return f"{size:.1f} {unit}"
-        size /= 1024
+        size /= _BYTES_PER_KIBIBYTE
     return f"{size:.1f} TB"
 
 
@@ -542,7 +546,7 @@ def _prompt_for_confirmation(db_path: Path, timeout_seconds: int) -> bool:
     # Gather stats to show user what they're about to lose
     try:
         stats = _get_db_stats(db_path)
-    except Exception:
+    except Exception:  # noqa: BLE001  # graceful fallback if stats unavailable
         stats = {
             "file_size": db_path.stat().st_size,
             "version": "unknown",
@@ -550,25 +554,48 @@ def _prompt_for_confirmation(db_path: Path, timeout_seconds: int) -> bool:
         }
 
     # Build warning message
-    print("\n" + "=" * 70, file=sys.stderr)
-    print(
+    print("\n" + "=" * 70, file=sys.stderr)  # intentional CLI output to stderr
+    print(  # intentional CLI output to stderr
         "WARNING: DATABASE SCHEMA MISMATCH - DESTRUCTIVE UPDATE REQUIRED",
         file=sys.stderr,
     )
-    print("=" * 70, file=sys.stderr)
-    print(f"\nDatabase: {db_path}", file=sys.stderr)
-    print(f"File size: {_format_file_size(stats['file_size'])}", file=sys.stderr)
-    print(f"Current schema version: {stats['version']}", file=sys.stderr)
-    print(f"Required schema version: {EXPECTED_VERSION}", file=sys.stderr)
+    print("=" * 70, file=sys.stderr)  # intentional CLI output to stderr
+    print(f"\nDatabase: {db_path}", file=sys.stderr)  # intentional CLI output to stderr
+    file_size = stats["file_size"]
+    assert isinstance(file_size, int)
+    print(
+        f"File size: {_format_file_size(file_size)}",
+        file=sys.stderr,
+    )  # intentional CLI output to stderr
+    print(
+        f"Current schema version: {stats['version']}",
+        file=sys.stderr,
+    )  # intentional CLI output to stderr
+    print(
+        f"Required schema version: {EXPECTED_VERSION}",
+        file=sys.stderr,
+    )  # intentional CLI output to stderr
 
     if stats["tables"]:
-        print("\nData that will be PERMANENTLY LOST:", file=sys.stderr)
-        for table, count in stats["tables"].items():
-            print(f"  - {table}: {count} rows", file=sys.stderr)
+        print(
+            "\nData that will be PERMANENTLY LOST:",
+            file=sys.stderr,
+        )  # intentional CLI output to stderr
+        for table, count in stats["tables"].items():  # ty:ignore[possibly-missing-attribute]
+            print(
+                f"  - {table}: {count} rows",
+                file=sys.stderr,
+            )  # intentional CLI output to stderr
 
-    print("\nA backup will be created before deletion.", file=sys.stderr)
-    print(f"You have {timeout_seconds // 60} minutes to respond.", file=sys.stderr)
     print(
+        "\nA backup will be created before deletion.",
+        file=sys.stderr,
+    )  # intentional CLI output to stderr
+    print(
+        f"You have {timeout_seconds // 60} minutes to respond.",
+        file=sys.stderr,
+    )  # intentional CLI output to stderr
+    print(  # intentional CLI output to stderr
         "\nType 'yes' to proceed, or anything else to abort: ",
         file=sys.stderr,
         end="",
@@ -581,7 +608,10 @@ def _prompt_for_confirmation(db_path: Path, timeout_seconds: int) -> bool:
         if sys.platform != "win32":
             ready, _, _ = select.select([sys.stdin], [], [], timeout_seconds)
             if not ready:
-                print("\n\nTimeout reached. Aborting.", file=sys.stderr)
+                print(
+                    "\n\nTimeout reached. Aborting.",
+                    file=sys.stderr,
+                )  # intentional CLI output to stderr
                 return False
         response = input().strip().lower()
     except EOFError:
@@ -593,6 +623,7 @@ def _prompt_for_confirmation(db_path: Path, timeout_seconds: int) -> bool:
 def _handle_schema_mismatch(
     db_path: Path,
     current_version: int,
+    *,
     allow_destructive_update: bool,
 ) -> Path | None:
     """
@@ -612,7 +643,7 @@ def _handle_schema_mismatch(
     if allow_destructive_update:
         # Explicit opt-in: backup and proceed
         backup_path = _create_backup(db_path)
-        print(
+        print(  # intentional CLI output to stderr
             f"Schema mismatch (v{current_version} -> v{EXPECTED_VERSION}). "
             f"Backup created: {backup_path}",
             file=sys.stderr,
@@ -624,11 +655,20 @@ def _handle_schema_mismatch(
     if sys.stdin.isatty():
         if _prompt_for_confirmation(db_path, CONFIRMATION_TIMEOUT_SECONDS):
             backup_path = _create_backup(db_path)
-            print(f"\nBackup created: {backup_path}", file=sys.stderr)
-            print("Proceeding with schema update...\n", file=sys.stderr)
+            print(
+                f"\nBackup created: {backup_path}",
+                file=sys.stderr,
+            )  # intentional CLI output to stderr
+            print(
+                "Proceeding with schema update...\n",
+                file=sys.stderr,
+            )  # intentional CLI output to stderr
             db_path.unlink()
             return backup_path
-        print("\nAborted. Database unchanged.", file=sys.stderr)
+        print(
+            "\nAborted. Database unchanged.",
+            file=sys.stderr,
+        )  # intentional CLI output to stderr
         raise SchemaMismatchError(db_path, current_version, EXPECTED_VERSION)
 
     # Non-interactive and no explicit opt-in: refuse
@@ -638,7 +678,7 @@ def _handle_schema_mismatch(
 @contextmanager
 def connect(
     state_dir: Path | str | None = None,
-    allow_destructive_update: bool = False,
+    allow_destructive_update: bool = False,  # noqa: FBT001, FBT002  # existing public API
 ) -> Generator[sqlite3.Connection, None, None]:
     """
     Context manager for state database connections.
@@ -687,7 +727,11 @@ def connect(
             current_version = _get_version(conn)
             conn.close()
             # This may raise SchemaMismatchError if user doesn't consent
-            _handle_schema_mismatch(db_path, current_version, allow_destructive_update)
+            _handle_schema_mismatch(
+                db_path,
+                current_version,
+                allow_destructive_update=allow_destructive_update,
+            )
             # If we get here, the old database was backed up and deleted
             conn = sqlite3.connect(db_path, timeout=30.0)
             _configure_connection(conn)

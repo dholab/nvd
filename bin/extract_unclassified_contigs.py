@@ -39,7 +39,7 @@ def get_classified_nodes(blast_results):
             return set(line.split("\t")[0] for line in f)
     except Exception as e:
         print(
-            f"Error processing BLAST results file {blast_results}: {e}", file=sys.stderr
+            f"Error processing BLAST results file {blast_results}: {e}", file=sys.stderr,
         )
         return set()
 
@@ -75,14 +75,14 @@ def get_unclassified_contigs(megablast_nodes, blastn_nodes, fasta_contigs, outpu
 
 def parse_command_line_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Classify contigs by blast result presence"
+        description="Classify contigs by blast result presence",
     )
     parser.add_argument("--contigs", required=True, help="Input contigs FASTA file")
     parser.add_argument(
-        "--megablast_results", required=True, help="Input megablast results file"
+        "--megablast_results", required=True, help="Input megablast results file",
     )
     parser.add_argument(
-        "--blastn_results", required=True, help="Input blastn results file"
+        "--blastn_results", required=True, help="Input blastn results file",
     )
     parser.add_argument(
         "--unclassified",
@@ -117,7 +117,7 @@ def main():
 
     if megablast_nodes or blastn_nodes:
         get_unclassified_contigs(
-            megablast_nodes, blastn_nodes, input_contigs, output_file
+            megablast_nodes, blastn_nodes, input_contigs, output_file,
         )
     else:
         print(

@@ -33,7 +33,6 @@ from __future__ import annotations
 
 import argparse
 import os
-import socket
 import sys
 import time
 from pathlib import Path
@@ -311,7 +310,7 @@ RETRYABLE_SLACK_ERRORS = frozenset(
         "request_timeout",
         "service_unavailable",
         "fatal_error",
-    }
+    },
 )
 
 # Maximum number of retry attempts for transient errors
@@ -395,11 +394,11 @@ def send_notification(
 
             if error_code == "channel_not_found":
                 logger.warning(
-                    "Channel '{ch}' not found. Check channel ID.", ch=channel
+                    "Channel '{ch}' not found. Check channel ID.", ch=channel,
                 )
             elif error_code == "not_in_channel":
                 logger.warning(
-                    "Bot not in channel '{ch}'. Invite the bot first.", ch=channel
+                    "Bot not in channel '{ch}'. Invite the bot first.", ch=channel,
                 )
             elif error_code == "invalid_auth":
                 logger.warning("Invalid Slack token. Check SLACK_BOT_TOKEN.")
@@ -420,7 +419,7 @@ def send_notification(
             )
             return False
 
-        except (socket.timeout, socket.error, ConnectionError) as e:
+        except (TimeoutError, OSError, ConnectionError) as e:
             if attempt < MAX_RETRIES:
                 wait_time = 2**attempt
                 logger.warning(
@@ -528,7 +527,7 @@ def main() -> int:
 
     # Get cross-run context (novel taxa, top movers)
     novel_count, notable_movers = get_cross_run_context(
-        args.state_dir, args.sample_set_id
+        args.state_dir, args.sample_set_id,
     )
     cross_run_section = format_cross_run_section(novel_count, notable_movers)
     if cross_run_section:

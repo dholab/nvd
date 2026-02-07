@@ -9,16 +9,19 @@ from __future__ import annotations
 
 import calendar
 from collections import Counter
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Annotated
 
 import typer
-from rich.console import Group
 from rich.panel import Panel
 from rich.text import Text
 
 from py_nvd.cli.utils import console, format_duration, info
 from py_nvd.db import connect, get_state_db_path
+
+_SUCCESS_RATE_EXCELLENT = 95
+_SUCCESS_RATE_GOOD = 80
+_SUCCESS_RATE_FAIR = 50
 
 
 def _make_bar(value: int, max_value: int, width: int = 20) -> str:
@@ -58,14 +61,14 @@ def wrapped(
         console.print("[dim]Your wrapped awaits...[/dim]")
         return
 
-    target_year = year or datetime.now().year
+    target_year = year or datetime.now(UTC).year
     year_start = f"{target_year}-01-01"
     year_end = f"{target_year}-12-31 23:59:59"
 
     with connect() as conn:
         # Get runs for the year
         runs = conn.execute(
-            """SELECT * FROM runs 
+            """SELECT * FROM runs
                WHERE started_at >= ? AND started_at <= ?
                ORDER BY started_at""",
             (year_start, year_end),
@@ -152,8 +155,8 @@ def wrapped(
     _show_wrapped(
         year=target_year,
         total_runs=total_runs,
-        completed_runs=completed_runs,
-        failed_runs=failed_runs,
+        _completed_runs=completed_runs,
+        _failed_runs=failed_runs,
         success_rate=success_rate,
         total_samples=total_samples,
         unique_samples=unique_samples,
@@ -165,7 +168,7 @@ def wrapped(
         longest_duration=longest_duration,
         total_uploads=total_uploads,
         labkey_uploads=labkey_uploads,
-        db_versions=len(db_versions),
+        _db_versions=len(db_versions),
     )
 
 
@@ -186,14 +189,14 @@ def _show_empty_wrapped(year: int) -> None:
             header,
             border_style="magenta",
             padding=(0, 2),
-        )
+        ),
     )
 
     console.print()
     console.print("  [dim]No pipeline runs found for this year.[/dim]")
     console.print()
     console.print(
-        f"  [italic]{year + 1} is your year! Get sequencing! \U0001f680[/italic]"
+        f"  [italic]{year + 1} is your year! Get sequencing! \U0001f680[/italic]",
     )
     console.print()
 
@@ -201,8 +204,8 @@ def _show_empty_wrapped(year: int) -> None:
 def _show_wrapped(
     year: int,
     total_runs: int,
-    completed_runs: int,
-    failed_runs: int,
+    _completed_runs: int,
+    _failed_runs: int,
     success_rate: float,
     total_samples: int,
     unique_samples: int,
@@ -214,7 +217,7 @@ def _show_wrapped(
     longest_duration: float,
     total_uploads: int,
     labkey_uploads: int,
-    db_versions: int,
+    _db_versions: int,
 ) -> None:
     """Display the wrapped summary."""
     console.print()
@@ -233,7 +236,7 @@ def _show_wrapped(
             header,
             border_style="magenta",
             padding=(0, 2),
-        )
+        ),
     )
 
     console.print()
@@ -257,7 +260,7 @@ def _show_wrapped(
             stats_text,
             border_style="blue",
             padding=(1, 2),
-        )
+        ),
     )
 
     console.print()
@@ -265,41 +268,41 @@ def _show_wrapped(
     # Superlatives
     if top_sample and top_sample_count > 1:
         console.print(
-            f"  \U0001f3c6 [bold]Top Sample:[/bold] {top_sample} [dim](appeared in {top_sample_count} runs)[/dim]"
+            f"  \U0001f3c6 [bold]Top Sample:[/bold] {top_sample} [dim](appeared in {top_sample_count} runs)[/dim]",
         )
         console.print()
 
     if busiest_month:
         console.print(
-            f"  \U0001f4c5 [bold]Busiest Month:[/bold] {busiest_month} [dim]({busiest_month_count} runs)[/dim]"
+            f"  \U0001f4c5 [bold]Busiest Month:[/bold] {busiest_month} [dim]({busiest_month_count} runs)[/dim]",
         )
         console.print()
 
     if longest_run and longest_duration > 0:
         console.print(
-            f"  \U000023f1\U0000fe0f  [bold]Longest Run:[/bold] {longest_run['run_id']} [dim]({format_duration(longest_duration)})[/dim]"
+            f"  \U000023f1\U0000fe0f  [bold]Longest Run:[/bold] {longest_run['run_id']} [dim]({format_duration(longest_duration)})[/dim]",
         )
         console.print()
 
     if total_uploads > 0:
         if labkey_uploads > 0:
             console.print(
-                f"  \U0001f4e4 [bold]Uploads:[/bold] {total_uploads:,} results [dim]({labkey_uploads:,} to LabKey)[/dim]"
+                f"  \U0001f4e4 [bold]Uploads:[/bold] {total_uploads:,} results [dim]({labkey_uploads:,} to LabKey)[/dim]",
             )
         else:
             console.print(
-                f"  \U0001f4e4 [bold]Uploads:[/bold] {total_uploads:,} results"
+                f"  \U0001f4e4 [bold]Uploads:[/bold] {total_uploads:,} results",
             )
         console.print()
 
     # Success rate with appropriate emoji
-    if success_rate >= 95:
+    if success_rate >= _SUCCESS_RATE_EXCELLENT:
         rate_emoji = "\U0001f389"  # party popper
         rate_style = "bold green"
-    elif success_rate >= 80:
+    elif success_rate >= _SUCCESS_RATE_GOOD:
         rate_emoji = "\U00002705"  # check mark
         rate_style = "green"
-    elif success_rate >= 50:
+    elif success_rate >= _SUCCESS_RATE_FAIR:
         rate_emoji = "\U0001f914"  # thinking face
         rate_style = "yellow"
     else:
@@ -307,13 +310,13 @@ def _show_wrapped(
         rate_style = "yellow"
 
     console.print(
-        f"  {rate_emoji} [bold]Success Rate:[/bold] [{rate_style}]{success_rate:.0f}%[/{rate_style}] of runs completed"
+        f"  {rate_emoji} [bold]Success Rate:[/bold] [{rate_style}]{success_rate:.0f}%[/{rate_style}] of runs completed",
     )
     console.print()
 
     if unique_samples != total_samples:
         console.print(
-            f"  [dim]({unique_samples:,} unique samples across all runs)[/dim]"
+            f"  [dim]({unique_samples:,} unique samples across all runs)[/dim]",
         )
         console.print()
 
@@ -330,7 +333,7 @@ def _show_wrapped(
             footer,
             border_style="magenta",
             padding=(0, 2),
-        )
+        ),
     )
 
     console.print()

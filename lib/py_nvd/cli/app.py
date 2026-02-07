@@ -15,8 +15,8 @@ Command implementations are in py_nvd.cli.commands.* modules.
 
 from __future__ import annotations
 
+import datetime
 import sys
-from datetime import datetime
 
 import typer
 
@@ -93,10 +93,13 @@ app.add_typer(secrets_app, name="secrets")
 app.add_typer(setup_app, name="setup")
 
 # Wrapped command (seasonal easter egg - Dec 15 to Jan 15)
-_today = datetime.now()
-_is_wrapped_season = (_today.month == 12 and _today.day >= 15) or (
-    _today.month == 1 and _today.day <= 15
-)
+_WRAPPED_MONTH_DEC = 12  # December
+_WRAPPED_MONTH_JAN = 1  # January
+_WRAPPED_DAY_START = 15  # Season starts Dec 15, ends Jan 15
+_today = datetime.datetime.now(tz=datetime.UTC)
+_is_wrapped_season = (
+    _today.month == _WRAPPED_MONTH_DEC and _today.day >= _WRAPPED_DAY_START
+) or (_today.month == _WRAPPED_MONTH_JAN and _today.day <= _WRAPPED_DAY_START)
 
 if _is_wrapped_season:
     # Local import intentional: avoid loading wrapped module outside of season

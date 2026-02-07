@@ -4,8 +4,13 @@ Tests for py_nvd.taxonomy module.
 Uses minimal test fixtures to avoid downloading real NCBI data during tests.
 """
 
+import os
 import sqlite3
+import threading
+import time
+import urllib.error
 import urllib.request
+from collections.abc import Generator
 from pathlib import Path
 
 import pytest
@@ -36,7 +41,7 @@ def minimal_taxdump(tmp_path: Path) -> Path:
     taxdump_dir = tmp_path / "taxdump"
     taxdump_dir.mkdir()
 
-    # nodes.dmp: tax_id | parent_tax_id | rank | ...
+    # nodes.dmp: tax_id | parent_tax_id | rank | ...  # noqa: ERA001
     # Format: tax_id<tab>|<tab>parent_tax_id<tab>|<tab>rank<tab>|<tab>...
     nodes_content = """\
 1\t|\t1\t|\tno rank\t|\t
@@ -52,7 +57,7 @@ def minimal_taxdump(tmp_path: Path) -> Path:
 """
     (taxdump_dir / "nodes.dmp").write_text(nodes_content)
 
-    # names.dmp: tax_id | name | unique_name | name_class
+    # names.dmp: tax_id | name | unique_name | name_class  # noqa: ERA001
     names_content = """\
 1\t|\troot\t|\t\t|\tscientific name\t|
 131567\t|\tcellular organisms\t|\t\t|\tscientific name\t|
@@ -67,7 +72,7 @@ def minimal_taxdump(tmp_path: Path) -> Path:
 """
     (taxdump_dir / "names.dmp").write_text(names_content)
 
-    # merged.dmp: old_tax_id | new_tax_id
+    # merged.dmp: old_tax_id | new_tax_id  # noqa: ERA001
     merged_content = """\
 12345\t|\t9606\t|
 """
@@ -165,7 +170,10 @@ def taxdump_with_cyclic_merge(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def test_taxonomy(minimal_taxdump: Path, monkeypatch: pytest.MonkeyPatch):
+def test_taxonomy(
+    minimal_taxdump: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> Generator[taxonomy.TaxonomyDB, None, None]:
     """Provide TaxonomyDB using minimal test data."""
     # Build SQLite from test .dmp files
     taxonomy._build_sqlite_from_dmp(minimal_taxdump)
@@ -184,7 +192,7 @@ def test_taxonomy(minimal_taxdump: Path, monkeypatch: pytest.MonkeyPatch):
 class TestTaxonomyDB:
     """Tests for TaxonomyDB class."""
 
-    def test_get_taxon_basic(self, test_taxonomy):
+    def test_get_taxon_basic(self, test_taxonomy: taxonomy.TaxonomyDB) -> None:
         """Test basic taxon lookup."""
         taxon = test_taxonomy.get_taxon(9606)
         assert taxon is not None
@@ -193,34 +201,37 @@ class TestTaxonomyDB:
         assert taxon.rank == "species"
         assert taxon.parent_tax_id == 9605
 
-    def test_get_taxon_not_found(self, test_taxonomy):
+    def test_get_taxon_not_found(self, test_taxonomy: taxonomy.TaxonomyDB) -> None:
         """Test lookup of non-existent taxid returns None."""
         taxon = test_taxonomy.get_taxon(999999999)
         assert taxon is None
 
-    def test_get_taxon_resolves_merged(self, test_taxonomy):
+    def test_get_taxon_resolves_merged(
+        self,
+        test_taxonomy: taxonomy.TaxonomyDB,
+    ) -> None:
         """Test that merged taxids resolve to current taxid."""
         taxon = test_taxonomy.get_taxon(12345)  # Merged -> 9606
         assert taxon is not None
         assert taxon.tax_id == 9606
         assert taxon.scientific_name == "Homo sapiens"
 
-    def test_get_name(self, test_taxonomy):
+    def test_get_name(self, test_taxonomy: taxonomy.TaxonomyDB) -> None:
         """Test get_name convenience method."""
         name = test_taxonomy.get_name(9606)
         assert name == "Homo sapiens"
 
-    def test_get_name_not_found(self, test_taxonomy):
+    def test_get_name_not_found(self, test_taxonomy: taxonomy.TaxonomyDB) -> None:
         """Test get_name returns None for non-existent taxid."""
         name = test_taxonomy.get_name(999999999)
         assert name is None
 
-    def test_get_rank(self, test_taxonomy):
+    def test_get_rank(self, test_taxonomy: taxonomy.TaxonomyDB) -> None:
         """Test get_rank convenience method."""
         rank = test_taxonomy.get_rank(9606)
         assert rank == "species"
 
-    def test_get_lineage(self, test_taxonomy):
+    def test_get_lineage(self, test_taxonomy: taxonomy.TaxonomyDB) -> None:
         """Test lineage retrieval."""
         lineage = test_taxonomy.get_lineage(9606)
         assert len(lineage) > 0
@@ -233,7 +244,7 @@ class TestTaxonomyDB:
         assert 207598 in tax_ids  # Homininae
         assert 9604 in tax_ids  # Hominidae
 
-    def test_get_lineage_caching(self, test_taxonomy):
+    def test_get_lineage_caching(self, test_taxonomy: taxonomy.TaxonomyDB) -> None:
         """Test that lineage results are cached."""
         # First call
         lineage1 = test_taxonomy.get_lineage(9606)
@@ -242,7 +253,7 @@ class TestTaxonomyDB:
         # Should be the same object (cached)
         assert lineage1 is lineage2
 
-    def test_get_lineage_ids(self, test_taxonomy):
+    def test_get_lineage_ids(self, test_taxonomy: taxonomy.TaxonomyDB) -> None:
         """Test get_lineage_ids returns list of tax_ids."""
         lineage_ids = test_taxonomy.get_lineage_ids(9606)
         assert isinstance(lineage_ids, list)
@@ -251,7 +262,7 @@ class TestTaxonomyDB:
         assert 9605 in lineage_ids  # Homo
         assert 207598 in lineage_ids  # Homininae
 
-    def test_get_lineage_string(self, test_taxonomy):
+    def test_get_lineage_string(self, test_taxonomy: taxonomy.TaxonomyDB) -> None:
         """Test get_lineage_string formats correctly."""
         lineage_str = test_taxonomy.get_lineage_string(9606)
         assert isinstance(lineage_str, str)
@@ -259,14 +270,17 @@ class TestTaxonomyDB:
         assert "genus:Homo" in lineage_str
         assert "subfamily:Homininae" in lineage_str
 
-    def test_get_lineage_string_excludes_unranked_by_default(self, test_taxonomy):
+    def test_get_lineage_string_excludes_unranked_by_default(
+        self,
+        test_taxonomy: taxonomy.TaxonomyDB,
+    ) -> None:
         """Test that unranked taxa are excluded by default."""
         lineage_str = test_taxonomy.get_lineage_string(9606)
         # "cellular organisms" has rank "no rank" in our test data
         # but we set it as "no rank" which should be excluded
         assert "no rank" not in lineage_str
 
-    def test_get_many(self, test_taxonomy):
+    def test_get_many(self, test_taxonomy: taxonomy.TaxonomyDB) -> None:
         """Test batch lookup."""
         result = test_taxonomy.get_many([9606, 9598])
         assert len(result) == 2
@@ -275,7 +289,7 @@ class TestTaxonomyDB:
         assert result[9606].scientific_name == "Homo sapiens"
         assert result[9598].scientific_name == "Pan troglodytes"
 
-    def test_get_many_empty_list(self, test_taxonomy):
+    def test_get_many_empty_list(self, test_taxonomy: taxonomy.TaxonomyDB) -> None:
         """Test batch lookup with empty list."""
         result = test_taxonomy.get_many([])
         assert result == {}
@@ -284,14 +298,20 @@ class TestTaxonomyDB:
 class TestGetManyMergedBehavior:
     """Tests documenting get_many() behavior with merged taxids."""
 
-    def test_get_many_does_not_resolve_merged_taxids(self, test_taxonomy):
+    def test_get_many_does_not_resolve_merged_taxids(
+        self,
+        test_taxonomy: taxonomy.TaxonomyDB,
+    ) -> None:
         """Document that get_many() does NOT resolve merged taxids (unlike get_taxon)."""
         # 12345 is merged to 9606 in our test data
         result = test_taxonomy.get_many([12345])
         # get_many queries taxons table directly, so merged taxids are not found
         assert result == {}
 
-    def test_get_many_mixed_valid_and_merged_taxids(self, test_taxonomy):
+    def test_get_many_mixed_valid_and_merged_taxids(
+        self,
+        test_taxonomy: taxonomy.TaxonomyDB,
+    ) -> None:
         """Valid taxids are returned, merged ones are silently omitted."""
         result = test_taxonomy.get_many([9606, 12345, 9598])
         # Only valid taxids are returned
@@ -299,7 +319,10 @@ class TestGetManyMergedBehavior:
         assert result[9606].scientific_name == "Homo sapiens"
         assert result[9598].scientific_name == "Pan troglodytes"
 
-    def test_get_many_vs_get_taxon_merged_behavior_differs(self, test_taxonomy):
+    def test_get_many_vs_get_taxon_merged_behavior_differs(
+        self,
+        test_taxonomy: taxonomy.TaxonomyDB,
+    ) -> None:
         """Explicitly document the behavioral difference between get_many and get_taxon."""
         # get_taxon resolves merged taxids
         taxon = test_taxonomy.get_taxon(12345)
@@ -314,23 +337,35 @@ class TestGetManyMergedBehavior:
 class TestLineageEdgeCases:
     """Tests for lineage methods with edge cases."""
 
-    def test_get_lineage_invalid_taxid_returns_empty_list(self, test_taxonomy):
+    def test_get_lineage_invalid_taxid_returns_empty_list(
+        self,
+        test_taxonomy: taxonomy.TaxonomyDB,
+    ) -> None:
         """get_lineage returns empty list for non-existent taxid."""
         lineage = test_taxonomy.get_lineage(999999999)
         assert lineage == []
         assert isinstance(lineage, list)
 
-    def test_get_lineage_ids_invalid_taxid_returns_empty_list(self, test_taxonomy):
+    def test_get_lineage_ids_invalid_taxid_returns_empty_list(
+        self,
+        test_taxonomy: taxonomy.TaxonomyDB,
+    ) -> None:
         """get_lineage_ids returns empty list for non-existent taxid."""
         lineage_ids = test_taxonomy.get_lineage_ids(999999999)
         assert lineage_ids == []
 
-    def test_get_lineage_string_invalid_taxid_returns_empty_string(self, test_taxonomy):
+    def test_get_lineage_string_invalid_taxid_returns_empty_string(
+        self,
+        test_taxonomy: taxonomy.TaxonomyDB,
+    ) -> None:
         """get_lineage_string returns empty string for non-existent taxid."""
         lineage_str = test_taxonomy.get_lineage_string(999999999)
         assert lineage_str == ""
 
-    def test_get_lineage_caches_invalid_taxid_result(self, test_taxonomy):
+    def test_get_lineage_caches_invalid_taxid_result(
+        self,
+        test_taxonomy: taxonomy.TaxonomyDB,
+    ) -> None:
         """Invalid taxid lookup is also cached to avoid repeated DB queries."""
         lineage1 = test_taxonomy.get_lineage(999999999)
         lineage2 = test_taxonomy.get_lineage(999999999)
@@ -341,27 +376,30 @@ class TestLineageEdgeCases:
 class TestFindLCA:
     """Tests for LCA (Lowest Common Ancestor) functionality."""
 
-    def test_find_lca_same_species(self, test_taxonomy):
+    def test_find_lca_same_species(self, test_taxonomy: taxonomy.TaxonomyDB) -> None:
         """Test LCA of same species returns that species."""
         lca = test_taxonomy.find_lca([9606, 9606])
         assert lca == 9606
 
-    def test_find_lca_human_chimp(self, test_taxonomy):
+    def test_find_lca_human_chimp(self, test_taxonomy: taxonomy.TaxonomyDB) -> None:
         """Test LCA of human and chimp is Homininae."""
         lca = test_taxonomy.find_lca([9606, 9598])
         assert lca == 207598  # Homininae
 
-    def test_find_lca_single_taxid(self, test_taxonomy):
+    def test_find_lca_single_taxid(self, test_taxonomy: taxonomy.TaxonomyDB) -> None:
         """Test LCA of single taxid returns that taxid."""
         lca = test_taxonomy.find_lca([9606])
         assert lca == 9606
 
-    def test_find_lca_empty_list(self, test_taxonomy):
+    def test_find_lca_empty_list(self, test_taxonomy: taxonomy.TaxonomyDB) -> None:
         """Test LCA of empty list returns None."""
         lca = test_taxonomy.find_lca([])
         assert lca is None
 
-    def test_find_lca_invalid_taxids_skipped(self, test_taxonomy):
+    def test_find_lca_invalid_taxids_skipped(
+        self,
+        test_taxonomy: taxonomy.TaxonomyDB,
+    ) -> None:
         """Test that invalid taxids are skipped in LCA calculation."""
         # 999999999 doesn't exist, should be skipped
         lca = test_taxonomy.find_lca([9606, 999999999])
@@ -375,8 +413,8 @@ class TestMergedTaxidResolution:
     def test_get_taxon_resolves_merge_chain(
         self,
         taxdump_with_merge_chain: Path,
-        monkeypatch,
-    ):
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         """Multi-level merge resolution: 11111 -> 22222 -> 9606."""
         taxonomy._build_sqlite_from_dmp(taxdump_with_merge_chain)
         monkeypatch.setattr(
@@ -394,8 +432,8 @@ class TestMergedTaxidResolution:
     def test_get_taxon_merge_to_nonexistent_returns_none(
         self,
         taxdump_with_merge_chain: Path,
-        monkeypatch,
-    ):
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         """Merge pointing to non-existent taxid returns None."""
         taxonomy._build_sqlite_from_dmp(taxdump_with_merge_chain)
         monkeypatch.setattr(
@@ -412,8 +450,8 @@ class TestMergedTaxidResolution:
     def test_get_taxon_cyclic_merge_returns_none(
         self,
         taxdump_with_cyclic_merge: Path,
-        monkeypatch,
-    ):
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         """Cyclic merge (A -> B -> A) returns None instead of infinite loop."""
         taxonomy._build_sqlite_from_dmp(taxdump_with_cyclic_merge)
         monkeypatch.setattr(
@@ -432,27 +470,24 @@ class TestMergedTaxidResolution:
 class TestTaxdumpManagement:
     """Tests for taxdump download and SQLite building."""
 
-    def test_build_sqlite_from_dmp(self, minimal_taxdump: Path):
+    def test_build_sqlite_from_dmp(self, minimal_taxdump: Path) -> None:
         """Test that SQLite is built correctly from .dmp files."""
         sqlite_path = taxonomy._build_sqlite_from_dmp(minimal_taxdump)
         assert sqlite_path.exists()
         assert sqlite_path.name == "taxonomy.sqlite"
 
-    def test_is_taxdump_stale_missing(self, tmp_path: Path):
+    def test_is_taxdump_stale_missing(self, tmp_path: Path) -> None:
         """Test that missing taxdump is considered stale."""
         taxdump_dir = tmp_path / "nonexistent"
         assert taxonomy._is_taxdump_stale(taxdump_dir) is True
 
-    def test_is_taxdump_stale_fresh(self, minimal_taxdump: Path):
+    def test_is_taxdump_stale_fresh(self, minimal_taxdump: Path) -> None:
         """Test that fresh taxdump is not stale."""
         # The fixture just created the files, so they're fresh
         assert taxonomy._is_taxdump_stale(minimal_taxdump) is False
 
-    def test_is_taxdump_stale_old(self, minimal_taxdump: Path):
+    def test_is_taxdump_stale_old(self, minimal_taxdump: Path) -> None:
         """Test that 31-day-old taxdump is considered stale."""
-        import os
-        import time
-
         nodes_dmp = minimal_taxdump / "nodes.dmp"
         # Set mtime to 31 days ago
         old_time = time.time() - (31 * 24 * 60 * 60)
@@ -460,11 +495,8 @@ class TestTaxdumpManagement:
 
         assert taxonomy._is_taxdump_stale(minimal_taxdump) is True
 
-    def test_is_taxdump_stale_29_days_is_fresh(self, minimal_taxdump: Path):
+    def test_is_taxdump_stale_29_days_is_fresh(self, minimal_taxdump: Path) -> None:
         """Test that 29-day-old taxdump is NOT stale (boundary test)."""
-        import os
-        import time
-
         nodes_dmp = minimal_taxdump / "nodes.dmp"
         # Set mtime to 29 days ago
         old_time = time.time() - (29 * 24 * 60 * 60)
@@ -479,8 +511,8 @@ class TestEnsureTaxdump:
     def test_ensure_taxdump_fresh_dmp_but_missing_sqlite_rebuilds(
         self,
         minimal_taxdump: Path,
-        monkeypatch,
-    ):
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         """Path 2: Fresh .dmp files but missing SQLite triggers rebuild only."""
         # Ensure SQLite doesn't exist
         sqlite_path = minimal_taxdump / "taxonomy.sqlite"
@@ -491,7 +523,7 @@ class TestEnsureTaxdump:
         download_called = []
         original_download = taxonomy._download_and_extract_taxdump
 
-        def mock_download(taxdump_dir):
+        def mock_download(taxdump_dir: Path) -> None:
             download_called.append(True)
             original_download(taxdump_dir)
 
@@ -514,8 +546,8 @@ class TestEnsureTaxdump:
     def test_ensure_taxdump_fresh_with_sqlite_does_nothing(
         self,
         minimal_taxdump: Path,
-        monkeypatch,
-    ):
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         """Path 3: Fresh taxdump with SQLite returns immediately."""
         # Build SQLite first
         taxonomy._build_sqlite_from_dmp(minimal_taxdump)
@@ -526,10 +558,10 @@ class TestEnsureTaxdump:
         download_called = []
         build_called = []
 
-        def mock_download(taxdump_dir):
+        def mock_download(_taxdump_dir: Path) -> None:
             download_called.append(True)
 
-        def mock_build(taxdump_dir):
+        def mock_build(taxdump_dir: Path) -> Path:
             build_called.append(True)
             return taxdump_dir / "taxonomy.sqlite"
 
@@ -555,7 +587,11 @@ class TestEnsureTaxdump:
 class TestContextManagers:
     """Tests for context manager behavior."""
 
-    def test_open_returns_taxonomy_db(self, minimal_taxdump: Path, monkeypatch):
+    def test_open_returns_taxonomy_db(
+        self,
+        minimal_taxdump: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         """Test that open() returns a TaxonomyDB instance."""
         taxonomy._build_sqlite_from_dmp(minimal_taxdump)
         monkeypatch.setattr(
@@ -570,8 +606,8 @@ class TestContextManagers:
     def test_open_connection_closed_after_context(
         self,
         minimal_taxdump: Path,
-        monkeypatch,
-    ):
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         """Test that database connection is closed after context exits."""
         taxonomy._build_sqlite_from_dmp(minimal_taxdump)
         monkeypatch.setattr(
@@ -591,8 +627,8 @@ class TestContextManagers:
     def test_delete_journal_mode_for_network_filesystem_compatibility(
         self,
         minimal_taxdump: Path,
-        monkeypatch,
-    ):
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         """Verify database uses DELETE journal mode for network filesystem compatibility.
 
         WAL mode requires shared memory (mmap) which doesn't work reliably on
@@ -610,7 +646,11 @@ class TestContextManagers:
             result = tax._conn.execute("PRAGMA journal_mode;").fetchone()
             assert result[0] == "delete"
 
-    def test_open_uses_readonly_connection(self, minimal_taxdump: Path, monkeypatch):
+    def test_open_uses_readonly_connection(
+        self,
+        minimal_taxdump: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         """Verify connection is opened in read-only mode to support read-only filesystems.
 
         This is critical for distributed workers on HTCondor/Slurm where the
@@ -637,11 +677,12 @@ class TestContextManagers:
 class TestConcurrentAccess:
     """Tests for concurrent database access."""
 
-    def test_concurrent_readers_do_not_block(self, minimal_taxdump: Path, monkeypatch):
+    def test_concurrent_readers_do_not_block(
+        self,
+        minimal_taxdump: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         """Multiple simultaneous readers can query without blocking."""
-        import threading
-        import time
-
         taxonomy._build_sqlite_from_dmp(minimal_taxdump)
         monkeypatch.setattr(
             taxonomy,
@@ -653,7 +694,7 @@ class TestConcurrentAccess:
         errors = []
         barrier = threading.Barrier(5)  # Wait for all threads to start
 
-        def reader_thread(thread_id):
+        def reader_thread(thread_id: int) -> None:
             try:
                 barrier.wait(timeout=2)  # Synchronize start
                 with taxonomy.open() as tax:
@@ -663,7 +704,7 @@ class TestConcurrentAccess:
                             errors.append(f"Thread {thread_id}: unexpected result")
                             return
                 results.append(thread_id)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001  # thread error collection
                 errors.append(f"Thread {thread_id}: {e}")
 
         threads = [threading.Thread(target=reader_thread, args=(i,)) for i in range(5)]
@@ -693,7 +734,7 @@ class TestNCBIIntegration:
     Run with: pytest -m "slow and network"
     """
 
-    def test_download_and_build_taxonomy(self, tmp_path):
+    def test_download_and_build_taxonomy(self, tmp_path: Path) -> None:
         """
         Verify we can download and build taxonomy from NCBI.
 
@@ -703,8 +744,6 @@ class TestNCBIIntegration:
         3. Builds taxonomy.sqlite
         4. Verifies known taxids resolve correctly
         """
-        import os
-
         # Use a fresh temp directory to force download
         state_dir = tmp_path / "ncbi_test"
         state_dir.mkdir()
@@ -744,15 +783,12 @@ class TestNCBIIntegration:
                 del os.environ["NVD_STATE_DIR"]
 
     @pytest.mark.slow
-    def test_taxonomy_sqlite_is_cached(self, tmp_path):
+    def test_taxonomy_sqlite_is_cached(self, tmp_path: Path) -> None:
         """
         Verify that taxonomy.sqlite is cached and reused.
 
         Second open() should be fast because it uses cached database.
         """
-        import os
-        import time
-
         state_dir = tmp_path / "cache_test"
         state_dir.mkdir()
         os.environ["NVD_STATE_DIR"] = str(state_dir)
@@ -783,7 +819,7 @@ class TestNCBIIntegration:
 class TestOfflineMode:
     """Tests for offline mode behavior."""
 
-    def test_offline_with_existing_sqlite(self, minimal_taxdump):
+    def test_offline_with_existing_sqlite(self, minimal_taxdump: Path) -> None:
         """Offline mode works when SQLite database exists."""
         # Build SQLite first
         taxonomy._build_sqlite_from_dmp(minimal_taxdump)
@@ -794,7 +830,10 @@ class TestOfflineMode:
             assert taxon is not None
             assert taxon.scientific_name == "Homo sapiens"
 
-    def test_offline_raises_when_dmp_exists_but_no_sqlite(self, minimal_taxdump):
+    def test_offline_raises_when_dmp_exists_but_no_sqlite(
+        self,
+        minimal_taxdump: Path,
+    ) -> None:
         """Offline mode raises error even if .dmp files exist but SQLite doesn't.
 
         This is intentional: distributed workers on read-only filesystems can't
@@ -809,27 +848,35 @@ class TestOfflineMode:
         assert not sqlite_path.exists()
 
         # Should raise TaxonomyOfflineError - we don't attempt to build in offline mode
-        with pytest.raises(taxonomy.TaxonomyOfflineError) as exc_info:
-            with taxonomy.open(state_dir=minimal_taxdump.parent, offline=True):
-                pass
+        with (
+            pytest.raises(taxonomy.TaxonomyOfflineError) as exc_info,
+            taxonomy.open(state_dir=minimal_taxdump.parent, offline=True),
+        ):
+            pass
 
         assert "offline mode is enabled" in str(exc_info.value)
         # SQLite should still not exist (we didn't try to build it)
         assert not sqlite_path.exists()
 
-    def test_offline_raises_when_no_data(self, tmp_path):
+    def test_offline_raises_when_no_data(self, tmp_path: Path) -> None:
         """Offline mode raises TaxonomyOfflineError when no data exists."""
         empty_dir = tmp_path / "empty"
         empty_dir.mkdir()
 
-        with pytest.raises(taxonomy.TaxonomyOfflineError) as exc_info:
-            with taxonomy.open(state_dir=empty_dir, offline=True):
-                pass
+        with (
+            pytest.raises(taxonomy.TaxonomyOfflineError) as exc_info,
+            taxonomy.open(state_dir=empty_dir, offline=True),
+        ):
+            pass
 
         assert "offline mode is enabled" in str(exc_info.value)
         assert str(empty_dir) in str(exc_info.value)
 
-    def test_offline_env_var(self, minimal_taxdump, monkeypatch):
+    def test_offline_env_var(
+        self,
+        minimal_taxdump: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         """NVD_TAXONOMY_OFFLINE env var enables offline mode."""
         # Build SQLite first
         taxonomy._build_sqlite_from_dmp(minimal_taxdump)
@@ -842,7 +889,11 @@ class TestOfflineMode:
             taxon = tax.get_taxon(9606)
             assert taxon is not None
 
-    def test_offline_env_var_true(self, minimal_taxdump, monkeypatch):
+    def test_offline_env_var_true(
+        self,
+        minimal_taxdump: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         """NVD_TAXONOMY_OFFLINE=true also works."""
         taxonomy._build_sqlite_from_dmp(minimal_taxdump)
         monkeypatch.setenv("NVD_TAXONOMY_OFFLINE", "true")
@@ -851,7 +902,11 @@ class TestOfflineMode:
             taxon = tax.get_taxon(9606)
             assert taxon is not None
 
-    def test_explicit_offline_overrides_env_var(self, minimal_taxdump, monkeypatch):
+    def test_explicit_offline_overrides_env_var(
+        self,
+        minimal_taxdump: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         """Explicit offline=False overrides env var."""
         taxonomy._build_sqlite_from_dmp(minimal_taxdump)
 
@@ -868,7 +923,11 @@ class TestOfflineMode:
 class TestTaxonomyDbEnvVar:
     """Tests for NVD_TAXONOMY_DB environment variable override."""
 
-    def test_env_var_overrides_default(self, minimal_taxdump, monkeypatch):
+    def test_env_var_overrides_default(
+        self,
+        minimal_taxdump: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         """NVD_TAXONOMY_DB points to custom taxonomy location."""
         # Build SQLite in the minimal_taxdump directory
         taxonomy._build_sqlite_from_dmp(minimal_taxdump)
@@ -880,7 +939,11 @@ class TestTaxonomyDbEnvVar:
         resolved = get_taxdump_dir()
         assert resolved == minimal_taxdump
 
-    def test_env_var_works_with_taxonomy_open(self, minimal_taxdump, monkeypatch):
+    def test_env_var_works_with_taxonomy_open(
+        self,
+        minimal_taxdump: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         """taxonomy.open() respects NVD_TAXONOMY_DB."""
         taxonomy._build_sqlite_from_dmp(minimal_taxdump)
         monkeypatch.setenv("NVD_TAXONOMY_DB", str(minimal_taxdump))
@@ -893,10 +956,10 @@ class TestTaxonomyDbEnvVar:
 
     def test_env_var_with_shared_readonly_taxonomy(
         self,
-        minimal_taxdump,
-        tmp_path,
-        monkeypatch,
-    ):
+        minimal_taxdump: Path,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         """Simulates cluster setup: shared taxonomy, separate state dir."""
         # Build taxonomy in "shared" location
         taxonomy._build_sqlite_from_dmp(minimal_taxdump)
@@ -921,23 +984,22 @@ class TestTaxonomyDbEnvVar:
 class TestSyncMode:
     """Tests for sync mode behavior (--sync flag)."""
 
-    def test_sync_mode_raises_when_taxonomy_missing(self, tmp_path):
+    def test_sync_mode_raises_when_taxonomy_missing(self, tmp_path: Path) -> None:
         """sync=True raises TaxonomyUnavailableError when no taxonomy exists."""
         empty_dir = tmp_path / "empty"
         empty_dir.mkdir()
 
-        with pytest.raises(taxonomy.TaxonomyUnavailableError) as exc_info:
-            with taxonomy.open(state_dir=empty_dir, sync=True):
-                pass
+        with (
+            pytest.raises(taxonomy.TaxonomyUnavailableError) as exc_info,
+            taxonomy.open(state_dir=empty_dir, sync=True),
+        ):
+            pass
 
         assert "missing or stale" in str(exc_info.value)
         assert exc_info.value.operation == "Loading taxonomy database"
 
-    def test_sync_mode_raises_when_taxonomy_stale(self, minimal_taxdump, monkeypatch):
+    def test_sync_mode_raises_when_taxonomy_stale(self, minimal_taxdump: Path) -> None:
         """sync=True raises TaxonomyUnavailableError when taxonomy is >30 days old."""
-        import os
-        import time
-
         # Build SQLite first
         taxonomy._build_sqlite_from_dmp(minimal_taxdump)
 
@@ -946,29 +1008,33 @@ class TestSyncMode:
         old_time = time.time() - (31 * 24 * 60 * 60)
         os.utime(nodes_dmp, (old_time, old_time))
 
-        with pytest.raises(taxonomy.TaxonomyUnavailableError) as exc_info:
-            with taxonomy.open(state_dir=minimal_taxdump.parent, sync=True):
-                pass
+        with (
+            pytest.raises(taxonomy.TaxonomyUnavailableError) as exc_info,
+            taxonomy.open(state_dir=minimal_taxdump.parent, sync=True),
+        ):
+            pass
 
         assert "missing or stale" in str(exc_info.value)
 
-    def test_sync_mode_raises_when_sqlite_missing(self, minimal_taxdump):
+    def test_sync_mode_raises_when_sqlite_missing(self, minimal_taxdump: Path) -> None:
         """sync=True raises TaxonomyUnavailableError when .dmp exists but SQLite doesn't."""
         # Don't build SQLite - only .dmp files exist
         sqlite_path = minimal_taxdump / "taxonomy.sqlite"
         assert not sqlite_path.exists()
 
-        with pytest.raises(taxonomy.TaxonomyUnavailableError) as exc_info:
-            with taxonomy.open(state_dir=minimal_taxdump.parent, sync=True):
-                pass
+        with (
+            pytest.raises(taxonomy.TaxonomyUnavailableError) as exc_info,
+            taxonomy.open(state_dir=minimal_taxdump.parent, sync=True),
+        ):
+            pass
 
         assert "needs rebuild" in str(exc_info.value)
 
     def test_sync_mode_succeeds_when_taxonomy_available(
         self,
-        minimal_taxdump,
-        monkeypatch,
-    ):
+        minimal_taxdump: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         """sync=True succeeds when taxonomy is ready."""
         taxonomy._build_sqlite_from_dmp(minimal_taxdump)
         # Must patch get_taxdump_dir so the staleness check uses our test directory
@@ -991,9 +1057,9 @@ class TestSyncMode:
 
     def test_graceful_mode_warns_when_taxonomy_missing(
         self,
-        minimal_taxdump,
-        monkeypatch,
-    ):
+        minimal_taxdump: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         """sync=False emits warning via callback when taxonomy needs download."""
         # Don't build SQLite yet
         sqlite_path = minimal_taxdump / "taxonomy.sqlite"
@@ -1002,11 +1068,14 @@ class TestSyncMode:
 
         warnings_received = []
 
-        def capture_warning(msg):
+        def capture_warning(msg: str) -> None:
             warnings_received.append(msg)
 
         # Patch _ensure_taxdump to build SQLite (simulating successful download)
-        def mock_ensure(state_dir=None, taxonomy_dir=None):
+        def mock_ensure(
+            _state_dir: Path | None = None,
+            _taxonomy_dir: Path | None = None,
+        ) -> Path:
             taxonomy._build_sqlite_from_dmp(minimal_taxdump)
             return minimal_taxdump
 
@@ -1027,25 +1096,25 @@ class TestSyncMode:
 
     def test_warn_callback_receives_formatted_warning(
         self,
-        minimal_taxdump,
-        monkeypatch,
-    ):
+        minimal_taxdump: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         """Verify the callback receives properly formatted warning."""
         # Make taxonomy stale
-        import os
-        import time
-
         nodes_dmp = minimal_taxdump / "nodes.dmp"
         old_time = time.time() - (31 * 24 * 60 * 60)
         os.utime(nodes_dmp, (old_time, old_time))
 
         warnings_received = []
 
-        def capture_warning(msg):
+        def capture_warning(msg: str) -> None:
             warnings_received.append(msg)
 
         # Patch to simulate successful download after warning
-        def mock_ensure(state_dir=None, taxonomy_dir=None):
+        def mock_ensure(
+            _state_dir: Path | None = None,
+            _taxonomy_dir: Path | None = None,
+        ) -> Path:
             taxonomy._build_sqlite_from_dmp(minimal_taxdump)
             return minimal_taxdump
 
@@ -1056,7 +1125,7 @@ class TestSyncMode:
             lambda _=None, __=None: minimal_taxdump,
         )
 
-        with taxonomy.open(sync=False, warn_callback=capture_warning) as tax:
+        with taxonomy.open(sync=False, warn_callback=capture_warning) as _tax:
             pass
 
         assert len(warnings_received) == 1
@@ -1071,7 +1140,7 @@ class TestSyncMode:
 class TestTaxonomyUnavailableError:
     """Tests for TaxonomyUnavailableError exception."""
 
-    def test_error_attributes(self, tmp_path):
+    def test_error_attributes(self, tmp_path: Path) -> None:
         """Verify exception has correct attributes."""
         original = ValueError("original error")
         error = taxonomy.TaxonomyUnavailableError(
@@ -1086,7 +1155,7 @@ class TestTaxonomyUnavailableError:
         assert error.reason == "test reason"
         assert error.original_error is original
 
-    def test_error_attributes_with_string_path(self, tmp_path):
+    def test_error_attributes_with_string_path(self, tmp_path: Path) -> None:
         """Verify exception handles string path correctly."""
         error = taxonomy.TaxonomyUnavailableError(
             taxdump_dir=str(tmp_path / "taxdump"),
@@ -1099,7 +1168,7 @@ class TestTaxonomyUnavailableError:
         # Also verify resource_path (the base class attribute)
         assert error.resource_path == tmp_path / "taxdump"
 
-    def test_error_message_format(self, tmp_path):
+    def test_error_message_format(self, tmp_path: Path) -> None:
         """Verify error message is helpful."""
         error = taxonomy.TaxonomyUnavailableError(
             taxdump_dir=tmp_path / "taxdump",
@@ -1113,7 +1182,7 @@ class TestTaxonomyUnavailableError:
         assert "--sync" in message
         assert str(tmp_path / "taxdump") in message
 
-    def test_error_without_original_error(self, tmp_path):
+    def test_error_without_original_error(self, tmp_path: Path) -> None:
         """Verify exception works without original_error."""
         error = taxonomy.TaxonomyUnavailableError(
             taxdump_dir=tmp_path / "taxdump",
@@ -1127,7 +1196,7 @@ class TestTaxonomyUnavailableError:
 class TestFormatTaxonomyWarning:
     """Tests for format_taxonomy_warning() function."""
 
-    def test_format_warning_with_permission_error(self, tmp_path):
+    def test_format_warning_with_permission_error(self, tmp_path: Path) -> None:
         """Verify warning format for PermissionError."""
         error = PermissionError("Permission denied")
         warning = taxonomy.format_taxonomy_warning(
@@ -1143,7 +1212,7 @@ class TestFormatTaxonomyWarning:
         assert "not readable/writable" in warning
         assert str(tmp_path) in warning
 
-    def test_format_warning_with_database_error(self, tmp_path):
+    def test_format_warning_with_database_error(self, tmp_path: Path) -> None:
         """Verify warning format for sqlite3.DatabaseError."""
         error = sqlite3.DatabaseError("file is not a database")
         warning = taxonomy.format_taxonomy_warning(
@@ -1157,9 +1226,9 @@ class TestFormatTaxonomyWarning:
         assert "DatabaseError" in warning
         assert "corrupted" in warning
 
-    def test_format_warning_with_url_error(self, tmp_path):
+    def test_format_warning_with_url_error(self, tmp_path: Path) -> None:
         """Verify warning format for URLError."""
-        error = urllib.request.URLError("Connection refused")
+        error = urllib.error.URLError("Connection refused")
         warning = taxonomy.format_taxonomy_warning(
             operation="Downloading taxonomy",
             context="Fetching from NCBI",
@@ -1171,7 +1240,7 @@ class TestFormatTaxonomyWarning:
         assert "URLError" in warning
         assert "network error" in warning
 
-    def test_format_warning_without_error(self, tmp_path):
+    def test_format_warning_without_error(self, tmp_path: Path) -> None:
         """Verify warning format when no error occurred (stale/missing case)."""
         warning = taxonomy.format_taxonomy_warning(
             operation="Loading taxonomy",
@@ -1185,7 +1254,7 @@ class TestFormatTaxonomyWarning:
         assert "not found or is stale" in warning
         assert "Error:" not in warning  # No error section when error=None
 
-    def test_format_warning_will_download_true(self, tmp_path):
+    def test_format_warning_will_download_true(self, tmp_path: Path) -> None:
         """Verify consequence text when download will be attempted."""
         warning = taxonomy.format_taxonomy_warning(
             operation="Loading taxonomy",
@@ -1198,7 +1267,7 @@ class TestFormatTaxonomyWarning:
         assert "download fresh taxonomy" in warning
         assert "Taxids may have been merged" in warning
 
-    def test_format_warning_will_download_false(self, tmp_path):
+    def test_format_warning_will_download_false(self, tmp_path: Path) -> None:
         """Verify consequence text when download will NOT be attempted."""
         warning = taxonomy.format_taxonomy_warning(
             operation="Loading taxonomy",
@@ -1219,7 +1288,7 @@ class TestTaxonomyDirParameter:
     is decoupled from the state directory.
     """
 
-    def test_open_with_explicit_taxonomy_dir(self, minimal_taxdump: Path):
+    def test_open_with_explicit_taxonomy_dir(self, minimal_taxdump: Path) -> None:
         """taxonomy.open() uses explicit taxonomy_dir when provided."""
         # Build SQLite in the minimal_taxdump directory
         taxonomy._build_sqlite_from_dmp(minimal_taxdump)
@@ -1234,7 +1303,7 @@ class TestTaxonomyDirParameter:
         self,
         minimal_taxdump: Path,
         tmp_path: Path,
-    ):
+    ) -> None:
         """taxonomy_dir takes precedence over state_dir-derived path."""
         # Build SQLite in the minimal_taxdump directory
         taxonomy._build_sqlite_from_dmp(minimal_taxdump)
@@ -1253,7 +1322,7 @@ class TestTaxonomyDirParameter:
             assert taxon is not None
             assert taxon.scientific_name == "Homo sapiens"
 
-    def test_taxonomy_dir_with_string_path(self, minimal_taxdump: Path):
+    def test_taxonomy_dir_with_string_path(self, minimal_taxdump: Path) -> None:
         """taxonomy_dir works with string path."""
         taxonomy._build_sqlite_from_dmp(minimal_taxdump)
 
@@ -1265,8 +1334,8 @@ class TestTaxonomyDirParameter:
     def test_taxonomy_dir_enables_stateless_mode(
         self,
         minimal_taxdump: Path,
-        monkeypatch,
-    ):
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         """taxonomy_dir allows operation without any state_dir.
 
         This is the key use case for stateless mode: taxonomy is provided
@@ -1292,8 +1361,8 @@ class TestTaxonomyDirParameter:
         self,
         minimal_taxdump: Path,
         tmp_path: Path,
-        monkeypatch,
-    ):
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         """taxonomy_dir takes precedence over NVD_TAXONOMY_DB env var."""
         # Build SQLite in the minimal_taxdump directory
         taxonomy._build_sqlite_from_dmp(minimal_taxdump)

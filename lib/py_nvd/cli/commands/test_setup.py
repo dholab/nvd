@@ -1,6 +1,5 @@
 """Tests for the setup command."""
 
-import os
 from pathlib import Path
 from unittest.mock import patch
 
@@ -10,7 +9,6 @@ from typer.testing import CliRunner
 from py_nvd import __version__
 from py_nvd.cli.app import app
 from py_nvd.cli.commands.setup import (
-    CONTAINER_IMAGE_URI,
     SHELL_HOOK_MARKER,
     _check_pixi_installed,
     _detect_shell,
@@ -30,61 +28,69 @@ runner = CliRunner()
 class TestEnvironmentDetection:
     """Tests for environment detection functions."""
 
-    def test_is_oconnor_chtc_false_on_generic_system(self):
+    def test_is_oconnor_chtc_false_on_generic_system(self) -> None:
         """_is_oconnor_chtc returns False on non-CHTC systems."""
-        with patch("socket.gethostname", return_value="generic-workstation"):
-            with patch("socket.getfqdn", return_value="generic-workstation.local"):
-                assert _is_oconnor_chtc() is False
+        with (
+            patch("socket.gethostname", return_value="generic-workstation"),
+            patch("socket.getfqdn", return_value="generic-workstation.local"),
+        ):
+            assert _is_oconnor_chtc() is False
 
-    def test_is_oconnor_chtc_true_on_chtc(self):
+    def test_is_oconnor_chtc_true_on_chtc(self) -> None:
         """_is_oconnor_chtc returns True when hostname matches pattern."""
-        with patch("socket.gethostname", return_value="oconnor-ap2001"):
-            with patch("socket.getfqdn", return_value="oconnor-ap2001.chtc.wisc.edu"):
-                assert _is_oconnor_chtc() is True
+        with (
+            patch("socket.gethostname", return_value="oconnor-ap2001"),
+            patch("socket.getfqdn", return_value="oconnor-ap2001.chtc.wisc.edu"),
+        ):
+            assert _is_oconnor_chtc() is True
 
-    def test_is_oconnor_chtc_false_wrong_hostname(self):
+    def test_is_oconnor_chtc_false_wrong_hostname(self) -> None:
         """_is_oconnor_chtc returns False when hostname doesn't match."""
-        with patch("socket.gethostname", return_value="some-other-host"):
-            with patch("socket.getfqdn", return_value="some-other-host.chtc.wisc.edu"):
-                assert _is_oconnor_chtc() is False
+        with (
+            patch("socket.gethostname", return_value="some-other-host"),
+            patch("socket.getfqdn", return_value="some-other-host.chtc.wisc.edu"),
+        ):
+            assert _is_oconnor_chtc() is False
 
-    def test_is_oconnor_chtc_false_wrong_domain(self):
+    def test_is_oconnor_chtc_false_wrong_domain(self) -> None:
         """_is_oconnor_chtc returns False when domain doesn't match."""
-        with patch("socket.gethostname", return_value="oconnor-ap2001"):
-            with patch("socket.getfqdn", return_value="oconnor-ap2001.example.com"):
-                assert _is_oconnor_chtc() is False
+        with (
+            patch("socket.gethostname", return_value="oconnor-ap2001"),
+            patch("socket.getfqdn", return_value="oconnor-ap2001.example.com"),
+        ):
+            assert _is_oconnor_chtc() is False
 
-    def test_detect_shell_bash(self, monkeypatch):
+    def test_detect_shell_bash(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """_detect_shell returns 'bash' for bash shell."""
         monkeypatch.setenv("SHELL", "/bin/bash")
         assert _detect_shell() == "bash"
 
-    def test_detect_shell_zsh(self, monkeypatch):
+    def test_detect_shell_zsh(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """_detect_shell returns 'zsh' for zsh shell."""
         monkeypatch.setenv("SHELL", "/bin/zsh")
         assert _detect_shell() == "zsh"
 
-    def test_detect_shell_zsh_usr_local(self, monkeypatch):
+    def test_detect_shell_zsh_usr_local(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """_detect_shell handles non-standard zsh paths."""
         monkeypatch.setenv("SHELL", "/usr/local/bin/zsh")
         assert _detect_shell() == "zsh"
 
-    def test_detect_shell_unknown(self, monkeypatch):
+    def test_detect_shell_unknown(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """_detect_shell returns None for unknown shells."""
         monkeypatch.setenv("SHELL", "/bin/fish")
         assert _detect_shell() is None
 
-    def test_detect_shell_empty(self, monkeypatch):
+    def test_detect_shell_empty(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """_detect_shell returns None when SHELL is empty."""
         monkeypatch.delenv("SHELL", raising=False)
         assert _detect_shell() is None
 
-    def test_check_pixi_installed_true(self):
+    def test_check_pixi_installed_true(self) -> None:
         """_check_pixi_installed returns True when pixi is available."""
         with patch("shutil.which", return_value="/usr/local/bin/pixi"):
             assert _check_pixi_installed() is True
 
-    def test_check_pixi_installed_false(self):
+    def test_check_pixi_installed_false(self) -> None:
         """_check_pixi_installed returns False when pixi is not found."""
         with patch("shutil.which", return_value=None):
             assert _check_pixi_installed() is False
@@ -93,7 +99,7 @@ class TestEnvironmentDetection:
 class TestTemplateSubstitution:
     """Tests for template loading and variable substitution."""
 
-    def test_load_and_substitute_template(self, tmp_path):
+    def test_load_and_substitute_template(self, tmp_path: Path) -> None:
         """_load_and_substitute_template substitutes variables correctly."""
         template = tmp_path / "test.config"
         template.write_text(
@@ -101,7 +107,7 @@ class TestTemplateSubstitution:
             "// Hostname: ${HOSTNAME}\n"
             "// Date: ${DATE}\n"
             "// Version: ${VERSION}\n"
-            "// Home: ${HOME}\n"  # Should NOT be substituted
+            "// Home: ${HOME}\n",  # Should NOT be substituted
         )
 
         result = _load_and_substitute_template(template)
@@ -113,7 +119,7 @@ class TestTemplateSubstitution:
         assert "${HOME}" in result  # Should remain for Nextflow
         assert __version__ in result
 
-    def test_load_and_substitute_template_missing_file(self, tmp_path):
+    def test_load_and_substitute_template_missing_file(self, tmp_path: Path) -> None:
         """_load_and_substitute_template raises FileNotFoundError for missing file."""
         with pytest.raises(FileNotFoundError):
             _load_and_substitute_template(tmp_path / "nonexistent.config")
@@ -122,7 +128,7 @@ class TestTemplateSubstitution:
 class TestWrapperScriptGeneration:
     """Tests for wrapper script generation."""
 
-    def test_generate_wrapper_script(self, tmp_path):
+    def test_generate_wrapper_script(self, tmp_path: Path) -> None:
         """_generate_wrapper_script generates valid bash script."""
         nvd_repo = tmp_path / "nvd"
         script = _generate_wrapper_script(nvd_repo)
@@ -133,7 +139,7 @@ class TestWrapperScriptGeneration:
         assert "nvd" in script
         assert __version__ in script
 
-    def test_generate_setup_conf(self, tmp_path):
+    def test_generate_setup_conf(self, tmp_path: Path) -> None:
         """_generate_setup_conf generates valid config."""
         nvd_repo = tmp_path / "nvd"
         state_dir = tmp_path / "state"
@@ -146,7 +152,7 @@ class TestWrapperScriptGeneration:
         # Default profile should be commented out
         assert "# NVD_DEFAULT_PROFILE=" in conf
 
-    def test_generate_setup_conf_with_profile(self, tmp_path):
+    def test_generate_setup_conf_with_profile(self, tmp_path: Path) -> None:
         """_generate_setup_conf includes default profile when specified."""
         nvd_repo = tmp_path / "nvd"
         state_dir = tmp_path / "state"
@@ -159,7 +165,7 @@ class TestWrapperScriptGeneration:
         # Should NOT have the commented version
         assert "# NVD_DEFAULT_PROFILE=my_profile" not in conf
 
-    def test_generate_completions_bash(self, tmp_path):
+    def test_generate_completions_bash(self, tmp_path: Path) -> None:
         """_generate_completions creates bash completion script."""
         with patch("py_nvd.cli.commands.setup.NVD_HOME", tmp_path):
             path = _generate_completions("bash")
@@ -170,7 +176,7 @@ class TestWrapperScriptGeneration:
         assert "_nvd_completion" in content
         assert "complete" in content
 
-    def test_generate_completions_zsh(self, tmp_path):
+    def test_generate_completions_zsh(self, tmp_path: Path) -> None:
         """_generate_completions creates zsh completion script."""
         with patch("py_nvd.cli.commands.setup.NVD_HOME", tmp_path):
             path = _generate_completions("zsh")
@@ -185,33 +191,33 @@ class TestWrapperScriptGeneration:
 class TestRCFileIntegration:
     """Tests for RC file detection and hook installation."""
 
-    def test_get_rc_file_bash(self):
+    def test_get_rc_file_bash(self) -> None:
         """_get_rc_file returns .bashrc for bash."""
         rc = _get_rc_file("bash")
         assert rc.name == ".bashrc"
         assert rc.parent == Path.home()
 
-    def test_get_rc_file_zsh(self):
+    def test_get_rc_file_zsh(self) -> None:
         """_get_rc_file returns .zshrc for zsh."""
         rc = _get_rc_file("zsh")
         assert rc.name == ".zshrc"
         assert rc.parent == Path.home()
 
-    def test_is_hook_installed_true(self, tmp_path):
+    def test_is_hook_installed_true(self, tmp_path: Path) -> None:
         """_is_hook_installed returns True when hook is present."""
         rc_file = tmp_path / ".bashrc"
         rc_file.write_text(f'eval "$({SHELL_HOOK_MARKER})"\n')
 
         assert _is_hook_installed(rc_file) is True
 
-    def test_is_hook_installed_false(self, tmp_path):
+    def test_is_hook_installed_false(self, tmp_path: Path) -> None:
         """_is_hook_installed returns False when hook is absent."""
         rc_file = tmp_path / ".bashrc"
         rc_file.write_text("# some other content\n")
 
         assert _is_hook_installed(rc_file) is False
 
-    def test_is_hook_installed_missing_file(self, tmp_path):
+    def test_is_hook_installed_missing_file(self, tmp_path: Path) -> None:
         """_is_hook_installed returns False for missing file."""
         rc_file = tmp_path / ".bashrc"
         assert _is_hook_installed(rc_file) is False
@@ -220,13 +226,13 @@ class TestRCFileIntegration:
 class TestStateDirValidation:
     """Tests for state directory validation."""
 
-    def test_validate_state_dir_exists_writable(self, tmp_path):
+    def test_validate_state_dir_exists_writable(self, tmp_path: Path) -> None:
         """_validate_state_dir succeeds for existing writable directory."""
         is_valid, message = _validate_state_dir(tmp_path)
         assert is_valid is True
         assert "writable" in message.lower()
 
-    def test_validate_state_dir_creates_new(self, tmp_path):
+    def test_validate_state_dir_creates_new(self, tmp_path: Path) -> None:
         """_validate_state_dir creates new directory if needed."""
         new_dir = tmp_path / "new_state"
         is_valid, message = _validate_state_dir(new_dir)
@@ -235,7 +241,7 @@ class TestStateDirValidation:
         assert new_dir.exists()
         assert "Created" in message
 
-    def test_validate_state_dir_parent_missing(self, tmp_path):
+    def test_validate_state_dir_parent_missing(self, tmp_path: Path) -> None:
         """_validate_state_dir fails when parent doesn't exist."""
         bad_path = tmp_path / "nonexistent" / "state"
         is_valid, message = _validate_state_dir(bad_path)
@@ -243,7 +249,7 @@ class TestStateDirValidation:
         assert is_valid is False
         assert "Parent directory does not exist" in message
 
-    def test_validate_state_dir_not_a_directory(self, tmp_path):
+    def test_validate_state_dir_not_a_directory(self, tmp_path: Path) -> None:
         """_validate_state_dir fails when path is a file."""
         file_path = tmp_path / "not_a_dir"
         file_path.touch()
@@ -257,7 +263,9 @@ class TestStateDirValidation:
 class TestShellHookOutput:
     """Tests for shell-hook command output."""
 
-    def test_shell_hook_bash(self, monkeypatch, tmp_path):
+    def test_shell_hook_bash(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+    ) -> None:
         """shell-hook outputs bash-compatible code with static completions."""
         monkeypatch.setenv("SHELL", "/bin/bash")
         # Create setup.conf so state_dir is read
@@ -277,7 +285,9 @@ class TestShellHookOutput:
         assert "export PATH" in result.stdout
         assert "export NVD_STATE_DIR" in result.stdout
 
-    def test_shell_hook_zsh(self, monkeypatch, tmp_path):
+    def test_shell_hook_zsh(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+    ) -> None:
         """shell-hook outputs zsh-compatible code with static completions."""
         monkeypatch.setenv("SHELL", "/bin/zsh")
         nvd_home = tmp_path / ".nvd"
@@ -294,7 +304,7 @@ class TestShellHookOutput:
         assert "completions.zsh" in result.stdout
         assert "source" in result.stdout
 
-    def test_shell_hook_unsupported_shell(self):
+    def test_shell_hook_unsupported_shell(self) -> None:
         """shell-hook rejects unsupported shells."""
         result = runner.invoke(app, ["setup", "shell-hook", "--shell", "fish"])
         assert result.exit_code == 1
@@ -304,7 +314,7 @@ class TestShellHookOutput:
 class TestSetupCommandHelp:
     """Tests for setup command help."""
 
-    def test_setup_help(self):
+    def test_setup_help(self) -> None:
         """setup --help exits cleanly."""
         result = runner.invoke(app, ["setup", "--help"])
         assert result.exit_code == 0
@@ -315,7 +325,7 @@ class TestSetupCommandHelp:
         assert "--skip-container" in result.stdout
         assert "--force" in result.stdout
 
-    def test_shell_hook_help(self):
+    def test_shell_hook_help(self) -> None:
         """setup shell-hook --help exits cleanly."""
         result = runner.invoke(app, ["setup", "shell-hook", "--help"])
         assert result.exit_code == 0
@@ -325,57 +335,65 @@ class TestSetupCommandHelp:
 class TestSetupCommandNonInteractive:
     """Tests for non-interactive setup mode."""
 
-    def test_setup_non_interactive_creates_wrapper(self, tmp_path, monkeypatch):
+    def test_setup_non_interactive_creates_wrapper(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         """setup --non-interactive creates wrapper script."""
         # Set up isolated environment
         nvd_home = tmp_path / ".nvd"
         local_bin = tmp_path / ".local" / "bin"
         monkeypatch.setenv("HOME", str(tmp_path))
 
-        with patch("py_nvd.cli.commands.setup.NVD_HOME", nvd_home):
-            with patch("py_nvd.cli.commands.setup.DEFAULT_WRAPPER_DIR", local_bin):
-                with patch("py_nvd.cli.commands.setup._get_rc_file") as mock_rc:
-                    # Point RC file to temp location
-                    mock_rc.return_value = tmp_path / ".zshrc"
-                    (tmp_path / ".zshrc").touch()
+        with (
+            patch("py_nvd.cli.commands.setup.NVD_HOME", nvd_home),
+            patch("py_nvd.cli.commands.setup.DEFAULT_WRAPPER_DIR", local_bin),
+            patch("py_nvd.cli.commands.setup._get_rc_file") as mock_rc,
+        ):
+            # Point RC file to temp location
+            mock_rc.return_value = tmp_path / ".zshrc"
+            (tmp_path / ".zshrc").touch()
 
-                    result = runner.invoke(
-                        app,
-                        [
-                            "setup",
-                            "--non-interactive",
-                            "--skip-shell-hook",
-                            "--state-dir",
-                            str(tmp_path / "state"),
-                        ],
-                    )
+            result = runner.invoke(
+                app,
+                [
+                    "setup",
+                    "--non-interactive",
+                    "--skip-shell-hook",
+                    "--state-dir",
+                    str(tmp_path / "state"),
+                ],
+            )
 
         assert result.exit_code == 0
         assert "Wrapper script installed" in result.stdout
         assert (local_bin / "nvd").exists()
 
-    def test_setup_non_interactive_creates_setup_conf(self, tmp_path, monkeypatch):
+    def test_setup_non_interactive_creates_setup_conf(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         """setup --non-interactive creates setup.conf."""
         nvd_home = tmp_path / ".nvd"
         local_bin = tmp_path / ".local" / "bin"
         monkeypatch.setenv("HOME", str(tmp_path))
 
-        with patch("py_nvd.cli.commands.setup.NVD_HOME", nvd_home):
-            with patch("py_nvd.cli.commands.setup.DEFAULT_WRAPPER_DIR", local_bin):
-                with patch("py_nvd.cli.commands.setup._get_rc_file") as mock_rc:
-                    mock_rc.return_value = tmp_path / ".zshrc"
-                    (tmp_path / ".zshrc").touch()
+        with (
+            patch("py_nvd.cli.commands.setup.NVD_HOME", nvd_home),
+            patch("py_nvd.cli.commands.setup.DEFAULT_WRAPPER_DIR", local_bin),
+            patch("py_nvd.cli.commands.setup._get_rc_file") as mock_rc,
+        ):
+            mock_rc.return_value = tmp_path / ".zshrc"
+            (tmp_path / ".zshrc").touch()
 
-                    result = runner.invoke(
-                        app,
-                        [
-                            "setup",
-                            "--non-interactive",
-                            "--skip-shell-hook",
-                            "--state-dir",
-                            str(tmp_path / "state"),
-                        ],
-                    )
+            result = runner.invoke(
+                app,
+                [
+                    "setup",
+                    "--non-interactive",
+                    "--skip-shell-hook",
+                    "--state-dir",
+                    str(tmp_path / "state"),
+                ],
+            )
 
         assert result.exit_code == 0
         assert (nvd_home / "setup.conf").exists()
@@ -384,7 +402,9 @@ class TestSetupCommandNonInteractive:
         assert "NVD_REPO=" in conf_content
         assert f"NVD_STATE_DIR={tmp_path / 'state'}" in conf_content
 
-    def test_setup_non_interactive_invalid_state_dir(self, tmp_path, monkeypatch):
+    def test_setup_non_interactive_invalid_state_dir(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         """setup --non-interactive fails with invalid state dir."""
         nvd_home = tmp_path / ".nvd"
         monkeypatch.setenv("HOME", str(tmp_path))

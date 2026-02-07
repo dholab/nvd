@@ -1,4 +1,3 @@
-# ruff: noqa: B008
 """
 Parameter file management commands for the NVD CLI.
 
@@ -10,12 +9,16 @@ Commands:
 
 from __future__ import annotations
 
+import json as json_module
 from pathlib import Path
 
 import typer
+import yaml
+from pydantic import ValidationError
 from rich.panel import Panel
 from rich.table import Table
 
+from py_nvd import params, state
 from py_nvd.cli.utils import (
     console,
     error,
@@ -23,15 +26,20 @@ from py_nvd.cli.utils import (
     success,
     warning,
 )
-from py_nvd import params, state
 from py_nvd.models import (
     PARAM_CATEGORIES,
+    NvdParams,
     ParamSource,
     TracedParams,
     get_field_category,
     trace_merge,
 )
 from py_nvd.params import get_schema_url, load_params_file
+
+# Display/truncation thresholds
+_MAX_LIST_PREVIEW_ITEMS = 3
+_MAX_STR_DISPLAY_LENGTH = 50
+_MAX_OVERRIDE_DISPLAY_LENGTH = 20
 
 params_app = typer.Typer(
     name="params",
@@ -73,10 +81,7 @@ def params_init(
     """
     # Determine format from extension or option
     if output_format is None:
-        if output.suffix == ".json":
-            output_format = "json"
-        else:
-            output_format = "yaml"  # Default to YAML
+        output_format = "json" if output.suffix == ".json" else "yaml"
 
     # Ensure correct extension
     if output_format == "yaml" and output.suffix not in (".yaml", ".yml"):
@@ -88,14 +93,14 @@ def params_init(
     if output.exists():
         warning(f"File already exists: {output}")
         if not typer.confirm("Overwrite?"):
-            raise typer.Abort()
+            raise typer.Abort
 
     try:
         params.generate_template(output, output_format=output_format)
         success(f"Created {output}")
         info("Edit this file in your IDE for autocomplete and validation")
         info(f"Use with: nextflow run dhoconno/nvd -params-file {output}")
-    except Exception as e:
+    except (OSError, ValueError) as e:
         error(f"Failed to generate template: {e}")
 
 
@@ -155,15 +160,13 @@ def params_check(
         # Skip path existence checks (for remote paths)
         nvd params check my-params.yaml --no-check-paths
     """
-    from pydantic import ValidationError
-
     # Load params file
     try:
         file_params = load_params_file(path)
     except FileNotFoundError:
         error(f"File not found: {path}")
         raise typer.Exit(1) from None
-    except Exception as e:
+    except (ValueError, yaml.YAMLError, json_module.JSONDecodeError) as e:
         error(f"Failed to parse file: {e}")
         raise typer.Exit(1) from None
 
@@ -190,7 +193,7 @@ def params_check(
             ("file", file_params),
         )
     except ValidationError as e:
-        console.print(f"\n[red]✗ Validation failed:[/red]\n")
+        console.print("\n[red]✗ Validation failed:[/red]\n")
         for err in e.errors():
             field = ".".join(str(loc) for loc in err["loc"])
             msg = err["msg"]
@@ -275,7 +278,7 @@ def params_check(
             console.print(f"  • [cyan]{field}[/cyan]: {p}")
         console.print()
         console.print(
-            "[dim]Note: Paths may be valid on the target system (e.g., cluster).[/dim]"
+            "[dim]Note: Paths may be valid on the target system (e.g., cluster).[/dim]",
         )
 
     console.print()
@@ -309,7 +312,7 @@ def _categorize_sources(
     return categories
 
 
-def _check_path_existence(params) -> list[tuple[str, Path]]:
+def _check_path_existence(params: NvdParams) -> list[tuple[str, Path]]:
     """
     Check that Path-typed parameters point to existing files/directories.
 
@@ -326,22 +329,23 @@ def _check_path_existence(params) -> list[tuple[str, Path]]:
             continue
 
         # Check if this is a Path field
-        if isinstance(value, Path):
-            if not value.exists():
-                missing.append((field_name, value))
+        if isinstance(value, Path) and not value.exists():
+            missing.append((field_name, value))
 
     return missing
 
 
-def _format_value(value) -> str:
+def _format_value(value: object) -> str:
     """Format a value for display, truncating if needed."""
     if isinstance(value, list):
-        if len(value) > 3:
-            return f"[{', '.join(str(v) for v in value[:3])}, ...]"
+        if len(value) > _MAX_LIST_PREVIEW_ITEMS:
+            return (
+                f"[{', '.join(str(v) for v in value[:_MAX_LIST_PREVIEW_ITEMS])}, ...]"
+            )
         return f"[{', '.join(str(v) for v in value)}]"
 
     str_value = str(value)
-    if len(str_value) > 50:
+    if len(str_value) > _MAX_STR_DISPLAY_LENGTH:
         return str_value[:47] + "..."
     return str_value
 
@@ -355,7 +359,7 @@ def _format_source(src: ParamSource) -> str:
     if src.overridden_value is not None:
         # Truncate overridden value if needed
         ov = str(src.overridden_value)
-        if len(ov) > 20:
+        if len(ov) > _MAX_OVERRIDE_DISPLAY_LENGTH:
             ov = ov[:17] + "..."
         result += f" [dim](was {src.overridden_source}: {ov})[/dim]"
 
@@ -409,12 +413,7 @@ def params_merge(
         # Include all defaults in output
         nvd params merge base.yaml overrides.yaml -o full.yaml --include-defaults
     """
-    import json as json_module
-
-    import yaml
-    from pydantic import ValidationError
-
-    if len(files) < 2:
+    if len(files) < 2:  # noqa: PLR2004
         error("At least two files are required for merging")
         raise typer.Exit(1)
 
@@ -427,7 +426,7 @@ def params_merge(
         except FileNotFoundError:
             error(f"File not found: {path}")
             raise typer.Exit(1) from None
-        except Exception as e:
+        except (ValueError, yaml.YAMLError, json_module.JSONDecodeError) as e:
             error(f"Failed to parse {path}: {e}")
             raise typer.Exit(1) from None
 
@@ -445,10 +444,7 @@ def params_merge(
 
     # Determine output format
     if output_format is None:
-        if output.suffix == ".json":
-            output_format = "json"
-        else:
-            output_format = "yaml"
+        output_format = "json" if output.suffix == ".json" else "yaml"
 
     # Ensure correct extension
     if output_format == "yaml" and output.suffix not in (".yaml", ".yml"):
@@ -460,7 +456,7 @@ def params_merge(
     if output.exists():
         warning(f"File already exists: {output}")
         if not typer.confirm("Overwrite?"):
-            raise typer.Abort()
+            raise typer.Abort
 
     # Build output data - only include explicitly set values unless --include-defaults
     explicitly_set = set()

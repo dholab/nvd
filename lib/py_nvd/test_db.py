@@ -7,6 +7,8 @@ Tests for database connection, schema management, and graceful degradation helpe
 import sqlite3
 from pathlib import Path
 
+import pytest
+
 from py_nvd.db import (
     SchemaMismatchError,
     StateUnavailableError,
@@ -18,7 +20,7 @@ from py_nvd.db import (
 class TestStateUnavailableError:
     """Tests for StateUnavailableError exception."""
 
-    def test_error_attributes(self, tmp_path):
+    def test_error_attributes(self, tmp_path: Path) -> None:
         """Verify exception has correct attributes."""
         original = ValueError("original error")
         error = StateUnavailableError(
@@ -33,7 +35,7 @@ class TestStateUnavailableError:
         assert error.reason == "test reason"
         assert error.original_error is original
 
-    def test_error_attributes_with_string_path(self, tmp_path):
+    def test_error_attributes_with_string_path(self, tmp_path: Path) -> None:
         """Verify exception handles string path correctly."""
         error = StateUnavailableError(
             db_path=str(tmp_path / "state.sqlite"),
@@ -44,7 +46,7 @@ class TestStateUnavailableError:
         assert error.db_path == tmp_path / "state.sqlite"
         assert isinstance(error.db_path, Path)
 
-    def test_error_message_format(self, tmp_path):
+    def test_error_message_format(self, tmp_path: Path) -> None:
         """Verify error message is helpful."""
         error = StateUnavailableError(
             db_path=tmp_path / "state.sqlite",
@@ -58,7 +60,7 @@ class TestStateUnavailableError:
         assert "--sync" in message
         assert str(tmp_path / "state.sqlite") in message
 
-    def test_error_without_original_error(self, tmp_path):
+    def test_error_without_original_error(self, tmp_path: Path) -> None:
         """Verify exception works without original_error."""
         error = StateUnavailableError(
             db_path=tmp_path / "state.sqlite",
@@ -72,7 +74,7 @@ class TestStateUnavailableError:
 class TestFormatStateWarning:
     """Tests for format_state_warning() function."""
 
-    def test_format_warning_permission_error(self, tmp_path):
+    def test_format_warning_permission_error(self, tmp_path: Path) -> None:
         """Verify explanation for PermissionError."""
         error = PermissionError("Permission denied")
         warning = format_state_warning(
@@ -88,7 +90,7 @@ class TestFormatStateWarning:
         assert "not readable/writable" in warning
         assert str(tmp_path / "state.sqlite") in warning
 
-    def test_format_warning_database_error(self, tmp_path):
+    def test_format_warning_database_error(self, tmp_path: Path) -> None:
         """Verify explanation for sqlite3.DatabaseError."""
         error = sqlite3.DatabaseError("file is not a database")
         warning = format_state_warning(
@@ -102,7 +104,7 @@ class TestFormatStateWarning:
         assert "DatabaseError" in warning
         assert "corrupted" in warning
 
-    def test_format_warning_operational_error_readonly(self, tmp_path):
+    def test_format_warning_operational_error_readonly(self, tmp_path: Path) -> None:
         """Verify explanation for readonly OperationalError."""
         error = sqlite3.OperationalError("attempt to write a readonly database")
         warning = format_state_warning(
@@ -116,7 +118,7 @@ class TestFormatStateWarning:
         assert "OperationalError" in warning
         assert "read-only filesystem" in warning
 
-    def test_format_warning_operational_error_locked(self, tmp_path):
+    def test_format_warning_operational_error_locked(self, tmp_path: Path) -> None:
         """Verify explanation for locked OperationalError."""
         error = sqlite3.OperationalError("database is locked")
         warning = format_state_warning(
@@ -130,7 +132,7 @@ class TestFormatStateWarning:
         assert "OperationalError" in warning
         assert "locked by another process" in warning
 
-    def test_format_warning_operational_error_generic(self, tmp_path):
+    def test_format_warning_operational_error_generic(self, tmp_path: Path) -> None:
         """Verify explanation for generic OperationalError."""
         error = sqlite3.OperationalError("some other error")
         warning = format_state_warning(
@@ -144,7 +146,7 @@ class TestFormatStateWarning:
         assert "OperationalError" in warning
         assert "failed unexpectedly" in warning
 
-    def test_format_warning_file_not_found(self, tmp_path):
+    def test_format_warning_file_not_found(self, tmp_path: Path) -> None:
         """Verify explanation for FileNotFoundError."""
         error = FileNotFoundError("No such file or directory")
         warning = format_state_warning(
@@ -158,7 +160,7 @@ class TestFormatStateWarning:
         assert "FileNotFoundError" in warning
         assert "does not exist" in warning
 
-    def test_format_warning_schema_mismatch(self, tmp_path):
+    def test_format_warning_schema_mismatch(self, tmp_path: Path) -> None:
         """Verify explanation for SchemaMismatchError."""
         error = SchemaMismatchError(
             db_path=tmp_path / "state.sqlite",
@@ -177,7 +179,7 @@ class TestFormatStateWarning:
         assert "version (1)" in warning
         assert "version (2)" in warning
 
-    def test_format_warning_unknown_error(self, tmp_path):
+    def test_format_warning_unknown_error(self, tmp_path: Path) -> None:
         """Verify fallback explanation for unknown errors."""
         error = RuntimeError("Something unexpected happened")
         warning = format_state_warning(
@@ -191,7 +193,7 @@ class TestFormatStateWarning:
         assert "RuntimeError" in warning
         assert "unexpected error" in warning
 
-    def test_format_warning_includes_consequences(self, tmp_path):
+    def test_format_warning_includes_consequences(self, tmp_path: Path) -> None:
         """Verify consequences are listed in warning."""
         error = PermissionError("Permission denied")
         warning = format_state_warning(
@@ -210,7 +212,7 @@ class TestFormatStateWarning:
         assert "Sample locking DISABLED" in warning
         assert "Run provenance tracking DISABLED" in warning
 
-    def test_format_warning_includes_resolution(self, tmp_path):
+    def test_format_warning_includes_resolution(self, tmp_path: Path) -> None:
         """Verify resolution instructions are included."""
         error = PermissionError("Permission denied")
         warning = format_state_warning(
@@ -225,7 +227,7 @@ class TestFormatStateWarning:
         assert "--sync" in warning
         assert "file permissions" in warning
 
-    def test_format_warning_structure(self, tmp_path):
+    def test_format_warning_structure(self, tmp_path: Path) -> None:
         """Verify overall warning structure."""
         error = ValueError("test error")
         warning = format_state_warning(
@@ -245,7 +247,7 @@ class TestFormatStateWarning:
         assert "Consequence:" in warning
         assert "Resolution:" in warning
 
-    def test_format_warning_with_string_path(self, tmp_path):
+    def test_format_warning_with_string_path(self, tmp_path: Path) -> None:
         """Verify warning works with string path."""
         error = ValueError("test")
         warning = format_state_warning(
@@ -262,7 +264,9 @@ class TestFormatStateWarning:
 class TestGetTaxdumpDir:
     """Tests for get_taxdump_dir() function with taxonomy_dir parameter."""
 
-    def test_taxonomy_dir_takes_precedence_over_env_var(self, tmp_path, monkeypatch):
+    def test_taxonomy_dir_takes_precedence_over_env_var(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         """Explicit taxonomy_dir parameter takes precedence over NVD_TAXONOMY_DB env var."""
         env_dir = tmp_path / "env_taxonomy"
         env_dir.mkdir()
@@ -274,7 +278,7 @@ class TestGetTaxdumpDir:
         result = get_taxdump_dir(taxonomy_dir=explicit_dir)
         assert result == explicit_dir
 
-    def test_taxonomy_dir_takes_precedence_over_state_dir(self, tmp_path):
+    def test_taxonomy_dir_takes_precedence_over_state_dir(self, tmp_path: Path) -> None:
         """Explicit taxonomy_dir parameter takes precedence over state_dir fallback."""
         state_dir = tmp_path / "state"
         state_dir.mkdir()
@@ -284,7 +288,7 @@ class TestGetTaxdumpDir:
         result = get_taxdump_dir(state_dir=state_dir, taxonomy_dir=explicit_dir)
         assert result == explicit_dir
 
-    def test_taxonomy_dir_with_string_path(self, tmp_path):
+    def test_taxonomy_dir_with_string_path(self, tmp_path: Path) -> None:
         """taxonomy_dir works with string path."""
         explicit_dir = tmp_path / "explicit_taxonomy"
         explicit_dir.mkdir()
@@ -293,7 +297,7 @@ class TestGetTaxdumpDir:
         assert result == explicit_dir
         assert isinstance(result, Path)
 
-    def test_taxonomy_dir_with_path_object(self, tmp_path):
+    def test_taxonomy_dir_with_path_object(self, tmp_path: Path) -> None:
         """taxonomy_dir works with Path object."""
         explicit_dir = tmp_path / "explicit_taxonomy"
         explicit_dir.mkdir()
@@ -302,7 +306,9 @@ class TestGetTaxdumpDir:
         assert result == explicit_dir
         assert isinstance(result, Path)
 
-    def test_env_var_used_when_taxonomy_dir_is_none(self, tmp_path, monkeypatch):
+    def test_env_var_used_when_taxonomy_dir_is_none(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         """NVD_TAXONOMY_DB env var is used when taxonomy_dir is None."""
         env_dir = tmp_path / "env_taxonomy"
         env_dir.mkdir()
@@ -314,9 +320,9 @@ class TestGetTaxdumpDir:
 
     def test_state_dir_fallback_when_no_taxonomy_dir_or_env_var(
         self,
-        tmp_path,
-        monkeypatch,
-    ):
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         """Falls back to {state_dir}/taxdump when no taxonomy_dir or env var."""
         # Ensure env var is not set
         monkeypatch.delenv("NVD_TAXONOMY_DB", raising=False)

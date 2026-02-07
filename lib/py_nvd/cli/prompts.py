@@ -39,7 +39,7 @@ if TYPE_CHECKING:
 PROMPT_TIMEOUT_SECONDS = 300
 
 
-class PromptTimeout(Exception):
+class PromptTimeoutError(Exception):
     """
     Raised when a prompt times out waiting for user input.
 
@@ -47,7 +47,7 @@ class PromptTimeout(Exception):
         timeout_seconds: The timeout duration that was exceeded
     """
 
-    def __init__(self, timeout_seconds: int):
+    def __init__(self, timeout_seconds: int) -> None:
         self.timeout_seconds = timeout_seconds
         super().__init__(f"Prompt timed out after {timeout_seconds} seconds")
 
@@ -65,7 +65,7 @@ def _read_with_timeout(timeout_seconds: int) -> str:
         User input string (without trailing newline)
 
     Raises:
-        PromptTimeout: If no input received within timeout
+        PromptTimeoutError: If no input received within timeout
         EOFError: If stdin is closed
     """
     # Windows doesn't support select on stdin; non-TTY can't timeout
@@ -74,7 +74,7 @@ def _read_with_timeout(timeout_seconds: int) -> str:
 
     ready, _, _ = select.select([sys.stdin], [], [], timeout_seconds)
     if not ready:
-        raise PromptTimeout(timeout_seconds)
+        raise PromptTimeoutError(timeout_seconds)
     return input()
 
 
@@ -90,7 +90,7 @@ def prompt_with_timeout(
     Display a Rich-styled prompt with timeout.
 
     Prompts the user for input with optional choice validation. If the user
-    doesn't respond within the timeout, raises PromptTimeout.
+    doesn't respond within the timeout, raises PromptTimeoutError.
 
     Args:
         console: Rich Console instance for styled output
@@ -103,7 +103,7 @@ def prompt_with_timeout(
         User input string, or default if Enter pressed
 
     Raises:
-        PromptTimeout: If no input received within timeout
+        PromptTimeoutError: If no input received within timeout
         EOFError: If stdin is closed
 
     Example:
@@ -170,7 +170,7 @@ def confirm_with_timeout(
     Display a Rich-styled confirmation prompt with timeout.
 
     Prompts the user for yes/no confirmation. If the user doesn't respond
-    within the timeout, raises PromptTimeout.
+    within the timeout, raises PromptTimeoutError.
 
     Args:
         console: Rich Console instance for styled output
@@ -182,7 +182,7 @@ def confirm_with_timeout(
         True if user confirmed, False otherwise
 
     Raises:
-        PromptTimeout: If no input received within timeout
+        PromptTimeoutError: If no input received within timeout
         EOFError: If stdin is closed
 
     Example:

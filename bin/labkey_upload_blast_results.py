@@ -381,7 +381,7 @@ def main():
                                     pl.col("sample_id") == sample_id,
                                 ).to_dicts()
                                 content_hash = nvd_state.hash_upload_content(
-                                    sample_records
+                                    sample_records,
                                 )
                                 nvd_state.record_upload(
                                     sample_id=str(sample_id),
