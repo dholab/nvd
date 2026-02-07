@@ -67,6 +67,11 @@ def _download_and_extract_taxdump(taxdump_dir: Path) -> None:
 
     Only extracts nodes.dmp, names.dmp, and merged.dmp (~500MB total).
     Uses extractfile() for safety against path traversal attacks.
+
+    Extraction is atomic: files are written to .tmp temporaries and only
+    renamed to their final names after all three are fully written. An
+    interrupted extraction (job kill, disk full, network hiccup) cannot
+    corrupt or truncate existing .dmp files.
     """
     taxdump_dir.mkdir(parents=True, exist_ok=True)
     tar_path = taxdump_dir / "taxdump.tar.gz"
@@ -74,107 +79,188 @@ def _download_and_extract_taxdump(taxdump_dir: Path) -> None:
     # Download
     urllib.request.urlretrieve(TAXDUMP_URL, tar_path)  # noqa: S310
 
-    # Extract only needed files using extractfile() for safety
-    # This avoids the deprecated tar.extract() behavior in Python 3.12+
-    with tarfile.open(tar_path, "r:gz") as tar:
-        for member in tar.getmembers():
-            if member.name in REQUIRED_DMP_FILES:
+    # Extract to temporary files, then rename atomically. This prevents an
+    # interrupted extraction from leaving truncated .dmp files behind (the
+    # "wb" open mode truncates the target to zero bytes before writing).
+    tmp_paths: list[tuple[Path, Path]] = []
+    rename_ok = False
+    try:
+        with tarfile.open(tar_path, "r:gz") as tar:
+            for member in tar.getmembers():
+                if member.name not in REQUIRED_DMP_FILES:
+                    continue
                 file_obj = tar.extractfile(member)
-                if file_obj is not None:
-                    dest_path = taxdump_dir / member.name
-                    with _open(dest_path, "wb") as dest:
-                        dest.write(file_obj.read())
+                if file_obj is None:
+                    continue
+                tmp = taxdump_dir / f"{member.name}.tmp"
+                with _open(tmp, "wb") as dest:
+                    dest.write(file_obj.read())
+                tmp_paths.append((tmp, taxdump_dir / member.name))
+
+        for tmp, final in tmp_paths:
+            os.replace(tmp, final)
+        rename_ok = True
+    finally:
+        if not rename_ok:
+            for tmp, _final in tmp_paths:
+                tmp.unlink(missing_ok=True)
 
     # Clean up tarball
     tar_path.unlink()
 
 
-def _build_sqlite_from_dmp(taxdump_dir: Path) -> Path:
+def _build_sqlite_from_dmp(taxdump_dir: Path) -> Path:  # noqa: C901, PLR0912, PLR0915
     """
     Build taxonomy.sqlite from .dmp files.
 
     Creates a SQLite database with the same schema as gettax.sqlite,
     plus a 'merged' table for deprecated taxid resolution.
 
+    The build is atomic: writes to a temporary file and renames on success,
+    so a crash mid-build never leaves a corrupt taxonomy.sqlite on disk.
+    All .dmp files are parsed into memory before the database is created,
+    so parse errors cannot produce a partial database.
+
     Returns path to the built database.
+
+    Raises:
+        TaxonomyBuildError: If .dmp files cannot be parsed or the resulting
+            database fails validation.
     """
     sqlite_path = taxdump_dir / "taxonomy.sqlite"
+    tmp_path = taxdump_dir / "taxonomy.sqlite.tmp"
 
-    # Remove existing to rebuild
-    if sqlite_path.exists():
-        sqlite_path.unlink()
+    # Clean up any stale temp file from a previous failed build
+    if tmp_path.exists():
+        tmp_path.unlink()
 
-    conn = sqlite3.connect(sqlite_path)
-    # Use DELETE journal mode for network filesystem compatibility.
-    # WAL mode requires shared memory (mmap) which doesn't work on NFS/GPFS/Lustre.
-    conn.execute("PRAGMA journal_mode=DELETE")
-
-    # Create schema (matches gettax.sqlite + merged table)
-    conn.executescript("""
-        CREATE TABLE taxons (
-            tax_id INTEGER PRIMARY KEY,
-            parent_tax_id INTEGER,
-            rank TEXT,
-            scientific_name TEXT
-        );
-
-        CREATE TABLE merged (
-            old_tax_id INTEGER PRIMARY KEY,
-            new_tax_id INTEGER
-        );
-
-        CREATE INDEX idx_taxons_parent ON taxons(parent_tax_id);
-    """)
+    # Parse all .dmp files into memory BEFORE creating the database.
+    # This ensures parse errors never leave a partial taxonomy.sqlite on disk.
 
     # Parse nodes.dmp: tax_id | parent_tax_id | rank | ...
-    # Format: tax_id<tab>|<tab>parent_tax_id<tab>|<tab>rank<tab>|<tab>...
     nodes: dict[int, tuple[int, str]] = {}
-    with _open(taxdump_dir / "nodes.dmp") as f:
-        for line in f:
-            parts = line.split("\t|\t")
-            tax_id = int(parts[0])
-            parent_tax_id = int(parts[1])
-            rank = parts[2].strip()
+    nodes_path = taxdump_dir / "nodes.dmp"
+    with _open(nodes_path) as f:
+        for line_num, line in enumerate(f, start=1):
+            try:
+                parts = line.split("\t|\t")
+                tax_id = int(parts[0])
+                parent_tax_id = int(parts[1])
+                rank = parts[2].strip()
+            except (ValueError, IndexError) as e:
+                msg = f"Failed to parse nodes.dmp line {line_num}: {e}\n  Line content: {line.rstrip()!r}"
+                raise TaxonomyBuildError(msg) from e
             nodes[tax_id] = (parent_tax_id, rank)
 
+    if not nodes:
+        msg = f"nodes.dmp is empty: {nodes_path}"
+        raise TaxonomyBuildError(msg)
+
     # Parse names.dmp: tax_id | name | unique_name | name_class
-    # We only want "scientific name" entries
     names: dict[int, str] = {}
-    with _open(taxdump_dir / "names.dmp") as f:
-        for line in f:
-            parts = line.split("\t|\t")
-            tax_id = int(parts[0])
-            name = parts[1]
-            name_class = parts[3].rstrip("\t|\n")
+    names_path = taxdump_dir / "names.dmp"
+    with _open(names_path) as f:
+        for line_num, line in enumerate(f, start=1):
+            try:
+                parts = line.split("\t|\t")
+                tax_id = int(parts[0])
+                name = parts[1]
+                name_class = parts[3].rstrip("\t|\n")
+            except (ValueError, IndexError) as e:
+                msg = f"Failed to parse names.dmp line {line_num}: {e}\n  Line content: {line.rstrip()!r}"
+                raise TaxonomyBuildError(msg) from e
             if name_class == "scientific name":
                 names[tax_id] = name
 
-    # Insert taxons
+    if not names:
+        msg = f"names.dmp contains no scientific name entries: {names_path}"
+        raise TaxonomyBuildError(msg)
+
+    # Parse merged.dmp: old_tax_id | new_tax_id
+    merged_rows: list[tuple[int, int]] = []
+    merged_path = taxdump_dir / "merged.dmp"
+    with _open(merged_path) as f:
+        for line_num, line in enumerate(f, start=1):
+            try:
+                parts = line.split("\t|\t")
+                old_tax_id = int(parts[0])
+                new_tax_id = int(parts[1].rstrip("\t|\n"))
+            except (ValueError, IndexError) as e:
+                msg = f"Failed to parse merged.dmp line {line_num}: {e}\n  Line content: {line.rstrip()!r}"
+                raise TaxonomyBuildError(msg) from e
+            merged_rows.append((old_tax_id, new_tax_id))
+
+    # Build taxon rows, joining nodes with names
     taxon_rows = [
         (tax_id, parent_tax_id, rank, names.get(tax_id, ""))
         for tax_id, (parent_tax_id, rank) in nodes.items()
     ]
-    conn.executemany(
-        "INSERT INTO taxons (tax_id, parent_tax_id, rank, scientific_name) VALUES (?, ?, ?, ?)",
-        taxon_rows,
-    )
 
-    # Parse merged.dmp: old_tax_id | new_tax_id
-    merged_rows = []
-    with _open(taxdump_dir / "merged.dmp") as f:
-        for line in f:
-            parts = line.split("\t|\t")
-            old_tax_id = int(parts[0])
-            new_tax_id = int(parts[1].rstrip("\t|\n"))
-            merged_rows.append((old_tax_id, new_tax_id))
+    conn = sqlite3.connect(tmp_path)
+    try:
+        # Use DELETE journal mode for network filesystem compatibility.
+        # WAL mode requires shared memory (mmap) which doesn't work on NFS/GPFS/Lustre.
+        conn.execute("PRAGMA journal_mode=DELETE")
 
-    conn.executemany(
-        "INSERT INTO merged (old_tax_id, new_tax_id) VALUES (?, ?)",
-        merged_rows,
-    )
+        # Create schema (matches gettax.sqlite + merged table)
+        conn.executescript("""
+            CREATE TABLE taxons (
+                tax_id INTEGER PRIMARY KEY,
+                parent_tax_id INTEGER,
+                rank TEXT,
+                scientific_name TEXT
+            );
 
-    conn.commit()
-    conn.close()
+            CREATE TABLE merged (
+                old_tax_id INTEGER PRIMARY KEY,
+                new_tax_id INTEGER
+            );
+
+            CREATE INDEX idx_taxons_parent ON taxons(parent_tax_id);
+        """)
+
+        conn.executemany(
+            "INSERT INTO taxons (tax_id, parent_tax_id, rank, scientific_name) VALUES (?, ?, ?, ?)",
+            taxon_rows,
+        )
+        conn.executemany(
+            "INSERT INTO merged (old_tax_id, new_tax_id) VALUES (?, ?)",
+            merged_rows,
+        )
+        conn.commit()
+
+        # Post-build validation
+        row = conn.execute("SELECT COUNT(*) FROM taxons").fetchone()
+        taxon_count = row[0] if row else 0
+
+        row = conn.execute(
+            "SELECT COUNT(*) FROM taxons WHERE scientific_name != ''",
+        ).fetchone()
+        named_count = row[0] if row else 0
+    except Exception:
+        conn.close()
+        if tmp_path.exists():
+            tmp_path.unlink()
+        raise
+    else:
+        conn.close()
+
+    if taxon_count == 0:
+        tmp_path.unlink()
+        msg = f"Taxonomy build produced an empty database from {taxdump_dir}"
+        raise TaxonomyBuildError(msg)
+
+    if named_count == 0:
+        tmp_path.unlink()
+        msg = (
+            f"Taxonomy build produced {taxon_count} taxons but none have scientific names. "
+            f"names.dmp may be missing or corrupt: {taxdump_dir / 'names.dmp'}"
+        )
+        raise TaxonomyBuildError(msg)
+
+    # Atomic replace: os.replace overwrites the destination atomically on POSIX
+    # (same filesystem), so a crash can never leave the database missing.
+    os.replace(tmp_path, sqlite_path)
 
     return sqlite_path
 
@@ -300,6 +386,39 @@ class TaxonomyDB:
         """Get the taxonomic rank for a tax ID."""
         taxon = self.get_taxon(tax_id)
         return taxon.rank if taxon else None
+
+    def get_taxon_by_name(self, scientific_name: str) -> Taxon | None:
+        """
+        Look up a taxon by its exact scientific name.
+
+        Case-sensitive exact match against the NCBI scientific name field.
+        Does not resolve merged taxa (merges are keyed by tax_id, not name).
+
+        Args:
+            scientific_name: Exact scientific name (e.g., "Adenoviridae")
+
+        Returns:
+            Taxon if found, None otherwise
+        """
+        row = self._conn.execute(
+            "SELECT tax_id, scientific_name, rank, parent_tax_id "
+            "FROM taxons WHERE scientific_name = ?",
+            (scientific_name,),
+        ).fetchone()
+        if row is None:
+            return None
+        return Taxon(
+            tax_id=row["tax_id"],
+            scientific_name=row["scientific_name"],
+            rank=row["rank"],
+            parent_tax_id=row["parent_tax_id"],
+        )
+
+    @property
+    def taxon_count(self) -> int:
+        """Return the number of taxa in the database."""
+        row = self._conn.execute("SELECT COUNT(*) FROM taxons").fetchone()
+        return row[0] if row else 0
 
     def get_lineage(self, tax_id: int) -> list[Taxon]:
         """
@@ -453,6 +572,10 @@ class TaxonomyDB:
             return valid_taxons[0].taxid
 
         return taxopy.utilities.find_lca(valid_taxons, self.taxopy_db).taxid
+
+
+class TaxonomyBuildError(Exception):
+    """Raised when the taxonomy SQLite database cannot be built from .dmp files."""
 
 
 class TaxonomyOfflineError(Exception):
@@ -770,6 +893,37 @@ def open(  # noqa: A001, C901, PLR0912, PLR0915
             )
             emit_warning(warning)
             raise
+
+    # Pre-use validation: verify the database is not empty or corrupt.
+    # This catches cases where the file exists but is truncated (e.g., stale
+    # NFS cache, interrupted copy to a distributed worker, or a build that
+    # committed an empty transaction).
+    try:
+        row = conn.execute("SELECT COUNT(*) FROM taxons").fetchone()
+        count = row[0] if row else 0
+    except sqlite3.Error as e:
+        conn.close()
+        msg = f"Taxonomy database at {sqlite_path} appears corrupt: {e}"
+        raise TaxonomyUnavailableError(
+            taxdump_dir=taxdump_dir,
+            operation="Validating taxonomy database",
+            reason=msg,
+            original_error=e,
+        ) from e
+
+    if count == 0:
+        conn.close()
+        msg = (
+            f"Taxonomy database at {sqlite_path} contains 0 taxons. "
+            f"The database file may be corrupt or was not fully built. "
+            f"Try deleting {taxdump_dir} and re-running to trigger a fresh "
+            f"download and rebuild."
+        )
+        raise TaxonomyUnavailableError(
+            taxdump_dir=taxdump_dir,
+            operation="Validating taxonomy database",
+            reason=msg,
+        )
 
     try:
         yield TaxonomyDB(conn, taxdump_dir)

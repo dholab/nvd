@@ -1377,3 +1377,292 @@ class TestTaxonomyDirParameter:
             taxon = tax.get_taxon(9606)
             assert taxon is not None
             assert taxon.scientific_name == "Homo sapiens"
+
+
+class TestGetTaxonByName:
+    """Tests for TaxonomyDB.get_taxon_by_name()."""
+
+    def test_exact_match(self, test_taxonomy: taxonomy.TaxonomyDB) -> None:
+        """Exact scientific name returns the correct Taxon."""
+        taxon = test_taxonomy.get_taxon_by_name("Homo sapiens")
+        assert taxon is not None
+        assert taxon.tax_id == 9606
+        assert taxon.scientific_name == "Homo sapiens"
+        assert taxon.rank == "species"
+        assert taxon.parent_tax_id == 9605
+
+    def test_not_found_returns_none(
+        self,
+        test_taxonomy: taxonomy.TaxonomyDB,
+    ) -> None:
+        """Nonexistent name returns None."""
+        assert test_taxonomy.get_taxon_by_name("Unicornus imaginarius") is None
+
+    def test_case_sensitive(self, test_taxonomy: taxonomy.TaxonomyDB) -> None:
+        """Lookup is case-sensitive: wrong case returns None."""
+        # "Homo sapiens" exists, but "homo sapiens" should not match
+        assert test_taxonomy.get_taxon_by_name("homo sapiens") is None
+        assert test_taxonomy.get_taxon_by_name("HOMO SAPIENS") is None
+
+    def test_all_fixture_taxa_findable(
+        self,
+        test_taxonomy: taxonomy.TaxonomyDB,
+    ) -> None:
+        """Every scientific name in the minimal fixture is findable."""
+        expected = {
+            "root": 1,
+            "cellular organisms": 131567,
+            "Eukaryota": 2759,
+            "Metazoa": 33208,
+            "Hominidae": 9604,
+            "Homininae": 207598,
+            "Homo": 9605,
+            "Homo sapiens": 9606,
+            "Pan": 9596,
+            "Pan troglodytes": 9598,
+        }
+        for name, expected_id in expected.items():
+            taxon = test_taxonomy.get_taxon_by_name(name)
+            assert taxon is not None, f"Expected to find {name!r}"
+            assert taxon.tax_id == expected_id
+
+
+class TestTaxonCount:
+    """Tests for TaxonomyDB.taxon_count property."""
+
+    def test_returns_correct_count(
+        self,
+        test_taxonomy: taxonomy.TaxonomyDB,
+    ) -> None:
+        """taxon_count matches the number of nodes in the minimal fixture."""
+        # The minimal_taxdump fixture has 10 nodes
+        assert test_taxonomy.taxon_count == 10
+
+    def test_returns_int(self, test_taxonomy: taxonomy.TaxonomyDB) -> None:
+        """taxon_count returns an int, not a Row or tuple."""
+        count = test_taxonomy.taxon_count
+        assert isinstance(count, int)
+
+
+class TestPreUseValidation:
+    """Tests for the pre-use validation added to taxonomy.open().
+
+    When the database file exists but contains zero taxons (e.g., truncated
+    copy, interrupted build), open() should raise immediately with a helpful
+    message rather than silently returning no results.
+    """
+
+    def test_empty_taxons_table_raises(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """open() raises TaxonomyUnavailableError when taxons table is empty."""
+        taxdump_dir = tmp_path / "taxdump"
+        taxdump_dir.mkdir()
+
+        # Create a structurally valid but empty database
+        sqlite_path = taxdump_dir / "taxonomy.sqlite"
+        conn = sqlite3.connect(sqlite_path)
+        conn.execute("PRAGMA journal_mode=DELETE")
+        conn.executescript("""
+            CREATE TABLE taxons (
+                tax_id INTEGER PRIMARY KEY,
+                parent_tax_id INTEGER,
+                rank TEXT,
+                scientific_name TEXT
+            );
+            CREATE TABLE merged (
+                old_tax_id INTEGER PRIMARY KEY,
+                new_tax_id INTEGER
+            );
+        """)
+        conn.commit()
+        conn.close()
+
+        # Also need a nodes.dmp so _is_taxdump_stale doesn't trigger download
+        (taxdump_dir / "nodes.dmp").write_text("")
+
+        monkeypatch.setattr(
+            taxonomy,
+            "_ensure_taxdump",
+            lambda _=None, __=None: taxdump_dir,
+        )
+
+        with (
+            pytest.raises(taxonomy.TaxonomyUnavailableError) as exc_info,
+            taxonomy.open(),
+        ):
+            pass  # pragma: no cover
+
+        assert "0 taxons" in str(exc_info.value)
+        assert "rebuild" in str(exc_info.value).lower()
+
+    def test_missing_taxons_table_raises(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """open() raises TaxonomyUnavailableError when taxons table is missing."""
+        taxdump_dir = tmp_path / "taxdump"
+        taxdump_dir.mkdir()
+
+        # Create a database file with no tables at all
+        sqlite_path = taxdump_dir / "taxonomy.sqlite"
+        conn = sqlite3.connect(sqlite_path)
+        conn.execute("PRAGMA journal_mode=DELETE")
+        conn.commit()
+        conn.close()
+
+        (taxdump_dir / "nodes.dmp").write_text("")
+
+        monkeypatch.setattr(
+            taxonomy,
+            "_ensure_taxdump",
+            lambda _=None, __=None: taxdump_dir,
+        )
+
+        with (
+            pytest.raises(taxonomy.TaxonomyUnavailableError) as exc_info,
+            taxonomy.open(),
+        ):
+            pass  # pragma: no cover
+
+        assert "corrupt" in str(exc_info.value).lower()
+
+
+class TestBuildErrorHandling:
+    """Tests for _build_sqlite_from_dmp error handling.
+
+    Each .dmp file parser should raise TaxonomyBuildError with the file name,
+    line number, and raw line content when it encounters unparseable data.
+    """
+
+    def test_corrupt_nodes_dmp_line(self, tmp_path: Path) -> None:
+        """Corrupt line in nodes.dmp raises TaxonomyBuildError with context."""
+        taxdump_dir = tmp_path / "taxdump"
+        taxdump_dir.mkdir()
+
+        (taxdump_dir / "nodes.dmp").write_text(
+            "1\t|\t1\t|\tno rank\t|\t\nnot_a_number\t|\t1\t|\tspecies\t|\t\n",
+        )
+        (taxdump_dir / "names.dmp").write_text(
+            "1\t|\troot\t|\t\t|\tscientific name\t|\n",
+        )
+        (taxdump_dir / "merged.dmp").write_text("")
+
+        with pytest.raises(taxonomy.TaxonomyBuildError, match=r"nodes\.dmp line 2"):
+            taxonomy._build_sqlite_from_dmp(taxdump_dir)
+
+    def test_corrupt_names_dmp_line(self, tmp_path: Path) -> None:
+        """Corrupt line in names.dmp raises TaxonomyBuildError with context."""
+        taxdump_dir = tmp_path / "taxdump"
+        taxdump_dir.mkdir()
+
+        (taxdump_dir / "nodes.dmp").write_text("1\t|\t1\t|\tno rank\t|\t\n")
+        (taxdump_dir / "names.dmp").write_text(
+            "1\t|\troot\t|\t\t|\tscientific name\t|\n"
+            "bad_id\t|\tname\t|\t\t|\tscientific name\t|\n",
+        )
+        (taxdump_dir / "merged.dmp").write_text("")
+
+        with pytest.raises(taxonomy.TaxonomyBuildError, match=r"names\.dmp line 2"):
+            taxonomy._build_sqlite_from_dmp(taxdump_dir)
+
+    def test_corrupt_merged_dmp_line(self, tmp_path: Path) -> None:
+        """Corrupt line in merged.dmp raises TaxonomyBuildError with context."""
+        taxdump_dir = tmp_path / "taxdump"
+        taxdump_dir.mkdir()
+
+        (taxdump_dir / "nodes.dmp").write_text("1\t|\t1\t|\tno rank\t|\t\n")
+        (taxdump_dir / "names.dmp").write_text(
+            "1\t|\troot\t|\t\t|\tscientific name\t|\n",
+        )
+        (taxdump_dir / "merged.dmp").write_text("abc\t|\t123\t|\n")
+
+        with pytest.raises(taxonomy.TaxonomyBuildError, match=r"merged\.dmp line 1"):
+            taxonomy._build_sqlite_from_dmp(taxdump_dir)
+
+    def test_empty_nodes_dmp(self, tmp_path: Path) -> None:
+        """Empty nodes.dmp raises TaxonomyBuildError."""
+        taxdump_dir = tmp_path / "taxdump"
+        taxdump_dir.mkdir()
+
+        (taxdump_dir / "nodes.dmp").write_text("")
+        (taxdump_dir / "names.dmp").write_text(
+            "1\t|\troot\t|\t\t|\tscientific name\t|\n",
+        )
+        (taxdump_dir / "merged.dmp").write_text("")
+
+        with pytest.raises(taxonomy.TaxonomyBuildError, match=r"nodes\.dmp is empty"):
+            taxonomy._build_sqlite_from_dmp(taxdump_dir)
+
+    def test_names_dmp_with_no_scientific_names(self, tmp_path: Path) -> None:
+        """names.dmp with only non-scientific entries raises TaxonomyBuildError."""
+        taxdump_dir = tmp_path / "taxdump"
+        taxdump_dir.mkdir()
+
+        (taxdump_dir / "nodes.dmp").write_text("1\t|\t1\t|\tno rank\t|\t\n")
+        # Only a "common name" entry, no "scientific name"
+        (taxdump_dir / "names.dmp").write_text("1\t|\troot\t|\t\t|\tcommon name\t|\n")
+        (taxdump_dir / "merged.dmp").write_text("")
+
+        with pytest.raises(
+            taxonomy.TaxonomyBuildError,
+            match="no scientific name",
+        ):
+            taxonomy._build_sqlite_from_dmp(taxdump_dir)
+
+
+class TestAtomicBuild:
+    """Tests for atomic build guarantees in _build_sqlite_from_dmp.
+
+    A failed build must never leave a corrupt taxonomy.sqlite on disk, and
+    must not destroy a previously valid database.
+    """
+
+    def test_parse_error_leaves_no_sqlite_or_tmp(self, tmp_path: Path) -> None:
+        """A parse error produces neither taxonomy.sqlite nor taxonomy.sqlite.tmp."""
+        taxdump_dir = tmp_path / "taxdump"
+        taxdump_dir.mkdir()
+
+        (taxdump_dir / "nodes.dmp").write_text("corrupt garbage\n")
+        (taxdump_dir / "names.dmp").write_text("")
+        (taxdump_dir / "merged.dmp").write_text("")
+
+        with pytest.raises(taxonomy.TaxonomyBuildError):
+            taxonomy._build_sqlite_from_dmp(taxdump_dir)
+
+        assert not (taxdump_dir / "taxonomy.sqlite").exists()
+        assert not (taxdump_dir / "taxonomy.sqlite.tmp").exists()
+
+    def test_failure_preserves_existing_sqlite(
+        self,
+        minimal_taxdump: Path,
+    ) -> None:
+        """A failed rebuild does not destroy a previously valid taxonomy.sqlite."""
+        # First, build a valid database
+        taxonomy._build_sqlite_from_dmp(minimal_taxdump)
+        sqlite_path = minimal_taxdump / "taxonomy.sqlite"
+        assert sqlite_path.exists()
+        original_size = sqlite_path.stat().st_size
+
+        # Now corrupt nodes.dmp and try to rebuild
+        (minimal_taxdump / "nodes.dmp").write_text("corrupt garbage\n")
+
+        with pytest.raises(taxonomy.TaxonomyBuildError):
+            taxonomy._build_sqlite_from_dmp(minimal_taxdump)
+
+        # The original database should still be intact
+        assert sqlite_path.exists()
+        assert sqlite_path.stat().st_size == original_size
+
+        # And the original data should still be queryable
+        conn = sqlite3.connect(sqlite_path)
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT scientific_name FROM taxons WHERE tax_id = 9606",
+        ).fetchone()
+        conn.close()
+        assert row is not None
+        assert row["scientific_name"] == "Homo sapiens"

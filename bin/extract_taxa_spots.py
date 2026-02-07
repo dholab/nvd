@@ -51,16 +51,17 @@ def resolve_taxa(taxa_list: list[str], tax) -> set[int]:
     Returns:
         Set of resolved taxids
     """
+    count = tax.taxon_count
+    logger.info(f"Taxonomy database contains {count} taxa")
+    if count == 0:
+        logger.error("Taxonomy database is empty — cannot resolve any taxa")
+        return set()
+
     resolved_taxa = set()
     for taxon_name in taxa_list:
-        # Query by scientific name
-        # We need to access the connection directly for name lookup
-        row = tax._conn.execute(
-            "SELECT tax_id FROM taxons WHERE scientific_name = ?",
-            (taxon_name,),
-        ).fetchone()
-        if row:
-            resolved_taxa.add(row[0])
+        taxon = tax.get_taxon_by_name(taxon_name)
+        if taxon:
+            resolved_taxa.add(taxon.tax_id)
         else:
             logger.warning(f"Taxon '{taxon_name}' not found in database.")
     return resolved_taxa
