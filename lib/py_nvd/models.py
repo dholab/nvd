@@ -72,7 +72,9 @@ def _from_row(cls: type[T], row: Row) -> T:
         AssertionError: If cls is not a dataclass or row is missing required columns
         ValidationError: If Pydantic validation fails
     """
-    assert dataclasses.is_dataclass(cls), f"_from_row requires a dataclass, got {cls.__name__}"
+    assert dataclasses.is_dataclass(cls), (
+        f"_from_row requires a dataclass, got {cls.__name__}"
+    )
 
     field_names = [f.name for f in dataclasses.fields(cls)]
     row_keys = set(row.keys())
@@ -225,7 +227,9 @@ class Upload:
     upload_target: str  # 'labkey', 'local', 'globus', etc.
     content_hash: str  # SHA256 of uploaded data
     uploaded_at: str
-    target_metadata: dict | None = None  # Target-specific data (e.g., experiment_id, row_id)
+    target_metadata: dict | None = (
+        None  # Target-specific data (e.g., experiment_id, row_id)
+    )
 
     @field_validator("target_metadata", mode="before")
     @classmethod
@@ -1414,7 +1418,11 @@ def trace_merge(
         if params is None:
             continue
 
-        as_dict = params.model_dump(exclude_none=True) if isinstance(params, NvdParams) else params
+        as_dict = (
+            params.model_dump(exclude_none=True)
+            if isinstance(params, NvdParams)
+            else params
+        )
 
         for field, value in as_dict.items():
             if value is None:

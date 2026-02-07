@@ -86,7 +86,10 @@ def handle_create_error(e: Exception, url: str, auth_header: str) -> bool:
 
 
 def handle_upload_error(
-    e: Exception, local_path: str, remote_url: str, auth_header: str,
+    e: Exception,
+    local_path: str,
+    remote_url: str,
+    auth_header: str,
 ) -> bool:
     """Handle errors when uploading file"""
     if isinstance(e, urllib.error.HTTPError):
@@ -177,7 +180,10 @@ def create_directory_recursive(url: str, auth_header: str) -> bool:
 
 # High-level operations
 def upload_files_to_directory(
-    directory_url: str, file_paths: list[str], auth_header: str, create_dir: bool = True,
+    directory_url: str,
+    file_paths: list[str],
+    auth_header: str,
+    create_dir: bool = True,
 ) -> dict[str, bool]:
     """Upload multiple files to a directory"""
     results = {}
@@ -330,7 +336,9 @@ Examples:
 
     # Authentication
     parser.add_argument(
-        "--server", default="https://Placeholder", help="WebDAV server URL",
+        "--server",
+        default="https://Placeholder",
+        help="WebDAV server URL",
     )
     parser.add_argument("--user", default="apikey", help="Username")
     parser.add_argument("--password", required=True, help="Password or API key")
@@ -429,13 +437,15 @@ def debug_test():
 
         print("\nTesting upload with hardcoded client:")
         result1 = client1["upload"](
-            test_file, urllib.parse.urljoin(BASE_URL, "debug1.txt"),
+            test_file,
+            urllib.parse.urljoin(BASE_URL, "debug1.txt"),
         )
         print(f"Result: {'Success' if result1 else 'Failed'}")
 
         print("\nTesting upload with CLI client:")
         result2 = client2["upload"](
-            test_file, urllib.parse.urljoin(BASE_URL, "debug2.txt"),
+            test_file,
+            urllib.parse.urljoin(BASE_URL, "debug2.txt"),
         )
         print(f"Result: {'Success' if result2 else 'Failed'}")
     else:

@@ -78,14 +78,20 @@ def run_filterbyname(input_fasta, output_fasta, names_file, logger):
 def parse_args() -> SimpleNamespace:
     if MODE == "snakemake":
         return SimpleNamespace(
-            input=snakemake.input, output=snakemake.output, log=snakemake.log,
+            input=snakemake.input,
+            output=snakemake.output,
+            log=snakemake.log,
         )
     parser = argparse.ArgumentParser(description="Remove contigs mapped by megablast")
     parser.add_argument(
-        "--megablast_results", required=True, help="Path to megablast results",
+        "--megablast_results",
+        required=True,
+        help="Path to megablast results",
     )
     parser.add_argument(
-        "--contigs_fasta", required=True, help="Path to original contigs FASTA",
+        "--contigs_fasta",
+        required=True,
+        help="Path to original contigs FASTA",
     )
     parser.add_argument(
         "--classified_contigs",
@@ -93,7 +99,9 @@ def parse_args() -> SimpleNamespace:
         help="Path to output classified contigs list",
     )
     parser.add_argument(
-        "--pruned_contigs", required=True, help="Path to output pruned FASTA",
+        "--pruned_contigs",
+        required=True,
+        help="Path to output pruned FASTA",
     )
     parser.add_argument("--log", default=None, required=False, help="Path to log file")
     args = parser.parse_args()

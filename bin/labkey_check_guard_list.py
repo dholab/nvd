@@ -45,7 +45,8 @@ def experiment_exists(labkey, guard_list_name, experiment_id) -> bool:
     if result is None:
         logger.info("Falling back to client-side filtering")
         result = labkey.query.select_rows(
-            schema_name="lists", query_name=guard_list_name,
+            schema_name="lists",
+            query_name=guard_list_name,
         )
         if result["rows"]:
             original_rows = result["rows"]
@@ -141,7 +142,9 @@ def register_experiment(labkey, guard_list_name, experiment_id) -> bool:
             try:
                 guard_row = {"experiment_id": experiment_id}
                 insert_result = labkey.query.insert_rows(
-                    "lists", guard_list_name, [guard_row],
+                    "lists",
+                    guard_list_name,
+                    [guard_row],
                 )
                 logger.info(
                     f"Successfully created guard list entry for experiment ID {experiment_id}",
@@ -175,10 +178,14 @@ def main() -> None:
         help="LabKey container path (e.g., project folder)",
     )
     parser.add_argument(
-        "--guard_list", required=True, help="Name of the LabKey guard list",
+        "--guard_list",
+        required=True,
+        help="Name of the LabKey guard list",
     )
     parser.add_argument(
-        "--api_key", required=True, help="API key with insert permissions",
+        "--api_key",
+        required=True,
+        help="API key with insert permissions",
     )
     parser.add_argument(
         "--experiment_id",

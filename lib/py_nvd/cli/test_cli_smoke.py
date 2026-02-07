@@ -401,7 +401,9 @@ class TestStateCommands:
         runner.invoke(app, ["state", "init"])
 
         # Create an old run and mark it completed
-        old_date = (datetime.now(UTC) - timedelta(days=100)).isoformat().replace("+00:00", "Z")
+        old_date = (
+            (datetime.now(UTC) - timedelta(days=100)).isoformat().replace("+00:00", "Z")
+        )
         register_run("old_run", "old_set", state_dir=tmp_path)
         complete_run("old_run", "completed", state_dir=tmp_path)
 
@@ -436,7 +438,9 @@ class TestStateCommands:
         monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
         runner.invoke(app, ["state", "init"])
 
-        old_date = (datetime.now(UTC) - timedelta(days=100)).isoformat().replace("+00:00", "Z")
+        old_date = (
+            (datetime.now(UTC) - timedelta(days=100)).isoformat().replace("+00:00", "Z")
+        )
         register_run("old_run", "old_set", state_dir=tmp_path)
         complete_run("old_run", "completed", state_dir=tmp_path)
 
@@ -469,7 +473,9 @@ class TestStateCommands:
         monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
         runner.invoke(app, ["state", "init"])
 
-        old_date = (datetime.now(UTC) - timedelta(days=100)).isoformat().replace("+00:00", "Z")
+        old_date = (
+            (datetime.now(UTC) - timedelta(days=100)).isoformat().replace("+00:00", "Z")
+        )
         new_date = datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
         # Create old run and new run, mark both completed

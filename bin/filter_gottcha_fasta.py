@@ -57,7 +57,10 @@ def main():
     )
     parser.add_argument("-i", "--input", required=True, help="Input FASTA file")
     parser.add_argument(
-        "-o", "--output", required=True, help="Output FASTA file (filtered)",
+        "-o",
+        "--output",
+        required=True,
+        help="Output FASTA file (filtered)",
     )
 
     args = parser.parse_args()

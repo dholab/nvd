@@ -64,7 +64,8 @@ def process_blast_file(filepath: str | Path) -> pl.LazyFrame:
 
 
 def concat_blast_tables(
-    megablast_hits: str | Path, blastn_hits: str | Path,
+    megablast_hits: str | Path,
+    blastn_hits: str | Path,
 ) -> pl.LazyFrame | None:
     """Concatenate BLAST tables, handling empty files gracefully."""
     mb_has_data = has_data(megablast_hits)

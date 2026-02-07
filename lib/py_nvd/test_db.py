@@ -265,7 +265,9 @@ class TestGetTaxdumpDir:
     """Tests for get_taxdump_dir() function with taxonomy_dir parameter."""
 
     def test_taxonomy_dir_takes_precedence_over_env_var(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Explicit taxonomy_dir parameter takes precedence over NVD_TAXONOMY_DB env var."""
         env_dir = tmp_path / "env_taxonomy"
@@ -307,7 +309,9 @@ class TestGetTaxdumpDir:
         assert isinstance(result, Path)
 
     def test_env_var_used_when_taxonomy_dir_is_none(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """NVD_TAXONOMY_DB env var is used when taxonomy_dir is None."""
         env_dir = tmp_path / "env_taxonomy"

@@ -14,7 +14,8 @@ from typing import Any
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s",
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
 
@@ -76,7 +77,9 @@ class DataValidator:
 
     @staticmethod
     def validate_int(
-        value: Any, field_name: str, allow_empty: bool = False,
+        value: Any,
+        field_name: str,
+        allow_empty: bool = False,
     ) -> int | None:
         """Validate and convert to integer."""
         if value is None or value == "":
@@ -91,7 +94,9 @@ class DataValidator:
 
     @staticmethod
     def validate_float(
-        value: Any, field_name: str, allow_empty: bool = False,
+        value: Any,
+        field_name: str,
+        allow_empty: bool = False,
     ) -> float | None:
         """Validate and convert to float."""
         if value is None or value == "":
@@ -230,7 +235,9 @@ def validate_and_convert_blast_row(
             blast_task=blast_task,
             sample_id=sample_id
             or validator.validate_string(
-                row.get("sample", ""), "sample_id", allow_empty=False,
+                row.get("sample", ""),
+                "sample_id",
+                allow_empty=False,
             ),
             qseqid=validator.validate_string(qseqid, "qseqid", allow_empty=False),
             qlen=validator.validate_string(row.get("qlen", ""), "qlen"),
@@ -249,16 +256,20 @@ def validate_and_convert_blast_row(
             total_reads=total_reads,
             stat_db_version=stat_db_version,
             adjusted_taxid=validator.validate_int(
-                row.get("adjusted_taxid", ""), "adjusted_taxid", allow_empty=True,
+                row.get("adjusted_taxid", ""),
+                "adjusted_taxid",
+                allow_empty=True,
             ),
             adjustment_method=validator.validate_adjustment_method(
                 row.get("adjustment_method", ""),
             ),
             adjusted_taxid_name=validator.validate_string(
-                row.get("adjusted_taxid_name", ""), "adjusted_taxid_name",
+                row.get("adjusted_taxid_name", ""),
+                "adjusted_taxid_name",
             ),
             adjusted_taxid_rank=validator.validate_string(
-                row.get("adjusted_taxid_rank", ""), "adjusted_taxid_rank",
+                row.get("adjusted_taxid_rank", ""),
+                "adjusted_taxid_rank",
             ),
         )
 
@@ -371,7 +382,10 @@ def main():
     parser = argparse.ArgumentParser(description="Prepare BLAST data for LabKey upload")
 
     parser.add_argument(
-        "--blast-csv", type=Path, required=True, help="Path to BLAST results CSV file",
+        "--blast-csv",
+        type=Path,
+        required=True,
+        help="Path to BLAST results CSV file",
     )
     parser.add_argument(
         "--contig-counts",
@@ -380,21 +394,36 @@ def main():
         help="Path to contig mapped read counts file",
     )
     parser.add_argument(
-        "--output", type=Path, required=True, help="Path to output CSV file",
+        "--output",
+        type=Path,
+        required=True,
+        help="Path to output CSV file",
     )
     parser.add_argument("--meta", type=str, required=True, help="Sample metadata/ID")
     parser.add_argument(
-        "--experiment-id", type=int, required=True, help="Experiment ID",
+        "--experiment-id",
+        type=int,
+        required=True,
+        help="Experiment ID",
     )
     parser.add_argument("--run-id", type=str, required=True, help="Snakemake run ID")
     parser.add_argument(
-        "--total-reads", type=int, required=True, help="Total number of reads",
+        "--total-reads",
+        type=int,
+        required=True,
+        help="Total number of reads",
     )
     parser.add_argument(
-        "--blast-db-version", type=str, required=True, help="BLAST database version",
+        "--blast-db-version",
+        type=str,
+        required=True,
+        help="BLAST database version",
     )
     parser.add_argument(
-        "--stat-db-version", type=str, required=True, help="Statistics database version",
+        "--stat-db-version",
+        type=str,
+        required=True,
+        help="Statistics database version",
     )
 
     args = parser.parse_args()

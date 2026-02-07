@@ -394,11 +394,13 @@ def send_notification(
 
             if error_code == "channel_not_found":
                 logger.warning(
-                    "Channel '{ch}' not found. Check channel ID.", ch=channel,
+                    "Channel '{ch}' not found. Check channel ID.",
+                    ch=channel,
                 )
             elif error_code == "not_in_channel":
                 logger.warning(
-                    "Bot not in channel '{ch}'. Invite the bot first.", ch=channel,
+                    "Bot not in channel '{ch}'. Invite the bot first.",
+                    ch=channel,
                 )
             elif error_code == "invalid_auth":
                 logger.warning("Invalid Slack token. Check SLACK_BOT_TOKEN.")
@@ -527,7 +529,8 @@ def main() -> int:
 
     # Get cross-run context (novel taxa, top movers)
     novel_count, notable_movers = get_cross_run_context(
-        args.state_dir, args.sample_set_id,
+        args.state_dir,
+        args.sample_set_id,
     )
     cross_run_section = format_cross_run_section(novel_count, notable_movers)
     if cross_run_section:

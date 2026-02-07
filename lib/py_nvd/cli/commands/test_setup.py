@@ -264,7 +264,9 @@ class TestShellHookOutput:
     """Tests for shell-hook command output."""
 
     def test_shell_hook_bash(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
     ) -> None:
         """shell-hook outputs bash-compatible code with static completions."""
         monkeypatch.setenv("SHELL", "/bin/bash")
@@ -286,7 +288,9 @@ class TestShellHookOutput:
         assert "export NVD_STATE_DIR" in result.stdout
 
     def test_shell_hook_zsh(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
     ) -> None:
         """shell-hook outputs zsh-compatible code with static completions."""
         monkeypatch.setenv("SHELL", "/bin/zsh")
@@ -336,7 +340,9 @@ class TestSetupCommandNonInteractive:
     """Tests for non-interactive setup mode."""
 
     def test_setup_non_interactive_creates_wrapper(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """setup --non-interactive creates wrapper script."""
         # Set up isolated environment
@@ -369,7 +375,9 @@ class TestSetupCommandNonInteractive:
         assert (local_bin / "nvd").exists()
 
     def test_setup_non_interactive_creates_setup_conf(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """setup --non-interactive creates setup.conf."""
         nvd_home = tmp_path / ".nvd"
@@ -403,7 +411,9 @@ class TestSetupCommandNonInteractive:
         assert f"NVD_STATE_DIR={tmp_path / 'state'}" in conf_content
 
     def test_setup_non_interactive_invalid_state_dir(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """setup --non-interactive fails with invalid state dir."""
         nvd_home = tmp_path / ".nvd"

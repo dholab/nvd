@@ -110,7 +110,9 @@ class TestIsInTargetLineage:
             assert result is False
 
     def test_include_children_ancestor_match(
-        self, test_taxonomy_sqlite: Path, mock_taxonomy_open,
+        self,
+        test_taxonomy_sqlite: Path,
+        mock_taxonomy_open,
     ):
         """With include_children, taxid under target ancestor should match."""
         from extract_taxa_spots import is_in_target_lineage
@@ -126,7 +128,9 @@ class TestIsInTargetLineage:
             assert result is True
 
     def test_include_children_no_match(
-        self, test_taxonomy_sqlite: Path, mock_taxonomy_open,
+        self,
+        test_taxonomy_sqlite: Path,
+        mock_taxonomy_open,
     ):
         """With include_children, taxid not under target should not match."""
         from extract_taxa_spots import is_in_target_lineage
