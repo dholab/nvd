@@ -81,8 +81,9 @@ dev = [
   "pre-commit>=4.5.1",
   "pyarrow>=19.0.1",
   "pytest>=8.3.5",
-  "ruff>=0.11.2",
+  "ruff>=0.11.7",
   "tox>=4.24.2",
+  "ty>=0.0.15",
 ]
 
 [build-system]
