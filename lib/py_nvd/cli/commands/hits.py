@@ -2146,7 +2146,11 @@ def hits_compact(
             raise typer.Exit(1)
 
     # Run compaction
-    result = compact_hits(month=month, dry_run=dry_run, keep_source=keep_source)
+    try:
+        result = compact_hits(month=month, dry_run=dry_run, keep_source=keep_source)
+    except RuntimeError as e:
+        error(str(e))
+        raise typer.Exit(1)
 
     # Output
     if json_output:

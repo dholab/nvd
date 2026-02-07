@@ -6,8 +6,10 @@ from py_nvd.cli.app import app
 from py_nvd.cli.commands.resume import EDITOR_MIN_DURATION_SECONDS
 from py_nvd.cli.utils import PIPELINE_ROOT, RESUME_FILE, get_editor
 from py_nvd.db import connect
+from py_nvd.db import get_hits_dir
 from py_nvd.hits import (
     HitRecord,
+    _compaction_lock,
     calculate_gc_content,
     compress_sequence,
     compute_hit_key,
@@ -1808,6 +1810,25 @@ class TestHitsCommands:
         feb_path = tmp_path / "hits" / "month=2024-02" / "data.parquet"
         assert jan_path.exists()
         assert not feb_path.exists()
+
+    def test_hits_compact_lock_contention(self, tmp_path, monkeypatch):
+        """hits compact shows friendly error when lock is held."""
+        monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
+        runner.invoke(app, ["state", "init"])
+
+        record = make_hit_record(
+            "ACGTACGTACGT",
+            "set_001",
+            "sample_a",
+            "2024-01-15T00:00:00Z",
+        )
+        write_hits_parquet([record], "sample_a", "set_001", tmp_path)
+
+        hits_dir = get_hits_dir(tmp_path)
+        with _compaction_lock(hits_dir):
+            result = runner.invoke(app, ["hits", "compact"])
+            assert result.exit_code == 1
+            assert "Another compaction" in result.stdout
 
 
 class TestResumeFile:

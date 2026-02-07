@@ -50,12 +50,17 @@ Storage (Parquet-based with Hive Partitioning):
 
 from __future__ import annotations
 
+import fcntl
+import re
 import shutil
 import zlib
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass
-import re
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
+
+if TYPE_CHECKING:
+    from collections.abc import Generator
 
 import blake3
 import duckdb
@@ -2676,6 +2681,68 @@ def delete_sample_set_hits(
     )
 
 
+@dataclass(frozen=True)
+class _FileSnapshot:
+    """A frozen snapshot of an uncompacted parquet file at inventory time.
+
+    Used to ensure compaction operates on a fixed set of files and only
+    deletes files that haven't been modified since the snapshot was taken.
+    """
+
+    path: Path
+    mtime_ns: int
+    size: int
+
+
+def _snapshot_uncompacted_files(
+    state_dir: Path | str | None = None,
+) -> list[_FileSnapshot]:
+    """Snapshot all uncompacted parquet files with their stat metadata.
+
+    Returns a frozen list of (path, mtime_ns, size) tuples representing
+    the exact files present at call time. Subsequent compaction steps
+    should operate only on these files, ignoring any that arrive later.
+    """
+    hits_dir = get_hits_dir(state_dir)
+    uncompacted_dir = hits_dir / "month=NULL"
+
+    if not uncompacted_dir.exists():
+        return []
+
+    snapshots = []
+    for p in uncompacted_dir.rglob("*.parquet"):
+        st = p.stat()
+        snapshots.append(
+            _FileSnapshot(path=p, mtime_ns=st.st_mtime_ns, size=st.st_size),
+        )
+    return snapshots
+
+
+@contextmanager
+def _compaction_lock(hits_dir: Path) -> Generator[None]:
+    """Acquire an exclusive advisory lock for compaction. Fails fast if held.
+
+    This prevents two concurrent ``compact_hits`` invocations from
+    clobbering each other's temp files or double-deleting source files.
+    It does not affect Nextflow writer processes.
+    """
+    lock_path = hits_dir / ".compact.lock"
+    lock_file = lock_path.open("w")
+    try:
+        fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError as e:
+        lock_file.close()
+        msg = f"Another compaction is already running (lock: {lock_path})"
+        raise RuntimeError(msg) from e
+    try:
+        yield
+    finally:
+        fcntl.flock(lock_file, fcntl.LOCK_UN)
+        lock_file.close()
+        with suppress(OSError):
+            lock_path.unlink()
+
+
 def _get_uncompacted_glob(state_dir: Path | str | None = None) -> str:
     """Get glob pattern for uncompacted parquet files."""
     hits_dir = get_hits_dir(state_dir)
@@ -2685,14 +2752,18 @@ def _get_uncompacted_glob(state_dir: Path | str | None = None) -> str:
 
 
 def _inventory_uncompacted(
-    state_dir: Path | str | None = None,
+    file_paths: list[Path],
     month: str | None = None,
 ) -> list[MonthCompactionInfo]:
     """
     Inventory uncompacted data grouped by month.
 
+    Operates on an explicit list of file paths rather than globbing, so
+    that the caller can freeze the file set once and use it consistently
+    across inventory, compaction, and deletion.
+
     Args:
-        state_dir: Optional state directory override
+        file_paths: Explicit list of uncompacted parquet file paths to inventory.
         month: Optional filter to a specific month (YYYY-MM format)
 
     Returns:
@@ -2702,16 +2773,10 @@ def _inventory_uncompacted(
         f"month must be YYYY-MM format, got {month!r}"
     )
 
-    uncompacted_glob = _get_uncompacted_glob(state_dir)
-    hits_dir = get_hits_dir(state_dir)
-    uncompacted_dir = hits_dir / "month=NULL"
-
-    if not uncompacted_dir.exists():
+    if not file_paths:
         return []
 
-    parquet_files = list(uncompacted_dir.rglob("*.parquet"))
-    if not parquet_files:
-        return []
+    file_list_sql = "[" + ",".join(f"'{p}'" for p in file_paths) + "]"
 
     con = duckdb.connect()
 
@@ -2725,21 +2790,19 @@ def _inventory_uncompacted(
             COUNT(*) AS observation_count,
             COUNT(DISTINCT hit_key) AS unique_hits,
             COUNT(DISTINCT sample_set_id) AS sample_sets
-        FROM read_parquet('{uncompacted_glob}')
+        FROM read_parquet({file_list_sql})
         {month_filter}
         GROUP BY target_month
         ORDER BY target_month DESC
     """).fetchall()
 
-    # Count source files per month by examining the data
     inventory = []
     for row in result:
         target_month, obs_count, unique_hits, sample_sets = row
 
-        # Count files that have data for this month
         file_count = con.execute(f"""
             SELECT COUNT(DISTINCT filename)
-            FROM read_parquet('{uncompacted_glob}', filename=true)
+            FROM read_parquet({file_list_sql}, filename=true)
             WHERE strftime(run_date::DATE, '%Y-%m') = '{target_month}'
         """).fetchone()
 
@@ -2785,15 +2848,22 @@ def compact_hits(
     Returns:
         CompactionResult with details of what was (or would be) compacted.
     """
-    assert month is None or len(month) == 7, (
+    assert month is None or (len(month) == 7 and month[4] == "-"), (
         f"month must be YYYY-MM format, got {month!r}"
     )
 
     hits_dir = get_hits_dir(state_dir)
-    uncompacted_glob = _get_uncompacted_glob(state_dir)
 
-    # Inventory what we have to compact
-    inventory = _inventory_uncompacted(state_dir, month)
+    # Freeze the set of uncompacted files. Every subsequent step operates
+    # on this exact list — new files arriving mid-compaction are invisible.
+    snapshot = _snapshot_uncompacted_files(state_dir)
+    file_paths = [s.path for s in snapshot]
+
+    # Build the stat lookup for conditional deletion
+    snapshot_stats = {s.path: (s.mtime_ns, s.size) for s in snapshot}
+
+    # Inventory from the frozen file list
+    inventory = _inventory_uncompacted(file_paths, month)
 
     if not inventory:
         return CompactionResult(
@@ -2811,114 +2881,133 @@ def compact_hits(
             total_source_files=sum(m.source_files for m in inventory),
         )
 
-    # Perform compaction for each month
-    errors: list[str] = []
-    compacted_months: list[MonthCompactionInfo] = []
-    files_to_delete: list[Path] = []
+    # Acquire exclusive lock so two concurrent compactions cannot clobber
+    # each other's temp files or double-delete source files.
+    with _compaction_lock(hits_dir):
+        errors: list[str] = []
+        compacted_months: list[MonthCompactionInfo] = []
+        files_to_delete: list[Path] = []
 
-    con = duckdb.connect()
+        # Build the DuckDB file list once from the frozen snapshot
+        file_list_sql = "[" + ",".join(f"'{p}'" for p in file_paths) + "]"
 
-    for info in inventory:
-        target_month = info.month
-        month_dir = hits_dir / f"month={target_month}"
-        month_dir.mkdir(parents=True, exist_ok=True)
+        con = duckdb.connect()
 
-        existing_file = month_dir / "data.parquet"
-        temp_file = month_dir / ".data.parquet.tmp"
+        for info in inventory:
+            target_month = info.month
+            month_dir = hits_dir / f"month={target_month}"
+            month_dir.mkdir(parents=True, exist_ok=True)
 
-        try:
-            # Build source list: uncompacted data for this month
-            # Plus existing compacted file if it exists
-            if existing_file.exists():
-                # Use SELECT * with UNION ALL BY NAME for schema evolution:
-                # - Old compacted files may lack new columns (e.g., adjusted_taxid)
-                # - New uncompacted files may have columns old compacted files lack
-                # UNION ALL BY NAME fills missing columns with NULL
-                source_sql = f"""
-                    SELECT *
-                    FROM read_parquet('{uncompacted_glob}', union_by_name=true)
-                    WHERE strftime(run_date::DATE, '%Y-%m') = '{target_month}'
+            existing_file = month_dir / "data.parquet"
+            temp_file = month_dir / ".data.parquet.tmp"
 
-                    UNION ALL BY NAME
-
-                    SELECT *
-                    FROM read_parquet('{existing_file}')
-                """
-            else:
-                source_sql = f"""
-                    SELECT *
-                    FROM read_parquet('{uncompacted_glob}', union_by_name=true)
-                    WHERE strftime(run_date::DATE, '%Y-%m') = '{target_month}'
-                """
-
-            # Write sorted, compressed parquet
-            con.execute(f"""
-                COPY (
-                    {source_sql}
-                    ORDER BY hit_key, run_date
-                )
-                TO '{temp_file}'
-                (FORMAT parquet, COMPRESSION zstd, ROW_GROUP_SIZE 100000)
-            """)
-
-            # Atomic rename
-            temp_file.rename(existing_file)
-
-            # Verify compaction succeeded
-            assert existing_file.exists(), (
-                f"compacted file should exist: {existing_file}"
-            )
-            assert not temp_file.exists(), (
-                f"temp file should be cleaned up: {temp_file}"
-            )
-
-            compacted_months.append(info)
-
-            # Track files to delete (if not keeping source)
-            if not keep_source:
-                # Find all uncompacted files that contributed to this month
-                file_result = con.execute(f"""
-                    SELECT DISTINCT filename
-                    FROM read_parquet('{uncompacted_glob}', filename=true)
-                    WHERE strftime(run_date::DATE, '%Y-%m') = '{target_month}'
-                """).fetchall()
-
-                for (filepath,) in file_result:
-                    files_to_delete.append(Path(filepath))
-
-        except Exception as e:
-            errors.append(
-                f"Failed to compact month {target_month}: {type(e).__name__}: {e}",
-            )
-            # Clean up temp file if it exists
-            if temp_file.exists():
-                temp_file.unlink()
-
-    # Delete source files after all compaction is done
-    if not keep_source and not errors:
-        deleted_dirs: set[Path] = set()
-        for filepath in files_to_delete:
-            if filepath.exists():
-                filepath.unlink()
-                # Track parent directories for cleanup
-                deleted_dirs.add(filepath.parent)
-
-        # Clean up empty directories (sample_id dirs, then sample_set_id dirs)
-        for dir_path in sorted(deleted_dirs, key=lambda p: len(p.parts), reverse=True):
             try:
-                if dir_path.exists() and not any(dir_path.iterdir()):
-                    dir_path.rmdir()
-                    # Also try to remove parent if empty
-                    parent = dir_path.parent
-                    if parent.exists() and not any(parent.iterdir()):
-                        parent.rmdir()
-            except OSError:
-                pass  # Directory not empty or other issue, skip
+                # Build source list: uncompacted data for this month
+                # Plus existing compacted file if it exists.
+                # Uses the frozen file list (not a glob) so concurrent writers
+                # cannot inject files into the read set.
+                if existing_file.exists():
+                    # Use SELECT * with UNION ALL BY NAME for schema evolution:
+                    # - Old compacted files may lack new columns (e.g., adjusted_taxid)
+                    # - New uncompacted files may have columns old compacted files lack
+                    # UNION ALL BY NAME fills missing columns with NULL
+                    source_sql = f"""
+                        SELECT *
+                        FROM read_parquet({file_list_sql}, union_by_name=true)
+                        WHERE strftime(run_date::DATE, '%Y-%m') = '{target_month}'
 
-    return CompactionResult(
-        dry_run=False,
-        months=compacted_months,
-        total_observations=sum(m.observation_count for m in compacted_months),
-        total_source_files=sum(m.source_files for m in compacted_months),
-        errors=errors,
-    )
+                        UNION ALL BY NAME
+
+                        SELECT *
+                        FROM read_parquet('{existing_file}')
+                    """
+                else:
+                    source_sql = f"""
+                        SELECT *
+                        FROM read_parquet({file_list_sql}, union_by_name=true)
+                        WHERE strftime(run_date::DATE, '%Y-%m') = '{target_month}'
+                    """
+
+                # Write sorted, compressed parquet
+                con.execute(f"""
+                    COPY (
+                        {source_sql}
+                        ORDER BY hit_key, run_date
+                    )
+                    TO '{temp_file}'
+                    (FORMAT parquet, COMPRESSION zstd, ROW_GROUP_SIZE 100000)
+                """)
+
+                # Atomic rename
+                temp_file.rename(existing_file)
+
+                # Verify compaction succeeded
+                assert existing_file.exists(), (
+                    f"compacted file should exist: {existing_file}"
+                )
+                assert not temp_file.exists(), (
+                    f"temp file should be cleaned up: {temp_file}"
+                )
+
+                compacted_months.append(info)
+
+                # Track files to delete (if not keeping source).
+                # Queries the frozen file list, not a fresh glob.
+                if not keep_source:
+                    file_result = con.execute(f"""
+                        SELECT DISTINCT filename
+                        FROM read_parquet({file_list_sql}, filename=true)
+                        WHERE strftime(run_date::DATE, '%Y-%m') = '{target_month}'
+                    """).fetchall()
+
+                    for (filepath,) in file_result:
+                        files_to_delete.append(Path(filepath))
+
+            except Exception as e:
+                errors.append(
+                    f"Failed to compact month {target_month}: {type(e).__name__}: {e}",
+                )
+                # Clean up temp file if it exists
+                if temp_file.exists():
+                    temp_file.unlink()
+
+        # Delete source files after all compaction is done.
+        # Only delete files whose (mtime_ns, size) still match the snapshot —
+        # if a concurrent writer replaced a file at the same path, skip it.
+        if not keep_source and not errors:
+            deleted_dirs: set[Path] = set()
+            for filepath in files_to_delete:
+                expected = snapshot_stats.get(filepath)
+                if expected is None:
+                    continue
+                try:
+                    st = filepath.stat()
+                except FileNotFoundError:
+                    continue
+                if (st.st_mtime_ns, st.st_size) == expected:
+                    filepath.unlink()
+                    deleted_dirs.add(filepath.parent)
+
+            # Clean up empty directories (sample_id dirs, then sample_set_id dirs)
+            for dir_path in sorted(
+                deleted_dirs,
+                key=lambda p: len(p.parts),
+                reverse=True,
+            ):
+                try:
+                    if dir_path.exists() and not any(dir_path.iterdir()):
+                        dir_path.rmdir()
+                        # Also try to remove parent if empty
+                        parent = dir_path.parent
+                        if parent.exists() and not any(parent.iterdir()):
+                            parent.rmdir()
+                except OSError:
+                    pass  # Directory not empty or other issue, skip
+
+        return CompactionResult(
+            dry_run=False,
+            months=compacted_months,
+            total_observations=sum(m.observation_count for m in compacted_months),
+            total_source_files=sum(m.source_files for m in compacted_months),
+            errors=errors,
+        )
