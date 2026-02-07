@@ -17,19 +17,16 @@ process EXTRACT_HUMAN_VIRUS_READS {
 
     script:
     """
-    seqkit fq2fa --threads 1 ${fastq} -o ${sample_id}.all_reads.fasta
-    aligns_to \
-    -dbss ${stat_dbss} \
-    -num_threads ${task.cpus} \
-    -tax_list ${human_virus_taxlist} \
-    ${sample_id}.all_reads.fasta \
-    | cut -f1 \
-    | seqkit grep -f - \
-    ${fastq} \
+    seqkit fq2fa --threads 1 ${fastq} -o - \\
+    | aligns_to \\
+    -dbss ${stat_dbss} \\
+    -num_threads ${task.cpus} \\
+    -tax_list ${human_virus_taxlist} \\
+    stdin \\
+    | cut -f1 \\
+    | seqkit grep -f - \\
+    ${fastq} \\
     -o ${sample_id}.human_virus.fastq.gz
-
-    # Cleanup intermediate large file
-    rm ${sample_id}.all_reads.fasta
     """
 }
 
