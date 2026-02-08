@@ -18,11 +18,7 @@ workflow CLASSIFY_WITH_MEGABLAST {
         ch_virus_contigs.combine(ch_blast_db_files)
     )
 
-    def nonEmptyMegablastResults = MEGABLAST.out.filter { _id, hits_file ->
-        hits_file.size() > 0 && hits_file.readLines().size() > 0
-    }
-
-    SELECT_TOP_BLAST_HITS(nonEmptyMegablastResults)
+    SELECT_TOP_BLAST_HITS(MEGABLAST.out)
 
     ANNOTATE_MEGABLAST_RESULTS(
         SELECT_TOP_BLAST_HITS.out,
@@ -32,13 +28,11 @@ workflow CLASSIFY_WITH_MEGABLAST {
 
     // Capture this output for the LabKey table
     FILTER_NON_VIRUS_MEGABLAST_NODES(
-        ANNOTATE_MEGABLAST_RESULTS.out.hits.filter { _id, hits_file ->
-            hits_file.size() > 0 && hits_file.readLines().size() > 0
-        }
+        ANNOTATE_MEGABLAST_RESULTS.out.hits
     )
 
     REMOVE_MEGABLAST_MAPPED_CONTIGS(
-        nonEmptyMegablastResults.join(ch_virus_contigs, by: 0)
+        MEGABLAST.out.join(ch_virus_contigs, by: 0)
     )
 
     emit:
