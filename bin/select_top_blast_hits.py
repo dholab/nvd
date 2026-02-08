@@ -118,12 +118,13 @@ def select_top_hits(blast_txt: str | Path, top_k: int = 5) -> pl.LazyFrame:
     Note: Uses lazy evaluation - no data is loaded until .collect() or .sink_*() called.
     """
     return (
-        # open a lazy file scanner than uses tab as its separator and refrains from inferring
-        # the schema. This is a concession to the fact that BLAST taxids are sometimes semicolon
-        # delimited and therefore not always numbers.
+        # open a lazy file scanner for headerless BLAST -outfmt 6 output. Schema
+        # inference is limited to 10k rows because NCBI data routinely has type
+        # inconsistencies beyond the inference window.
         pl.scan_csv(
             blast_txt,
             separator="\t",
+            has_header=False,
             infer_schema_length=10000,
             new_columns=[
                 "qseqid",
@@ -142,6 +143,12 @@ def select_top_hits(blast_txt: str | Path, top_k: int = 5) -> pl.LazyFrame:
             # mostly looks like integers, to be encoded as a float, as it will occasionally
             # contain decimal points that break integer parsers
             schema_overrides={"staxids": pl.Utf8, "bitscore": pl.Float64},
+            # BLAST -outfmt 6 doesn't quote fields, so stitle values containing
+            # tabs produce rows with extra columns. Truncate rather than crash.
+            truncate_ragged_lines=True,
+            # Skip rows that fail type casting (e.g., non-numeric bitscores)
+            # rather than aborting the entire file.
+            ignore_errors=True,
         )
         # cast staxids into a column of strings
         .with_columns(pl.col("staxids").cast(pl.Utf8))
