@@ -22,7 +22,7 @@ import yaml
 SCHEMA_FILENAME = "nvd-params.latest.schema.json"
 
 # GitHub raw URL for schema (fallback and for generated templates)
-SCHEMA_URL = "https://raw.githubusercontent.com/dhoconno/nvd/state-management/schemas/nvd-params.v2.4.0.schema.json"
+SCHEMA_URL = "https://raw.githubusercontent.com/dhoconno/nvd/main/schemas/nvd-params.v2.4.0.schema.json"
 
 
 def _find_schema_path() -> Path:

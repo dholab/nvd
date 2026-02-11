@@ -73,10 +73,10 @@ jobs:
         run: uv sync
       
       - name: Run ruff check
-        run: uv run ruff check bin/
+        run: uv run ruff check lib/
       
       - name: Run ruff format check
-        run: uv run ruff format --check bin/
+        run: uv run ruff format --check lib/
 
   validate-nextflow-syntax:
     name: Validate Nextflow Config Syntax
@@ -267,10 +267,10 @@ jobs:
           echo "pyproject_version=$PYPROJECT_VERSION" >> $GITHUB_OUTPUT
           echo "pyproject.toml version: $PYPROJECT_VERSION"
           
-          # Extract version from bin/__main__.py
-          CLI_VERSION=$(grep '^VERSION = ' bin/__main__.py | sed 's/VERSION = "\(.*\)"/\1/')
+          # Extract version from lib/py_nvd/__init__.py
+          CLI_VERSION=$(grep '^__version__ = ' lib/py_nvd/__init__.py | sed 's/__version__ = "\(.*\)"/\1/')
           echo "cli_version=$CLI_VERSION" >> $GITHUB_OUTPUT
-          echo "bin/__main__.py version: $CLI_VERSION"
+          echo "lib/py_nvd/__init__.py version: $CLI_VERSION"
           
           # Extract monoimage version from nextflow.config
           MONOIMAGE=$(grep 'monoimage.*=' nextflow.config | grep -oP 'nrminor/nvd:\K[^"]+')
@@ -283,14 +283,14 @@ jobs:
           CLI_VERSION="${{ steps.versions.outputs.cli_version }}"
           
           if [ "$PYPROJECT_VERSION" != "$CLI_VERSION" ]; then
-            echo "::error::Version mismatch between pyproject.toml ($PYPROJECT_VERSION) and bin/__main__.py ($CLI_VERSION)"
+            echo "::error::Version mismatch between pyproject.toml ($PYPROJECT_VERSION) and lib/py_nvd/__init__.py ($CLI_VERSION)"
             echo "These versions must be kept in sync. Update both files when bumping version."
             exit 1
           fi
           
           echo "✅ Version consistency check passed"
           echo "   - pyproject.toml: $PYPROJECT_VERSION"
-          echo "   - bin/__main__.py: $CLI_VERSION"
+          echo "   - lib/py_nvd/__init__.py: $CLI_VERSION"
           echo "   - Container image: ${{ steps.versions.outputs.monoimage_version }}"
           echo ""
           echo "Note: Container image version (${{ steps.versions.outputs.monoimage_version }}) may differ from package version"

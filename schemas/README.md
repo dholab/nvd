@@ -7,6 +7,7 @@ This directory contains JSON Schema definitions for the NVD pipeline.
 | Schema | Description |
 |--------|-------------|
 | `nvd-params.v2.3.0.schema.json` | Pipeline parameters schema (version 2.3.0) |
+| `nvd-params.v2.4.0.schema.json` | Pipeline parameters schema (version 2.4.0) |
 | `nvd-params.latest.schema.json` | Symlink to the current version |
 
 ## Usage
@@ -69,7 +70,7 @@ points to the current version for users who want to track updates automatically.
 For reproducibility, you can reference a specific version:
 
 ```yaml
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dhoconno/nvd/main/schemas/nvd-params.v2.3.0.schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dhoconno/nvd/main/schemas/nvd-params.v2.4.0.schema.json
 ```
 
 ## Validation
