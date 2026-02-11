@@ -27,6 +27,8 @@ COPY pyproject.toml $HOME/pyproject.toml
 COPY pixi.lock $HOME/pixi.lock
 COPY uv.lock $HOME/uv.lock
 COPY lib/ $HOME/lib/
+COPY main.nf $HOME/main.nf
+COPY nextflow.config $HOME/nextflow.config
 
 # 2) install pixi
 RUN cd $HOME && PIXI_ARCH=x86_64 curl -fsSL https://pixi.sh/install.sh | bash
