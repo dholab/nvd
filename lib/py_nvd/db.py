@@ -5,17 +5,23 @@ Database connection and initialization.
 Provides context managers for state database connections with automatic
 schema initialization and version checking.
 
-NVD Home Directory:
-    All NVD data is stored under ~/.nvd/ by default:
-        ~/.nvd/
-        ├── user.config         # Nextflow configuration
-        ├── state.sqlite        # Run/sample/upload tracking
-        └── taxdump/            # NCBI taxonomy data
+NVD stores configuration and operational state in two separate locations
+following platform conventions:
+
+Configuration (dotfile directory):
+    ~/.nvd/
+    └── user.config         # Nextflow configuration (database paths, etc.)
+
+State (cache directory):
+    ~/.cache/nvd/
+    ├── state.sqlite        # Run/sample/upload tracking
+    ├── taxdump/            # NCBI taxonomy data
+    └── hits/               # Parquet hit records
 
 Path Resolution (hierarchical fallback):
     Config:   NVD_CONFIG env var > ~/.nvd/user.config
-    State:    NVD_STATE_DIR env var > ~/.nvd/
-    Taxonomy: NVD_TAXONOMY_DB env var > ~/.nvd/taxdump/
+    State:    NVD_STATE_DIR env var > ~/.cache/nvd/
+    Taxonomy: NVD_TAXONOMY_DB env var > {state_dir}/taxdump/
 
 Schema Migration Safety:
     When the database schema version doesn't match the expected version,
@@ -47,17 +53,22 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from collections.abc import Generator
 
-# The NVD home directory - all NVD data lives here by default
+# The NVD config directory - user-facing configuration lives here
 DEFAULT_NVD_HOME = Path.home() / ".nvd"
+
+# The NVD cache directory - operational state (database, taxonomy, hits) lives here.
+# This matches the Nextflow config default in nextflow.config and follows the
+# XDG convention of putting mutable cache/state data under ~/.cache/.
+DEFAULT_NVD_CACHE = Path.home() / ".cache" / "nvd"
 
 # Environment variables for overriding default paths
 ENV_VAR_CONFIG = "NVD_CONFIG"
 ENV_VAR = "NVD_STATE_DIR"  # Keep short name for backward compatibility
 ENV_VAR_TAXONOMY = "NVD_TAXONOMY_DB"
 
-# Default paths (all relative to NVD home)
+# Default paths
 DEFAULT_CONFIG_PATH = DEFAULT_NVD_HOME / "user.config"
-DEFAULT_STATE_DIR = DEFAULT_NVD_HOME
+DEFAULT_STATE_DIR = DEFAULT_NVD_CACHE
 
 EXPECTED_VERSION = 2
 
@@ -329,7 +340,7 @@ def get_state_dir(explicit_path: Path | str | None = None) -> Path:
     Priority:
         1. Explicit path argument (from CLI or Nextflow param)
         2. NVD_STATE_DIR environment variable
-        3. Default: ~/.nvd/
+        3. Default: ~/.cache/nvd/
 
     The directory is created if it doesn't exist.
 
@@ -411,7 +422,7 @@ def get_hits_dir(state_dir: Path | str | None = None) -> Path:
 
     Args:
         state_dir: Optional explicit state directory. If None, resolves
-                   via NVD_STATE_DIR env var, then ~/.nvd/
+                   via NVD_STATE_DIR env var, then ~/.cache/nvd/
 
     Returns:
         Path to the hits directory

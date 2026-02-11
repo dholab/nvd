@@ -36,23 +36,23 @@ nextflow run dhoconno/nvd \
     --experiment_id exp001 \
     --blast_db /long/path/to/blast_db \
     --blast_db_prefix core_nt \
-    --stat_index /long/path/to/STAT_db/tree_index.dbs \
-    --stat_dbss /long/path/to/STAT_db/tree_filter.dbss \
-    --stat_annotation /long/path/to/STAT_db/tree_filter.dbss.annotation \
+    --stat_index /long/path/to/STAT_db/tree_index.20240830.dbs \
+    --stat_dbss /long/path/to/STAT_db/tree_filter.20240830.dbss \
+    --stat_annotation /long/path/to/STAT_db/tree_filter.20240830.dbss.annotation \
     --human_virus_taxlist /long/path/to/STAT_db/human_viruses_taxlist.txt \
     --gottcha2_db /long/path/to/gottcha2.fna
 ```
 
 ### **Smart Defaults**
 - **Auto-detects execution profile** (Docker, Apptainer, or local)
-- **Loads configuration** from `~/.nvd2/config/user.config` automatically
+- **Loads configuration** from `~/.nvd/user.config` automatically
 - **Validates inputs** before execution (saves time catching errors early)
 - **100% parameter coverage** - all Nextflow parameters available as CLI options
 
 ### **Integration with install.sh**
 The CLI wrapper works seamlessly with the `install.sh` script:
 
-1. **install.sh** sets up databases and creates `~/.nvd2/config/user.config`
+1. **install.sh** sets up databases and creates `~/.nvd/user.config`
 2. **nvd CLI** reads that config automatically - no need to specify paths every time
 3. **Validation tools** verify everything is configured correctly
 
@@ -76,7 +76,7 @@ curl -fsSL https://raw.githubusercontent.com/dhoconno/nvd/main/install.sh | bash
 # The script will:
 # 1. Check that prerequisites are installed
 # 2. Help you configure database paths
-# 3. Create ~/.nvd2/config/user.config
+# 3. Create ~/.nvd/user.config
 # 4. Optionally download reference databases
 ```
 
@@ -120,13 +120,13 @@ uv sync                  # Python dependencies only
 pixi shell --frozen      # All Conda dependencies
 
 # 4. Create config file manually
-mkdir -p ~/.nvd2/config
-cat > ~/.nvd2/config/user.config <<'EOF'
+mkdir -p ~/.nvd
+cat > ~/.nvd/user.config <<'EOF'
 params {
     // STAT database paths
-    stat_index              = "/path/to/STAT_db/tree_index.dbs"
-    stat_dbss               = "/path/to/STAT_db/tree_filter.dbss"
-    stat_annotation         = "/path/to/STAT_db/tree_filter.dbss.annotation"
+    stat_index              = "/path/to/STAT_db/tree_index.20240830.dbs"
+    stat_dbss               = "/path/to/STAT_db/tree_filter.20240830.dbss"
+    stat_annotation         = "/path/to/STAT_db/tree_filter.20240830.dbss.annotation"
     human_virus_taxlist     = "/path/to/STAT_db/human_viruses_taxlist.txt"
     
     // BLAST database paths
@@ -178,10 +178,10 @@ nvd run -s samples.csv -e exp004 --tools all --dry-run
 Output:
 ```
 ✓ Auto-detected execution profile: docker
-ℹ Using config: /Users/you/.nvd2/config/user.config
+ℹ Using config: /Users/you/.nvd/user.config
 
 Executing command:
-nextflow run dhoconno/nvd -profile docker -c /Users/you/.nvd2/config/user.config \
+nextflow run dhoconno/nvd -profile docker -c /Users/you/.nvd/user.config \
     --samplesheet samples.csv --experiment_id exp004 --tools all
 
 ✓ Dry-run mode: command shown above but not executed
@@ -203,7 +203,7 @@ nvd config show
 # │ blast_db                 │ /data/blast_db                 │
 # │ blast_db_prefix          │ core_nt                        │
 # │ gottcha2_db              │ /data/gottcha2.fna             │
-# │ stat_index               │ /data/STAT_db/tree_index.dbs   │
+# │ stat_index               │ /data/STAT_db/tree_index.20240830.dbs │
 # └──────────────────────────┴────────────────────────────────┘
 
 # Show config file location
@@ -342,11 +342,11 @@ nvd validate databases
 # Output:
 # Validating Database Paths
 #
-# ℹ Using config: /Users/you/.nvd2/config/user.config
+# ℹ Using config: /Users/you/.nvd/user.config
 #
-# ✓ STAT index file             - /data/STAT_db/tree_index.dbs
-# ✓ STAT dbss file               - /data/STAT_db/tree_filter.dbss
-# ✓ STAT annotation file         - /data/STAT_db/tree_filter.dbss.annotation
+# ✓ STAT index file             - /data/STAT_db/tree_index.20240830.dbs
+# ✓ STAT dbss file               - /data/STAT_db/tree_filter.20240830.dbss
+# ✓ STAT annotation file         - /data/STAT_db/tree_filter.20240830.dbss.annotation
 # ✓ Human virus taxlist          - /data/STAT_db/human_viruses_taxlist.txt
 # ✓ BLAST database directory     - /data/blast_db
 # ✓ GOTTCHA2 database file       - /data/gottcha2.fna
@@ -480,7 +480,7 @@ nvd run -s samples.csv -e exp030 \
 nvd run -s samples.csv -e exp031 \
     --labkey
 
-# LabKey configuration is in ~/.nvd2/config/user.config
+# LabKey configuration is in ~/.nvd/user.config
 # or can be specified via Nextflow config file
 ```
 
@@ -634,13 +634,13 @@ sudo mv nextflow /usr/local/bin/
 nvd config path
 
 # Output shows:
-# Default config location: /Users/you/.nvd2/config/user.config
+# Default config location: /Users/you/.nvd/user.config
 # ⚠ Config file does not exist
 
 # Solution: Run install.sh or create manually
 ./install.sh
 # or
-mkdir -p ~/.nvd2/config
+mkdir -p ~/.nvd
 # ... create user.config manually
 ```
 
@@ -668,7 +668,7 @@ nvd validate databases
 
 # Fix in config file
 nvd config path  # Shows location
-# Edit ~/.nvd2/config/user.config with correct paths
+# Edit ~/.nvd/user.config with correct paths
 
 # Or override on command line
 nvd run -s samples.csv -e exp032 --blast-db /correct/path/blast_db
@@ -734,7 +734,7 @@ nvd version
 | Parameter | Short | Description | Default |
 |-----------|-------|-------------|---------|
 | `--profile` | `-p` | Execution profile: `docker`, `apptainer`, `local` | Auto-detect |
-| `--config` | `-c` | Custom config file | `~/.nvd2/config/user.config` |
+| `--config` | `-c` | Custom config file | `~/.nvd/user.config` |
 | `--results` | `-r` | Results output directory | `./results` |
 | `--work-dir` | `-w` | Nextflow work directory | `./work` |
 | `--resume` | | Resume from checkpoint | `false` |
@@ -792,7 +792,7 @@ nvd version
 1. **Always validate before large runs** - Use `nvd validate all` to catch config issues early
 2. **Use dry-run** - Preview commands with `--dry-run` before committing to long analyses
 3. **Start with test samples** - Validate pipeline behavior on small datasets first
-4. **Leverage config files** - Store database paths in `~/.nvd2/config/user.config` to avoid repetition
+4. **Leverage config files** - Store database paths in `~/.nvd/user.config` to avoid repetition
 5. **Enable cleanup for production** - Use `--cleanup` to save disk space on routine runs
 6. **Respect rate limits** - Keep `--max-concurrent-downloads` low (≤3) for SRA downloads
 7. **Use resume** - Always add `--resume` when restarting failed runs to save time

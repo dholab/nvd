@@ -804,9 +804,9 @@ database_wizard() {
 	echo
 	if [[ -n "$stat_path" ]]; then
 		echo "    params {"
-		echo "        stat_index          = \"${stat_path}/tree_index.dbs\""
-		echo "        stat_dbss           = \"${stat_path}/tree_filter.dbss\""
-		echo "        stat_annotation     = \"${stat_path}/tree_filter.dbss.annotation\""
+		echo "        stat_index          = \"${stat_path}/tree_index.20240830.dbs\""
+		echo "        stat_dbss           = \"${stat_path}/tree_filter.20240830.dbss\""
+		echo "        stat_annotation     = \"${stat_path}/tree_filter.20240830.dbss.annotation\""
 		echo "        human_virus_taxlist = \"${stat_path}/human_viruses_taxlist.txt\""
 		echo "    }"
 		echo

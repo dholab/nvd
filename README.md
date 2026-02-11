@@ -69,7 +69,7 @@ The script will help you:
 - Detect available execution environments (Docker, Apptainer)
 - Configure database paths
 - Optionally download reference databases
-- Create a configuration file at `~/.nvd2/config/user.config`
+- Create a configuration file at `~/.nvd/user.config`
 
 See the [Installation Guide](./docs/INSTALLATION.md) for more details.
 
@@ -180,7 +180,7 @@ With that, you're ready to run the pipeline!
 
 #### Option 1: Using the NVD2 CLI Wrapper
 
-If you have set up `~/.nvd2/config/user.config`, you can use the streamlined CLI
+If you have set up `~/.nvd/user.config`, you can use the streamlined CLI
 wrapper:
 
 ```bash
@@ -209,7 +209,7 @@ nvd run -s samples.csv -e exp004 --dry-run
 ```
 
 The CLI wrapper automatically loads configuration from
-`~/.nvd2/config/user.config`, auto-detects your execution profile
+`~/.nvd/user.config`, auto-detects your execution profile
 (Docker/Apptainer/local), and provides a simplified interface.
 
 **Note**: Prepend commands with `pixi run` (for full toolchain access) or
@@ -243,9 +243,9 @@ nextflow run dhoconno/nvd \
 	--gottcha2_db $YOUR_REFERENCE_PATH/gottcha2/gottcha_db.species.fna \
 	--blast_db $YOUR_REFERENCE_PATH/blast_db \
 	--blast_db_prefix core_nt \
-	--stat_index $YOUR_REFERENCE_PATH/STAT_db/tree_index.dbs \
-	--stat_dbss $YOUR_REFERENCE_PATH/STAT_db/tree_filter.dbss \
-	--stat_annotation $YOUR_REFERENCE_PATH/STAT_db/tree_filter.dbss.annotation \
+	--stat_index $YOUR_REFERENCE_PATH/STAT_db/tree_index.20240830.dbs \
+	--stat_dbss $YOUR_REFERENCE_PATH/STAT_db/tree_filter.20240830.dbss \
+	--stat_annotation $YOUR_REFERENCE_PATH/STAT_db/tree_filter.20240830.dbss.annotation \
 	--human_virus_taxlist $YOUR_REFERENCE_PATH/STAT_db/human_viruses_taxlist.txt \
 	--experiment_id github_readme_test
 ```

@@ -109,9 +109,9 @@ nextflow run dhoconno/nvd \
     --samplesheet my_samples.csv \
     --blast_db /path/to/blast_db \
     --blast_db_prefix core_nt \
-    --stat_index /path/to/STAT_db/tree_index.dbs \
-    --stat_dbss /path/to/STAT_db/tree_filter.dbss \
-    --stat_annotation /path/to/STAT_db/tree_filter.dbss.annotation \
+    --stat_index /path/to/STAT_db/tree_index.20240830.dbs \
+    --stat_dbss /path/to/STAT_db/tree_filter.20240830.dbss \
+    --stat_annotation /path/to/STAT_db/tree_filter.20240830.dbss.annotation \
     --human_virus_taxlist /path/to/STAT_db/human_viruses_taxlist.txt \
     --experiment_id 12348
 ```
@@ -131,9 +131,9 @@ nextflow run dhoconno/nvd \
     --gottcha2_db /data/gottcha2/gottcha_db.species.fna \
     --blast_db /data/blast_db \
     --blast_db_prefix core_nt \
-    --stat_index /data/STAT_db/tree_index.dbs \
-    --stat_dbss /data/STAT_db/tree_filter.dbss \
-    --stat_annotation /data/STAT_db/tree_filter.dbss.annotation \
+    --stat_index /data/STAT_db/tree_index.20240830.dbs \
+    --stat_dbss /data/STAT_db/tree_filter.20240830.dbss \
+    --stat_annotation /data/STAT_db/tree_filter.20240830.dbss.annotation \
     --human_virus_taxlist /data/STAT_db/human_viruses_taxlist.txt \
     --experiment_id 12349
 ```
@@ -153,9 +153,9 @@ nextflow run dhoconno/nvd \
     --gottcha2_db /shared/gottcha2/gottcha_db.species.fna \
     --blast_db /shared/blast_db \
     --blast_db_prefix core_nt \
-    --stat_index /shared/STAT_db/tree_index.dbs \
-    --stat_dbss /shared/STAT_db/tree_filter.dbss \
-    --stat_annotation /shared/STAT_db/tree_filter.dbss.annotation \
+    --stat_index /shared/STAT_db/tree_index.20240830.dbs \
+    --stat_dbss /shared/STAT_db/tree_filter.20240830.dbss \
+    --stat_annotation /shared/STAT_db/tree_filter.20240830.dbss.annotation \
     --human_virus_taxlist /shared/STAT_db/human_viruses_taxlist.txt \
     --experiment_id 12350
 ```
@@ -175,9 +175,9 @@ nextflow run dhoconno/nvd \
     --gottcha2_db /staging/gottcha2/gottcha_db.species.fna \
     --blast_db /staging/blast_db \
     --blast_db_prefix core_nt \
-    --stat_index /staging/STAT_db/tree_index.dbs \
-    --stat_dbss /staging/STAT_db/tree_filter.dbss \
-    --stat_annotation /staging/STAT_db/tree_filter.dbss.annotation \
+    --stat_index /staging/STAT_db/tree_index.20240830.dbs \
+    --stat_dbss /staging/STAT_db/tree_filter.20240830.dbss \
+    --stat_annotation /staging/STAT_db/tree_filter.20240830.dbss.annotation \
     --human_virus_taxlist /staging/STAT_db/human_viruses_taxlist.txt \
     --experiment_id 12351 \
     --max_concurrent_downloads 5
@@ -200,9 +200,9 @@ nextflow run dhoconno/nvd \
     --gottcha2_db /data/gottcha2/gottcha_db.species.fna \
     --blast_db /data/blast_db \
     --blast_db_prefix core_nt \
-    --stat_index /data/STAT_db/tree_index.dbs \
-    --stat_dbss /data/STAT_db/tree_filter.dbss \
-    --stat_annotation /data/STAT_db/tree_filter.dbss.annotation \
+    --stat_index /data/STAT_db/tree_index.20240830.dbs \
+    --stat_dbss /data/STAT_db/tree_filter.20240830.dbss \
+    --stat_annotation /data/STAT_db/tree_filter.20240830.dbss.annotation \
     --human_virus_taxlist /data/STAT_db/human_viruses_taxlist.txt \
     --min_gottcha_reads 500 \
     --min_consecutive_bases 150 \
@@ -230,9 +230,9 @@ nextflow run dhoconno/nvd \
     --gottcha2_db /data/gottcha2/gottcha_db.species.fna \
     --blast_db /data/blast_db \
     --blast_db_prefix core_nt \
-    --stat_index /data/STAT_db/tree_index.dbs \
-    --stat_dbss /data/STAT_db/tree_filter.dbss \
-    --stat_annotation /data/STAT_db/tree_filter.dbss.annotation \
+    --stat_index /data/STAT_db/tree_index.20240830.dbs \
+    --stat_dbss /data/STAT_db/tree_filter.20240830.dbss \
+    --stat_annotation /data/STAT_db/tree_filter.20240830.dbss.annotation \
     --human_virus_taxlist /data/STAT_db/human_viruses_taxlist.txt \
     --min_gottcha_reads 100 \
     --min_consecutive_bases 300 \
@@ -261,9 +261,9 @@ nextflow run dhoconno/nvd \
     --gottcha2_db /data/gottcha2/gottcha_db.species.fna \
     --blast_db /data/blast_db \
     --blast_db_prefix core_nt \
-    --stat_index /data/STAT_db/tree_index.dbs \
-    --stat_dbss /data/STAT_db/tree_filter.dbss \
-    --stat_annotation /data/STAT_db/tree_filter.dbss.annotation \
+    --stat_index /data/STAT_db/tree_index.20240830.dbs \
+    --stat_dbss /data/STAT_db/tree_filter.20240830.dbss \
+    --stat_annotation /data/STAT_db/tree_filter.20240830.dbss.annotation \
     --human_virus_taxlist /data/STAT_db/human_viruses_taxlist.txt \
     --min_gottcha_reads 250 \
     --experiment_id 12354
@@ -286,9 +286,9 @@ nextflow run dhoconno/nvd \
     --samplesheet low_biomass_samples.csv \
     --blast_db /data/blast_db \
     --blast_db_prefix core_nt \
-    --stat_index /data/STAT_db/tree_index.dbs \
-    --stat_dbss /data/STAT_db/tree_filter.dbss \
-    --stat_annotation /data/STAT_db/tree_filter.dbss.annotation \
+    --stat_index /data/STAT_db/tree_index.20240830.dbs \
+    --stat_dbss /data/STAT_db/tree_filter.20240830.dbss \
+    --stat_annotation /data/STAT_db/tree_filter.20240830.dbss.annotation \
     --human_virus_taxlist /data/STAT_db/human_viruses_taxlist.txt \
     --cutoff_percent 0.0001 \
     --tax_stringency 0.5 \
@@ -320,9 +320,9 @@ nextflow run dhoconno/nvd \
     --gottcha2_db /data/gottcha2/gottcha_db.species.fna \
     --blast_db /data/blast_db \
     --blast_db_prefix core_nt \
-    --stat_index /data/STAT_db/tree_index.dbs \
-    --stat_dbss /data/STAT_db/tree_filter.dbss \
-    --stat_annotation /data/STAT_db/tree_filter.dbss.annotation \
+    --stat_index /data/STAT_db/tree_index.20240830.dbs \
+    --stat_dbss /data/STAT_db/tree_filter.20240830.dbss \
+    --stat_annotation /data/STAT_db/tree_filter.20240830.dbss.annotation \
     --human_virus_taxlist /data/STAT_db/human_viruses_taxlist.txt \
     --cutoff_percent 0.01 \
     --tax_stringency 0.9 \
@@ -353,9 +353,9 @@ nextflow run dhoconno/nvd \
     --samplesheet respiratory_samples.csv \
     --blast_db /data/blast_db \
     --blast_db_prefix core_nt \
-    --stat_index /data/STAT_db/tree_index.dbs \
-    --stat_dbss /data/STAT_db/tree_filter.dbss \
-    --stat_annotation /data/STAT_db/tree_filter.dbss.annotation \
+    --stat_index /data/STAT_db/tree_index.20240830.dbs \
+    --stat_dbss /data/STAT_db/tree_filter.20240830.dbss \
+    --stat_annotation /data/STAT_db/tree_filter.20240830.dbss.annotation \
     --human_virus_taxlist /data/STAT_db/human_viruses_taxlist.txt \
     --experiment_id 12357 \
     -params-file custom_virus_families.json
@@ -415,9 +415,9 @@ nextflow run dhoconno/nvd \
     --samplesheet sra_samples.csv \
     --blast_db /data/blast_db \
     --blast_db_prefix core_nt \
-    --stat_index /data/STAT_db/tree_index.dbs \
-    --stat_dbss /data/STAT_db/tree_filter.dbss \
-    --stat_annotation /data/STAT_db/tree_filter.dbss.annotation \
+    --stat_index /data/STAT_db/tree_index.20240830.dbs \
+    --stat_dbss /data/STAT_db/tree_filter.20240830.dbss \
+    --stat_annotation /data/STAT_db/tree_filter.20240830.dbss.annotation \
     --human_virus_taxlist /data/STAT_db/human_viruses_taxlist.txt \
     --max_concurrent_downloads 2 \
     --experiment_id 12359
@@ -451,9 +451,9 @@ nextflow run dhoconno/nvd \
     --gottcha2_db /data/gottcha2/gottcha_db.species.fna \
     --blast_db /data/blast_db \
     --blast_db_prefix core_nt \
-    --stat_index /data/STAT_db/tree_index.dbs \
-    --stat_dbss /data/STAT_db/tree_filter.dbss \
-    --stat_annotation /data/STAT_db/tree_filter.dbss.annotation \
+    --stat_index /data/STAT_db/tree_index.20240830.dbs \
+    --stat_dbss /data/STAT_db/tree_filter.20240830.dbss \
+    --stat_annotation /data/STAT_db/tree_filter.20240830.dbss.annotation \
     --human_virus_taxlist /data/STAT_db/human_viruses_taxlist.txt \
     --max_concurrent_downloads 3 \
     --experiment_id 12360
@@ -485,9 +485,9 @@ nextflow run dhoconno/nvd \
     --samplesheet my_samples.csv \
     --blast_db /data/blast_db \
     --blast_db_prefix core_nt \
-    --stat_index /data/STAT_db/tree_index.dbs \
-    --stat_dbss /data/STAT_db/tree_filter.dbss \
-    --stat_annotation /data/STAT_db/tree_filter.dbss.annotation \
+    --stat_index /data/STAT_db/tree_index.20240830.dbs \
+    --stat_dbss /data/STAT_db/tree_filter.20240830.dbss \
+    --stat_annotation /data/STAT_db/tree_filter.20240830.dbss.annotation \
     --human_virus_taxlist /data/STAT_db/human_viruses_taxlist.txt \
     --results /project/nvd_analysis_2024 \
     --experiment_id 12361
@@ -525,9 +525,9 @@ nextflow run dhoconno/nvd \
     --gottcha2_db /data/gottcha2/gottcha_db.species.fna \
     --blast_db /data/blast_db \
     --blast_db_prefix core_nt \
-    --stat_index /data/STAT_db/tree_index.dbs \
-    --stat_dbss /data/STAT_db/tree_filter.dbss \
-    --stat_annotation /data/STAT_db/tree_filter.dbss.annotation \
+    --stat_index /data/STAT_db/tree_index.20240830.dbs \
+    --stat_dbss /data/STAT_db/tree_filter.20240830.dbss \
+    --stat_annotation /data/STAT_db/tree_filter.20240830.dbss.annotation \
     --human_virus_taxlist /data/STAT_db/human_viruses_taxlist.txt \
     --cleanup false \
     --experiment_id 12363 \
@@ -586,9 +586,9 @@ nextflow run dhoconno/nvd \
     --samplesheet my_samples.csv \
     --blast_db /data/blast_db \
     --blast_db_prefix core_nt \
-    --stat_index /data/STAT_db/tree_index.dbs \
-    --stat_dbss /data/STAT_db/tree_filter.dbss \
-    --stat_annotation /data/STAT_db/tree_filter.dbss.annotation \
+    --stat_index /data/STAT_db/tree_index.20240830.dbs \
+    --stat_dbss /data/STAT_db/tree_filter.20240830.dbss \
+    --stat_annotation /data/STAT_db/tree_filter.20240830.dbss.annotation \
     --human_virus_taxlist /data/STAT_db/human_viruses_taxlist.txt \
     --experiment_id 12366 \
     -params-file labkey_config.json
@@ -623,9 +623,9 @@ nextflow run dhoconno/nvd \
     --gottcha2_db /shared/gottcha2/gottcha_db.species.fna \
     --blast_db /shared/blast_db \
     --blast_db_prefix core_nt \
-    --stat_index /shared/STAT_db/tree_index.dbs \
-    --stat_dbss /shared/STAT_db/tree_filter.dbss \
-    --stat_annotation /shared/STAT_db/tree_filter.dbss.annotation \
+    --stat_index /shared/STAT_db/tree_index.20240830.dbs \
+    --stat_dbss /shared/STAT_db/tree_filter.20240830.dbss \
+    --stat_annotation /shared/STAT_db/tree_filter.20240830.dbss.annotation \
     --human_virus_taxlist /shared/STAT_db/human_viruses_taxlist.txt \
     --experiment_id 12368 \
     -params-file full_enterprise_config.json
@@ -648,9 +648,9 @@ nextflow run dhoconno/nvd \
     --gottcha2_db /staging/gottcha2/gottcha_db.species.fna \
     --blast_db /staging/blast_db \
     --blast_db_prefix core_nt \
-    --stat_index /staging/STAT_db/tree_index.dbs \
-    --stat_dbss /staging/STAT_db/tree_filter.dbss \
-    --stat_annotation /staging/STAT_db/tree_filter.dbss.annotation \
+    --stat_index /staging/STAT_db/tree_index.20240830.dbs \
+    --stat_dbss /staging/STAT_db/tree_filter.20240830.dbss \
+    --stat_annotation /staging/STAT_db/tree_filter.20240830.dbss.annotation \
     --human_virus_taxlist /staging/STAT_db/human_viruses_taxlist.txt \
     --cutoff_percent 0.001 \
     --tax_stringency 0.7 \
@@ -674,9 +674,9 @@ nextflow run dhoconno/nvd \
     --samplesheet clinical_samples.csv \
     --blast_db /data/clinical_blast_db \
     --blast_db_prefix clinical_nt \
-    --stat_index /data/clinical_STAT_db/tree_index.dbs \
-    --stat_dbss /data/clinical_STAT_db/tree_filter.dbss \
-    --stat_annotation /data/clinical_STAT_db/tree_filter.dbss.annotation \
+    --stat_index /data/clinical_STAT_db/tree_index.20240830.dbs \
+    --stat_dbss /data/clinical_STAT_db/tree_filter.20240830.dbss \
+    --stat_annotation /data/clinical_STAT_db/tree_filter.20240830.dbss.annotation \
     --human_virus_taxlist /data/clinical_STAT_db/human_viruses_taxlist.txt \
     --cutoff_percent 0.01 \
     --tax_stringency 0.9 \
@@ -699,9 +699,9 @@ nextflow run dhoconno/nvd \
     --samplesheet outbreak_samples.csv \
     --blast_db /data/outbreak_blast_db \
     --blast_db_prefix outbreak_nt \
-    --stat_index /data/outbreak_STAT_db/tree_index.dbs \
-    --stat_dbss /data/outbreak_STAT_db/tree_filter.dbss \
-    --stat_annotation /data/outbreak_STAT_db/tree_filter.dbss.annotation \
+    --stat_index /data/outbreak_STAT_db/tree_index.20240830.dbs \
+    --stat_dbss /data/outbreak_STAT_db/tree_filter.20240830.dbss \
+    --stat_annotation /data/outbreak_STAT_db/tree_filter.20240830.dbss.annotation \
     --human_virus_taxlist /data/outbreak_STAT_db/human_viruses_taxlist.txt \
     --cutoff_percent 0.0001 \
     --tax_stringency 0.5 \
@@ -727,9 +727,9 @@ nextflow run dhoconno/nvd \
     --samplesheet debug_samples.csv \
     --blast_db /data/blast_db \
     --blast_db_prefix core_nt \
-    --stat_index /data/STAT_db/tree_index.dbs \
-    --stat_dbss /data/STAT_db/tree_filter.dbss \
-    --stat_annotation /data/STAT_db/tree_filter.dbss.annotation \
+    --stat_index /data/STAT_db/tree_index.20240830.dbs \
+    --stat_dbss /data/STAT_db/tree_filter.20240830.dbss \
+    --stat_annotation /data/STAT_db/tree_filter.20240830.dbss.annotation \
     --human_virus_taxlist /data/STAT_db/human_viruses_taxlist.txt \
     --cleanup false \
     --experiment_id 99999 \
@@ -760,9 +760,9 @@ nextflow run dhoconno/nvd \
     --samplesheet single_sample.csv \
     --blast_db /data/blast_db \
     --blast_db_prefix core_nt \
-    --stat_index /data/STAT_db/tree_index.dbs \
-    --stat_dbss /data/STAT_db/tree_filter.dbss \
-    --stat_annotation /data/STAT_db/tree_filter.dbss.annotation \
+    --stat_index /data/STAT_db/tree_index.20240830.dbs \
+    --stat_dbss /data/STAT_db/tree_filter.20240830.dbss \
+    --stat_annotation /data/STAT_db/tree_filter.20240830.dbss.annotation \
     --human_virus_taxlist /data/STAT_db/human_viruses_taxlist.txt \
     --experiment_id 99998
 ```
@@ -789,9 +789,9 @@ nextflow run dhoconno/nvd \
     --gottcha2_db /data/gottcha2/gottcha_db.species.fna \
     --blast_db /data/blast_db \
     --blast_db_prefix core_nt \
-    --stat_index /data/STAT_db/tree_index.dbs \
-    --stat_dbss /data/STAT_db/tree_filter.dbss \
-    --stat_annotation /data/STAT_db/tree_filter.dbss.annotation \
+    --stat_index /data/STAT_db/tree_index.20240830.dbs \
+    --stat_dbss /data/STAT_db/tree_filter.20240830.dbss \
+    --stat_annotation /data/STAT_db/tree_filter.20240830.dbss.annotation \
     --human_virus_taxlist /data/STAT_db/human_viruses_taxlist.txt \
     --experiment_id 99997 \
     -preview
@@ -821,9 +821,9 @@ params {
     gottcha2_db = "/shared/databases/gottcha2/gottcha_db.species.fna"
     blast_db = "/shared/databases/blast_db"
     blast_db_prefix = "core_nt"
-    stat_index = "/shared/databases/STAT_db/tree_index.dbs"
-    stat_dbss = "/shared/databases/STAT_db/tree_filter.dbss"
-    stat_annotation = "/shared/databases/STAT_db/tree_filter.dbss.annotation"
+    stat_index = "/shared/databases/STAT_db/tree_index.20240830.dbs"
+    stat_dbss = "/shared/databases/STAT_db/tree_filter.20240830.dbss"
+    stat_annotation = "/shared/databases/STAT_db/tree_filter.20240830.dbss.annotation"
     human_virus_taxlist = "/shared/databases/STAT_db/human_viruses_taxlist.txt"
     results = "/project/results"
     labkey = true
@@ -862,9 +862,9 @@ nextflow run dhoconno/nvd \
   "gottcha2_db": "/data/gottcha2/gottcha_db.species.fna",
   "blast_db": "/data/blast_db",
   "blast_db_prefix": "core_nt",
-  "stat_index": "/data/STAT_db/tree_index.dbs",
-  "stat_dbss": "/data/STAT_db/tree_filter.dbss",
-  "stat_annotation": "/data/STAT_db/tree_filter.dbss.annotation",
+  "stat_index": "/data/STAT_db/tree_index.20240830.dbs",
+  "stat_dbss": "/data/STAT_db/tree_filter.20240830.dbss",
+  "stat_annotation": "/data/STAT_db/tree_filter.20240830.dbss.annotation",
   "human_virus_taxlist": "/data/STAT_db/human_viruses_taxlist.txt",
   "cutoff_percent": 0.001,
   "tax_stringency": 0.8,
@@ -915,9 +915,9 @@ nextflow run dhoconno/nvd \
     --gottcha2_db /data/gottcha2/gottcha_db.species.fna \
     --blast_db /data/blast_db \
     --blast_db_prefix core_nt \
-    --stat_index /data/STAT_db/tree_index.dbs \
-    --stat_dbss /data/STAT_db/tree_filter.dbss \
-    --stat_annotation /data/STAT_db/tree_filter.dbss.annotation \
+    --stat_index /data/STAT_db/tree_index.20240830.dbs \
+    --stat_dbss /data/STAT_db/tree_filter.20240830.dbss \
+    --stat_annotation /data/STAT_db/tree_filter.20240830.dbss.annotation \
     --human_virus_taxlist /data/STAT_db/human_viruses_taxlist.txt \
     --experiment_id 12372 \
     -work-dir /scratch/nvd_work
@@ -938,9 +938,9 @@ nextflow run dhoconno/nvd \
     --gottcha2_db /data/gottcha2/gottcha_db.species.fna \
     --blast_db /data/blast_db \
     --blast_db_prefix core_nt \
-    --stat_index /data/STAT_db/tree_index.dbs \
-    --stat_dbss /data/STAT_db/tree_filter.dbss \
-    --stat_annotation /data/STAT_db/tree_filter.dbss.annotation \
+    --stat_index /data/STAT_db/tree_index.20240830.dbs \
+    --stat_dbss /data/STAT_db/tree_filter.20240830.dbss \
+    --stat_annotation /data/STAT_db/tree_filter.20240830.dbss.annotation \
     --human_virus_taxlist /data/STAT_db/human_viruses_taxlist.txt \
     --experiment_id 12373 \
     -with-report execution_report.html \

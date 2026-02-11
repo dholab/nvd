@@ -36,7 +36,7 @@ Guides you through the complete setup process:
 - Detects available execution environments (Docker, Apptainer)
 - Helps configure reference database paths
 - Optionally downloads databases (100s of GB)
-- Creates configuration file at `~/.nvd2/config/user.config`
+- Creates configuration file at `~/.nvd/user.config`
 
 **Time:** 5-10 minutes + database downloads (if selected)
 
@@ -90,7 +90,7 @@ Remove NVD2 from your system:
 ```
 
 **What it removes:**
-- Configuration files (`~/.nvd2/`)
+- Configuration files (`~/.nvd/`)
 - Cached pipeline (`~/.nextflow/assets/dhoconno/nvd`)
 - Optionally: databases (asks for confirmation)
 - Shows commands for removing dependencies
@@ -140,14 +140,14 @@ You must have these installed:
 
 ### 2. Configure Databases
 
-Create a configuration file at `~/.nvd2/config/user.config`:
+Create a configuration file at `~/.nvd/user.config`:
 
 ```groovy
 params {
     // STAT database
-    stat_index      = "/path/to/databases/stat_db/tree_index.dbs"
-    stat_dbss       = "/path/to/databases/stat_db/tree_filter.dbss"
-    stat_annotation = "/path/to/databases/stat_db/tree_filter.dbss.annotation"
+    stat_index      = "/path/to/databases/stat_db/tree_index.20240830.dbs"
+    stat_dbss       = "/path/to/databases/stat_db/tree_filter.20240830.dbss"
+    stat_annotation = "/path/to/databases/stat_db/tree_filter.20240830.dbss.annotation"
     human_virus_taxlist = "/path/to/databases/stat_db/human_viruses_taxlist.txt"
     
     // BLAST database
@@ -214,7 +214,7 @@ nvd --help
 or `uv run` (Python-only scripts).
 
 The CLI wrapper automatically:
-- Loads configuration from `~/.nvd2/config/user.config`
+- Loads configuration from `~/.nvd/user.config`
 - Auto-detects your execution profile (Docker/Apptainer/local)
 - Validates inputs before running
 
@@ -226,7 +226,7 @@ You can also run NVD2 with direct Nextflow commands:
 
 ```bash
 nextflow run dhoconno/nvd \
-  -c ~/.nvd2/config/user.config \
+  -c ~/.nvd/user.config \
   -profile docker \
   --samplesheet samples.csv \
   --experiment_id exp001 \
@@ -408,7 +408,7 @@ bash install.sh
 
 The installer:
 - Never requires root/sudo
-- Only writes to `~/.nvd2/` and user-specified database locations
+- Only writes to `~/.nvd/` and user-specified database locations
 - Does not modify system files
 - Does not install dependencies automatically (shows instructions only)
 
@@ -437,7 +437,7 @@ A: `nextflow pull dhoconno/nvd` updates the pipeline. Databases are versioned se
 A: Run `./install.sh --uninstall` and follow the prompts.
 
 **Q: What if installation fails?**  
-A: Run `./install.sh --verify` to see what's missing. Check the error log at `~/.nvd2/install-error.log`.
+A: Run `./install.sh --verify` to see what's missing. Check the error log at `~/.nvd/install-error.log`.
 
 ## License
 

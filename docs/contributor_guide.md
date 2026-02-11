@@ -34,7 +34,7 @@ contribution workflow.
 
 3. **Start developing**:
    ```bash
-   python -c "import nvd2; print('Ready to contribute!')"
+   python -c "import py_nvd; print('Ready to contribute!')"
    ```
 
 **Alternative setups:**
@@ -49,7 +49,7 @@ contribution workflow.
   cd nvd
   uv sync
   source .venv/bin/activate
-  python -c "import nvd2; print('Ready for Python development!')"
+  python -c "import py_nvd; print('Ready for Python development!')"
   ```
 
 - **For system-level reproducibility** (Nix alternative):
@@ -695,7 +695,7 @@ pixi shell
 # Check tool availability (in pixi shell)
 which nextflow
 which samtools
-python -c "import biopython; print('OK')"
+python -c "import Bio; print('OK')"
 ```
 
 **With uv:**
@@ -707,8 +707,8 @@ uv sync
 source .venv/bin/activate
 
 # Check Python dependencies (in activated venv)
-python -c "import biopython; print('OK')"
-python -c "import nvd2; print('Package installed')"
+python -c "import Bio; print('OK')"
+python -c "import py_nvd; print('Package installed')"
 ```
 
 **With Nix:**
