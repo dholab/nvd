@@ -62,6 +62,7 @@ CLI_ONLY_OPTIONS = {
     "params_file",  # Handled specially by CLI, merged into NvdParams
     "preset",  # Resolved to params before passing to Nextflow
     "dry_run",  # CLI behavior flag
+    "no_slack",  # Negated form of slack_enabled
 }
 
 # NvdParams fields that don't need CLI options
@@ -80,6 +81,8 @@ PYDANTIC_NO_CLI_NEEDED = {
     # Typically set via params-file or preset
     "nvd_files",
     "state_dir",
+    # Exposed via negated CLI flag --no-slack
+    "slack_enabled",
 }
 
 
