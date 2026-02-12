@@ -186,22 +186,15 @@ process SCRUB_HOST_READS {
 
     script:
     """
-    # Convert to FASTA for STAT alignment
-    seqkit fq2fa --threads 1 ${fastq} -o ${sample_id}.all_reads.fasta
-    
-    # Get human-aligned read IDs
-    aligns_to \\
+    seqkit fq2fa --threads 1 ${fastq} -o - \\
+    | aligns_to \\
         -db ${human_db} \\
         -num_threads ${task.cpus} \\
-        ${sample_id}.all_reads.fasta \\
-        | cut -f1 > human_read_ids.txt
-    
-    # Remove human reads (inverse grep), preserving original FASTQ headers
-    seqkit grep -v -f human_read_ids.txt ${fastq} \\
+        stdin \\
+    | cut -f1 \\
+    | seqkit grep -v -f - \\
+        ${fastq} \\
         -o ${sample_id}.scrubbed.fastq.gz
-    
-    # Cleanup intermediate file
-    rm ${sample_id}.all_reads.fasta
     """
 }
 
@@ -228,21 +221,14 @@ process SCRUB_HUMAN_READS {
 
     script:
     """
-    # Convert to FASTA for STAT alignment
-    seqkit fq2fa --threads 1 ${fastq} -o ${sample_id}.all_reads.fasta
-    
-    # Get human-aligned read IDs
-    aligns_to \\
+    seqkit fq2fa --threads 1 ${fastq} -o - \\
+    | aligns_to \\
         -db ${human_db} \\
         -num_threads ${task.cpus} \\
-        ${sample_id}.all_reads.fasta \\
-        | cut -f1 > human_read_ids.txt
-    
-    # Remove human reads (inverse grep), preserving original FASTQ headers
-    seqkit grep -v -f human_read_ids.txt ${fastq} \\
+        stdin \\
+    | cut -f1 \\
+    | seqkit grep -v -f - \\
+        ${fastq} \\
         -o ${sample_id}.scrubbed.fastq.gz
-    
-    # Cleanup intermediate file
-    rm ${sample_id}.all_reads.fasta
     """
 }
