@@ -8,6 +8,7 @@ This directory contains JSON Schema definitions for the NVD pipeline.
 |--------|-------------|
 | `nvd-params.v2.3.0.schema.json` | Pipeline parameters schema (version 2.3.0) |
 | `nvd-params.v2.4.0.schema.json` | Pipeline parameters schema (version 2.4.0) |
+| `nvd-params.v2.5.0.schema.json` | Pipeline parameters schema (version 2.5.0) |
 | `nvd-params.latest.schema.json` | Symlink to the current version |
 
 ## Usage
