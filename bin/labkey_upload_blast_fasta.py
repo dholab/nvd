@@ -189,12 +189,6 @@ def main():
                                         },
                                         state_dir=args.state_dir,
                                     )
-                                    # Mark sample as uploaded (terminal state for LabKey runs)
-                                    nvd_state.mark_sample_uploaded(
-                                        sample_id=str(sample_id),
-                                        sample_set_id=args.sample_set_id,
-                                        state_dir=args.state_dir,
-                                    )
                                     # Release sample lock after successful upload
                                     if args.run_id:
                                         nvd_state.release_sample_lock(
