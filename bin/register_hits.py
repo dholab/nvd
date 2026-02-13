@@ -225,7 +225,8 @@ def build_hit_records(
                 sample_set_id=context.sample_set_id,
                 sample_id=context.sample_id,
                 run_date=context.run_date,
-                contig_id=contig_id,
+                sequence_id=contig_id,
+                source="blast",
                 adjusted_taxid=classification.adjusted_taxid,
                 adjusted_taxid_name=classification.adjusted_taxid_name,
                 adjusted_taxid_rank=classification.adjusted_taxid_rank,
@@ -250,7 +251,8 @@ def write_hits_to_path(hits: list[HitRecord], output_path: Path) -> Path:
     """
     # Convert to polars DataFrame
     if not hits:
-        # Create empty DataFrame with correct schema
+        # Create empty DataFrame with correct schema.
+        # Includes contig_id=NULL for backward compatibility (see COALESCE strategy).
         df = pl.DataFrame(
             schema={
                 "hit_key": pl.Utf8,
@@ -260,30 +262,36 @@ def write_hits_to_path(hits: list[HitRecord], output_path: Path) -> Path:
                 "sample_set_id": pl.Utf8,
                 "sample_id": pl.Utf8,
                 "run_date": pl.Utf8,
+                "sequence_id": pl.Utf8,
                 "contig_id": pl.Utf8,
+                "source": pl.Utf8,
                 "adjusted_taxid": pl.Int64,
                 "adjusted_taxid_name": pl.Utf8,
                 "adjusted_taxid_rank": pl.Utf8,
             },
         )
     else:
+        n = len(hits)
         df = pl.DataFrame(
-            [
-                {
-                    "hit_key": h.hit_key,
-                    "sequence_length": h.sequence_length,
-                    "sequence_compressed": h.sequence_compressed,
-                    "gc_content": h.gc_content,
-                    "sample_set_id": h.sample_set_id,
-                    "sample_id": h.sample_id,
-                    "run_date": h.run_date,
-                    "contig_id": h.contig_id,
-                    "adjusted_taxid": h.adjusted_taxid,
-                    "adjusted_taxid_name": h.adjusted_taxid_name,
-                    "adjusted_taxid_rank": h.adjusted_taxid_rank,
-                }
-                for h in hits
-            ],
+            {
+                "hit_key": [h.hit_key for h in hits],
+                "sequence_length": [h.sequence_length for h in hits],
+                "sequence_compressed": [h.sequence_compressed for h in hits],
+                "gc_content": [h.gc_content for h in hits],
+                "sample_set_id": [h.sample_set_id for h in hits],
+                "sample_id": [h.sample_id for h in hits],
+                "run_date": [h.run_date for h in hits],
+                "sequence_id": pl.Series(
+                    "sequence_id",
+                    [h.sequence_id for h in hits],
+                    dtype=pl.Utf8,
+                ),
+                "contig_id": pl.Series("contig_id", [None] * n, dtype=pl.Utf8),
+                "source": [h.source for h in hits],
+                "adjusted_taxid": [h.adjusted_taxid for h in hits],
+                "adjusted_taxid_name": [h.adjusted_taxid_name for h in hits],
+                "adjusted_taxid_rank": [h.adjusted_taxid_rank for h in hits],
+            },
         )
 
     # Ensure parent directory exists

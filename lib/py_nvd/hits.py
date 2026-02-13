@@ -1,9 +1,9 @@
 # ruff: noqa: S608
 """
-Hit management for metagenomic BLAST results.
+Hit management for metagenomic sequence identification.
 
-Provides idempotent hit registration and querying. A "hit" is a contig sequence
-that had BLAST results. Hit keys are computed from canonical sequences
+Provides idempotent hit registration and querying. A "hit" is a sequence
+identified by BLAST or GOTTCHA2. Hit keys are computed from canonical sequences
 (lexicographically smaller of forward/reverse-complement), enabling:
 
 - Cross-run deduplication: same sequence in different runs → same key
@@ -101,6 +101,69 @@ COMPLEMENT = str.maketrans(
     "ACGTacgtNnRYSWKMBDHVryswkmbdhv",
     "TGCAtgcaNnYRSWMKVHDByrswmkvhdb",
 )
+
+# Canonical parquet schema for hit records. This is the target state after
+# compaction normalizes legacy files. Column order matters for readability
+# but not for correctness (DuckDB uses column names, not positions).
+CANONICAL_HIT_SCHEMA: dict[str, pl.DataType] = {
+    "hit_key": pl.Utf8,
+    "sequence_length": pl.Int64,
+    "sequence_compressed": pl.Binary,
+    "gc_content": pl.Float64,
+    "sample_set_id": pl.Utf8,
+    "sample_id": pl.Utf8,
+    "run_date": pl.Utf8,
+    "sequence_id": pl.Utf8,
+    "source": pl.Utf8,
+    "adjusted_taxid": pl.Int64,
+    "adjusted_taxid_name": pl.Utf8,
+    "adjusted_taxid_rank": pl.Utf8,
+}
+
+# Column renames applied during normalization: old_name -> new_name.
+SCHEMA_RENAMES: dict[str, str] = {
+    "contig_id": "sequence_id",
+}
+
+# Default values for columns missing from legacy parquet files.
+SCHEMA_DEFAULTS: dict[str, object] = {
+    "source": "blast",
+    "sequence_id": None,
+}
+
+
+def normalize_schema(df: pl.DataFrame) -> pl.DataFrame:
+    """
+    Normalize a DataFrame to the canonical hit schema.
+
+    Applies column renames (e.g. contig_id -> sequence_id), adds missing
+    columns with default values, and retains a NULL contig_id column for
+    backward compatibility with the DuckDB view's COALESCE/EXCLUDE pattern.
+    This is idempotent — normalizing an already-normalized DataFrame is a
+    no-op.
+
+    Used by compaction to ensure compacted output uses a consistent schema
+    regardless of what schema the input files had.
+    """
+    for old_name, new_name in SCHEMA_RENAMES.items():
+        if old_name in df.columns and new_name not in df.columns:
+            df = df.rename({old_name: new_name})
+
+    for col_name, default_value in SCHEMA_DEFAULTS.items():
+        if col_name not in df.columns:
+            df = df.with_columns(pl.lit(default_value).alias(col_name))
+
+    # Retain contig_id as a NULL column so the DuckDB view's
+    # EXCLUDE (contig_id, sequence_id) + COALESCE pattern always works,
+    # even when reading only compacted files.
+    if "contig_id" not in df.columns:
+        df = df.with_columns(pl.lit(None).cast(pl.Utf8).alias("contig_id"))
+
+    # Select canonical columns plus the transition contig_id stub.
+    output_cols = [c for c in CANONICAL_HIT_SCHEMA if c in df.columns]
+    if "contig_id" not in output_cols:
+        output_cols.append("contig_id")
+    return df.select(output_cols)
 
 
 def is_valid_hit_key(key: str) -> bool:
@@ -279,8 +342,9 @@ def _get_hits_view_sql(glob_pattern: str) -> str:
     return f"""
         CREATE OR REPLACE VIEW hits AS
         SELECT
-            *,
-            COALESCE(month, strftime(run_date::DATE, '%Y-%m')) AS effective_month
+            * EXCLUDE (contig_id, sequence_id),
+            COALESCE(sequence_id, contig_id) AS sequence_id,
+            COALESCE(month::VARCHAR, strftime(run_date::DATE, '%Y-%m')) AS effective_month
         FROM read_parquet('{glob_pattern}', hive_partitioning=true, union_by_name=true)
     """  # SQL uses module constants, not user input
 
@@ -334,8 +398,10 @@ class HitRecord:
     Each row in the parquet file represents one observation of a hit in a sample.
 
     Classification fields (adjusted_taxid, adjusted_taxid_name, adjusted_taxid_rank)
-    contain the consensus taxonomic assignment from LCA analysis. These may be None
-    for hits from older runs that predate classification tracking.
+    contain the consensus taxonomic assignment. For BLAST hits this is the LCA-adjusted
+    classification; for GOTTCHA2 hits this is the direct taxonomic assignment from
+    profiling. These may be None for hits from older runs that predate classification
+    tracking.
     """
 
     hit_key: str
@@ -345,7 +411,8 @@ class HitRecord:
     sample_set_id: str
     sample_id: str
     run_date: str
-    contig_id: str | None
+    sequence_id: str | None
+    source: Literal["blast", "gottcha2"]
     adjusted_taxid: int | None = None
     adjusted_taxid_name: str | None = None
     adjusted_taxid_rank: str | None = None
@@ -368,6 +435,9 @@ class HitRecord:
         assert self.sample_set_id, "sample_set_id cannot be empty"
         assert self.sample_id, "sample_id cannot be empty"
         assert self.run_date, "run_date cannot be empty"
+        assert self.source in ("blast", "gottcha2"), (
+            f"source must be 'blast' or 'gottcha2', got {self.source!r}"
+        )
 
 
 def write_hits_parquet(
@@ -412,7 +482,9 @@ def write_hits_parquet(
     temp_path = sample_dir / ".data.parquet.tmp"
 
     if not hits:
-        # Write empty parquet with correct schema
+        # Write empty parquet with correct schema.
+        # Includes contig_id=NULL for backward compatibility with union_by_name
+        # reads against legacy parquet files (see COALESCE strategy in plan).
         hits_df = pl.DataFrame(
             schema={
                 "hit_key": pl.Utf8,
@@ -422,14 +494,20 @@ def write_hits_parquet(
                 "sample_set_id": pl.Utf8,
                 "sample_id": pl.Utf8,
                 "run_date": pl.Utf8,
+                "sequence_id": pl.Utf8,
                 "contig_id": pl.Utf8,
+                "source": pl.Utf8,
                 "adjusted_taxid": pl.Int64,
                 "adjusted_taxid_name": pl.Utf8,
                 "adjusted_taxid_rank": pl.Utf8,
             },
         )
     else:
-        # Build DataFrame from hit records
+        # Build DataFrame from hit records.
+        # Writes contig_id=NULL alongside sequence_id so that
+        # union_by_name=true always surfaces both columns when reading
+        # a mix of old and new parquet files.
+        n = len(hits)
         hits_df = pl.DataFrame(
             {
                 "hit_key": [h.hit_key for h in hits],
@@ -439,7 +517,13 @@ def write_hits_parquet(
                 "sample_set_id": [h.sample_set_id for h in hits],
                 "sample_id": [h.sample_id for h in hits],
                 "run_date": [h.run_date for h in hits],
-                "contig_id": [h.contig_id for h in hits],
+                "sequence_id": pl.Series(
+                    "sequence_id",
+                    [h.sequence_id for h in hits],
+                    dtype=pl.Utf8,
+                ),
+                "contig_id": pl.Series("contig_id", [None] * n, dtype=pl.Utf8),
+                "source": [h.source for h in hits],
                 "adjusted_taxid": [h.adjusted_taxid for h in hits],
                 "adjusted_taxid_name": [h.adjusted_taxid_name for h in hits],
                 "adjusted_taxid_rank": [h.adjusted_taxid_rank for h in hits],
@@ -709,7 +793,7 @@ def list_hit_observations(
 
     con = query_hits(state_dir)
 
-    sql = "SELECT hit_key, sample_set_id, sample_id, run_date, contig_id FROM hits"
+    sql = "SELECT hit_key, sample_set_id, sample_id, run_date, sequence_id, source FROM hits"
     conditions: list[str] = []
     params: list[str] = []
 
@@ -742,7 +826,8 @@ def list_hit_observations(
             sample_set_id=row[1],
             sample_id=row[2],
             run_date=row[3],
-            contig_id=row[4],
+            sequence_id=row[4],
+            source=row[5],
         )
         for row in rows
     ]
@@ -2422,10 +2507,11 @@ def list_hits_with_observations(
             h.sample_set_id,
             h.sample_id,
             h.run_date,
-            h.contig_id,
+            h.sequence_id,
             h.adjusted_taxid,
             h.adjusted_taxid_name,
-            h.adjusted_taxid_rank
+            h.adjusted_taxid_rank,
+            h.source
         FROM hits h
         INNER JOIN (
             SELECT hit_key, MIN(run_date) as first_seen_date
@@ -2458,7 +2544,8 @@ def list_hits_with_observations(
             sample_set_id=row[5],
             sample_id=row[6],
             run_date=row[7],
-            contig_id=row[8],
+            sequence_id=row[8],
+            source=row[12],
         )
         result.append((hit, observation))
 
@@ -2939,16 +3026,18 @@ def compact_hits(  # noqa: C901, PLR0912, PLR0915  # complexity is inherent to t
                         WHERE strftime(run_date::DATE, '%Y-%m') = '{target_month}'
                     """  # SQL uses module constants, not user input
 
-                # Write sorted, compressed parquet
-                con.execute(
-                    f"""
-                    COPY (
-                        {source_sql}
-                        ORDER BY hit_key, run_date
-                    )
-                    TO '{temp_file}'
-                    (FORMAT parquet, COMPRESSION zstd, ROW_GROUP_SIZE 100000)
-                """,
+                # Read into Polars, normalize schema, then write.
+                # normalize_schema() handles column renames (contig_id ->
+                # sequence_id) and adds missing columns (source) with defaults,
+                # ensuring compacted output always uses the canonical schema.
+                raw_df = con.execute(
+                    f"{source_sql} ORDER BY hit_key, run_date",
+                ).pl()
+                normalized_df = normalize_schema(raw_df)
+                normalized_df.write_parquet(
+                    temp_file,
+                    compression="zstd",
+                    row_group_size=100_000,
                 )
 
                 # Atomic rename
