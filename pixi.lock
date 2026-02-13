@@ -15,7 +15,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/alsa-lib-1.2.15.3-hb03c661_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/apptainer-1.4.5-h6ccafba_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/backports.zstd-1.3.0-py313h18e8e13_0.conda
-      - conda: https://conda.anaconda.org/bioconda/linux-64/bbmap-39.52-he5f24ec_0.conda
+      - conda: https://conda.anaconda.org/bioconda/linux-64/bbmap-39.76-h9b5c0a0_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/binutils-2.45.1-default_h4852527_101.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/binutils_impl_linux-64-2.45.1-default_hfdba357_101.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/binutils_linux-64-2.45.1-default_h4852527_101.conda
@@ -281,7 +281,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/alsa-lib-1.2.15.3-he30d5cf_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/apptainer-1.4.5-hb8e6bbc_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/backports.zstd-1.3.0-py313h3d57138_0.conda
-      - conda: https://conda.anaconda.org/bioconda/linux-aarch64/bbmap-39.52-h44cf5ac_0.conda
+      - conda: https://conda.anaconda.org/bioconda/linux-aarch64/bbmap-39.76-heff9fa3_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/binutils-2.45.1-default_hf1166c9_101.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/binutils_impl_linux-aarch64-2.45.1-default_h5f4c503_101.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/binutils_linux-aarch64-2.45.1-default_hf1166c9_101.conda
@@ -545,7 +545,7 @@ environments:
       osx-64:
       - conda: https://conda.anaconda.org/conda-forge/osx-64/_openmp_mutex-4.5-7_kmp_llvm.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-64/backports.zstd-1.3.0-py313h591e92b_0.conda
-      - conda: https://conda.anaconda.org/bioconda/osx-64/bbmap-39.52-h75f4405_0.conda
+      - conda: https://conda.anaconda.org/bioconda/osx-64/bbmap-39.76-h831ead7_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-64/biom-format-2.1.17-py313hcb05632_1.conda
       - conda: https://conda.anaconda.org/bioconda/osx-64/blast-2.17.0-h53185c9_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-64/brotli-python-1.2.0-py313h8d69aa9_1.conda
@@ -764,7 +764,7 @@ environments:
       osx-arm64:
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/_openmp_mutex-4.5-7_kmp_llvm.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/backports.zstd-1.3.0-py313h48bb75e_0.conda
-      - conda: https://conda.anaconda.org/bioconda/osx-arm64/bbmap-39.52-hd6aff48_0.conda
+      - conda: https://conda.anaconda.org/bioconda/osx-arm64/bbmap-39.76-h2e3bd82_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/biom-format-2.1.17-py313h9734d34_1.conda
       - conda: https://conda.anaconda.org/bioconda/osx-arm64/blast-2.16.0-hb260f6e_5.tar.bz2
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/brotli-python-1.2.0-py313hde1f3bb_1.conda
@@ -1180,52 +1180,52 @@ packages:
   - pkg:pypi/backports-zstd?source=hash-mapping
   size: 244371
   timestamp: 1767045003420
-- conda: https://conda.anaconda.org/bioconda/linux-64/bbmap-39.52-he5f24ec_0.conda
-  sha256: d13a24a5fa4ae14944be45659b8bda9dba073f29c5aaec64aa37857f60986fc0
-  md5: e6eab94b6b57dbf9433e5433949c85e4
+- conda: https://conda.anaconda.org/bioconda/linux-64/bbmap-39.76-h9b5c0a0_0.conda
+  sha256: 06131f3826b3f326462a2c41908ca8169f9107f628a6b96d492c94f465002c78
+  md5: e6fef404e3e6af5c5575fd222cd10488
   depends:
   - bzip2 >=1.0.8,<2.0a0
-  - libgcc >=13
+  - libgcc >=14
   - openjdk >=11.0.1
   - samtools >=1.22.1,<2.0a0
-  license: UC-LBL license (see package)
+  license: BSD-3-Clause-LBNL
   purls: []
-  size: 15870752
-  timestamp: 1763954174010
-- conda: https://conda.anaconda.org/bioconda/linux-aarch64/bbmap-39.52-h44cf5ac_0.conda
-  sha256: ab3b6ef1a4393513aa8707e8a3f5d18aeb0138ee38db7567957729391c49a5cb
-  md5: 8f734c92a2779ffc59a5ad3db366b73f
+  size: 19116163
+  timestamp: 1771814093132
+- conda: https://conda.anaconda.org/bioconda/linux-aarch64/bbmap-39.76-heff9fa3_0.conda
+  sha256: 0c47c6f8f5f040989ea516a6286b8a3501d28b136fbd7d06ace3486e719162ba
+  md5: 66989ba0b23eac52df0a3fd4346b0fb9
   depends:
   - bzip2 >=1.0.8,<2.0a0
-  - libgcc >=13
+  - libgcc >=14
   - openjdk >=11.0.1
-  - samtools >=1.22.1,<2.0a0
-  license: UC-LBL license (see package)
+  - samtools >=1.6,<2.0a0
+  license: BSD-3-Clause-LBNL
   purls: []
-  size: 15787608
-  timestamp: 1763953968001
-- conda: https://conda.anaconda.org/bioconda/osx-64/bbmap-39.52-h75f4405_0.conda
-  sha256: 1f853cb49890019456f6ed3a8040d4c0d251dd1c8804c8cd2fbf1de7a21795f6
-  md5: e1fbadef3f37c614337edae7bad376b3
-  depends:
-  - bzip2 >=1.0.8,<2.0a0
-  - openjdk >=11.0.1
-  - samtools >=1.22.1,<2.0a0
-  license: UC-LBL license (see package)
-  purls: []
-  size: 16223793
-  timestamp: 1763955335359
-- conda: https://conda.anaconda.org/bioconda/osx-arm64/bbmap-39.52-hd6aff48_0.conda
-  sha256: 340a96144075b1009bddec826688c57fc52d012293f232a342d00e2836a8cc54
-  md5: 8da42119638bcffc9801e5f60721e662
+  size: 18360044
+  timestamp: 1771813966939
+- conda: https://conda.anaconda.org/bioconda/osx-64/bbmap-39.76-h831ead7_0.conda
+  sha256: bcf278e51ef98f452c66b56bac94ca1a80132362ead05d3e753cc081884ed467
+  md5: d7632ca3dfcbda644b1058b4be12ef0e
   depends:
   - bzip2 >=1.0.8,<2.0a0
   - openjdk >=11.0.1
-  - samtools >=1.22.1,<2.0a0
-  license: UC-LBL license (see package)
+  - samtools >=1.23,<2.0a0
+  license: BSD-3-Clause-LBNL
   purls: []
-  size: 16241848
-  timestamp: 1763954370621
+  size: 20661065
+  timestamp: 1771814896314
+- conda: https://conda.anaconda.org/bioconda/osx-arm64/bbmap-39.76-h2e3bd82_0.conda
+  sha256: 3c352e52f3b0006e8255e9bac93898909dc00b41294c0e759a7f699b9567a156
+  md5: 187b27496ec677da047b1b54dc7955ab
+  depends:
+  - bzip2 >=1.0.8,<2.0a0
+  - openjdk >=11.0.1
+  - samtools >=1.23,<2.0a0
+  license: BSD-3-Clause-LBNL
+  purls: []
+  size: 18506338
+  timestamp: 1771813779294
 - conda: https://conda.anaconda.org/conda-forge/linux-64/binutils-2.45.1-default_h4852527_101.conda
   sha256: 2851d34944b056d028543f0440fb631aeeff204151ea09589d8d9c13882395de
   md5: 9902aeb08445c03fb31e01beeb173988
@@ -6814,8 +6814,8 @@ packages:
   timestamp: 1770098439599
 - pypi: ./
   name: nvd
-  version: 2.4.0
-  sha256: eb9eb21751582a636725bf28dd13f652505393f6ec43b2ce2b50907e516782b2
+  version: 2.5.0
+  sha256: a815595678f65bb3f2d1d57f51dde2e051fea2a44ca60cea66bada4c5a6595be
   requires_dist:
   - biopython>=1.85
   - blake3>=1.0.8

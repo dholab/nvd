@@ -71,7 +71,7 @@ points to the current version for users who want to track updates automatically.
 For reproducibility, you can reference a specific version:
 
 ```yaml
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dhoconno/nvd/main/schemas/nvd-params.v2.4.0.schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dhoconno/nvd/main/schemas/nvd-params.v2.5.0.schema.json
 ```
 
 ## Validation

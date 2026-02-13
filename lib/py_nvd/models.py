@@ -1191,7 +1191,7 @@ class NvdParams(BaseModel):
         json_schema_extra={"category": "Internal"},
     )
     monoimage: str = Field(
-        "nrminor/nvd:v2.4.0",
+        "nrminor/nvd:v2.5.0",
         description="Container image",
         json_schema_extra={"category": "Internal"},
     )
