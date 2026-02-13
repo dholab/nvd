@@ -374,6 +374,9 @@ class Hit:
         return _from_row(cls, row)
 
 
+HitSource = Literal["blast", "gottcha2"]
+
+
 @dataclass(frozen=True)
 class HitObservation:
     """
@@ -387,7 +390,10 @@ class HitObservation:
     sample_set_id: str  # Links to Run.sample_set_id
     sample_id: str  # Source sample
     run_date: str  # ISO8601
-    contig_id: str | None = None  # Original SPAdes contig ID (for traceability)
+    sequence_id: str | None = (
+        None  # Sequence identifier (contig ID for BLAST, read ID for GOTTCHA2)
+    )
+    source: HitSource | None = None  # Hit provenance ("blast" or "gottcha2")
 
     @classmethod
     def from_row(cls, row: Row) -> Self:

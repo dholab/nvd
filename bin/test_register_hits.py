@@ -216,8 +216,8 @@ class TestBuildHitRecords:
         records = build_hit_records(contigs, classifications, context)
 
         assert len(records) == 2
-        contig_ids = {r.contig_id for r in records}
-        assert contig_ids == {"NODE_1", "NODE_3"}
+        sequence_ids = {r.sequence_id for r in records}
+        assert sequence_ids == {"NODE_1", "NODE_3"}
 
     def test_skips_missing_contigs(self):
         """Skips contig IDs that aren't in the FASTA."""
@@ -236,7 +236,7 @@ class TestBuildHitRecords:
         records = build_hit_records(contigs, classifications, context)
 
         assert len(records) == 1
-        assert records[0].contig_id == "NODE_1"
+        assert records[0].sequence_id == "NODE_1"
 
     def test_empty_hits_returns_empty_list(self):
         """Returns empty list when no contigs have hits."""

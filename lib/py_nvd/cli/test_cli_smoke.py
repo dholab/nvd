@@ -33,12 +33,13 @@ from py_nvd.state import (
 runner = CliRunner()
 
 
-def make_hit_record(
+def make_hit_record(  # noqa: PLR0913
     seq: str,
     sample_set_id: str,
     sample_id: str,
     run_date: str,
-    contig_id: str | None = None,
+    sequence_id: str | None = None,
+    source: str = "blast",
 ) -> HitRecord:
     """Helper to create a HitRecord from a sequence."""
     return HitRecord(
@@ -49,7 +50,8 @@ def make_hit_record(
         sample_set_id=sample_set_id,
         sample_id=sample_id,
         run_date=run_date,
-        contig_id=contig_id,
+        sequence_id=sequence_id,
+        source=source,
     )
 
 

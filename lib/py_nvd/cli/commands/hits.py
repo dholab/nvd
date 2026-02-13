@@ -1556,7 +1556,8 @@ def _print_lookup_rich(hit: Hit, observations: list) -> None:
         table.add_column("Sample")
         table.add_column("Sample Set ID")
         table.add_column("Run")
-        table.add_column("Contig", style="dim")
+        table.add_column("Sequence ID", style="dim")
+        table.add_column("Source", style="dim")
 
         for obs in observations:
             run_id = run_id_map.get(obs.sample_set_id, "-")
@@ -1565,7 +1566,8 @@ def _print_lookup_rich(hit: Hit, observations: list) -> None:
                 obs.sample_id,
                 obs.sample_set_id,
                 run_id,
-                obs.contig_id or "-",
+                obs.sequence_id or "-",
+                obs.source or "-",
             )
 
         console.print(table)
@@ -2027,7 +2029,8 @@ def _export_tabular(
         "sample_set_id": [],
         "run_id": [],
         "sample_id": [],
-        "contig_id": [],
+        "sequence_id": [],
+        "source": [],
         "run_date": [],
     }
 
@@ -2045,7 +2048,8 @@ def _export_tabular(
         data["sample_set_id"].append(obs.sample_set_id)
         data["run_id"].append(run_id_map.get(obs.sample_set_id))
         data["sample_id"].append(obs.sample_id)
-        data["contig_id"].append(obs.contig_id)
+        data["sequence_id"].append(obs.sequence_id)
+        data["source"].append(obs.source)
         data["run_date"].append(obs.run_date)
 
         if include_sequence:
