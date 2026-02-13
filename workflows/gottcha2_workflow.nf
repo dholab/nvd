@@ -3,9 +3,9 @@ include {
     GOTTCHA2_PROFILE_ILLUMINA ;
     GENERATE_FASTA
 } from "../modules/gottcha2"
-include { 
+include {
     VALIDATE_LK_GOTTCHA2
- } from '../subworkflows/validate_lk_gottcha2_lists'
+} from '../subworkflows/validate_lk_gottcha2_lists'
 include {
     BUNDLE_GOTTCHA2_FOR_LABKEY
 } from "../subworkflows/bundle_gottcha2_for_labkey"
@@ -17,10 +17,8 @@ workflow GOTTCHA2_WORKFLOW {
     ch_sample_fastqs // Queue channel: tuple val(sample_id), val(platform), val(read_structure), path(fastq)
 
     main:
-    // Check if GOTTCHA2 workflow should run
-    // Supports: gottcha, all
+    // Validate required params when GOTTCHA2 is selected
     if (params.tools && (params.tools.contains("gottcha") || params.tools.contains("all"))) {
-        // Validate LabKey params required for GOTTCHA2 if LabKey is enabled
         NvdUtils.validateLabkeyGottcha2(params)
     }
 
@@ -32,7 +30,6 @@ workflow GOTTCHA2_WORKFLOW {
             .fromPath("${params.gottcha2_db}{.tax.tsv,.stats,.mmi}")
             .collect()
             .map { files ->
-                // Sort or pick files into the right tuple slots
                 def ref_mmi   = files.find { it.name.endsWith(".mmi") }
                 def stats     = files.find { it.name.endsWith(".stats") }
                 def tax_tsv   = files.find { it.name.endsWith(".tax.tsv") }
@@ -42,7 +39,6 @@ workflow GOTTCHA2_WORKFLOW {
 
     // Gate sample channel: when gottcha2 is disabled, ch_gottcha2_enabled is empty,
     // so the combine produces nothing and no downstream operations execute.
-    // This prevents eager evaluation of countFastq() on samples when gottcha2 isn't selected.
     ch_gottcha2_enabled = params.gottcha2_db
         ? Channel.value(true)
         : Channel.empty()
@@ -53,9 +49,17 @@ workflow GOTTCHA2_WORKFLOW {
             tuple(sample_id, platform, read_structure, fastq)
         }
 
+    // LabKey validation: no-input subworkflow, gated by if (matches stat_blast pattern)
     if (params.labkey) {
         VALIDATE_LK_GOTTCHA2()
     }
+
+    // LabKey data gating: empty channel when disabled, value channel when enabled.
+    // Combining data channels with ch_labkey_gate produces nothing when LabKey is off,
+    // so BUNDLE_GOTTCHA2_FOR_LABKEY never executes without an if/else block.
+    ch_labkey_gate = params.labkey
+        ? Channel.value(true)
+        : Channel.empty()
 
     ch_nanopore_fastqs = ch_gated_samples
         .filter { _sample_id, platform, _read_structure, _fastq -> platform == "nanopore" || platform == "ont" }
@@ -79,25 +83,32 @@ workflow GOTTCHA2_WORKFLOW {
         GOTTCHA2_PROFILE_NANOPORE.out.aligned.mix(GOTTCHA2_PROFILE_ILLUMINA.out.aligned)
     )
 
-    // Map the channel to match multimaps input
     ch_to_remove_multimaps = GENERATE_FASTA.out
-        .map {id, fasta, full_tsv, _log, _lineages -> tuple(id, fasta, full_tsv)}
+        .map { id, fasta, full_tsv, _log, _lineages -> tuple(id, fasta, full_tsv) }
 
     REMOVE_MULTIMAPS(ch_to_remove_multimaps)
 
-    // TODO potential addition of Extracted read deduplication across taxonomic rank
+    // LabKey upload: gated by ch_labkey_gate. When LabKey is disabled, the combine
+    // with ch_labkey_gate produces empty channels, so the bundle never executes.
+    ch_gottcha2_results_for_labkey = GOTTCHA2_PROFILE_NANOPORE.out.full_tsv
+        .mix(GOTTCHA2_PROFILE_ILLUMINA.out.full_tsv)
+        .combine(ch_labkey_gate)
+        .map { sample_id, full_tsv, ref_mmi, stats, tax_tsv, _flag ->
+            tuple(sample_id, full_tsv, ref_mmi, stats, tax_tsv)
+        }
 
-    if (params.labkey) {
+    ch_extracted_for_labkey = REMOVE_MULTIMAPS.out
+        .combine(ch_labkey_gate)
+        .map { sample_id, fasta, full_tsv, _flag ->
+            tuple(sample_id, fasta, full_tsv)
+        }
 
-        BUNDLE_GOTTCHA2_FOR_LABKEY(
-            GOTTCHA2_PROFILE_NANOPORE.out.full_tsv.mix(GOTTCHA2_PROFILE_ILLUMINA.out.full_tsv),
-            REMOVE_MULTIMAPS.out
-        )
-    }
+    BUNDLE_GOTTCHA2_FOR_LABKEY(
+        ch_gottcha2_results_for_labkey,
+        ch_extracted_for_labkey
+    )
 
-    ch_completion = GENERATE_FASTA.out.map{ _results -> "GOTTCHA2 complete!" }
-
-    // ch_completion = VERIFY_WITH_BLAST.out.map{ _results -> "GOTTCHA2 complete!" }
+    ch_completion = GENERATE_FASTA.out.map { _results -> "GOTTCHA2 complete!" }
 
     emit:
     completion = ch_completion
