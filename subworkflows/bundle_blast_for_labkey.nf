@@ -66,17 +66,17 @@ workflow BUNDLE_BLAST_FOR_LABKEY {
         validation_complete
     )
 
-    // Upload BLAST results to LabKey
+    // Upload BLAST results to LabKey (eager: one process invocation per sample)
     LABKEY_UPLOAD_BLAST(
-        PREPARE_BLAST_LABKEY.out.csv.map { _meta, path -> path }.collect(),
+        PREPARE_BLAST_LABKEY.out.csv,
         experiment_id,
         run_id,
         run_context
     )
 
-    // Upload FASTA results to LabKey
+    // Upload FASTA results to LabKey (eager: one process invocation per sample)
     LABKEY_UPLOAD_FASTA(
-        PREPARE_FASTA_LABKEY.out.csv.map { _meta, path -> path }.collect(),
+        PREPARE_FASTA_LABKEY.out.csv,
         experiment_id,
         run_id,
         run_context
@@ -248,19 +248,19 @@ process PREPARE_FASTA_LABKEY {
 }
 
 process LABKEY_UPLOAD_BLAST {
+    tag "${sample_id}"
     label 'low'
 
     secret 'LABKEY_API_KEY'
 
     input:
-    path csv_files        // collected list of all sample CSVs (value channel from .collect())
+    tuple val(sample_id), path(csv_file)  // per-sample prepared CSV from PREPARE_BLAST_LABKEY
     val experiment_id
     val run_id
     tuple val(sample_set_id), val(state_dir)  // run_context: bundled from CHECK_RUN_STATE
 
     output:
     path "blast_labkey_upload.log", emit: log
-    path csv_files        // preserve input files in work dir (no emit label - intentional)
 
     script:
     def sample_set_arg = sample_set_id ? "--sample-set-id '${sample_set_id}'" : ""
@@ -281,12 +281,13 @@ process LABKEY_UPLOAD_BLAST {
 
 // Uploading BLAST FASTA
 process LABKEY_UPLOAD_FASTA {
+    tag "${sample_id}"
     label 'low'
 
     secret 'LABKEY_API_KEY'
 
     input:
-    path csv_files        // collected list of all sample CSVs (value channel from .collect())
+    tuple val(sample_id), path(csv_file)  // per-sample prepared CSV from PREPARE_FASTA_LABKEY
     val experiment_id
     val run_id
     tuple val(sample_set_id), val(state_dir)  // run_context: bundled from CHECK_RUN_STATE
