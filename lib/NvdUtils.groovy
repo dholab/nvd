@@ -27,7 +27,6 @@ class NvdUtils {
     private static final List<String> LABKEY_GOTTCHA2_PARAMS = [
         'labkey_gottcha_fasta_list',
         'labkey_gottcha_full_list',
-        'labkey_gottcha_blast_verified_full_list',
     ]
 
     // -------------------------------------------------------------------------
