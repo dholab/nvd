@@ -1,8 +1,13 @@
 workflow VALIDATE_LK_GOTTCHA2 {
 
+    main:
     VALIDATE_GOTTCHA2_FULL_LIST()
     VALIDATE_GOTTCHA2_FASTA_LIST()
 
+    emit:
+    validated = VALIDATE_GOTTCHA2_FULL_LIST.out
+        .mix(VALIDATE_GOTTCHA2_FASTA_LIST.out)
+        .collect()
 }
 
 /*
