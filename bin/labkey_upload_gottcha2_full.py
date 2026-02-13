@@ -214,12 +214,6 @@ def main():
                     },
                     state_dir=args.state_dir,
                 )
-                # Mark sample as uploaded (terminal state for LabKey runs)
-                nvd_state.mark_sample_uploaded(
-                    sample_id=args.sample,
-                    sample_set_id=args.sample_set_id,
-                    state_dir=args.state_dir,
-                )
                 log_entries.append(
                     f"Recorded upload in state database for sample '{args.sample}'",
                 )

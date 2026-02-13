@@ -87,6 +87,7 @@ class RunRegistration:
     sample_ids: list[str]
     state_dir: str | None = None
     experiment_id: int | None = None
+    upload_types: list[str] | None = None
     lock_ttl_hours: int = DEFAULT_LOCK_TTL_HOURS
     sync: bool = False
     state_available: bool = field(default=True, init=False)
@@ -152,6 +153,7 @@ class RunRegistration:
         try:
             uploaded = get_uploaded_sample_ids(
                 self.sample_ids,
+                upload_types=self.upload_types,
                 state_dir=self.state_dir,
             )
         except Exception as e:
@@ -475,6 +477,12 @@ def parse_args() -> argparse.Namespace:
         help=f"Lock TTL in hours (default: {DEFAULT_LOCK_TTL_HOURS})",
     )
     parser.add_argument(
+        "--upload-types",
+        help="Comma-separated upload types to check for duplicate detection "
+        "(e.g., 'blast,blast_fasta' or 'gottcha2,gottcha2_fasta'). "
+        "When set, only uploads matching these types count as 'already uploaded'.",
+    )
+    parser.add_argument(
         "--sync",
         action="store_true",
         help="Require state database synchronization (fail if unavailable)",
@@ -555,11 +563,18 @@ def main() -> None:
                 )
 
     # Create registration object
+    upload_types = (
+        [t.strip() for t in args.upload_types.split(",") if t.strip()]
+        if args.upload_types
+        else None
+    )
+
     registration = RunRegistration(
         run_id=args.run_id,
         sample_ids=sample_ids,
         state_dir=args.state_dir,
         experiment_id=args.experiment_id,
+        upload_types=upload_types,
         lock_ttl_hours=args.lock_ttl,
         sync=args.sync,
     )

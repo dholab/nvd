@@ -824,30 +824,44 @@ def get_samples_needing_upload(
 
 def get_uploaded_sample_ids(
     sample_ids: list[str],
+    upload_types: list[str] | None = None,
     state_dir: Path | str | None = None,
 ) -> set[str]:
     """
     Check which of the given sample IDs have been uploaded (in any sample set).
 
     Used at run start to warn about/filter already-uploaded samples.
+    Queries the uploads table, which tracks each upload with its type
+    (blast, blast_fasta, gottcha2, gottcha2_fasta). When upload_types is
+    provided, only uploads matching those types count — this prevents one
+    workflow's uploads from causing another workflow's CHECK_RUN_STATE to
+    incorrectly skip samples.
 
     Args:
         sample_ids: List of sample IDs to check
+        upload_types: Optional list of upload types to filter by.
+            When None, any upload counts.
         state_dir: Optional state directory override
 
     Returns:
-        Set of sample IDs that have status='uploaded'
+        Set of sample IDs that have at least one matching upload record
     """
     if not sample_ids:
         return set()
 
     placeholders = ",".join("?" * len(sample_ids))
+    query = (
+        f"SELECT DISTINCT sample_id FROM uploads WHERE sample_id IN ({placeholders})"
+    )
+    params: list[str] = list(sample_ids)
+
+    if upload_types:
+        type_placeholders = ",".join("?" * len(upload_types))
+        query += f" AND upload_type IN ({type_placeholders})"
+        params.extend(upload_types)
+
     with connect(state_dir) as conn:
-        rows = conn.execute(
-            f"SELECT DISTINCT sample_id FROM processed_samples "
-            f"WHERE sample_id IN ({placeholders}) AND status = 'uploaded'",
-            sample_ids,
-        ).fetchall()
+        rows = conn.execute(query, params).fetchall()
         return {row["sample_id"] for row in rows}
 
 
@@ -887,35 +901,6 @@ def complete_sample(
                 raise SampleNotFoundError(sample_id, sample_set_id)
             return False
         return True
-
-
-def mark_sample_uploaded(
-    sample_id: str,
-    sample_set_id: str,
-    state_dir: Path | str | None = None,
-) -> bool:
-    """
-    Mark a sample as uploaded to LabKey.
-
-    This is the terminal state for samples in LabKey-enabled runs.
-    Should be called AFTER record_upload() succeeds.
-
-    Args:
-        sample_id: The sample identifier
-        sample_set_id: The sample set this sample belongs to
-        state_dir: Optional state directory override
-
-    Returns:
-        True if updated, False if sample not found
-    """
-    with connect(state_dir) as conn:
-        cursor = conn.execute(
-            "UPDATE processed_samples SET status = 'uploaded' "
-            "WHERE sample_id = ? AND sample_set_id = ?",
-            (sample_id, sample_set_id),
-        )
-        conn.commit()
-        return cursor.rowcount > 0
 
 
 def record_upload(  # noqa: PLR0913

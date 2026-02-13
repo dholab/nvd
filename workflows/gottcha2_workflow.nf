@@ -34,7 +34,7 @@ workflow GOTTCHA2_WORKFLOW {
         .combine(Channel.value(dirs.taxonomy_dir))
 
     // Check run state upfront (prevents duplicate processing of same sample set)
-    CHECK_RUN_STATE(ch_run_state_input)
+    CHECK_RUN_STATE(ch_run_state_input, "gottcha2,gottcha2_fasta")
 
     // Convert run_context from queue channel to value channel so it can be
     // consumed by multiple processes (hit registration, LabKey uploads, etc.).
