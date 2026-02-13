@@ -337,7 +337,19 @@ def run(
     dedup: bool | None = typer.Option(
         None,
         "--dedup/--no-dedup",
-        help="Deduplicate reads (default: follows --preprocess)",
+        help="Deduplicate reads (umbrella: enables both --dedup-seq and --dedup-pos)",
+        rich_help_panel=PANEL_PREPROCESSING,
+    ),
+    dedup_seq: bool | None = typer.Option(
+        None,
+        "--dedup-seq/--no-dedup-seq",
+        help="Sequence-based deduplication with clumpify (default: follows --dedup)",
+        rich_help_panel=PANEL_PREPROCESSING,
+    ),
+    dedup_pos: bool | None = typer.Option(
+        None,
+        "--dedup-pos/--no-dedup-pos",
+        help="Positional deduplication with samtools markdup (default: follows --dedup)",
         rich_help_panel=PANEL_PREPROCESSING,
     ),
     trim_adapters: bool | None = typer.Option(
@@ -625,6 +637,8 @@ def run(
         "preprocess": preprocess,
         "merge_pairs": merge_pairs,
         "dedup": dedup,
+        "dedup_seq": dedup_seq,
+        "dedup_pos": dedup_pos,
         "trim_adapters": trim_adapters,
         "scrub_host_reads": scrub_host_reads,
         "filter_reads": filter_reads,

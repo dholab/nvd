@@ -146,7 +146,15 @@
     },
     "dedup": {
       "type": "boolean",
-      "description": "Deduplicate sequencing reads"
+      "description": "Deduplicate sequencing reads (umbrella: enables both dedup_seq and dedup_pos)"
+    },
+    "dedup_seq": {
+      "type": "boolean",
+      "description": "Sequence-based deduplication with clumpify (preprocessing)"
+    },
+    "dedup_pos": {
+      "type": "boolean",
+      "description": "Positional deduplication with samtools markdup (after alignment)"
     },
     "trim_adapters": {
       "type": "boolean",

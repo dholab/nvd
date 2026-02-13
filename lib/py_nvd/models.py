@@ -929,7 +929,17 @@ class NvdParams(BaseModel):
     )
     dedup: bool | None = Field(
         None,
-        description="Deduplicate reads",
+        description="Deduplicate reads (umbrella: enables both dedup_seq and dedup_pos)",
+        json_schema_extra={"category": "Preprocessing"},
+    )
+    dedup_seq: bool | None = Field(
+        None,
+        description="Sequence-based deduplication with clumpify (preprocessing)",
+        json_schema_extra={"category": "Preprocessing"},
+    )
+    dedup_pos: bool | None = Field(
+        None,
+        description="Positional deduplication with samtools markdup (after alignment)",
         json_schema_extra={"category": "Preprocessing"},
     )
     trim_adapters: bool | None = Field(

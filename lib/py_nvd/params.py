@@ -281,6 +281,8 @@ def _yaml_analysis_section(
         "preprocess",
         "merge_pairs",
         "dedup",
+        "dedup_seq",
+        "dedup_pos",
         "trim_adapters",
         "scrub_host_reads",
         "filter_reads",

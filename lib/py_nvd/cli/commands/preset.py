@@ -160,7 +160,17 @@ def preset_register(
     dedup: bool | None = typer.Option(
         None,
         "--dedup/--no-dedup",
-        help="Deduplicate reads",
+        help="Deduplicate reads (umbrella: enables both --dedup-seq and --dedup-pos)",
+    ),
+    dedup_seq: bool | None = typer.Option(
+        None,
+        "--dedup-seq/--no-dedup-seq",
+        help="Sequence-based deduplication with clumpify",
+    ),
+    dedup_pos: bool | None = typer.Option(
+        None,
+        "--dedup-pos/--no-dedup-pos",
+        help="Positional deduplication with samtools markdup",
     ),
     trim_adapters: bool | None = typer.Option(
         None,
@@ -225,6 +235,8 @@ def preset_register(
         "entropy": entropy,
         "preprocess": preprocess,
         "dedup": dedup,
+        "dedup_seq": dedup_seq,
+        "dedup_pos": dedup_pos,
         "trim_adapters": trim_adapters,
         "scrub_host_reads": scrub_host_reads,
         "filter_reads": filter_reads,

@@ -1,12 +1,13 @@
 /*
- * Map reads to contigs using minimap2, with optional duplicate marking.
+ * Map reads to contigs using minimap2, with optional positional duplicate marking.
  *
- * When params.dedup is true, the pipeline includes samtools collate/fixmate/markdup
- * to identify and remove PCR/optical duplicates. This is recommended for amplicon
- * or high-duplication libraries but adds computational overhead.
+ * When positional dedup is enabled (dedup_pos or dedup), the pipeline includes
+ * samtools collate/fixmate/markdup to identify and remove PCR/optical duplicates.
+ * This is recommended for amplicon or high-duplication libraries but adds
+ * computational overhead.
  *
- * When params.dedup is false, reads are simply filtered (unmapped removed) and
- * coordinate-sorted, which is sufficient for many viral metagenomics applications.
+ * When positional dedup is disabled, reads are simply filtered (unmapped removed)
+ * and coordinate-sorted, which is sufficient for many viral metagenomics applications.
  *
  * Output is always a coordinate-sorted, indexed BAM file.
  */
@@ -30,7 +31,8 @@ process MAP_READS_TO_CONTIGS {
     def preset = platform == 'ont' || platform == 'sra'
         ? "map-ont"
         : "sr"
-    if (params.dedup) {
+    def should_dedup_pos = params.dedup_pos ?: params.dedup ?: params.preprocess
+    if (should_dedup_pos) {
         """
         minimap2 -ax ${preset} -t ${task.cpus} ${contigs} ${reads} \\
         | samtools view -b -F 4 \\
