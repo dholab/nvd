@@ -6814,8 +6814,8 @@ packages:
   timestamp: 1770098439599
 - pypi: ./
   name: nvd
-  version: 2.4.0
-  sha256: 9f831455ecae73a266562a661e14552aa24a80a90c7fd8d4ecdb951e24022ac2
+  version: 2.5.0
+  sha256: 2c1d48f60c4e619ef9ba2688293df5c56c504d75e3f002b293b05da99f84cd32
   requires_dist:
   - biopython>=1.85
   - blake3>=1.0.8

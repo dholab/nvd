@@ -7,7 +7,7 @@ authors = [
   { name = "William Gardner", email = "wkgardner@wisc.edu" },
 ]
 requires-python = ">= 3.11, < 3.14"
-version = "2.4.0"
+version = "2.5.0"
 dependencies = [
   "biopython>=1.85",
   "blake3>=1.0.8",
