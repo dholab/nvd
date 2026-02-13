@@ -25,6 +25,16 @@ def parse_args():
         help="Sample set ID for upload tracking",
     )
     parser.add_argument(
+        "--state-dir",
+        required=False,
+        help="State directory for upload tracking database",
+    )
+    parser.add_argument(
+        "--run-id",
+        required=False,
+        help="Pipeline run ID for provenance tracking",
+    )
+    parser.add_argument(
         "--labkey-server",
         required=True,
         help="LabKey server address (e.g., labkey.org)",
@@ -52,7 +62,9 @@ def main():
         f"GOTTCHA2 Upload Log - {datetime.now()}",
         f"Sample: {args.sample}",
         f"Experiment: {args.experiment}",
+        f"Run ID: {args.run_id or 'not provided'}",
         f"Sample Set ID: {args.sample_set_id or 'not provided'}",
+        f"State Dir: {args.state_dir or 'default'}",
         f"Server: {args.labkey_server}",
         f"Project: {args.labkey_project_name}",
         f"Schema: {args.labkey_schema}",
@@ -70,6 +82,7 @@ def main():
                 args.sample,
                 upload_type="gottcha2",
                 upload_target="labkey",
+                state_dir=args.state_dir,
             ):
                 log_entries.append(
                     f"SKIP: Sample '{args.sample}' was already uploaded to LabKey in a previous run.",
@@ -199,11 +212,13 @@ def main():
                         "table_name": args.table_name,
                         "records_uploaded": total_uploaded,
                     },
+                    state_dir=args.state_dir,
                 )
                 # Mark sample as uploaded (terminal state for LabKey runs)
                 nvd_state.mark_sample_uploaded(
                     sample_id=args.sample,
                     sample_set_id=args.sample_set_id,
+                    state_dir=args.state_dir,
                 )
                 log_entries.append(
                     f"Recorded upload in state database for sample '{args.sample}'",

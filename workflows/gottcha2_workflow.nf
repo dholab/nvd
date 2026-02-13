@@ -78,13 +78,6 @@ workflow GOTTCHA2_WORKFLOW {
         VALIDATE_LK_GOTTCHA2()
     }
 
-    // LabKey data gating: empty channel when disabled, value channel when enabled.
-    // Combining data channels with ch_labkey_gate produces nothing when LabKey is off,
-    // so BUNDLE_GOTTCHA2_FOR_LABKEY never executes without an if/else block.
-    ch_labkey_gate = params.labkey
-        ? Channel.value(true)
-        : Channel.empty()
-
     ch_nanopore_fastqs = ch_gated_samples
         .filter { _sample_id, platform, _read_structure, _fastq -> platform == "nanopore" || platform == "ont" }
         .map { sample_id, _platform, _read_structure, fastq -> tuple(sample_id, file(fastq)) }
@@ -123,29 +116,31 @@ workflow GOTTCHA2_WORKFLOW {
 
     REGISTER_GOTTCHA2_HITS(ch_register_gottcha2_input)
 
-    // LabKey upload: gated by ch_labkey_gate. When LabKey is disabled, the combine
-    // with ch_labkey_gate produces empty channels, so the bundle never executes.
-    ch_gottcha2_results_for_labkey = GOTTCHA2_PROFILE_NANOPORE.out.full_tsv
-        .mix(GOTTCHA2_PROFILE_ILLUMINA.out.full_tsv)
-        .combine(ch_labkey_gate)
-        .map { sample_id, full_tsv, ref_mmi, stats, tax_tsv, _flag ->
-            tuple(sample_id, full_tsv, ref_mmi, stats, tax_tsv)
-        }
-
-    ch_extracted_for_labkey = REMOVE_MULTIMAPS.out
-        .combine(ch_labkey_gate)
-        .map { sample_id, fasta, full_tsv, _flag ->
-            tuple(sample_id, fasta, full_tsv)
-        }
-
-    BUNDLE_GOTTCHA2_FOR_LABKEY(
-        ch_gottcha2_results_for_labkey,
-        ch_extracted_for_labkey
-    )
-
     if (params.labkey) {
+        // Build validation gate: both state check and LabKey validation must pass
+        // before any uploads proceed. Matches stat_blast_workflow pattern.
+        ch_validation_gate = CHECK_RUN_STATE.out.ready
+            .combine(VALIDATE_LK_GOTTCHA2.out.validated)
+            .map { _ready, _validated -> true }
+            .first()
+
+        // LabKey upload channels
+        ch_gottcha2_results_for_labkey = GOTTCHA2_PROFILE_NANOPORE.out.full_tsv
+            .mix(GOTTCHA2_PROFILE_ILLUMINA.out.full_tsv)
+
+        ch_extracted_for_labkey = REMOVE_MULTIMAPS.out
+
+        BUNDLE_GOTTCHA2_FOR_LABKEY(
+            ch_gottcha2_results_for_labkey,
+            ch_extracted_for_labkey,
+            params.experiment_id,
+            workflow.runName,
+            ch_validation_gate,
+            ch_run_context
+        )
+
         // Gate run completion on LabKey bundle completion
-        ch_run_complete_gate = BUNDLE_GOTTCHA2_FOR_LABKEY.out.collect()
+        ch_run_complete_gate = BUNDLE_GOTTCHA2_FOR_LABKEY.out.upload_log.collect()
             .map { _logs -> true }
     } else {
         // Gate run completion on REGISTER_GOTTCHA2_HITS completion (all samples)
