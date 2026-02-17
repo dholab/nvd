@@ -10,7 +10,7 @@ include {
 include {
     BUNDLE_GOTTCHA2_FOR_LABKEY
 } from "../subworkflows/bundle_gottcha2_for_labkey"
-include { REMOVE_MULTIMAPS } from "../modules/bbmap"
+include { SANITIZE_EXTRACTED_FASTA } from "../modules/bbmap"
 include { CHECK_RUN_STATE; COMPLETE_RUN } from "../modules/utils"
 
 
@@ -100,14 +100,14 @@ workflow GOTTCHA2_WORKFLOW {
         GOTTCHA2_PROFILE_NANOPORE.out.aligned.mix(GOTTCHA2_PROFILE_ILLUMINA.out.aligned)
     )
 
-    ch_to_remove_multimaps = GENERATE_FASTA.out
+    ch_extracted_fasta = GENERATE_FASTA.out
         .map { id, fasta, full_tsv, _log, _lineages -> tuple(id, fasta, full_tsv) }
 
-    REMOVE_MULTIMAPS(ch_to_remove_multimaps)
+    SANITIZE_EXTRACTED_FASTA(ch_extracted_fasta)
 
     // Register GOTTCHA2 hits with idempotent keys in the state database.
-    // Join extracted FASTA (post-multimap removal) with run context and hits_dir.
-    ch_register_gottcha2_input = REMOVE_MULTIMAPS.out
+    // Join sanitized FASTA with run context and hits_dir.
+    ch_register_gottcha2_input = SANITIZE_EXTRACTED_FASTA.out
         .combine(ch_run_context)
         .combine(ch_hits_dir)
         .map { sample_id, fasta, full_tsv, sample_set_id, state_dir, hits_dir ->
@@ -128,7 +128,7 @@ workflow GOTTCHA2_WORKFLOW {
         ch_gottcha2_results_for_labkey = GOTTCHA2_PROFILE_NANOPORE.out.full_tsv
             .mix(GOTTCHA2_PROFILE_ILLUMINA.out.full_tsv)
 
-        ch_extracted_for_labkey = REMOVE_MULTIMAPS.out
+        ch_extracted_for_labkey = SANITIZE_EXTRACTED_FASTA.out
 
         BUNDLE_GOTTCHA2_FOR_LABKEY(
             ch_gottcha2_results_for_labkey,
