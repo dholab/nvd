@@ -14,7 +14,7 @@ Register GOTTCHA2 hits to parquet files for crash-safe storage.
 
 This script is the GOTTCHA2 counterpart to register_hits.py (BLAST). It:
 1. Parses CLI arguments
-2. Reads the extracted FASTA from GOTTCHA2 (post-REMOVE_MULTIMAPS)
+2. Reads the extracted FASTA from GOTTCHA2 (post-SANITIZE_EXTRACTED_FASTA)
 3. Extracts taxonomy from FASTA headers (LEVEL, NAME, TAXID)
 4. Computes hit keys and metadata
 5. Writes hits atomically to a per-sample parquet file
@@ -178,6 +178,66 @@ def parse_gottcha2_fasta(
     return results
 
 
+# Priority ranking for taxonomic levels: lower value = more specific.
+# GOTTCHA2's -ef extraction duplicates each read across all levels; we keep
+# only the most specific classification per read (strain > species).
+_LEVEL_PRIORITY: dict[str, int] = {"strain": 0, "species": 1}
+
+
+def dedupe_by_taxonomic_level(
+    parsed_entries: list[tuple[str, str, Gottcha2Classification]],
+) -> list[tuple[str, str, Gottcha2Classification]]:
+    """
+    Collapse parsed FASTA entries to one taxonomic level per read.
+
+    GOTTCHA2's ``-ef`` extraction emits each aligned read once per taxonomic
+    level (strain, species, genus, family, order, class, phylum, superkingdom),
+    inflating the entry count up to 8x. This function keeps only the most
+    specific classification per read:
+
+        1. STRAIN entries present  -> keep only STRAIN
+        2. No strain, has SPECIES  -> keep only SPECIES
+        3. Neither                 -> discard (no informative sub-species classification)
+
+    Read identity is the token before the first ``|`` in the sequence ID::
+
+        {read_name}{mate}|{ref}:{start}..{end}
+
+    The same read appears at multiple taxonomic levels with an identical key,
+    so this token serves as the grouping key for deduplication.
+
+    This mirrors the selection logic in ``labkey_upload_gottcha2_fasta.py``
+    (``select_records_for_upload``) so that hit registration and LabKey uploads
+    agree on which entries represent each read.
+
+    Args:
+        parsed_entries: List of ``(sequence_id, sequence, classification)``
+            tuples from :func:`parse_gottcha2_fasta`.
+
+    Returns:
+        Filtered list with at most one taxonomic level per read.
+    """
+    per_read: dict[str, dict[str, list[tuple[str, str, Gottcha2Classification]]]] = {}
+
+    for entry in parsed_entries:
+        sequence_id, _seq, classification = entry
+        read_key = sequence_id.split("|", 1)[0]
+        rank = classification.rank.lower()
+
+        if rank not in _LEVEL_PRIORITY:
+            continue
+
+        bucket = per_read.setdefault(read_key, {})
+        bucket.setdefault(rank, []).append(entry)
+
+    selected: list[tuple[str, str, Gottcha2Classification]] = []
+    for levels in per_read.values():
+        best_rank = min(levels, key=lambda r: _LEVEL_PRIORITY[r])
+        selected.extend(levels[best_rank])
+
+    return selected
+
+
 def build_gottcha2_hit_records(
     parsed_entries: list[tuple[str, str, Gottcha2Classification]],
     context: Gottcha2HitRegistrationContext,
@@ -320,7 +380,7 @@ def main() -> None:
         "--fasta",
         type=Path,
         required=True,
-        help="Path to GOTTCHA2 extracted FASTA file (post-REMOVE_MULTIMAPS)",
+        help="Path to GOTTCHA2 extracted FASTA file (post-SANITIZE_EXTRACTED_FASTA)",
     )
     parser.add_argument(
         "--full-tsv",
@@ -424,12 +484,22 @@ def main() -> None:
     parsed_entries = parse_gottcha2_fasta(args.fasta)
     logger.info(f"Found {len(parsed_entries)} sequences with taxonomy")
 
+    # Collapse to one taxonomic level per read (strain > species, discard higher).
+    # GOTTCHA2 -ef duplicates each read across up to 8 levels; this brings parity
+    # with what labkey_upload_gottcha2_fasta.py sends to LabKey.
+    deduped_entries = dedupe_by_taxonomic_level(parsed_entries)
+    removed = len(parsed_entries) - len(deduped_entries)
+    logger.info(
+        f"After taxonomic dedup: {len(deduped_entries)} entries "
+        f"({removed} duplicates removed)"
+    )
+
     # Log the full TSV path for provenance
     logger.info(f"GOTTCHA2 profile TSV: {args.full_tsv}")
 
     # Build hit records
     hit_records = build_gottcha2_hit_records(
-        parsed_entries=parsed_entries,
+        parsed_entries=deduped_entries,
         context=context,
     )
     logger.info(f"Computed {len(hit_records)} hit records")
