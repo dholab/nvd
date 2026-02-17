@@ -6,8 +6,8 @@ workflow PREPROCESS_READS {
     ch_fastq_tuple  // tuple(sample_id, platform, read_structure, reads)
 
     main:
-    // Resolve optional step flags: explicit param wins, otherwise fall back to master switch
-    def should_dedup = params.dedup ?: params.preprocess
+    // Resolve optional step flags: explicit param wins, then umbrella, then master switch
+    def should_dedup = params.dedup_seq ?: params.dedup ?: params.preprocess
     def should_trim = params.trim_adapters ?: params.preprocess
     def should_scrub = params.scrub_host_reads ?: params.preprocess
     def should_filter = params.filter_reads ?: params.preprocess
