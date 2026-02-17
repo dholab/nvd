@@ -1,15 +1,17 @@
 include {
     GOTTCHA2_PROFILE_NANOPORE ;
     GOTTCHA2_PROFILE_ILLUMINA ;
-    GENERATE_FASTA
+    GENERATE_FASTA ;
+    REGISTER_GOTTCHA2_HITS
 } from "../modules/gottcha2"
-include { 
+include {
     VALIDATE_LK_GOTTCHA2
- } from '../subworkflows/validate_lk_gottcha2_lists'
+} from '../subworkflows/validate_lk_gottcha2_lists'
 include {
     BUNDLE_GOTTCHA2_FOR_LABKEY
 } from "../subworkflows/bundle_gottcha2_for_labkey"
-include { REMOVE_MULTIMAPS } from "../modules/bbmap"
+include { SANITIZE_EXTRACTED_FASTA } from "../modules/bbmap"
+include { CHECK_RUN_STATE; COMPLETE_RUN } from "../modules/utils"
 
 
 workflow GOTTCHA2_WORKFLOW {
@@ -17,12 +19,32 @@ workflow GOTTCHA2_WORKFLOW {
     ch_sample_fastqs // Queue channel: tuple val(sample_id), val(platform), val(read_structure), path(fastq)
 
     main:
-    // Check if GOTTCHA2 workflow should run
-    // Supports: gottcha, all
+    // Validate required params when GOTTCHA2 is selected
     if (params.tools && (params.tools.contains("gottcha") || params.tools.contains("all"))) {
-        // Validate LabKey params required for GOTTCHA2 if LabKey is enabled
         NvdUtils.validateLabkeyGottcha2(params)
     }
+
+    // Resolve directories for stateful vs stateless mode.
+    // Returns absolute path strings (not Nextflow path objects) to avoid staging.
+    dirs = NvdDirs.resolve(params, log)
+
+    // Combine samplesheet, state_dir, and taxonomy_dir into a tuple for CHECK_RUN_STATE.
+    ch_run_state_input = Channel.fromPath(params.samplesheet)
+        .combine(Channel.value(dirs.state_dir))
+        .combine(Channel.value(dirs.taxonomy_dir))
+
+    // Check run state upfront (prevents duplicate processing of same sample set)
+    CHECK_RUN_STATE(ch_run_state_input, "gottcha2,gottcha2_fasta")
+
+    // Convert run_context from queue channel to value channel so it can be
+    // consumed by multiple processes (hit registration, LabKey uploads, etc.).
+    ch_run_context = CHECK_RUN_STATE.out.run_context.first()
+
+    // Extract state_dir from run_context for state-tracking processes
+    ch_state_dir = ch_run_context.map { _sample_set_id, state_dir -> state_dir }
+
+    // Create value channel for hits_dir
+    ch_hits_dir = Channel.value(dirs.hits_dir)
 
     // Guard channel declaration with ternary fallback to Channel.empty().
     // When --tools doesn't include 'gottcha', this param is null.
@@ -32,7 +54,6 @@ workflow GOTTCHA2_WORKFLOW {
             .fromPath("${params.gottcha2_db}{.tax.tsv,.stats,.mmi}")
             .collect()
             .map { files ->
-                // Sort or pick files into the right tuple slots
                 def ref_mmi   = files.find { it.name.endsWith(".mmi") }
                 def stats     = files.find { it.name.endsWith(".stats") }
                 def tax_tsv   = files.find { it.name.endsWith(".tax.tsv") }
@@ -42,7 +63,6 @@ workflow GOTTCHA2_WORKFLOW {
 
     // Gate sample channel: when gottcha2 is disabled, ch_gottcha2_enabled is empty,
     // so the combine produces nothing and no downstream operations execute.
-    // This prevents eager evaluation of countFastq() on samples when gottcha2 isn't selected.
     ch_gottcha2_enabled = params.gottcha2_db
         ? Channel.value(true)
         : Channel.empty()
@@ -53,6 +73,7 @@ workflow GOTTCHA2_WORKFLOW {
             tuple(sample_id, platform, read_structure, fastq)
         }
 
+    // LabKey validation: no-input subworkflow, gated by if (matches stat_blast pattern)
     if (params.labkey) {
         VALIDATE_LK_GOTTCHA2()
     }
@@ -79,25 +100,62 @@ workflow GOTTCHA2_WORKFLOW {
         GOTTCHA2_PROFILE_NANOPORE.out.aligned.mix(GOTTCHA2_PROFILE_ILLUMINA.out.aligned)
     )
 
-    // Map the channel to match multimaps input
-    ch_to_remove_multimaps = GENERATE_FASTA.out
-        .map {id, fasta, full_tsv, _log, _lineages -> tuple(id, fasta, full_tsv)}
+    ch_extracted_fasta = GENERATE_FASTA.out
+        .map { id, fasta, full_tsv, _log, _lineages -> tuple(id, fasta, full_tsv) }
 
-    REMOVE_MULTIMAPS(ch_to_remove_multimaps)
+    SANITIZE_EXTRACTED_FASTA(ch_extracted_fasta)
 
-    // TODO potential addition of Extracted read deduplication across taxonomic rank
+    // Register GOTTCHA2 hits with idempotent keys in the state database.
+    // Join sanitized FASTA with run context and hits_dir.
+    ch_register_gottcha2_input = SANITIZE_EXTRACTED_FASTA.out
+        .combine(ch_run_context)
+        .combine(ch_hits_dir)
+        .map { sample_id, fasta, full_tsv, sample_set_id, state_dir, hits_dir ->
+            tuple(sample_id, fasta, full_tsv, sample_set_id, state_dir, hits_dir)
+        }
+
+    REGISTER_GOTTCHA2_HITS(ch_register_gottcha2_input)
 
     if (params.labkey) {
+        // Build validation gate: both state check and LabKey validation must pass
+        // before any uploads proceed. Matches stat_blast_workflow pattern.
+        ch_validation_gate = CHECK_RUN_STATE.out.ready
+            .combine(VALIDATE_LK_GOTTCHA2.out.validated)
+            .map { _ready, _validated -> true }
+            .first()
+
+        // LabKey upload channels
+        ch_gottcha2_results_for_labkey = GOTTCHA2_PROFILE_NANOPORE.out.full_tsv
+            .mix(GOTTCHA2_PROFILE_ILLUMINA.out.full_tsv)
+
+        ch_extracted_for_labkey = SANITIZE_EXTRACTED_FASTA.out
 
         BUNDLE_GOTTCHA2_FOR_LABKEY(
-            GOTTCHA2_PROFILE_NANOPORE.out.full_tsv.mix(GOTTCHA2_PROFILE_ILLUMINA.out.full_tsv),
-            REMOVE_MULTIMAPS.out
+            ch_gottcha2_results_for_labkey,
+            ch_extracted_for_labkey,
+            params.experiment_id,
+            workflow.runName,
+            ch_validation_gate,
+            ch_run_context
         )
+
+        // Gate run completion on LabKey bundle completion
+        ch_run_complete_gate = BUNDLE_GOTTCHA2_FOR_LABKEY.out.upload_log.collect()
+            .map { _logs -> true }
+    } else {
+        // Gate run completion on REGISTER_GOTTCHA2_HITS completion (all samples)
+        ch_run_complete_gate = REGISTER_GOTTCHA2_HITS.out.collect()
+            .map { _logs -> true }
     }
 
-    ch_completion = GENERATE_FASTA.out.map{ _results -> "GOTTCHA2 complete!" }
+    // Mark the run as completed in the state database
+    COMPLETE_RUN(
+        ch_run_complete_gate,
+        ch_state_dir,
+        "completed"
+    )
 
-    // ch_completion = VERIFY_WITH_BLAST.out.map{ _results -> "GOTTCHA2 complete!" }
+    ch_completion = GENERATE_FASTA.out.map { _results -> "GOTTCHA2 complete!" }
 
     emit:
     completion = ch_completion

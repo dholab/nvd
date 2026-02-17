@@ -36,7 +36,7 @@ workflow {
     }
 
     // GOTTCHA2 workflow
-    def gottcha_token = GOTTCHA2_WORKFLOW(GATHER_READS.out).completion
+    def gottcha_token = GOTTCHA2_WORKFLOW(PREPROCESS_READS.out).completion
     def start_clumpify = stat_blast_token.mix(gottcha_token).collect().map { true }
 
     // CLUMPIFY workflow  

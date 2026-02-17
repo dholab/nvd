@@ -78,7 +78,8 @@ def make_hit_record(  # noqa: PLR0913
     sample_set_id: str,
     sample_id: str,
     run_date: str,
-    contig_id: str | None = None,
+    sequence_id: str | None = None,
+    source: str = "blast",
     adjusted_taxid: int | None = None,
     adjusted_taxid_name: str | None = None,
     adjusted_taxid_rank: str | None = None,
@@ -90,7 +91,8 @@ def make_hit_record(  # noqa: PLR0913
         sample_set_id: The sample set identifier.
         sample_id: The sample identifier.
         run_date: ISO 8601 timestamp of the run.
-        contig_id: Optional contig identifier.
+        sequence_id: Optional sequence identifier (contig ID for BLAST, read ID for GOTTCHA2).
+        source: Hit provenance ("blast" or "gottcha2").
         adjusted_taxid: Optional taxonomic ID from LCA classification.
         adjusted_taxid_name: Optional taxonomic name (e.g., "Influenza A virus").
         adjusted_taxid_rank: Optional taxonomic rank (e.g., "species").
@@ -103,7 +105,8 @@ def make_hit_record(  # noqa: PLR0913
         sample_set_id=sample_set_id,
         sample_id=sample_id,
         run_date=run_date,
-        contig_id=contig_id,
+        sequence_id=sequence_id,
+        source=source,
         adjusted_taxid=adjusted_taxid,
         adjusted_taxid_name=adjusted_taxid_name,
         adjusted_taxid_rank=adjusted_taxid_rank,
@@ -2377,7 +2380,8 @@ class TestCompactHits:
             sample_set_id="set-new",
             sample_id="sample-new",
             run_date="2024-01-20",
-            contig_id="contig-new",
+            sequence_id="contig-new",
+            source="blast",
             adjusted_taxid=12345,
             adjusted_taxid_name="Test virus",
             adjusted_taxid_rank="species",

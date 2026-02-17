@@ -32,9 +32,9 @@ from typing import TextIO
 
 # Lazy import so --no_upload works without LabKey client installed
 try:
-    from labkey.api_wrapper import APIWrapper  # type: ignore
+    from labkey.api_wrapper import APIWrapper
 except Exception:
-    APIWrapper = None
+    APIWrapper = None  # ty:ignore[invalid-assignment]
 
 
 # ----------------------------- FASTA parsing -----------------------------
@@ -193,6 +193,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Sample set ID for upload tracking",
     )
     p.add_argument(
+        "--state_dir",
+        required=False,
+        help="State directory for upload tracking database",
+    )
+    p.add_argument(
         "--output_tsv",
         required=True,
         help="Path to write TSV (file path only).",
@@ -248,6 +253,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 args.sample_id,
                 upload_type="gottcha2_fasta",
                 upload_target="labkey",
+                state_dir=args.state_dir,
             ):
                 print(
                     f"[INFO] SKIP: Sample '{args.sample_id}' was already uploaded to LabKey in a previous run.",
@@ -355,11 +361,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                                 "list_name": args.list_name,
                                 "records_uploaded": total_uploaded,
                             },
-                        )
-                        # Mark sample as uploaded (terminal state for LabKey runs)
-                        nvd_state.mark_sample_uploaded(
-                            sample_id=args.sample_id,
-                            sample_set_id=args.sample_set_id,
+                            state_dir=args.state_dir,
                         )
                         print(
                             f"[INFO] Recorded upload in state database for sample '{args.sample_id}'",

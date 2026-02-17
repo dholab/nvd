@@ -93,7 +93,7 @@ workflow STAT_BLAST_WORKFLOW {
     // Check run state upfront (prevents duplicate processing of same sample set)
     // Reads sample IDs directly from samplesheet for immediate validation
     // Emits run_context tuple: [sample_set_id, state_dir] for downstream upload processes
-    CHECK_RUN_STATE(ch_run_state_input)
+    CHECK_RUN_STATE(ch_run_state_input, "blast,blast_fasta")
 
     if (params.labkey) {
         VALIDATE_LK_BLAST()

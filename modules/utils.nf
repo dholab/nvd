@@ -26,6 +26,7 @@ process CHECK_RUN_STATE {
 
     input:
     tuple path(samplesheet), val(state_dir), val(taxonomy_dir)
+    val upload_types  // Comma-separated upload types for duplicate detection (e.g., "blast,blast_fasta")
 
     output:
     val true, emit: ready
@@ -37,6 +38,7 @@ process CHECK_RUN_STATE {
     def stat_db_arg = params.stat_db_version ? "--stat-db-version '${params.stat_db_version}'" : ""
     def state_dir_arg = state_dir ? "--state-dir '${state_dir}'" : ""
     def taxonomy_dir_arg = taxonomy_dir ? "--taxonomy-dir '${taxonomy_dir}'" : ""
+    def upload_types_arg = upload_types ? "--upload-types '${upload_types}'" : ""
     """
     check_run_state.py \\
         --verbose \\
@@ -46,7 +48,8 @@ process CHECK_RUN_STATE {
         ${taxonomy_dir_arg} \\
         ${exp_arg} \\
         ${blast_db_arg} \\
-        ${stat_db_arg}
+        ${stat_db_arg} \\
+        ${upload_types_arg}
     """
 }
 

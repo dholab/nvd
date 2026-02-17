@@ -288,9 +288,11 @@ process CLUMP_READS {
 
 }
 
-process REMOVE_MULTIMAPS {
+process SANITIZE_EXTRACTED_FASTA {
 
-    /* */
+    /* Reformat GOTTCHA2 extracted FASTA for downstream consumption.
+     * Taxonomic-level deduplication (strain > species) is handled by
+     * each consumer: register_gottcha2_hits.py and labkey_upload_gottcha2_fasta.py. */
 
 	tag "${sample_id}"
 	label "medium"

@@ -10,19 +10,22 @@
 # ///
 
 """
-Register BLAST hits to parquet files for crash-safe storage.
+Register GOTTCHA2 hits to parquet files for crash-safe storage.
 
-This script is a thin wrapper around py_nvd.hits that:
+This script is the GOTTCHA2 counterpart to register_hits.py (BLAST). It:
 1. Parses CLI arguments
-2. Reads FASTA and BLAST result files (I/O)
-3. Computes hit keys and metadata
-4. Writes hits atomically to a per-sample parquet file
+2. Reads the extracted FASTA from GOTTCHA2 (post-SANITIZE_EXTRACTED_FASTA)
+3. Extracts taxonomy from FASTA headers (LEVEL, NAME, TAXID)
+4. Computes hit keys and metadata
+5. Writes hits atomically to a per-sample parquet file
+
+GOTTCHA2 FASTA headers encode taxonomy directly:
+    >{read_name}{mate}|{ref}:{start}..{end} LEVEL={level} NAME={name} TAXID={taxid}
+
+Names use underscores in place of spaces (restored during parsing).
 
 Each sample's hits are stored in a Hive-partitioned structure:
     {state_dir}/hits/month=NULL/{sample_set_id}/{sample_id}/data.parquet
-
-The month=NULL partition holds uncompacted data. After running `nvd hits compact`,
-data moves to month=YYYY-MM partitions for better query performance.
 
 Graceful Degradation:
     By default, if the state database is unavailable for marking samples as
@@ -31,7 +34,7 @@ Graceful Degradation:
     state database operations and fail if unavailable.
 
 Usage:
-    register_hits.py --contigs contigs.fasta --blast-results merged.tsv \\
+    register_gottcha2_hits.py --fasta extracted.fasta --full-tsv profile.tsv \\
         --state-dir /path/to/state --sample-set-id abc123 --sample-id sample_a \\
         --run-id my_run_2024
 
@@ -41,6 +44,7 @@ Exit codes:
 """
 
 import argparse
+import re
 import sys
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -59,11 +63,18 @@ from py_nvd.hits import (
 )
 from py_nvd.state import mark_sample_completed, release_sample_lock
 
+# Regex for parsing GOTTCHA2 FASTA header metadata.
+# Matches: LEVEL={level} NAME={name} TAXID={taxid}
+# NAME may contain underscores (spaces replaced by GOTTCHA2).
+HEADER_PATTERN = re.compile(
+    r"LEVEL=(?P<level>\S+)\s+NAME=(?P<name>\S+)\s+TAXID=(?P<taxid>\d+)",
+)
+
 
 @dataclass(frozen=True)
-class HitRegistrationContext:
+class Gottcha2HitRegistrationContext:
     """
-    Context for registering hits from a single sample.
+    Context for registering GOTTCHA2 hits from a single sample.
 
     Bundles all the parameters needed for hit registration, providing
     validation and type safety over loose string arguments.
@@ -90,111 +101,153 @@ class HitRegistrationContext:
             raise ValueError(msg)
 
 
-def parse_fasta(fasta_path: Path) -> dict[str, str]:
-    """
-    Parse a FASTA file into a dict of {contig_id: sequence}.
-
-    Uses Biopython's SeqIO for robust handling of edge cases.
-    """
-    return {record.id: str(record.seq) for record in SeqIO.parse(fasta_path, "fasta")}
-
-
-QSEQID_COLUMN = "qseqid"
-
-
 @dataclass(frozen=True)
-class ContigClassification:
+class Gottcha2Classification:
     """
-    Classification data for a single contig from LCA-annotated BLAST results.
+    Classification data for a single sequence from GOTTCHA2 extracted FASTA.
 
-    Each contig gets a consensus taxonomic assignment (either dominant taxid
-    or LCA of near-ties). This data is extracted from the merged BLAST results
-    after LCA annotation.
+    Taxonomy is parsed directly from the FASTA header, unlike BLAST where
+    it comes from a separate LCA-annotated TSV.
     """
 
-    contig_id: str
-    adjusted_taxid: int | None
-    adjusted_taxid_name: str | None
-    adjusted_taxid_rank: str | None
+    sequence_id: str
+    taxid: int
+    name: str
+    rank: str
 
     def __post_init__(self) -> None:
-        assert self.contig_id, "contig_id cannot be empty"
-        assert isinstance(self.contig_id, str), (
-            f"contig_id must be str, got {type(self.contig_id)}"
+        assert self.sequence_id, "sequence_id cannot be empty"
+        assert isinstance(self.sequence_id, str), (
+            f"sequence_id must be str, got {type(self.sequence_id)}"
         )
 
 
-def parse_blast_classifications(
-    blast_results_path: Path,
-) -> dict[str, ContigClassification]:
+def parse_gottcha2_fasta(
+    fasta_path: Path,
+) -> list[tuple[str, str, Gottcha2Classification]]:
     """
-    Extract classification data per contig from LCA-annotated BLAST results TSV.
+    Parse a GOTTCHA2 extracted FASTA file into sequences with classifications.
 
-    Uses Polars for robust TSV parsing. The input file has multiple rows per contig
-    (one per BLAST hit), but they share the same adjusted_* values from LCA analysis.
-    We take the first row per contig to get the classification.
+    Each FASTA entry has taxonomy encoded in its header:
+        >{read_name}{mate}|{ref}:{start}..{end} LEVEL={level} NAME={name} TAXID={taxid}
+
+    Names have underscores replacing spaces (restored here).
 
     Args:
-        blast_results_path: Path to LCA-annotated merged BLAST results TSV
+        fasta_path: Path to the GOTTCHA2 extracted FASTA file
 
     Returns:
-        Dict mapping contig_id to ContigClassification
-
-    Raises:
-        ValueError: If the qseqid column is not found in the TSV.
+        List of (sequence_id, sequence, classification) tuples.
+        Entries with unparseable headers are logged and skipped.
     """
-    df = pl.read_csv(blast_results_path, separator="\t")
+    results: list[tuple[str, str, Gottcha2Classification]] = []
 
-    if QSEQID_COLUMN not in df.columns:
-        msg = (
-            f"Expected column '{QSEQID_COLUMN}' not found in BLAST results. "
-            f"Available columns: {df.columns}"
-        )
-        raise ValueError(msg)
+    for record in SeqIO.parse(fasta_path, "fasta"):
+        seq = str(record.seq)
+        if not seq:
+            logger.warning(f"Empty sequence for {record.id}, skipping")
+            continue
 
-    # Get one row per contig (they all have the same adjusted_* values)
-    # Use first() aggregation to pick one representative row
-    unique_contigs = df.group_by(QSEQID_COLUMN).agg(
-        pl.col("adjusted_taxid").first(),
-        pl.col("adjusted_taxid_name").first(),
-        pl.col("adjusted_taxid_rank").first(),
-    )
+        # The full description line (after >) includes the ID and metadata
+        description = record.description
+        match = HEADER_PATTERN.search(description)
 
-    classifications: dict[str, ContigClassification] = {}
-    for row in unique_contigs.iter_rows(named=True):
-        contig_id = row[QSEQID_COLUMN]
+        if match is None:
+            logger.warning(
+                f"Could not parse GOTTCHA2 header for {record.id}, skipping: "
+                f"{description}",
+            )
+            continue
 
-        # Handle type conversion for adjusted_taxid (may be float from CSV parsing)
-        raw_taxid = row["adjusted_taxid"]
-        if raw_taxid is not None:
-            try:
-                adjusted_taxid = int(raw_taxid)
-            except (ValueError, TypeError):
-                adjusted_taxid = None
-        else:
-            adjusted_taxid = None
+        taxid_str = match.group("taxid")
+        name_raw = match.group("name")
+        level = match.group("level")
 
-        classifications[contig_id] = ContigClassification(
-            contig_id=contig_id,
-            adjusted_taxid=adjusted_taxid,
-            adjusted_taxid_name=row["adjusted_taxid_name"],
-            adjusted_taxid_rank=row["adjusted_taxid_rank"],
+        # Restore spaces from underscores in taxon name
+        name = name_raw.replace("_", " ")
+
+        classification = Gottcha2Classification(
+            sequence_id=record.id,
+            taxid=int(taxid_str),
+            name=name,
+            rank=level,
         )
 
-    return classifications
+        results.append((record.id, seq, classification))
+
+    return results
 
 
-def build_hit_records(
-    contigs: dict[str, str],
-    classifications: dict[str, ContigClassification],
-    context: HitRegistrationContext,
-) -> list[HitRecord]:
+# Priority ranking for taxonomic levels: lower value = more specific.
+# GOTTCHA2's -ef extraction duplicates each read across all levels; we keep
+# only the most specific classification per read (strain > species).
+_LEVEL_PRIORITY: dict[str, int] = {"strain": 0, "species": 1}
+
+
+def dedupe_by_taxonomic_level(
+    parsed_entries: list[tuple[str, str, Gottcha2Classification]],
+) -> list[tuple[str, str, Gottcha2Classification]]:
     """
-    Build HitRecord objects for contigs that had BLAST results.
+    Collapse parsed FASTA entries to one taxonomic level per read.
+
+    GOTTCHA2's ``-ef`` extraction emits each aligned read once per taxonomic
+    level (strain, species, genus, family, order, class, phylum, superkingdom),
+    inflating the entry count up to 8x. This function keeps only the most
+    specific classification per read:
+
+        1. STRAIN entries present  -> keep only STRAIN
+        2. No strain, has SPECIES  -> keep only SPECIES
+        3. Neither                 -> discard (no informative sub-species classification)
+
+    Read identity is the token before the first ``|`` in the sequence ID::
+
+        {read_name}{mate}|{ref}:{start}..{end}
+
+    The same read appears at multiple taxonomic levels with an identical key,
+    so this token serves as the grouping key for deduplication.
+
+    This mirrors the selection logic in ``labkey_upload_gottcha2_fasta.py``
+    (``select_records_for_upload``) so that hit registration and LabKey uploads
+    agree on which entries represent each read.
 
     Args:
-        contigs: Dict mapping contig IDs to sequences
-        classifications: Dict mapping contig IDs to their classification data
+        parsed_entries: List of ``(sequence_id, sequence, classification)``
+            tuples from :func:`parse_gottcha2_fasta`.
+
+    Returns:
+        Filtered list with at most one taxonomic level per read.
+    """
+    per_read: dict[str, dict[str, list[tuple[str, str, Gottcha2Classification]]]] = {}
+
+    for entry in parsed_entries:
+        sequence_id, _seq, classification = entry
+        read_key = sequence_id.split("|", 1)[0]
+        rank = classification.rank.lower()
+
+        if rank not in _LEVEL_PRIORITY:
+            continue
+
+        bucket = per_read.setdefault(read_key, {})
+        bucket.setdefault(rank, []).append(entry)
+
+    selected: list[tuple[str, str, Gottcha2Classification]] = []
+    for levels in per_read.values():
+        best_rank = min(levels, key=lambda r: _LEVEL_PRIORITY[r])
+        selected.extend(levels[best_rank])
+
+    return selected
+
+
+def build_gottcha2_hit_records(
+    parsed_entries: list[tuple[str, str, Gottcha2Classification]],
+    context: Gottcha2HitRegistrationContext,
+) -> list[HitRecord]:
+    """
+    Build HitRecord objects from parsed GOTTCHA2 FASTA entries.
+
+    Args:
+        parsed_entries: List of (sequence_id, sequence, classification) tuples
+            from parse_gottcha2_fasta()
         context: Registration context with sample/run metadata
 
     Returns:
@@ -202,16 +255,7 @@ def build_hit_records(
     """
     hit_records: list[HitRecord] = []
 
-    for contig_id, classification in classifications.items():
-        if contig_id not in contigs:
-            logger.warning(f"Contig {contig_id} in BLAST results but not in FASTA")
-            continue
-
-        seq = contigs[contig_id]
-        if not seq:
-            logger.warning(f"Empty sequence for contig {contig_id}")
-            continue
-
+    for sequence_id, seq, classification in parsed_entries:
         hit_key = compute_hit_key(seq)
         compressed = compress_sequence(seq)
         gc_content = calculate_gc_content(seq)
@@ -225,11 +269,11 @@ def build_hit_records(
                 sample_set_id=context.sample_set_id,
                 sample_id=context.sample_id,
                 run_date=context.run_date,
-                sequence_id=contig_id,
-                source="blast",
-                adjusted_taxid=classification.adjusted_taxid,
-                adjusted_taxid_name=classification.adjusted_taxid_name,
-                adjusted_taxid_rank=classification.adjusted_taxid_rank,
+                sequence_id=sequence_id,
+                source="gottcha2",
+                adjusted_taxid=classification.taxid,
+                adjusted_taxid_name=classification.name,
+                adjusted_taxid_rank=classification.rank,
             ),
         )
 
@@ -330,19 +374,19 @@ def configure_logging(verbosity: int) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Register BLAST hits with idempotent keys in state database",
+        description="Register GOTTCHA2 hits with idempotent keys in state database",
     )
     parser.add_argument(
-        "--contigs",
+        "--fasta",
         type=Path,
         required=True,
-        help="Path to contigs FASTA file",
+        help="Path to GOTTCHA2 extracted FASTA file (post-SANITIZE_EXTRACTED_FASTA)",
     )
     parser.add_argument(
-        "--blast-results",
+        "--full-tsv",
         type=Path,
         required=True,
-        help="Path to merged BLAST results TSV",
+        help="Path to GOTTCHA2 full profile TSV (retained for provenance)",
     )
     parser.add_argument(
         "--state-dir",
@@ -376,18 +420,6 @@ def main() -> None:
         help="Run identifier (workflow.runName) for state tracking",
     )
     parser.add_argument(
-        "--blast-db-version",
-        type=str,
-        default=None,
-        help="BLAST database version for provenance tracking",
-    )
-    parser.add_argument(
-        "--stat-db-version",
-        type=str,
-        default=None,
-        help="STAT database version for provenance tracking",
-    )
-    parser.add_argument(
         "--labkey",
         action="store_true",
         default=False,
@@ -418,12 +450,12 @@ def main() -> None:
     configure_logging(args.verbose)
 
     # Validate inputs
-    if not args.contigs.exists():
-        logger.error(f"Contigs file not found: {args.contigs}")
+    if not args.fasta.exists():
+        logger.error(f"FASTA file not found: {args.fasta}")
         sys.exit(1)
 
-    if not args.blast_results.exists():
-        logger.error(f"BLAST results file not found: {args.blast_results}")
+    if not args.full_tsv.exists():
+        logger.error(f"Full TSV file not found: {args.full_tsv}")
         sys.exit(1)
 
     # In stateless mode (no state_dir), --output is required
@@ -437,7 +469,7 @@ def main() -> None:
     run_date = args.run_date or datetime.now(UTC).isoformat()
 
     try:
-        context = HitRegistrationContext(
+        context = Gottcha2HitRegistrationContext(
             state_dir=args.state_dir,
             sample_set_id=args.sample_set_id,
             sample_id=args.sample_id,
@@ -447,19 +479,27 @@ def main() -> None:
         logger.error(f"Invalid registration context: {e}")
         sys.exit(1)
 
-    # Parse inputs
-    logger.info(f"Parsing contigs from {args.contigs}")
-    contigs = parse_fasta(args.contigs)
-    logger.info(f"Found {len(contigs)} contigs")
+    # Parse GOTTCHA2 FASTA with embedded taxonomy
+    logger.info(f"Parsing GOTTCHA2 FASTA from {args.fasta}")
+    parsed_entries = parse_gottcha2_fasta(args.fasta)
+    logger.info(f"Found {len(parsed_entries)} sequences with taxonomy")
 
-    logger.info(f"Parsing BLAST results from {args.blast_results}")
-    classifications = parse_blast_classifications(args.blast_results)
-    logger.info(f"Found {len(classifications)} contigs with hits")
+    # Collapse to one taxonomic level per read (strain > species, discard higher).
+    # GOTTCHA2 -ef duplicates each read across up to 8 levels; this brings parity
+    # with what labkey_upload_gottcha2_fasta.py sends to LabKey.
+    deduped_entries = dedupe_by_taxonomic_level(parsed_entries)
+    removed = len(parsed_entries) - len(deduped_entries)
+    logger.info(
+        f"After taxonomic dedup: {len(deduped_entries)} entries "
+        f"({removed} duplicates removed)"
+    )
+
+    # Log the full TSV path for provenance
+    logger.info(f"GOTTCHA2 profile TSV: {args.full_tsv}")
 
     # Build hit records
-    hit_records = build_hit_records(
-        contigs=contigs,
-        classifications=classifications,
+    hit_records = build_gottcha2_hit_records(
+        parsed_entries=deduped_entries,
         context=context,
     )
     logger.info(f"Computed {len(hit_records)} hit records")
@@ -480,7 +520,6 @@ def main() -> None:
         logger.info(f"Wrote {len(hit_records)} hits to {parquet_path}")
 
     # Mark sample as completed in state database
-    # This enables per-sample resume and upload gating
     # Skip in stateless mode (no state_dir)
     if context.state_dir is not None:
         try:
@@ -488,8 +527,6 @@ def main() -> None:
                 sample_id=context.sample_id,
                 sample_set_id=context.sample_set_id,
                 run_id=args.run_id,
-                blast_db_version=args.blast_db_version,
-                stat_db_version=args.stat_db_version,
                 state_dir=str(context.state_dir),
             )
             logger.info(
@@ -505,9 +542,6 @@ def main() -> None:
                     original_error=e,
                 ) from e
 
-            # Graceful degradation: warn but don't fail
-            # Hits are registered (parquet written), that's the critical part
-            # State tracking is for resume/upload gating, not data integrity
             warning = format_state_warning(
                 operation="Marking sample as completed",
                 context=f"Sample '{context.sample_id}' in run '{args.run_id}'",
@@ -547,7 +581,6 @@ def main() -> None:
                     original_error=e,
                 ) from e
 
-            # Graceful degradation: warn but don't fail
             warning = format_state_warning(
                 operation="Releasing sample lock",
                 context=f"Sample '{context.sample_id}' in run '{args.run_id}'",

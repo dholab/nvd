@@ -374,6 +374,9 @@ class Hit:
         return _from_row(cls, row)
 
 
+HitSource = Literal["blast", "gottcha2"]
+
+
 @dataclass(frozen=True)
 class HitObservation:
     """
@@ -387,7 +390,10 @@ class HitObservation:
     sample_set_id: str  # Links to Run.sample_set_id
     sample_id: str  # Source sample
     run_date: str  # ISO8601
-    contig_id: str | None = None  # Original SPAdes contig ID (for traceability)
+    sequence_id: str | None = (
+        None  # Sequence identifier (contig ID for BLAST, read ID for GOTTCHA2)
+    )
+    source: HitSource | None = None  # Hit provenance ("blast" or "gottcha2")
 
     @classmethod
     def from_row(cls, row: Row) -> Self:
@@ -985,6 +991,43 @@ class NvdParams(BaseModel):
     max_read_length: int | None = Field(
         None,
         description="Maximum read length (no limit if not specified)",
+        json_schema_extra={"category": "Preprocessing"},
+    )
+
+    # Host scrubbing with deacon
+    deacon_index: Path | None = Field(
+        None,
+        description="Path to prebuilt deacon index (.idx file)",
+        json_schema_extra={"category": "Preprocessing"},
+    )
+    deacon_index_url: str = Field(
+        "https://zenodo.org/api/records/17288185/files/panhuman-1.k31w15.idx/content",
+        description="URL to download prebuilt deacon index (default: panhuman-1)",
+        json_schema_extra={"category": "Preprocessing"},
+    )
+    deacon_contaminants_fasta: Path | None = Field(
+        None,
+        description="Custom contaminant FASTA to union with base index",
+        json_schema_extra={"category": "Preprocessing"},
+    )
+    deacon_kmer_size: int = Field(
+        31,
+        description="K-mer size for deacon index (must match index if prebuilt)",
+        json_schema_extra={"category": "Preprocessing"},
+    )
+    deacon_window_size: int = Field(
+        15,
+        description="Minimizer window size for deacon index",
+        json_schema_extra={"category": "Preprocessing"},
+    )
+    deacon_abs_threshold: int = Field(
+        2,
+        description="Minimum absolute minimizer hits to classify as contaminant",
+        json_schema_extra={"category": "Preprocessing"},
+    )
+    deacon_rel_threshold: float = Field(
+        0.01,
+        description="Minimum relative proportion of minimizers (0.0-1.0)",
         json_schema_extra={"category": "Preprocessing"},
     )
 
