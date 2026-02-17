@@ -1,5 +1,5 @@
 include { DEDUP_WITH_CLUMPIFY ; TRIM_ADAPTERS ; FILTER_READS ; REPAIR_PAIRS } from "../modules/bbmap"
-include { SCRUB_HOST_READS } from "../modules/stat"
+include { HOST_DEPLETION } from "../subworkflows/host_depletion"
 
 workflow PREPROCESS_READS {
     take:
@@ -29,13 +29,12 @@ workflow PREPROCESS_READS {
 
     ch_after_trim = ch_trimmed_illumina.mix(ch_branched_for_trim.other)
 
-    // 3. Host scrub (requires sra_human_db to be set)
-    ch_human_db = params.sra_human_db
-        ? Channel.fromPath(params.sra_human_db)
-        : Channel.empty()
+    // 3. Host scrub with deacon
+    // Requires at least one of: deacon_index, deacon_index_url, deacon_contaminants_fasta
+    def has_deacon_config = params.deacon_index || params.deacon_index_url || params.deacon_contaminants_fasta
 
-    ch_after_scrub = (should_scrub && params.sra_human_db)
-        ? SCRUB_HOST_READS(ch_after_trim.combine(ch_human_db))
+    ch_after_scrub = (should_scrub && has_deacon_config)
+        ? HOST_DEPLETION(ch_after_trim).reads
         : ch_after_trim
 
     // 4. Quality/length filter (with platform-specific quality threshold)
@@ -51,6 +50,7 @@ workflow PREPROCESS_READS {
         : ch_after_scrub
 
     // 5. Repair pairs (interleaved reads only) - fixes orphans from upstream steps
+    // Note: This works because deacon preserves CASAVA FASTQ headers
     ch_branched_for_repair = ch_after_filter.branch { _id, _platform, read_structure, _reads ->
         interleaved: read_structure == "interleaved"
         other: true
