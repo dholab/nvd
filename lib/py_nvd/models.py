@@ -15,7 +15,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Self, TypeVar
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pydantic.dataclasses import dataclass
 
 if TYPE_CHECKING:
@@ -95,7 +95,7 @@ Platform = Literal["illumina", "ont", "sra"]
 UploadType = Literal["blast", "blast_fasta", "gottcha2", "gottcha2_fasta"]
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, config=ConfigDict(coerce_numbers_to_str=True))
 class Run:
     """A pipeline run."""
 
@@ -103,7 +103,7 @@ class Run:
     sample_set_id: str  # SHA256[:16] of sorted sample IDs (idempotency key)
     started_at: str
     status: Status
-    experiment_id: int | None = None  # Optional LabKey linkage
+    experiment_id: str | None = None  # Optional LabKey linkage
     completed_at: str | None = None
 
     @property

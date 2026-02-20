@@ -144,12 +144,12 @@ class TestRegisterRun:
         run = register_run(
             "run_001",
             sample_set_id,
-            experiment_id=12345,
+            experiment_id="12345",
             state_dir=temp_state_dir,
         )
 
         assert run is not None
-        assert run.experiment_id == 12345
+        assert run.experiment_id == "12345"
 
     def test_duplicate_sample_set_returns_none(self, temp_state_dir: Path) -> None:
         """Attempting to register same sample_set_id returns None."""
@@ -368,7 +368,7 @@ class TestRegisterRun:
         original = register_run(
             "old_run",
             sample_set_id,
-            experiment_id=42,
+            experiment_id="42",
             state_dir=temp_state_dir,
         )
         assert original is not None  # Satisfy type checker
@@ -377,7 +377,7 @@ class TestRegisterRun:
 
         assert updated is not None
         assert updated.run_id == "new_run"
-        assert updated.experiment_id == 42
+        assert updated.experiment_id == "42"
         assert updated.started_at == original.started_at
         assert updated.status == original.status
 

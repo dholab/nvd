@@ -72,7 +72,7 @@ def compute_sample_set_id(sample_ids: list[str]) -> str:
 def register_run(
     run_id: str,
     sample_set_id: str,
-    experiment_id: int | None = None,
+    experiment_id: str | None = None,
     state_dir: Path | str | None = None,
 ) -> Run | None:
     """

@@ -86,7 +86,7 @@ class RunRegistration:
     run_id: str
     sample_ids: list[str]
     state_dir: str | None = None
-    experiment_id: int | None = None
+    experiment_id: str | None = None
     upload_types: list[str] | None = None
     lock_ttl_hours: int = DEFAULT_LOCK_TTL_HOURS
     sync: bool = False
@@ -459,7 +459,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--experiment-id",
-        type=int,
+        type=str,
         help="Experiment ID for tracking",
     )
     parser.add_argument(
