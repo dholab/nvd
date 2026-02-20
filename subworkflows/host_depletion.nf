@@ -43,18 +43,20 @@ workflow HOST_DEPLETION {
     DEACON_BUILD_INDEX(ch_custom_fasta)
     ch_custom_index = DEACON_BUILD_INDEX.out.index
 
-    // --- Combine indexes ---
-    // Determine at parse time whether we need to union multiple indexes.
-    // Both branches produce a value channel of one path (.idx file).
+    // --- Combine indexes if both base and custom are present ---
     def needs_union = params.deacon_contaminants_fasta && (params.deacon_index || params.deacon_index_url)
 
-    DEACON_UNION_INDEXES(
-        ch_base_index.mix(ch_custom_index).collect()
-    )
+    ch_union_input = needs_union
+        ? ch_base_index.mix(ch_custom_index).collect()
+        : Channel.empty()
+
+    DEACON_UNION_INDEXES(ch_union_input)
 
     ch_index = needs_union
-        ? DEACON_UNION_INDEXES.out.index.first()
-        : ch_base_index.mix(ch_custom_index).first()
+        ? DEACON_UNION_INDEXES.out.index
+        : params.deacon_contaminants_fasta
+            ? ch_custom_index
+            : ch_base_index
 
     // --- Run depletion ---
     DEACON_DEPLETE(ch_reads.combine(ch_index))
