@@ -1001,7 +1001,7 @@ class NvdParams(BaseModel):
         json_schema_extra={"category": "Preprocessing"},
     )
     deacon_index_url: str = Field(
-        "https://zenodo.org/api/records/17288185/files/panhuman-1.k31w15.idx/content",
+        "https://zenodo.org/records/17288185/files/panhuman-1.k31w15.idx",
         description="URL to download prebuilt deacon index (default: panhuman-1)",
         json_schema_extra={"category": "Preprocessing"},
     )

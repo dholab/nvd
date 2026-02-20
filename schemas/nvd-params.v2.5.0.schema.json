@@ -209,7 +209,7 @@
     },
     "deacon_index_url": {
       "type": "string",
-      "default": "https://zenodo.org/api/records/17288185/files/panhuman-1.k31w15.idx/content",
+      "default": "https://zenodo.org/records/17288185/files/panhuman-1.k31w15.idx",
       "description": "URL to download prebuilt deacon index (default: panhuman-1)"
     },
     "deacon_contaminants_fasta": {
