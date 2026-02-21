@@ -21,6 +21,25 @@ workflow GOTTCHA2_WORKFLOW {
     main:
     // Validate required params when GOTTCHA2 is selected
     if (params.tools && (params.tools.contains("gottcha") || params.tools.contains("all"))) {
+        assert (
+            params.gottcha2_db &&
+            file("${params.gottcha2_db}.mmi").exists() &&
+            file("${params.gottcha2_db}.stats").exists() &&
+            file("${params.gottcha2_db}.tax.tsv").exists()
+        ) :
+        """
+        One or more required GOTTCHA2 database files are missing or gottcha2_db is not set:
+
+          gottcha2_db          -> ${params.gottcha2_db}
+          gottcha2_db.mmi      -> ${params.gottcha2_db ? params.gottcha2_db + '.mmi' : 'N/A'}
+          gottcha2_db.stats    -> ${params.gottcha2_db ? params.gottcha2_db + '.stats' : 'N/A'}
+          gottcha2_db.tax.tsv  -> ${params.gottcha2_db ? params.gottcha2_db + '.tax.tsv' : 'N/A'}
+
+        Please supply --gottcha2_db in your config or command line, pointing to the
+        GOTTCHA2 database prefix (without extension). The .mmi, .stats, and .tax.tsv
+        companion files must exist at that prefix.
+        """
+
         NvdUtils.validateLabkeyGottcha2(params)
     }
 
