@@ -24,6 +24,7 @@ from py_nvd.cli.utils import (
     RESUME_FILE,
     console,
     error,
+    format_command_for_display,
     get_editor,
     info,
     warning,
@@ -129,8 +130,9 @@ def _interactive_resume(command: str) -> None:
     Raises:
         SystemExit: On timeout, user decline, or after execution.
     """
+    cmd_display = format_command_for_display(shlex.split(command))
     console.print("\n[bold]Resume command:[/bold]")
-    console.print(f"[dim]{command}[/dim]\n")
+    console.print(f"[dim]{cmd_display}[/dim]\n")
 
     try:
         # First confirmation: run as-is?
@@ -150,8 +152,9 @@ def _interactive_resume(command: str) -> None:
         # Re-read the (possibly modified) command
         edited_command = _read_resume_command()
 
+        edited_display = format_command_for_display(shlex.split(edited_command))
         console.print("\n[bold]Edited command:[/bold]")
-        console.print(f"[dim]{edited_command}[/dim]\n")
+        console.print(f"[dim]{edited_display}[/dim]\n")
 
         # Final confirmation (no more edit chances)
         if confirm_with_timeout(console, "Run this command?", default=True):
@@ -219,5 +222,7 @@ def resume(
             )
         _interactive_resume(command)
     else:
-        info(f"Resuming: {command}")
+        cmd_display = format_command_for_display(shlex.split(command))
+        console.print("\n[bold]Resuming:[/bold]")
+        console.print(f"[dim]{cmd_display}[/dim]\n")
         _execute_command(command)

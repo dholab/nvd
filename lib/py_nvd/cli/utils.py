@@ -348,3 +348,45 @@ def auto_detect_profile() -> str:
     if check_command_exists("singularity"):
         return "apptainer"  # Singularity is legacy name for Apptainer
     return "local"
+
+
+_MIN_CMD_PARTS_FOR_CONTINUATION = 3
+
+
+def format_command_for_display(cmd: list[str]) -> str:
+    """
+    Format a command list for readable display with line continuations.
+
+    Each argument pair (--flag value) gets its own line, indented and
+    with shell continuation characters for copy-paste compatibility.
+    """
+    if len(cmd) < _MIN_CMD_PARTS_FOR_CONTINUATION:
+        return " ".join(cmd)
+
+    lines = []
+    # First line: nextflow run <pipeline_root>
+    lines.append(f"{cmd[0]} {cmd[1]} {cmd[2]} \\")
+
+    # Process remaining args in pairs where possible
+    i = 3
+    while i < len(cmd):
+        arg = cmd[i]
+
+        # Check if this is a flag that takes a value (not a standalone flag like -resume)
+        if i + 1 < len(cmd) and not cmd[i + 1].startswith("-"):
+            # Flag with value: --param value
+            value = cmd[i + 1]
+            if i + 2 < len(cmd):
+                lines.append(f"    {arg} {value} \\")
+            else:
+                lines.append(f"    {arg} {value}")
+            i += 2
+        else:
+            # Standalone flag like -resume
+            if i + 1 < len(cmd):
+                lines.append(f"    {arg} \\")
+            else:
+                lines.append(f"    {arg}")
+            i += 1
+
+    return "\n".join(lines)
