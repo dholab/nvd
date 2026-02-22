@@ -64,7 +64,7 @@ process GOTTCHA2_PROFILE_ILLUMINA {
 process GENERATE_FASTA {
 
     tag "${sample_id}"
-    label "medium"
+    label "high"
 
     publishDir params.extracted_reads, mode: 'copy', overwrite: false, pattern: "*.fasta"
 
