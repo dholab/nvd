@@ -12,6 +12,7 @@ include {
 } from "../subworkflows/bundle_gottcha2_for_labkey"
 include { SANITIZE_EXTRACTED_FASTA } from "../modules/bbmap"
 include { CHECK_RUN_STATE; COMPLETE_RUN } from "../modules/utils"
+include { CHECK_MIN_READS } from "../modules/count_reads"
 
 
 workflow GOTTCHA2_WORKFLOW {
@@ -97,15 +98,26 @@ workflow GOTTCHA2_WORKFLOW {
         VALIDATE_LK_GOTTCHA2()
     }
 
-    ch_nanopore_fastqs = ch_gated_samples
-        .filter { _sample_id, platform, _read_structure, _fastq -> platform == "nanopore" || platform == "ont" }
-        .map { sample_id, _platform, _read_structure, fastq -> tuple(sample_id, file(fastq)) }
-        .filter { _id, fastq -> file(fastq).countFastq() >= params.min_gottcha_reads }
+    // Check minimum read threshold on a compute node instead of using
+    // countFastq() on the head node. countFastq() decompresses entire gzipped
+    // FASTQs in the Nextflow process, blocking indefinitely for large files on
+    // networked storage. CHECK_MIN_READS only reads up to min_reads records
+    // before stopping — O(threshold) instead of O(file_size).
+    CHECK_MIN_READS(ch_gated_samples)
 
-    ch_illumina_fastqs = ch_gated_samples
-        .filter { _sample_id, platform, _read_structure, _fastq -> platform == "illumina" }
-        .map { sample_id, _platform, _read_structure, fastq -> tuple(sample_id, file(fastq)) }
-        .filter { _id, fastq -> file(fastq).countFastq() >= params.min_gottcha_reads }
+    // Join threshold check back to samples and filter out those below minimum
+    ch_passing_samples = ch_gated_samples
+        .map { sample_id, platform, _read_structure, fastq -> tuple(sample_id, platform, fastq) }
+        .join(CHECK_MIN_READS.out.counts)
+        .filter { _sample_id, _platform, _fastq, read_count -> (read_count as Integer) >= params.min_gottcha_reads }
+
+    ch_nanopore_fastqs = ch_passing_samples
+        .filter { _sample_id, platform, _fastq, _read_count -> platform == "nanopore" || platform == "ont" }
+        .map { sample_id, _platform, fastq, _read_count -> tuple(sample_id, file(fastq)) }
+
+    ch_illumina_fastqs = ch_passing_samples
+        .filter { _sample_id, platform, _fastq, _read_count -> platform == "illumina" }
+        .map { sample_id, _platform, fastq, _read_count -> tuple(sample_id, file(fastq)) }
 
     GOTTCHA2_PROFILE_NANOPORE(
         ch_nanopore_fastqs.combine(ch_gottcha2_db)

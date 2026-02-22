@@ -11,9 +11,6 @@ process COUNT_READS {
     output:
     tuple val(sample_id), env(total_reads), emit: counts
 
-    when:
-    params.tools && (params.tools.contains("nvd") || params.tools.contains("stat") || params.tools.contains("blast") || params.tools.contains("stat_blast") || params.tools.contains("stast") || params.tools.contains("all"))
-
     script:
     """
     if [[ "${fastq}" == *.gz ]]; then
@@ -22,5 +19,26 @@ process COUNT_READS {
         total_reads=\$(cat ${fastq} | wc -l | awk -v OFMT="%.0f" '{print \$1/4}')
     fi
 
+    """
+}
+
+// Lightweight threshold check: reads only min_reads records instead of the
+// entire file. For large gzipped FASTQs this is O(threshold) vs O(file_size).
+process CHECK_MIN_READS {
+    tag "${sample_id}"
+    label 'low'
+
+    errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
+    maxRetries 2
+
+    input:
+    tuple val(sample_id), val(platform), val(read_structure), path(fastq)
+
+    output:
+    tuple val(sample_id), env(read_count), emit: counts
+
+    script:
+    """
+    read_count=\$(seqkit head -n ${params.min_gottcha_reads} ${fastq} | seqkit stats -T | tail -1 | cut -f4)
     """
 }
