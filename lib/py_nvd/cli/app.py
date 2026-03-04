@@ -108,8 +108,47 @@ if _is_wrapped_season:
     app.command("wrapped")(wrapped)
 
 
+def _normalize_nextflow_args() -> None:
+    """Rewrite Nextflow-style single-dash long options before Typer parses them.
+
+    Nextflow uses single-dash long options (e.g., -resume, -profile) which
+    diverges from the POSIX/GNU double-dash convention that Click/Typer
+    expects. When a user passes -resume, Click interprets it as the short
+    flag -r with the value "esume" — silently setting --results to "esume"
+    and dropping the resume intent entirely. This can cause a pipeline run
+    without resume, overwriting the previous run's Nextflow cache and losing
+    potentially hours of progress.
+
+    This function rewrites known Nextflow-style args to their double-dash
+    equivalents in sys.argv before Typer sees them, and emits a warning so
+    the user learns the correct syntax.
+    """
+    # Map of Nextflow single-dash options to their nvd CLI double-dash equivalents.
+    # Only options that have a corresponding Typer parameter need to be here —
+    # truly Nextflow-only options (e.g., -with-tower) should be passed via the
+    # -- separator and are handled by ctx.args pass-through.
+    nextflow_to_cli = {
+        "-resume": "--resume",
+        "-profile": "--profile",
+    }
+
+    rewrites: list[str] = []
+    for i, arg in enumerate(sys.argv):
+        if arg in nextflow_to_cli:
+            sys.argv[i] = nextflow_to_cli[arg]
+            rewrites.append(f"{arg} → {nextflow_to_cli[arg]}")
+
+    if rewrites:
+        console.print(
+            f"[yellow]⚠ Converted Nextflow-style option(s): "
+            f"{', '.join(rewrites)}. "
+            f"Use double-dash (e.g., --resume) with the nvd CLI.[/yellow]",
+        )
+
+
 def main() -> None:
     """Main entry point for the CLI."""
+    _normalize_nextflow_args()
     try:
         app()
     except KeyboardInterrupt:
