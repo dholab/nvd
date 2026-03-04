@@ -8,6 +8,15 @@
 class NvdUtils {
 
     // -------------------------------------------------------------------------
+    // Tool selection
+    // -------------------------------------------------------------------------
+
+    /** All recognized aliases for the STAT+BLAST workflow. */
+    private static final List<String> BLAST_ALIASES = [
+        'nvd', 'stat', 'blast', 'stat_blast', 'stast',
+    ]
+
+    // -------------------------------------------------------------------------
     // LabKey parameter definitions
     // -------------------------------------------------------------------------
 
@@ -30,8 +39,30 @@ class NvdUtils {
     ]
 
     // -------------------------------------------------------------------------
-    // Public validation methods
+    // Public methods
     // -------------------------------------------------------------------------
+
+    /**
+     * Check whether a tool was selected via --tools.
+     *
+     * Centralizes the tool-selection logic so that workflows, channel gates,
+     * and param-validation blocks all use the same condition. The 'blast'
+     * tool has several historical aliases that are all treated as equivalent.
+     *
+     * @param params The Nextflow params object (must have a 'tools' field)
+     * @param tool   Canonical tool name: 'gottcha', 'blast', or 'clumpify'
+     * @return true if the tool (or 'all') appears in params.tools
+     */
+    static boolean isToolSelected(params, String tool) {
+        if (!params.tools) return false
+        if (params.tools.contains('all')) return true
+        switch (tool) {
+            case 'gottcha':  return params.tools.contains('gottcha')
+            case 'blast':    return BLAST_ALIASES.any { params.tools.contains(it) }
+            case 'clumpify': return params.tools.contains('clumpify')
+            default:         return params.tools.contains(tool)
+        }
+    }
 
     /**
      * Validates LabKey parameters required for the STAT+BLAST workflow.
