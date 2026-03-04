@@ -27,14 +27,11 @@ workflow STAT_BLAST_WORKFLOW {
     ch_sample_fastqs // Queue channel: tuple val(sample_id), val(platform), val(read_structure), path(fastq)
 
     main:
-    // Check if STAT+BLAST workflow should run
-    // Supports: nvd, stat, blast, stat_blast, stast (all equivalent for backward compatibility)
-    if (params.tools && (params.tools.contains("nvd") || 
-                         params.tools.contains("stat") || 
-                         params.tools.contains("blast") || 
-                         params.tools.contains("stat_blast") || 
-                         params.tools.contains("stast") || 
-                         params.tools.contains("all"))) {
+    // Determine whether STAT+BLAST was selected by the user.
+    def blast_selected = NvdUtils.isToolSelected(params, 'blast')
+
+    // Validate required params when STAT+BLAST is selected
+    if (blast_selected) {
         assert (
             params.blast_db              && file(params.blast_db).isDirectory()         &&
             params.stat_index            && file(params.stat_index).exists()            &&
@@ -57,6 +54,15 @@ workflow STAT_BLAST_WORKFLOW {
         // Validate LabKey params required for STAT+BLAST if LabKey is enabled
         NvdUtils.validateLabkeyBlast(params)
     }
+
+    // Signal channel: emits true when STAT+BLAST is selected, empty otherwise.
+    // This single signal gates both state-management processes (CHECK_RUN_STATE,
+    // COMPLETE_RUN) and data-processing processes (COUNT_READS, PREPROCESS_CONTIGS).
+    // When empty, combine() produces nothing, so downstream processes remain in
+    // the DAG but never execute.
+    ch_blast_enabled = blast_selected
+        ? Channel.value(true)
+        : Channel.empty()
 
     // Guard channel declarations with ternary fallback to Channel.empty().
     // When --tools doesn't include a BLAST alias, these params are null.
@@ -82,28 +88,37 @@ workflow STAT_BLAST_WORKFLOW {
     // See lib/NvdDirs.groovy for validation logic and error messages.
     dirs = NvdDirs.resolve(params, log)
 
-    // Combine samplesheet, state_dir, and taxonomy_dir into a tuple for CHECK_RUN_STATE.
-    // This ensures they travel together and we get visible cross-product failures
-    // if either channel unexpectedly emits multiple values.
-    // Note: directories are passed as val (string), not path, to avoid staging.
-    ch_run_state_input = Channel.fromPath(params.samplesheet)
+    // Gate CHECK_RUN_STATE: combine with the tool-selection signal so the input
+    // tuple only emits when STAT+BLAST is selected. When empty, CHECK_RUN_STATE
+    // remains in the DAG but never executes.
+    ch_run_state_input = ch_blast_enabled
+        .combine(Channel.fromPath(params.samplesheet))
         .combine(Channel.value(dirs.state_dir))
         .combine(Channel.value(dirs.taxonomy_dir))
+        .map { _flag, samplesheet, state_dir, taxonomy_dir ->
+            tuple(samplesheet, state_dir, taxonomy_dir)
+        }
 
     // Check run state upfront (prevents duplicate processing of same sample set)
-    // Reads sample IDs directly from samplesheet for immediate validation
-    // Emits run_context tuple: [sample_set_id, state_dir] for downstream upload processes
     CHECK_RUN_STATE(ch_run_state_input, "blast,blast_fasta")
 
     if (params.labkey) {
         VALIDATE_LK_BLAST()
     }
 
+    // Gate sample channel: when STAT+BLAST is not selected, ch_blast_enabled is
+    // empty, so the combine produces nothing and no downstream operations execute.
+    ch_gated_samples = ch_blast_enabled
+        .combine(ch_sample_fastqs)
+        .map { _flag, sample_id, platform, read_structure, fastq ->
+            tuple(sample_id, platform, read_structure, fastq)
+        }
+
     // Count reads for each sample
-    COUNT_READS(ch_sample_fastqs)
+    COUNT_READS(ch_gated_samples)
 
     PREPROCESS_CONTIGS(
-        ch_sample_fastqs,
+        ch_gated_samples,
         ch_stat_dbss,
         ch_stat_annotation,
         ch_human_virus_taxlist
@@ -238,7 +253,21 @@ workflow STAT_BLAST_WORKFLOW {
         )
     }
 
-    ch_completion = CLASSIFY_WITH_BLASTN.out.merged_results.map { _results -> "STAT+BLAST workflow complete!" }
+    // Terminal channel: the last meaningful output in each execution path.
+    ch_terminal = params.labkey
+        ? REGISTER_LK_EXPERIMENT.out
+        : REGISTER_HITS.out
+
+    // Completion signal: always emits exactly one value regardless of whether
+    // data flowed through the workflow.
+    //
+    // When STAT+BLAST is not selected: Channel.value() emits one token immediately.
+    // When STAT+BLAST is selected: count() waits for ch_terminal to close, then
+    // emits the number of items that flowed through (including 0 if all samples
+    // were filtered out). Either way, exactly one emission.
+    ch_completion = blast_selected
+        ? ch_terminal.count().map { n -> "STAT+BLAST complete: ${n} samples processed" }
+        : Channel.value("STAT+BLAST skipped: tool not selected")
 
     emit:
     completion = ch_completion
