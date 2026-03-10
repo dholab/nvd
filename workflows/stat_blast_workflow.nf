@@ -102,7 +102,7 @@ workflow STAT_BLAST_WORKFLOW {
     // Check run state upfront (prevents duplicate processing of same sample set)
     CHECK_RUN_STATE(ch_run_state_input, "blast,blast_fasta")
 
-    if (params.labkey) {
+    if (params.labkey && blast_selected) {
         VALIDATE_LK_BLAST()
     }
 

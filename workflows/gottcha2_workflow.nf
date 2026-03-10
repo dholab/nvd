@@ -107,8 +107,8 @@ workflow GOTTCHA2_WORKFLOW {
             tuple(sample_id, platform, read_structure, fastq)
         }
 
-    // LabKey validation: no-input subworkflow, gated by if (matches stat_blast pattern)
-    if (params.labkey) {
+    // LabKey validation: no-input subworkflow, gated by tool selection
+    if (params.labkey && gottcha_selected) {
         VALIDATE_LK_GOTTCHA2()
     }
 
@@ -161,7 +161,7 @@ workflow GOTTCHA2_WORKFLOW {
 
     REGISTER_GOTTCHA2_HITS(ch_register_gottcha2_input)
 
-    if (params.labkey) {
+    if (params.labkey && gottcha_selected) {
         // Build validation gate: both state check and LabKey validation must pass
         // before any uploads proceed. Matches stat_blast_workflow pattern.
         ch_validation_gate = CHECK_RUN_STATE.out.ready
