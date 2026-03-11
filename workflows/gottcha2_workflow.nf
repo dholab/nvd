@@ -187,10 +187,16 @@ workflow GOTTCHA2_WORKFLOW {
         // Gate run completion on LabKey bundle completion
         ch_run_complete_gate = BUNDLE_GOTTCHA2_FOR_LABKEY.out.upload_log.collect()
             .map { _logs -> true }
+
+        // Terminal channel for LabKey path
+        ch_terminal = BUNDLE_GOTTCHA2_FOR_LABKEY.out.upload_log
     } else {
         // Gate run completion on REGISTER_GOTTCHA2_HITS completion (all samples)
         ch_run_complete_gate = REGISTER_GOTTCHA2_HITS.out.collect()
             .map { _logs -> true }
+
+        // Terminal channel for non-LabKey path
+        ch_terminal = REGISTER_GOTTCHA2_HITS.out
     }
 
     // Mark the run as completed in the state database
@@ -199,11 +205,6 @@ workflow GOTTCHA2_WORKFLOW {
         ch_state_dir,
         "completed"
     )
-
-    // Terminal channel: the last meaningful output in each execution path.
-    ch_terminal = params.labkey
-        ? BUNDLE_GOTTCHA2_FOR_LABKEY.out.upload_log
-        : REGISTER_GOTTCHA2_HITS.out
 
     // Completion signal: always emits exactly one value regardless of whether
     // data flowed through the workflow.

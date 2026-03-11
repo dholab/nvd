@@ -179,7 +179,7 @@ workflow STAT_BLAST_WORKFLOW {
     // Hits are registered in the state database for querying via `nvd hits export`.
     // Collect output to gate run completion when LabKey is disabled.
 
-    if (params.labkey) {
+    if (params.labkey && blast_selected) {
         // Check LabKey guard list - ensures experiment_id hasn't been uploaded before
         // Uses .first() to get a value channel trigger
         VALIDATE_LK_EXP_FRESH(
@@ -219,6 +219,9 @@ workflow STAT_BLAST_WORKFLOW {
         // This ensures all uploads are complete before marking the run done
         ch_run_complete_gate = REGISTER_LK_EXPERIMENT.out.collect()
             .map { _logs -> true }
+
+        // Terminal channel for LabKey path
+        ch_terminal = REGISTER_LK_EXPERIMENT.out
     } else {
         // If no labkey upload then just pass an empty channel
         labkey_log_ch = Channel.empty()
@@ -226,6 +229,9 @@ workflow STAT_BLAST_WORKFLOW {
         // Gate run completion on REGISTER_HITS completion (all samples)
         ch_run_complete_gate = REGISTER_HITS.out.collect()
             .map { _logs -> true }
+
+        // Terminal channel for non-LabKey path
+        ch_terminal = REGISTER_HITS.out
     }
 
     // Mark the run as completed in the state database
@@ -239,7 +245,7 @@ workflow STAT_BLAST_WORKFLOW {
     // Only runs when slack_enabled=true, slack_channel is set, and LabKey is enabled
     // (we need LabKey for the results URL in the notification)
     // Stats are queried from state database by the Python script using sample_set_id
-    if (params.slack_enabled && params.slack_channel && params.labkey) {
+    if (params.slack_enabled && params.slack_channel && params.labkey && blast_selected) {
         // Build LabKey URL to the hits list view
         // Format: https://{server}/{project}/list-grid.view?name={list_name}
         ch_labkey_url = Channel.value(
@@ -252,11 +258,6 @@ workflow STAT_BLAST_WORKFLOW {
             ch_labkey_url
         )
     }
-
-    // Terminal channel: the last meaningful output in each execution path.
-    ch_terminal = params.labkey
-        ? REGISTER_LK_EXPERIMENT.out
-        : REGISTER_HITS.out
 
     // Completion signal: always emits exactly one value regardless of whether
     // data flowed through the workflow.
