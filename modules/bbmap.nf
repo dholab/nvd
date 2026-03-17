@@ -46,9 +46,6 @@ process INTERLEAVE_PAIRS {
 	output:
 	tuple val(sample_id), val(platform), val("interleaved"), path("${sample_id}.interleaved.fastq.gz")
 
-	when:
-	params.tools
-
 	script:
 	"""
 	reformat.sh \

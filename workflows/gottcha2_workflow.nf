@@ -20,8 +20,11 @@ workflow GOTTCHA2_WORKFLOW {
     ch_sample_fastqs // Queue channel: tuple val(sample_id), val(platform), val(read_structure), path(fastq)
 
     main:
+    // Determine whether GOTTCHA2 was selected by the user.
+    def gottcha_selected = NvdUtils.isToolSelected(params, 'gottcha')
+
     // Validate required params when GOTTCHA2 is selected
-    if (params.tools && (params.tools.contains("gottcha") || params.tools.contains("all"))) {
+    if (gottcha_selected) {
         assert (
             params.gottcha2_db &&
             file("${params.gottcha2_db}.mmi").exists() &&
@@ -44,14 +47,29 @@ workflow GOTTCHA2_WORKFLOW {
         NvdUtils.validateLabkeyGottcha2(params)
     }
 
+    // Signal channel: emits true when gottcha is selected, empty otherwise.
+    // This single signal gates both state-management processes (CHECK_RUN_STATE,
+    // COMPLETE_RUN) and data-processing processes (profiling, FASTA generation).
+    // When empty, combine() produces nothing, so downstream processes remain in
+    // the DAG but never execute.
+    ch_gottcha_enabled = gottcha_selected
+        ? Channel.value(true)
+        : Channel.empty()
+
     // Resolve directories for stateful vs stateless mode.
     // Returns absolute path strings (not Nextflow path objects) to avoid staging.
     dirs = NvdDirs.resolve(params, log)
 
-    // Combine samplesheet, state_dir, and taxonomy_dir into a tuple for CHECK_RUN_STATE.
-    ch_run_state_input = Channel.fromPath(params.samplesheet)
+    // Gate CHECK_RUN_STATE: combine with the tool-selection signal so the input
+    // tuple only emits when gottcha is selected. When empty, CHECK_RUN_STATE
+    // remains in the DAG but never executes.
+    ch_run_state_input = ch_gottcha_enabled
+        .combine(Channel.fromPath(params.samplesheet))
         .combine(Channel.value(dirs.state_dir))
         .combine(Channel.value(dirs.taxonomy_dir))
+        .map { _flag, samplesheet, state_dir, taxonomy_dir ->
+            tuple(samplesheet, state_dir, taxonomy_dir)
+        }
 
     // Check run state upfront (prevents duplicate processing of same sample set)
     CHECK_RUN_STATE(ch_run_state_input, "gottcha2,gottcha2_fasta")
@@ -81,20 +99,16 @@ workflow GOTTCHA2_WORKFLOW {
             }
         : Channel.empty()
 
-    // Gate sample channel: when gottcha2 is disabled, ch_gottcha2_enabled is empty,
-    // so the combine produces nothing and no downstream operations execute.
-    ch_gottcha2_enabled = params.gottcha2_db
-        ? Channel.value(true)
-        : Channel.empty()
-
-    ch_gated_samples = ch_gottcha2_enabled
+    // Gate sample channel: when gottcha is not selected, ch_gottcha_enabled is
+    // empty, so the combine produces nothing and no downstream operations execute.
+    ch_gated_samples = ch_gottcha_enabled
         .combine(ch_sample_fastqs)
         .map { _flag, sample_id, platform, read_structure, fastq ->
             tuple(sample_id, platform, read_structure, fastq)
         }
 
-    // LabKey validation: no-input subworkflow, gated by if (matches stat_blast pattern)
-    if (params.labkey) {
+    // LabKey validation: no-input subworkflow, gated by tool selection
+    if (params.labkey && gottcha_selected) {
         VALIDATE_LK_GOTTCHA2()
     }
 
@@ -147,7 +161,7 @@ workflow GOTTCHA2_WORKFLOW {
 
     REGISTER_GOTTCHA2_HITS(ch_register_gottcha2_input)
 
-    if (params.labkey) {
+    if (params.labkey && gottcha_selected) {
         // Build validation gate: both state check and LabKey validation must pass
         // before any uploads proceed. Matches stat_blast_workflow pattern.
         ch_validation_gate = CHECK_RUN_STATE.out.ready
@@ -173,10 +187,16 @@ workflow GOTTCHA2_WORKFLOW {
         // Gate run completion on LabKey bundle completion
         ch_run_complete_gate = BUNDLE_GOTTCHA2_FOR_LABKEY.out.upload_log.collect()
             .map { _logs -> true }
+
+        // Terminal channel for LabKey path
+        ch_terminal = BUNDLE_GOTTCHA2_FOR_LABKEY.out.upload_log
     } else {
         // Gate run completion on REGISTER_GOTTCHA2_HITS completion (all samples)
         ch_run_complete_gate = REGISTER_GOTTCHA2_HITS.out.collect()
             .map { _logs -> true }
+
+        // Terminal channel for non-LabKey path
+        ch_terminal = REGISTER_GOTTCHA2_HITS.out
     }
 
     // Mark the run as completed in the state database
@@ -186,7 +206,16 @@ workflow GOTTCHA2_WORKFLOW {
         "completed"
     )
 
-    ch_completion = GENERATE_FASTA.out.map { _results -> "GOTTCHA2 complete!" }
+    // Completion signal: always emits exactly one value regardless of whether
+    // data flowed through the workflow.
+    //
+    // When gottcha is not selected: Channel.value() emits one token immediately.
+    // When gottcha is selected: count() waits for ch_terminal to close, then
+    // emits the number of items that flowed through (including 0 if all samples
+    // were filtered out). Either way, exactly one emission.
+    ch_completion = gottcha_selected
+        ? ch_terminal.count().map { n -> "GOTTCHA2 complete: ${n} samples processed" }
+        : Channel.value("GOTTCHA2 skipped: tool not selected")
 
     emit:
     completion = ch_completion
