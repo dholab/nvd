@@ -130,13 +130,13 @@ Laboratory's LabKey server, like so:
 
 ```bash
 # download the STAT database
-wget https://dholk.primate.wisc.edu/_webdav/dho/projects/lungfish/InfinitePath/public/%40files/release-v2.0.0/stat_db.tar.gz
+wget https://dholk.primate.wisc.edu/_webdav/dho/projects/lungfish/InfinitePath/public/@files/release-v2.5.0/stat_db_v2_5_0.tar.gz
 
 # download the BLAST database
-wget https://dholk.primate.wisc.edu/_webdav/dho/projects/lungfish/InfinitePath/public/%40files/release-v2.0.0/blast_db.tar.gz
+wget https://dholk.primate.wisc.edu/_webdav/dho/projects/lungfish/InfinitePath/public/@files/release-v2.5.0/blast_db_v2_5_0.tar.gz
 
 # download the GOTTCHA2 database
-wget https://dholk.primate.wisc.edu/_webdav/dho/projects/lungfish/InfinitePath/public/%40files/release-v2.0.0/gottcha2.tar.gz
+wget https://dholk.primate.wisc.edu/_webdav/dho/projects/lungfish/InfinitePath/public/@files/release-v2.5.0/gottcha2.tar.gz
 ```
 
 (`curl -fSsL` can be substituted for `wget` in the above commands if desired)
@@ -144,7 +144,7 @@ wget https://dholk.primate.wisc.edu/_webdav/dho/projects/lungfish/InfinitePath/p
 > [!IMPORTANT]\
 > We strongly recommend users verify their database downloads with the md5
 > hashes available in `checksum.txt`, which can be downloaded with
-> `wget https://dholk.primate.wisc.edu/_webdav/dho/projects/lungfish/InfinitePath/public/%40files/release-v2.0.0/checksum.txt`.
+> `wget https://dholk.primate.wisc.edu/_webdav/dho/projects/lungfish/InfinitePath/public/@files/release-v2.5.0/checksums_v2_5_0.txt`.
 > Updates to the reference databases will also be reflected in `CHANGELOG.md`,
 > available at the same endpoint as the databases and checksum text file.
 
@@ -152,11 +152,11 @@ Also at that endpoint, if desired, is a pre-built Apptainer image file for use
 on HPC cluster or other linux environments:
 
 ```bash
-wget https://dholk.primate.wisc.edu/_webdav/dho/projects/lungfish/InfinitePath/public/%40files/release-v2.0.0/nvd2.sif
+wget https://dholk.primate.wisc.edu/_webdav/dho/projects/lungfish/InfinitePath/public/@files/release-v2.5.0/nvd-v2.5.0.sif
 ```
 
 All TAR-archived reference databases must be extracted into directories with
-`tar xvf` before use with the NVD2 pipeline.
+`tar xvf` before use with the NVD pipeline.
 
 ### Sample data setup
 
@@ -243,10 +243,10 @@ nextflow run dhoconno/nvd \
 	--gottcha2_db $YOUR_REFERENCE_PATH/gottcha2/gottcha_db.species.fna \
 	--blast_db $YOUR_REFERENCE_PATH/blast_db \
 	--blast_db_prefix core_nt \
-	--stat_index $YOUR_REFERENCE_PATH/STAT_db/tree_index.20240830.dbs \
-	--stat_dbss $YOUR_REFERENCE_PATH/STAT_db/tree_filter.20240830.dbss \
-	--stat_annotation $YOUR_REFERENCE_PATH/STAT_db/tree_filter.20240830.dbss.annotation \
-	--human_virus_taxlist $YOUR_REFERENCE_PATH/STAT_db/human_viruses_taxlist.txt \
+	--stat_index $YOUR_REFERENCE_PATH/stat_db_v2_5_0/tree_index.20260217.dbs \
+	--stat_dbss $YOUR_REFERENCE_PATH/stat_db_v2_5_0/tree_filter.20260217.dbss \
+	--stat_annotation $YOUR_REFERENCE_PATH/stat_db_v2_5_0/tree_filter.20260217.dbss.annotation \
+	--human_virus_taxlist $YOUR_REFERENCE_PATH/stat_db_v2_5_0/human_viruses_taxlist.20260217.txt \
 	--experiment_id github_readme_test
 ```
 

@@ -561,12 +561,12 @@ setup_repo() {
 # =============================================================================
 
 # Database URLs and checksums (update these for new releases)
-STAT_DB_URL="https://dholk.primate.wisc.edu/_webdav/dho/projects/lungfish/InfinitePath/public/%40files/release-v2.0.0/stat_db.tar.gz"
-BLAST_DB_URL="https://dholk.primate.wisc.edu/_webdav/dho/projects/lungfish/InfinitePath/public/%40files/release-v2.0.0/blast_db.tar.gz"
-GOTTCHA2_DB_URL="https://dholk.primate.wisc.edu/_webdav/dho/projects/lungfish/InfinitePath/public/%40files/release-v2.0.0/gottcha2.tar.gz"
+STAT_DB_URL="https://dholk.primate.wisc.edu/_webdav/dho/projects/lungfish/InfinitePath/public/%40files/release-v2.5.0/stat_db_v2_5_0.tar.gz"
+BLAST_DB_URL="https://dholk.primate.wisc.edu/_webdav/dho/projects/lungfish/InfinitePath/public/%40files/release-v2.5.0/blast_db_v2_5_0.tar.gz"
+GOTTCHA2_DB_URL="https://dholk.primate.wisc.edu/_webdav/dho/projects/lungfish/InfinitePath/public/%40files/release-v2.5.0/gottcha2.tar.gz"
 
-STAT_DB_MD5="2641a1754f6986eedbe9f38e188f2b0c"
-BLAST_DB_MD5="cebc4c59ea572c09fb93aa4e3594bf3e"
+STAT_DB_MD5="68471367e635eddff411e4102b8566f3"
+BLAST_DB_MD5="7f64ecb805d396b5b8b83e4cc014390d"
 GOTTCHA2_DB_MD5="d33fb5d1b2d22f7a174239f1dfc142cb"
 
 # Approximate size per database in GB (for disk space checks)
@@ -804,10 +804,10 @@ database_wizard() {
 	echo
 	if [[ -n "$stat_path" ]]; then
 		echo "    params {"
-		echo "        stat_index          = \"${stat_path}/tree_index.20240830.dbs\""
-		echo "        stat_dbss           = \"${stat_path}/tree_filter.20240830.dbss\""
-		echo "        stat_annotation     = \"${stat_path}/tree_filter.20240830.dbss.annotation\""
-		echo "        human_virus_taxlist = \"${stat_path}/human_viruses_taxlist.txt\""
+		echo "        stat_index          = \"${stat_path}/tree_index.20260217.dbs\""
+		echo "        stat_dbss           = \"${stat_path}/tree_filter.20260217.dbss\""
+		echo "        stat_annotation     = \"${stat_path}/tree_filter.20260217.dbss.annotation\""
+		echo "        human_virus_taxlist = \"${stat_path}/human_viruses_taxlist.20260217.txt\""
 		echo "    }"
 		echo
 	fi

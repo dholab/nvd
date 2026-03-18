@@ -145,10 +145,10 @@ Create a configuration file at `~/.nvd/user.config`:
 ```groovy
 params {
     // STAT database
-    stat_index      = "/path/to/databases/stat_db/tree_index.20240830.dbs"
-    stat_dbss       = "/path/to/databases/stat_db/tree_filter.20240830.dbss"
-    stat_annotation = "/path/to/databases/stat_db/tree_filter.20240830.dbss.annotation"
-    human_virus_taxlist = "/path/to/databases/stat_db/human_viruses_taxlist.txt"
+    stat_index      = "/path/to/databases/stat_db_v2_5_0/tree_index.20260217.dbs"
+    stat_dbss       = "/path/to/databases/stat_db_v2_5_0/tree_filter.20260217.dbss"
+    stat_annotation = "/path/to/databases/stat_db_v2_5_0/tree_filter.20260217.dbss.annotation"
+    human_virus_taxlist = "/path/to/databases/stat_db_v2_5_0/human_viruses_taxlist.20260217.txt"
     
     // BLAST database
     blast_db        = "/path/to/databases/blast_db"
@@ -174,12 +174,12 @@ The installer can download and extract databases for you:
 
 Databases are available from:
 ```
-https://dholk.primate.wisc.edu/_webdav/dho/projects/lungfish/InfinitePath/public/@files/release-v2.0.0/
+https://dholk.primate.wisc.edu/_webdav/dho/projects/lungfish/InfinitePath/public/@files/release-v2.5.0/
 ```
 
 Files:
-- `stat_db.tar.gz` (MD5: 2641a1754f6986eedbe9f38e188f2b0c)
-- `blast_db.tar.gz` (MD5: cebc4c59ea572c09fb93aa4e3594bf3e)
+- `stat_db_v2_5_0.tar.gz` (MD5: 68471367e635eddff411e4102b8566f3)
+- `blast_db_v2_5_0.tar.gz` (MD5: 7f64ecb805d396b5b8b83e4cc014390d)
 - `gottcha2.tar.gz` (MD5: d33fb5d1b2d22f7a174239f1dfc142cb)
 
 Extract to your desired location and update the configuration file.
