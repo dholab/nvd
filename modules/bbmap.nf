@@ -267,10 +267,10 @@ process CLUMP_READS {
 	cpus 4
 
 	input:
-	tuple val(sample_id), path(reads)
+	tuple val(sample_id), val(platform), val(read_structure), path(reads)
 
 	output:
-    tuple val(sample_id), path("${sample_id}.clumped.fastq.gz")
+    tuple val(sample_id), val(platform), val(read_structure), path("${sample_id}.clumped.fastq.gz")
 
     when:
 	params.tools && (params.tools.contains("clump") || params.tools.contains("all"))

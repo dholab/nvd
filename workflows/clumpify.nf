@@ -1,5 +1,6 @@
-include { CLUMP_READS       } from "../modules/bbmap"
-include { SCRUB_HUMAN_READS } from "../modules/stat"
+include { CLUMP_READS          } from "../modules/bbmap"
+include { DEACON_FETCH_INDEX   } from "../modules/deacon"
+include { DEACON_DEPLETE       } from "../modules/deacon"
 
 workflow CLUMPIFY_WORKFLOW {
     take:
@@ -11,26 +12,26 @@ workflow CLUMPIFY_WORKFLOW {
         .combine(ch_start_gate)
         .map { it[0..-2] }
 
-    // Add human read scrubbing step for public posting of clumpified data to SRA
-    CLUMP_READS(
-        gated_reads.map { id, _platform, _read_structure, reads -> tuple(id, file(reads)) }
-    )
+    // Reorder reads by kmer similarity for better compression.
+    // Full 4-element tuple passes through so DEACON_DEPLETE can consume it directly.
+    CLUMP_READS(gated_reads)
 
-    // Resolve human database path, supporting deprecated human_read_scrub param
-    def human_db_path = params.sra_human_db ?: params.human_read_scrub
+    // --- Host read depletion with deacon ---
+    // Resolve deacon index: local path takes priority over URL download
+    ch_local_index = params.deacon_index
+        ? Channel.fromPath(params.deacon_index)
+        : Channel.empty()
 
-    if (params.human_read_scrub != null && params.sra_human_db == null) {
-        log.warn "DEPRECATION WARNING: --human_read_scrub is deprecated. Please use --sra_human_db instead."
-    }
+    ch_fetch_url = (!params.deacon_index && params.deacon_index_url)
+        ? Channel.of(params.deacon_index_url)
+        : Channel.empty()
 
-    // Check if human database path is a valid file
-    if (human_db_path != null && !file(human_db_path).isFile()) {
-        error("Error: Human database file does not exist: ${human_db_path}")
-    }
+    DEACON_FETCH_INDEX(ch_fetch_url)
 
-    ch_human_reads = human_db_path ? Channel.fromPath( human_db_path ) : Channel.empty()
+    ch_index = ch_local_index.mix(DEACON_FETCH_INDEX.out.index)
 
-    SCRUB_HUMAN_READS(
-        CLUMP_READS.out.combine(ch_human_reads)
+    // DEACON_DEPLETE expects tuple(sample_id, platform, read_structure, reads, index)
+    DEACON_DEPLETE(
+        CLUMP_READS.out.combine(ch_index)
     )
 }

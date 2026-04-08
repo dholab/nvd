@@ -11,6 +11,7 @@ workflow PREPROCESS_READS {
     def should_trim = params.trim_adapters ?: params.preprocess
     def should_scrub = params.scrub_host_reads ?: params.preprocess
     def should_filter = params.filter_reads ?: params.preprocess
+    def should_repair = params.repair_pairs ?: params.preprocess
 
     // 1. Dedup
     ch_after_dedup = should_dedup
@@ -56,7 +57,9 @@ workflow PREPROCESS_READS {
         other: true
     }
 
-    ch_repaired = REPAIR_PAIRS(ch_branched_for_repair.interleaved)
+    ch_repaired = should_repair
+        ? REPAIR_PAIRS(ch_branched_for_repair.interleaved)
+        : ch_branched_for_repair.interleaved
     ch_preprocessed = ch_repaired.mix(ch_branched_for_repair.other)
 
     emit:
