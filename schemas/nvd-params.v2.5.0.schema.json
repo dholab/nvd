@@ -179,6 +179,11 @@
       "type": "boolean",
       "description": "Apply quality and length filtering to reads"
     },
+    "repair_pairs": {
+      "type": "boolean",
+      "default": true,
+      "description": "Repair interleaved paired-end reads to fix orphans from upstream preprocessing steps"
+    },
     "min_read_quality_illumina": {
       "type": "integer",
       "default": 20,
