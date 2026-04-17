@@ -117,3 +117,64 @@ process DEACON_DEPLETE {
         ${reads}
     """
 }
+
+process DEACON_FILTER_HUMAN_VIRUS_READS {
+
+    /* Filter human virus reads using deacon filter in non-deplete mode.
+     * This is used when the user has requested human virus filtering but
+     * the input is interleaved (e.g. from SRA) and thus cannot be repaired
+     * before filtering. Deacon can filter interleaved reads directly, but
+     * it does not re-pair them after filtering, so the output is still
+     * interleaved and must be handled accordingly downstream. */
+
+    tag "${sample_id}"
+
+    label "high"
+
+    input:
+    tuple val(sample_id), val(platform), val(read_structure), path(fastq1), path(fastq2), path(stat_dbss), path(stat_annotation), path(human_virus_taxlist), path(stat_compatible_deacon_idx)
+
+    output:
+    tuple val(sample_id), val(platform), val(read_structure), path(${sample_id}.human_virus.fastq.gz)
+
+    script:
+    """
+    deacon filter \\
+        --threads ${task.cpus} \\
+        --abs-threshold 1 \\
+        --rel-threshold 0.0 \\
+        --output ${sample_id}.human_virus.fastq.gz \\ # Output is interleaved
+        ${stat_compatible_deacon_idx} \\
+        ${fastq1} ${fastq2}
+    """
+
+}
+
+process DEACON_BUILD_INDEX_FROM_STAT_K-MERS {
+
+    /* Build a deacon index from kmers extracted from STAT hits.
+     * This allows us to leverage the taxonomic specificity of STAT
+     * hits while benefiting from deacon's composable indexes and
+     * efficient filtering. */
+
+    tag "${sample_id}"
+    label "medium"
+
+    input:
+    tuple val(sample_id), val(platform), val(read_structure), path(fastq1), path(fastq2), path(stat_dbss), path(stat_annotation), path(human_virus_taxlist), path(stat_compatible_deacon_idx)
+
+
+    output:
+    path "${sample_id}.k31w1-stat_deacon.idx", emit: index
+
+    script:
+    """
+    rust-script bin/stat_to_deacon.rs \\
+        --target-k 31 \\
+        --window-size 1 \\
+        --dbss ${stat_dbss} \\
+        --annotation ${stat_annotation} \\
+        --taxids ${human_virus_taxlist} \\
+        --output ${sample_id}.k31w1-stat_deacon.idx
+    """
+}
