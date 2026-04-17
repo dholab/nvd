@@ -314,3 +314,29 @@ process SANITIZE_EXTRACTED_FASTA {
 	"""
 }
 
+
+
+process SPLIT_INTERLEAVED_READS {
+
+	/* Split interleaved paired-end reads into separate files
+	This is necessary for filtering human virus reads using deacon
+	on an interleaved input. */
+
+	tag "${sample_id}"
+	label "medium"
+
+	input:
+	tuple val(sample_id), val(platform), val(read_structure), path(fastq), path(stat_dbss), path(stat_annotation), path(human_virus_taxlist)
+
+	output:
+	tuple val(sample_id), val(platform), val(read_structure), path(${sample_id}_R1.fastq.gz), path(${sample_id}_R2.fastq.gz), path(stat_dbss), path(stat_annotation), path(human_virus_taxlist)
+	script:
+	"""
+	reformat.sh \
+	in=${fastq} \
+	out1=${sample_id}_R1.fastq.gz \
+	out2=${sample_id}_R2.fastq.gz \
+	threads=${task.cpus} -eoom
+	"""
+}
+
