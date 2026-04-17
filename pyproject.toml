@@ -27,6 +27,7 @@ dependencies = [
   "snakemake>=9.3.1",
   "taxopy>=0.14.0",
   "typer>=0.15.2",
+
 ]
 
 [tool.pixi.workspace]
@@ -46,6 +47,8 @@ samtools = ">=1.5,<2"
 seqkit = ">=2.10.0,<3"
 spades = ">=4.1.0,<5"
 vsearch = ">=2.30.0,<3"
+rust = ">=1.94.0,<1.95"
+rust-script = ">=0.36.0,<0.37"
 
 # System Dependencies
 # ----------------------------------------------------------------------------------- #
