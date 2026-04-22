@@ -118,24 +118,66 @@ process DEACON_DEPLETE {
     """
 }
 
-process DEACON_FILTER_HUMAN_VIRUS_READS {
+process DEACON_BUILD_INDEX_FROM_STAT_K_MERS {
+    /*
+     * Build a deacon index from k-mers extracted from a STAT .dbss database.
+     *
+     * Converts STAT's MSB-first 2-bit k-mers to deacon's LSB-first format,
+     * filtered by a list of target tax IDs (e.g., human-infecting viruses).
+     * Uses k=31, w=1 with dual truncation for maximum sensitivity — captures
+     * 100% of STAT's virus signal while running 60-80x faster per sample.
+     *
+     * This runs ONCE per pipeline invocation (not per-sample) since the
+     * reference files are the same for all samples. The resulting .idx is
+     * then .combine()'d with per-sample reads for filtering.
+     */
 
-    /* Filter human virus reads using deacon filter in non-deplete mode.
-     * This is used when the user has requested human virus filtering but
-     * the input is interleaved (e.g. from SRA) and thus cannot be repaired
-     * before filtering. Deacon can filter interleaved reads directly, but
-     * it does not re-pair them after filtering, so the output is still
-     * interleaved and must be handled accordingly downstream. */
-
-    tag "${sample_id}"
-
-    label "high"
+    label "medium"
 
     input:
-    tuple val(sample_id), val(platform), val(read_structure), path(fastq1), path(fastq2), path(stat_dbss), path(stat_annotation), path(human_virus_taxlist), path(stat_compatible_deacon_idx)
+    path stat_dbss
+    path stat_annotation
+    path human_virus_taxlist
 
     output:
-    tuple val(sample_id), val(platform), val(read_structure), path(${sample_id}.human_virus.fastq.gz)
+    path "human_viruses.k31w1.idx", emit: index
+
+    script:
+    """
+    rust-script ${projectDir}/bin/stat_to_deacon.rs \\
+        --target-k 31 \\
+        --window-size 1 \\
+        --dbss ${stat_dbss} \\
+        --annotation ${stat_annotation} \\
+        --taxids ${human_virus_taxlist} \\
+        --output human_viruses.k31w1.idx
+    """
+}
+
+process DEACON_FILTER_HUMAN_VIRUS_READS {
+    /*
+     * Extract human virus reads using deacon filter in non-deplete mode.
+     *
+     * Replaces STAT aligns_to + seqkit grep for human virus read extraction.
+     * Uses a deacon index built from STAT k-mers (via DEACON_BUILD_INDEX_FROM_STAT_K_MERS).
+     * Threshold settings (abs=1, rel=0.0) match STAT's single-kmer-hit behavior.
+     *
+     * Deacon handles interleaved input natively — no need to split R1/R2 first.
+     * Output is a single FASTQ with the same tuple shape as EXTRACT_HUMAN_VIRUS_READS,
+     * so downstream processes (RUN_SPADES, MAP_READS_TO_CONTIGS) work unchanged.
+     */
+
+    tag "${sample_id}"
+    label "high"
+
+    errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
+    maxRetries 2
+
+    input:
+    tuple val(sample_id), val(platform), val(read_structure), path(reads), path(deacon_idx)
+
+    output:
+    tuple val(sample_id), val(platform), val(read_structure), path("${sample_id}.human_virus.fastq.gz")
 
     script:
     """
@@ -143,38 +185,8 @@ process DEACON_FILTER_HUMAN_VIRUS_READS {
         --threads ${task.cpus} \\
         --abs-threshold 1 \\
         --rel-threshold 0.0 \\
-        --output ${sample_id}.human_virus.fastq.gz \\ # Output is interleaved
-        ${stat_compatible_deacon_idx} \\
-        ${fastq1} ${fastq2}
-    """
-
-}
-
-process DEACON_BUILD_INDEX_FROM_STAT_K-MERS {
-
-    /* Build a deacon index from kmers extracted from STAT hits.
-     * This allows us to leverage the taxonomic specificity of STAT
-     * hits while benefiting from deacon's composable indexes and
-     * efficient filtering. */
-
-    tag "${sample_id}"
-    label "medium"
-
-    input:
-    tuple val(sample_id), val(platform), val(read_structure), path(fastq1), path(fastq2), path(stat_dbss), path(stat_annotation), path(human_virus_taxlist), path(stat_compatible_deacon_idx)
-
-
-    output:
-    path "${sample_id}.k31w1-stat_deacon.idx", emit: index
-
-    script:
-    """
-    rust-script bin/stat_to_deacon.rs \\
-        --target-k 31 \\
-        --window-size 1 \\
-        --dbss ${stat_dbss} \\
-        --annotation ${stat_annotation} \\
-        --taxids ${human_virus_taxlist} \\
-        --output ${sample_id}.k31w1-stat_deacon.idx
+        --output ${sample_id}.human_virus.fastq.gz \\
+        ${deacon_idx} \\
+        ${reads}
     """
 }
