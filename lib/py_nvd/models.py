@@ -968,6 +968,11 @@ class NvdParams(BaseModel):
         description="DEPRECATED: Use sra_human_db instead",
         json_schema_extra={"category": "Preprocessing"},
     )
+    repair_pairs: bool | None = Field(
+        None,
+        description="Repair interleaved paired-end reads to fix orphans from upstream steps",
+        json_schema_extra={"category": "Preprocessing"},
+    )
     filter_reads: bool | None = Field(
         None,
         description="Filter reads by quality/length",

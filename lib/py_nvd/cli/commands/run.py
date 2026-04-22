@@ -342,6 +342,12 @@ def run(
         help="Custom contaminant FASTA to union with base index",
         rich_help_panel=PANEL_PREPROCESSING,
     ),
+    repair_pairs: bool | None = typer.Option(
+        None,
+        "--repair-pairs/--no-repair-pairs",
+        help="Repair interleaved paired-end reads to fix orphans from upstream steps",
+        rich_help_panel=PANEL_PREPROCESSING,
+    ),
     filter_reads: bool | None = typer.Option(
         None,
         "--filter-reads/--no-filter-reads",
@@ -622,6 +628,7 @@ def run(
         "deacon_index": deacon_index,
         "deacon_index_url": deacon_index_url,
         "deacon_contaminants_fasta": deacon_contaminants_fasta,
+        "repair_pairs": repair_pairs,
         "filter_reads": filter_reads,
         "min_read_quality_illumina": min_read_quality_illumina,
         "min_read_quality_nanopore": min_read_quality_nanopore,
