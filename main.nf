@@ -20,11 +20,10 @@ workflow {
 
     GATHER_READS(ch_input_samplesheet)
 
-    PREPROCESS_READS(GATHER_READS.out)
-
-    // STAT+BLAST workflow (human virus detection via STAT + two-phase BLAST)
-    // Aliases: nvd, stat, blast, stat_blast, stast (for backward compatibility)
-    def stat_blast_results = STAT_BLAST_WORKFLOW(PREPROCESS_READS.out)
+    // STAT+BLAST workflow: runs immediately on raw interleaved reads.
+    // Deacon virus extraction + preprocessing happen inside the workflow,
+    // operating on the tiny virus subset for maximum speed.
+    def stat_blast_results = STAT_BLAST_WORKFLOW(GATHER_READS.out)
     def stat_blast_token = stat_blast_results.completion
 
     // Collect all LabKey logs as final process
@@ -35,11 +34,16 @@ workflow {
         )
     }
 
-    // GOTTCHA2 workflow
+    // GOTTCHA2 workflow: full reads, preprocessed — waits for STAT_BLAST to finish
+    // so cluster resources from the fast STAT_BLAST path are freed up first.
+    def gottcha_start = stat_blast_token.map { true }
+    PREPROCESS_READS(
+        GATHER_READS.out.combine(gottcha_start).map { it[0..-2] }
+    )
     def gottcha_token = GOTTCHA2_WORKFLOW(PREPROCESS_READS.out).completion
-    def start_clumpify = stat_blast_token.mix(gottcha_token).collect().map { true }
 
-    // CLUMPIFY workflow  
+    // CLUMPIFY workflow: raw gathered reads, waits for both workflows
+    def start_clumpify = stat_blast_token.mix(gottcha_token).collect().map { true }
     CLUMPIFY_WORKFLOW(
         GATHER_READS.out,
         start_clumpify,
