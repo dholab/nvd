@@ -1,15 +1,21 @@
 /*
  * STAT+BLAST Workflow
- * 
- * Human virus detection using NCBI STAT for initial classification
+ *
+ * Human virus detection using deacon-based virus read extraction
  * followed by two-phase BLAST verification (megablast + blastn).
- * 
+ *
+ * Architecture: deacon virus extraction runs first (right after interleaving),
+ * then preprocessing (dedup, trim, filter) operates on the tiny virus subset,
+ * then SPAdes assembly and BLAST classification.
+ *
  * Historical note: Previously called "NVD" (Novel Virus Detection) workflow.
  * Tool aliases: nvd, stat, blast, stat_blast, stast
  */
 
 nextflow.enable.dsl=2
 
+include { DEACON_BUILD_INDEX_FROM_STAT_K_MERS ; DEACON_FILTER_HUMAN_VIRUS_READS } from "../modules/deacon"
+include { PREPROCESS_READS as PREPROCESS_VIRUS_READS } from "../workflows/preprocess_reads"
 include { PREPROCESS_CONTIGS } from "../subworkflows/preprocess_contigs"
 include { EXTRACT_HUMAN_VIRUSES } from "../subworkflows/extract_human_virus_contigs"
 include { CLASSIFY_WITH_MEGABLAST } from "../subworkflows/classify_with_megablast"
@@ -67,20 +73,20 @@ workflow STAT_BLAST_WORKFLOW {
     // Guard channel declarations with ternary fallback to Channel.empty().
     // When --tools doesn't include a BLAST alias, these params are null.
     // Empty channels maintain the DAG but result in no-op downstream processes.
-    ch_blast_db_files = params.blast_db 
-        ? Channel.fromPath(params.blast_db) 
+    ch_blast_db_files = params.blast_db
+        ? Channel.fromPath(params.blast_db)
         : Channel.empty()
-    ch_stat_index = params.stat_index 
-        ? Channel.fromPath(params.stat_index) 
+    ch_stat_index = params.stat_index
+        ? Channel.fromPath(params.stat_index)
         : Channel.empty()
-    ch_stat_dbss = params.stat_dbss 
-        ? Channel.fromPath(params.stat_dbss) 
+    ch_stat_dbss = params.stat_dbss
+        ? Channel.fromPath(params.stat_dbss)
         : Channel.empty()
-    ch_stat_annotation = params.stat_annotation 
-        ? Channel.fromPath(params.stat_annotation) 
+    ch_stat_annotation = params.stat_annotation
+        ? Channel.fromPath(params.stat_annotation)
         : Channel.empty()
-    ch_human_virus_taxlist = params.human_virus_taxlist 
-        ? Channel.fromPath(params.human_virus_taxlist) 
+    ch_human_virus_taxlist = params.human_virus_taxlist
+        ? Channel.fromPath(params.human_virus_taxlist)
         : Channel.empty()
 
     // Resolve directories for stateful vs stateless mode.
@@ -114,15 +120,34 @@ workflow STAT_BLAST_WORKFLOW {
             tuple(sample_id, platform, read_structure, fastq)
         }
 
-    // Count reads for each sample
+    // Count reads for each sample (on raw gathered reads, before extraction)
     COUNT_READS(ch_gated_samples)
 
-    PREPROCESS_CONTIGS(
-        ch_gated_samples,
+    // -------------------------------------------------------------------------
+    // Frontloaded deacon virus extraction + preprocessing
+    // -------------------------------------------------------------------------
+    // Step 1: Build deacon virus index from STAT k-mers (runs once, not per-sample).
+    // Converts STAT's .dbss database to a deacon .idx filtered by human virus tax IDs.
+    DEACON_BUILD_INDEX_FROM_STAT_K_MERS(
         ch_stat_dbss,
         ch_stat_annotation,
         ch_human_virus_taxlist
     )
+
+    // Step 2: Extract virus reads — runs right after interleaving, before any
+    // preprocessing. Massively reduces data volume (~1-3% of reads are virus).
+    DEACON_FILTER_HUMAN_VIRUS_READS(
+        ch_gated_samples.combine(DEACON_BUILD_INDEX_FROM_STAT_K_MERS.out.index)
+    )
+
+    // Step 3: Preprocess the small virus-only dataset (dedup, trim, filter, repair).
+    // Uses an aliased copy of PREPROCESS_READS so main.nf can call its own instance
+    // for the GOTTCHA2 path without conflict.
+    PREPROCESS_VIRUS_READS(DEACON_FILTER_HUMAN_VIRUS_READS.out)
+
+    // Step 4: Assemble and classify — SPAdes, mask, filter short contigs.
+    // PREPROCESS_CONTIGS no longer does virus extraction (already done above).
+    PREPROCESS_CONTIGS(PREPROCESS_VIRUS_READS.out)
 
     // Convert run_context from queue channel to value channel so it can be
     // consumed by multiple processes (hit registration, LabKey uploads, etc.).
@@ -132,7 +157,7 @@ workflow STAT_BLAST_WORKFLOW {
     // Extract state_dir from run_context for state-tracking processes
     // (run_context is a value channel: [sample_set_id, state_dir])
     ch_state_dir = ch_run_context.map { _sample_set_id, state_dir -> state_dir }
-    
+
     // Create value channels for taxonomy_dir and hits_dir
     // These are resolved at workflow start and broadcast to all consumers
     ch_taxonomy_dir = Channel.value(dirs.taxonomy_dir)
@@ -165,7 +190,7 @@ workflow STAT_BLAST_WORKFLOW {
 
     // Register hits with idempotent keys in the state database.
     // Join contigs with merged BLAST results, then combine with run context and hits_dir.
-    // DSL2 automatically forks EXTRACT_HUMAN_VIRUSES.out.contigs and 
+    // DSL2 automatically forks EXTRACT_HUMAN_VIRUSES.out.contigs and
     // CLASSIFY_WITH_BLASTN.out.merged_results for multiple consumers.
     ch_register_hits_input = EXTRACT_HUMAN_VIRUSES.out.contigs
         .join(CLASSIFY_WITH_BLASTN.out.merged_results, by: 0)
