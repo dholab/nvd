@@ -162,9 +162,13 @@ process DEACON_FILTER_HUMAN_VIRUS_READS {
      * Uses a deacon index built from STAT k-mers (via DEACON_BUILD_INDEX_FROM_STAT_K_MERS).
      * Threshold settings (abs=1, rel=0.0) match STAT's single-kmer-hit behavior.
      *
-     * Deacon handles interleaved input natively — no need to split R1/R2 first.
-     * Output is a single FASTQ with the same tuple shape as EXTRACT_HUMAN_VIRUS_READS,
-     * so downstream processes (RUN_SPADES, MAP_READS_TO_CONTIGS) work unchanged.
+     * Handles both interleaved (Illumina) and single-end (ONT) input:
+     * - Interleaved: piped via zcat | deacon filter ... - - for pair-aware
+     *   k-mer counting (hits from either mate count toward the threshold)
+     * - Single-end: passed directly as a positional argument
+     *
+     * Output is a single FASTQ with the same tuple shape as the input (minus
+     * the index), so downstream PREPROCESS_READS and SPAdes work unchanged.
      */
 
     tag "${sample_id}"
@@ -180,13 +184,25 @@ process DEACON_FILTER_HUMAN_VIRUS_READS {
     tuple val(sample_id), val(platform), val(read_structure), path("${sample_id}.human_virus.fastq.gz")
 
     script:
-    """
-    deacon filter \\
-        --threads ${task.cpus} \\
-        --abs-threshold 1 \\
-        --rel-threshold 0.0 \\
-        --output ${sample_id}.human_virus.fastq.gz \\
-        ${deacon_idx} \\
-        ${reads}
-    """
+    if (read_structure == "interleaved")
+        """
+        zcat ${reads} \\
+        | deacon filter \\
+            --threads ${task.cpus} \\
+            --abs-threshold 1 \\
+            --rel-threshold 0.0 \\
+            --output ${sample_id}.human_virus.fastq.gz \\
+            ${deacon_idx} \\
+            - -
+        """
+    else
+        """
+        deacon filter \\
+            --threads ${task.cpus} \\
+            --abs-threshold 1 \\
+            --rel-threshold 0.0 \\
+            --output ${sample_id}.human_virus.fastq.gz \\
+            ${deacon_idx} \\
+            ${reads}
+        """
 }
