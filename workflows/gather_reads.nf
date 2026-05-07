@@ -72,20 +72,36 @@ workflow GATHER_READS {
 
 
         // MERGE OR INTERLEAVE ANY PAIRED READS
+        // Only run when a downstream workflow needs interleaved reads (gottcha2,
+        // clumpify). When only stat_blast is selected, deacon handles R1/R2 directly
+        // and interleaves as a byproduct, so this step is skipped entirely.
         // ***************************************************************************/
-        ch_combined_fastqs = params.merge_pairs
-            ? MERGE_PAIRS(ch_to_be_paired)
-            : INTERLEAVE_PAIRS(ch_to_be_paired)
+        def needs_interleave = NvdUtils.isToolSelected(params, 'gottcha') ||
+                               NvdUtils.isToolSelected(params, 'clumpify')
+
+        ch_combined_fastqs = needs_interleave
+            ? (params.merge_pairs ? MERGE_PAIRS(ch_to_be_paired) : INTERLEAVE_PAIRS(ch_to_be_paired))
+            : Channel.empty()
 
 
         // MIX READS FROM DIFFERENT PLATFORMS AND EMIT
         // ***************************************************************************/
-        ch_gathered_reads = ch_known_single.mix(
-            ch_combined_fastqs,
-            ch_sorted_fastqs.single
+        ch_gathered_reads = needs_interleave
+            ? ch_known_single.mix(ch_combined_fastqs, ch_sorted_fastqs.single)
+            : Channel.empty()
+
+        // Pre-interleave channel: paired reads as separate R1/R2 files, singles as-is.
+        // Used by STAT_BLAST_WORKFLOW so deacon can filter + interleave in one step,
+        // skipping the ~1 hour INTERLEAVE_PAIRS bottleneck.
+        // Paired: tuple(id, platform, R1, R2)
+        // Single: tuple(id, platform, fastq)  — no R2
+        ch_pre_interleave = ch_to_be_paired.mix(
+            ch_known_single.map { id, platform, _read_structure, fastq -> tuple(id, platform, fastq) },
+            ch_sorted_fastqs.single.map { id, platform, _read_structure, fastq -> tuple(id, platform, fastq) }
         )
 
         emit:
         ch_gathered_reads
+        ch_pre_interleave
 
 }
