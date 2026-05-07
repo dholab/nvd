@@ -162,13 +162,14 @@ process DEACON_FILTER_HUMAN_VIRUS_READS {
      * Uses a deacon index built from STAT k-mers (via DEACON_BUILD_INDEX_FROM_STAT_K_MERS).
      * Threshold settings (abs=1, rel=0.0) match STAT's single-kmer-hit behavior.
      *
-     * Handles both interleaved (Illumina) and single-end (ONT) input:
-     * - Interleaved: piped via zcat | deacon filter ... - - for pair-aware
-     *   k-mer counting (hits from either mate count toward the threshold)
-     * - Single-end: passed directly as a positional argument
+     * Accepts pre-interleave input directly from GATHER_READS:
+     * - Paired (Illumina): takes R1/R2 as separate files. Deacon does pair-aware
+     *   k-mer counting and outputs interleaved FASTQ in a single pass, replacing
+     *   both INTERLEAVE_PAIRS and the old STAT extraction step.
+     * - Single-end (ONT): takes a single file, filtered as individual reads.
      *
-     * Output is a single FASTQ with the same tuple shape as the input (minus
-     * the index), so downstream PREPROCESS_READS and SPAdes work unchanged.
+     * Output is always tuple(sample_id, platform, read_structure, fastq) matching
+     * the shape expected by PREPROCESS_READS and downstream SPAdes.
      */
 
     tag "${sample_id}"
@@ -178,22 +179,22 @@ process DEACON_FILTER_HUMAN_VIRUS_READS {
     maxRetries 2
 
     input:
-    tuple val(sample_id), val(platform), val(read_structure), path(reads), path(deacon_idx)
+    tuple val(sample_id), val(platform), path(reads), path(reads2), path(deacon_idx)
 
     output:
     tuple val(sample_id), val(platform), val(read_structure), path("${sample_id}.human_virus.fastq.gz")
 
     script:
+    read_structure = reads2.name != "NO_R2" ? "interleaved" : "single"
     if (read_structure == "interleaved")
         """
-        zcat ${reads} \\
-        | deacon filter \\
+        deacon filter \\
             --threads ${task.cpus} \\
             --abs-threshold 1 \\
             --rel-threshold 0.0 \\
             --output ${sample_id}.human_virus.fastq.gz \\
             ${deacon_idx} \\
-            - -
+            ${reads} ${reads2}
         """
     else
         """
