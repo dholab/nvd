@@ -30,7 +30,9 @@ include { REGISTER_LK_EXPERIMENT } from "../modules/validate_blast_labkey.nf"
 
 workflow STAT_BLAST_WORKFLOW {
     take:
-    ch_sample_fastqs // Queue channel: tuple val(sample_id), val(platform), val(read_structure), path(fastq)
+    ch_sample_fastqs  // Queue channel: pre-interleave tuples from GATHER_READS
+                      // Paired: tuple(sample_id, platform, R1, R2)
+                      // Single: tuple(sample_id, platform, fastq)
 
     main:
     // Determine whether STAT+BLAST was selected by the user.
@@ -114,13 +116,24 @@ workflow STAT_BLAST_WORKFLOW {
 
     // Gate sample channel: when STAT+BLAST is not selected, ch_blast_enabled is
     // empty, so the combine produces nothing and no downstream operations execute.
+    // Normalize mixed-size tuples from ch_pre_interleave:
+    //   Paired: (id, platform, R1, R2) → (id, platform, R1, R2)
+    //   Single: (id, platform, fastq)  → (id, platform, fastq, NO_R2)
+    // The sentinel file NO_R2 lets DEACON_FILTER_HUMAN_VIRUS_READS distinguish
+    // paired from single-end input with a fixed-size tuple.
     ch_gated_samples = ch_blast_enabled
         .combine(ch_sample_fastqs)
-        .map { _flag, sample_id, platform, read_structure, fastq ->
-            tuple(sample_id, platform, read_structure, fastq)
+        .map { items ->
+            def without_flag = items[1..-1]
+            if (without_flag.size() == 4)
+                // Paired: (id, platform, R1, R2)
+                tuple(without_flag[0], without_flag[1], file(without_flag[2]), file(without_flag[3]))
+            else
+                // Single: (id, platform, fastq) → pad with sentinel
+                tuple(without_flag[0], without_flag[1], file(without_flag[2]), file("NO_R2"))
         }
 
-    // Count reads for each sample (on raw gathered reads, before extraction)
+    // Count total reads across R1+R2 (paired) or single file (ONT)
     COUNT_READS(ch_gated_samples)
 
     // -------------------------------------------------------------------------
@@ -134,8 +147,10 @@ workflow STAT_BLAST_WORKFLOW {
         ch_human_virus_taxlist
     )
 
-    // Step 2: Extract virus reads — runs right after interleaving, before any
-    // preprocessing. Massively reduces data volume (~1-3% of reads are virus).
+    // Step 2: Extract virus reads — runs BEFORE interleaving and preprocessing.
+    // For paired reads, deacon takes R1/R2 directly and outputs interleaved FASTQ,
+    // combining filtering + interleaving in one step (~30 min vs ~1hr interleave + 8hr STAT).
+    // For single-end (ONT), deacon filters the single file directly.
     DEACON_FILTER_HUMAN_VIRUS_READS(
         ch_gated_samples.combine(DEACON_BUILD_INDEX_FROM_STAT_K_MERS.out.index)
     )
