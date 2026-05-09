@@ -118,7 +118,7 @@ process DEACON_BUILD_INDEX_FROM_STAT_K_MERS {
 
     script:
     """
-    rust-script ${projectDir}/bin/stat_to_deacon.rs \\
+    stat_to_deacon.rs \\
         --target-k 31 \\
         --window-size 1 \\
         --dbss ${stat_dbss} \\
