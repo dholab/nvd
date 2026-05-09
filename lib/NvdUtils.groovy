@@ -1,20 +1,11 @@
 /**
- * Utility functions for the NVD2 Nextflow pipeline.
+ * Utility functions for the NVD Nextflow pipeline.
  *
- * This class provides static helper methods for configuration validation
- * and other common operations. Methods are automatically available in
- * .nf files due to Nextflow's implicit import of classes in lib/.
+ * This class provides static helper methods for LabKey configuration
+ * validation. Methods are automatically available in .nf files due to
+ * Nextflow's implicit import of classes in lib/.
  */
 class NvdUtils {
-
-    // -------------------------------------------------------------------------
-    // Tool selection
-    // -------------------------------------------------------------------------
-
-    /** All recognized aliases for the STAT+BLAST workflow. */
-    private static final List<String> BLAST_ALIASES = [
-        'nvd', 'stat', 'blast', 'stat_blast', 'stast',
-    ]
 
     // -------------------------------------------------------------------------
     // LabKey parameter definitions
@@ -33,36 +24,9 @@ class NvdUtils {
         'labkey_exp_id_guard_list',
     ]
 
-    private static final List<String> LABKEY_GOTTCHA2_PARAMS = [
-        'labkey_gottcha_fasta_list',
-        'labkey_gottcha_full_list',
-    ]
-
     // -------------------------------------------------------------------------
     // Public methods
     // -------------------------------------------------------------------------
-
-    /**
-     * Check whether a tool was selected via --tools.
-     *
-     * Centralizes the tool-selection logic so that workflows, channel gates,
-     * and param-validation blocks all use the same condition. The 'blast'
-     * tool has several historical aliases that are all treated as equivalent.
-     *
-     * @param params The Nextflow params object (must have a 'tools' field)
-     * @param tool   Canonical tool name: 'gottcha', 'blast', or 'clumpify'
-     * @return true if the tool (or 'all') appears in params.tools
-     */
-    static boolean isToolSelected(params, String tool) {
-        if (!params.tools) return false
-        if (params.tools.contains('all')) return true
-        switch (tool) {
-            case 'gottcha':  return params.tools.contains('gottcha')
-            case 'blast':    return BLAST_ALIASES.any { params.tools.contains(it) }
-            case 'clumpify': return params.tools.contains('clumpify')
-            default:         return params.tools.contains(tool)
-        }
-    }
 
     /**
      * Validates LabKey parameters required for the STAT+BLAST workflow.
@@ -77,21 +41,6 @@ class NvdUtils {
         }
         def requiredParams = LABKEY_COMMON_PARAMS + LABKEY_BLAST_PARAMS
         validateLabkeyParams(params, requiredParams, 'STAT+BLAST')
-    }
-
-    /**
-     * Validates LabKey parameters required for the GOTTCHA2 workflow.
-     * Checks common params plus GOTTCHA2-specific params.
-     *
-     * @param params The Nextflow params object
-     * @throws IllegalStateException if labkey is enabled but required params are missing
-     */
-    public static void validateLabkeyGottcha2(params) {
-        if (!params.labkey) {
-            return
-        }
-        def requiredParams = LABKEY_COMMON_PARAMS + LABKEY_GOTTCHA2_PARAMS
-        validateLabkeyParams(params, requiredParams, 'GOTTCHA2')
     }
 
     // -------------------------------------------------------------------------
