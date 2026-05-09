@@ -16,9 +16,6 @@ process FETCH_FASTQ {
     output:
     tuple val(id), val(platform), path("${run_accession}*.fastq")
 
-    when:
-    params.tools
-
     script:
     id = id ? id : run_accession
     """
