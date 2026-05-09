@@ -254,37 +254,6 @@ process FILTER_SHORT_CONTIGS {
 	"""
 }
 
-process CLUMP_READS {
-
-    /* */
-
-	tag "${sample_id}"
-	label "ludicrous"
-
-	errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
-	maxRetries 2
-
-	cpus 4
-
-	input:
-	tuple val(sample_id), val(platform), val(read_structure), path(reads)
-
-	output:
-    tuple val(sample_id), val(platform), val(read_structure), path("${sample_id}.clumped.fastq.gz")
-
-    when:
-	params.tools && (params.tools.contains("clump") || params.tools.contains("all"))
-
-	script:
-	"""
-	clumpify.sh \
-	in=${reads} out=${sample_id}.clumped.fastq.gz \
-	reorder \
-	threads=${task.cpus} -eoom
-	"""
-
-}
-
 process SANITIZE_EXTRACTED_FASTA {
 
     /* Reformat GOTTCHA2 extracted FASTA for downstream consumption.
