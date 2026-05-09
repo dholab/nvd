@@ -26,18 +26,6 @@
       "type": "string",
       "description": "LabKey schema name"
     },
-    "labkey_gottcha_fasta_list": {
-      "type": "string",
-      "description": "LabKey list name for GOTTCHA2 FASTA uploads"
-    },
-    "labkey_gottcha_full_list": {
-      "type": "string",
-      "description": "LabKey list name for GOTTCHA2 full results"
-    },
-    "labkey_gottcha_blast_verified_full_list": {
-      "type": "string",
-      "description": "LabKey list name for BLAST-verified GOTTCHA2 results"
-    },
     "labkey_blast_meta_hits_list": {
       "type": "string",
       "description": "LabKey list name for BLAST meta hits"
@@ -60,11 +48,6 @@
       "format": "path",
       "description": "Directory for pipeline output files"
     },
-    "tools": {
-      "type": "string",
-      "pattern": "^(stat_blast|nvd|stat|blast|stast|gottcha|all|clumpify)(,(stat_blast|nvd|stat|blast|stast|gottcha|all|clumpify))*$",
-      "description": "Which analysis tool(s) to run. Valid tools: stat_blast, nvd, stat, blast, gottcha, all, clumpify. For multiple tools, use comma-separated values with no spaces (e.g., 'stat,blast,gottcha'). Use 'all' to run the complete pipeline."
-    },
     "experiment_id": {
       "type": "string",
       "description": "Experiment identifier for tracking and LabKey integration"
@@ -84,10 +67,6 @@
       "format": "path",
       "description": "Nextflow work directory for intermediate files"
     },
-    "gottcha2_db_version": {
-      "type": "string",
-      "description": "GOTTCHA2 database version identifier"
-    },
     "blast_db_version": {
       "type": "string",
       "description": "BLAST database version identifier"
@@ -95,11 +74,6 @@
     "stat_db_version": {
       "type": "string",
       "description": "STAT database version identifier"
-    },
-    "gottcha2_db": {
-      "type": "string",
-      "format": "path",
-      "description": "Path to GOTTCHA2 database directory"
     },
     "nvd_files": {
       "type": "string",
@@ -163,17 +137,6 @@
     "scrub_host_reads": {
       "type": "boolean",
       "description": "Remove host (human) reads using STAT. Requires sra_human_db to be set."
-    },
-    "sra_human_db": {
-      "type": "string",
-      "format": "path",
-      "description": "Path to human reads STAT database for host scrubbing and SRA submission prep"
-    },
-    "human_read_scrub": {
-      "type": "string",
-      "format": "path",
-      "deprecated": true,
-      "description": "DEPRECATED: Use sra_human_db instead. Path to human reads database for SRA submission scrubbing"
     },
     "filter_reads": {
       "type": "boolean",
@@ -310,12 +273,6 @@
         "Kolmioviridae"
       ],
       "description": "List of virus family names to include in human virus analysis"
-    },
-    "min_gottcha_reads": {
-      "type": "integer",
-      "default": 250,
-      "minimum": 1,
-      "description": "Minimum number of reads required for GOTTCHA2 analysis"
     },
     "max_blast_targets": {
       "type": "integer",
