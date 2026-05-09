@@ -64,16 +64,6 @@ def run(
         help="Unique experiment identifier (required for LabKey uploads)",
         rich_help_panel=PANEL_CORE,
     ),
-    # NOTE: Default is None, not "all" - this lets us detect if user provided it
-    # vs using preset value. Default "all" is applied after preset merge.
-    tools: str | None = typer.Option(
-        None,
-        "--tools",
-        "-t",
-        help="Workflow(s) to run: all, stat_blast, gottcha, blast, clumpify. "
-        "Combine with commas, e.g. 'stat_blast,clumpify' (default: all)",
-        rich_help_panel=PANEL_CORE,
-    ),
     results: Path | None = typer.Option(
         None,
         "--results",
@@ -153,12 +143,6 @@ def run(
     # -------------------------------------------------------------------------
     # Database Paths
     # -------------------------------------------------------------------------
-    gottcha2_db: Path | None = typer.Option(
-        None,
-        "--gottcha2-db",
-        help="Override GOTTCHA2 database path",
-        rich_help_panel=PANEL_DATABASES,
-    ),
     blast_db: Path | None = typer.Option(
         None,
         "--blast-db",
@@ -198,12 +182,6 @@ def run(
     # -------------------------------------------------------------------------
     # Database Versions
     # -------------------------------------------------------------------------
-    gottcha2_db_version: str | None = typer.Option(
-        None,
-        "--gottcha2-db-version",
-        help="GOTTCHA2 database version (auto-resolved from registry if path registered)",
-        rich_help_panel=PANEL_DATABASES,
-    ),
     blast_db_version: str | None = typer.Option(
         None,
         "--blast-db-version",
@@ -235,12 +213,6 @@ def run(
         None,
         "--entropy",
         help="Entropy threshold (default: 0.9)",
-        rich_help_panel=PANEL_ANALYSIS,
-    ),
-    min_gottcha_reads: int | None = typer.Option(
-        None,
-        "--min-gottcha-reads",
-        help="Minimum reads for GOTTCHA2 (default: 250)",
         rich_help_panel=PANEL_ANALYSIS,
     ),
     max_blast_targets: int | None = typer.Option(
@@ -421,24 +393,6 @@ def run(
         help="LabKey database schema name (e.g., 'lists')",
         rich_help_panel=PANEL_LABKEY,
     ),
-    labkey_gottcha_fasta_list: str | None = typer.Option(
-        None,
-        "--labkey-gottcha-fasta-list",
-        help="LabKey list name for GOTTCHA2 FASTA results",
-        rich_help_panel=PANEL_LABKEY,
-    ),
-    labkey_gottcha_full_list: str | None = typer.Option(
-        None,
-        "--labkey-gottcha-full-list",
-        help="LabKey list name for full GOTTCHA2 results",
-        rich_help_panel=PANEL_LABKEY,
-    ),
-    labkey_gottcha_blast_verified_full_list: str | None = typer.Option(
-        None,
-        "--labkey-gottcha-blast-verified-full-list",
-        help="LabKey list name for BLAST-verified GOTTCHA2 results",
-        rich_help_panel=PANEL_LABKEY,
-    ),
     labkey_blast_meta_hits_list: str | None = typer.Option(
         None,
         "--labkey-blast-meta-hits-list",
@@ -581,7 +535,6 @@ def run(
         # Core
         "samplesheet": samplesheet,
         "experiment_id": experiment_id,
-        "tools": tools,
         "results": results,
         "cleanup": cleanup,
         "work_dir": work_dir,
@@ -589,7 +542,6 @@ def run(
         "stateless": stateless,
         "taxonomy_dir": taxonomy_dir,
         # Database paths
-        "gottcha2_db": gottcha2_db,
         "blast_db": blast_db,
         "blast_db_prefix": blast_db_prefix,
         "stat_index": stat_index,
@@ -597,14 +549,12 @@ def run(
         "stat_annotation": stat_annotation,
         "human_virus_taxlist": human_virus_taxlist,
         # Database versions
-        "gottcha2_db_version": gottcha2_db_version,
         "blast_db_version": blast_db_version,
         "stat_db_version": stat_db_version,
         # Analysis
         "cutoff_percent": cutoff_percent,
         "tax_stringency": tax_stringency,
         "entropy": entropy,
-        "min_gottcha_reads": min_gottcha_reads,
         "max_blast_targets": max_blast_targets,
         "blast_retention_count": blast_retention_count,
         "min_consecutive_bases": min_consecutive_bases,
@@ -635,9 +585,6 @@ def run(
         "labkey_project_name": labkey_project_name,
         "labkey_webdav": labkey_webdav,
         "labkey_schema": labkey_schema,
-        "labkey_gottcha_fasta_list": labkey_gottcha_fasta_list,
-        "labkey_gottcha_full_list": labkey_gottcha_full_list,
-        "labkey_gottcha_blast_verified_full_list": labkey_gottcha_blast_verified_full_list,
         "labkey_blast_meta_hits_list": labkey_blast_meta_hits_list,
         "labkey_blast_fasta_list": labkey_blast_fasta_list,
         "labkey_exp_id_guard_list": labkey_exp_id_guard_list,
@@ -668,18 +615,12 @@ def run(
         error(f"Samplesheet not found: {params.samplesheet}")
         raise typer.Exit(1)
 
-    # Tools validation is handled by NvdParams, just show info
-    if params.tools and params.tools != "all":
-        info(f"Using tools: {params.tools}")
-
     # =========================================================================
     # STEP 3b: Resolve database versions from registry
     # =========================================================================
     resolution = resolve_database_versions(
         blast_db=params.blast_db,
         blast_db_version=params.blast_db_version,
-        gottcha2_db=params.gottcha2_db,
-        gottcha2_db_version=params.gottcha2_db_version,
         stat_index=params.stat_index,
         stat_db_version=params.stat_db_version,
         state_dir=state_dir,
@@ -697,8 +638,6 @@ def run(
     resolved_updates: dict[str, Any] = {}
     if resolution.blast_db_version is not None:
         resolved_updates["blast_db_version"] = resolution.blast_db_version
-    if resolution.gottcha2_db_version is not None:
-        resolved_updates["gottcha2_db_version"] = resolution.gottcha2_db_version
     if resolution.stat_db_version is not None:
         resolved_updates["stat_db_version"] = resolution.stat_db_version
 

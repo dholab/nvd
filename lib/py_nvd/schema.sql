@@ -42,7 +42,7 @@ CREATE INDEX IF NOT EXISTS idx_processed_samples_sample_id
 
 -- Reference database registry
 CREATE TABLE IF NOT EXISTS databases (
-    db_type TEXT NOT NULL CHECK (db_type IN ('blast', 'stat', 'gottcha2', 'hostile')),
+    db_type TEXT NOT NULL CHECK (db_type IN ('blast', 'stat', 'hostile')),
     version TEXT NOT NULL,
     path TEXT NOT NULL,
     checksum TEXT,
@@ -60,7 +60,7 @@ CREATE INDEX IF NOT EXISTS idx_databases_path ON databases(db_type, path);
 CREATE TABLE IF NOT EXISTS uploads (
     sample_id TEXT NOT NULL,
     sample_set_id TEXT NOT NULL,
-    upload_type TEXT NOT NULL CHECK (upload_type IN ('blast', 'blast_fasta', 'gottcha2', 'gottcha2_fasta')),
+    upload_type TEXT NOT NULL CHECK (upload_type IN ('blast', 'blast_fasta')),
     upload_target TEXT NOT NULL,          -- 'labkey', 'local', 'globus', etc.
     content_hash TEXT NOT NULL,           -- SHA256 of uploaded data for idempotency
     uploaded_at TEXT NOT NULL,

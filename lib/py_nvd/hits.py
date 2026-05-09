@@ -412,7 +412,7 @@ class HitRecord:
     sample_id: str
     run_date: str
     sequence_id: str | None
-    source: Literal["blast", "gottcha2"]
+    source: Literal["blast"]
     adjusted_taxid: int | None = None
     adjusted_taxid_name: str | None = None
     adjusted_taxid_rank: str | None = None
@@ -435,8 +435,8 @@ class HitRecord:
         assert self.sample_set_id, "sample_set_id cannot be empty"
         assert self.sample_id, "sample_id cannot be empty"
         assert self.run_date, "run_date cannot be empty"
-        assert self.source in ("blast", "gottcha2"), (
-            f"source must be 'blast' or 'gottcha2', got {self.source!r}"
+        assert self.source == "blast", (
+            f"source must be 'blast', got {self.source!r}"
         )
 
 

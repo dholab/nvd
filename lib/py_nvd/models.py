@@ -90,9 +90,9 @@ def _from_row(cls: type[T], row: Row) -> T:
 # Type aliases for constrained values
 Status = Literal["running", "completed", "failed"]
 ProcessedSampleStatus = Literal["completed", "uploaded", "failed"]
-DbType = Literal["blast", "stat", "gottcha2"]
+DbType = Literal["blast", "stat"]
 Platform = Literal["illumina", "ont", "sra"]
-UploadType = Literal["blast", "blast_fasta", "gottcha2", "gottcha2_fasta"]
+UploadType = Literal["blast", "blast_fasta"]
 
 
 @dataclass(frozen=True, config=ConfigDict(coerce_numbers_to_str=True))
@@ -207,7 +207,6 @@ class DatabaseResolution:
 
     # Resolved versions (None if path not provided or unresolvable)
     blast_db_version: str | None = None
-    gottcha2_db_version: str | None = None
     stat_db_version: str | None = None
 
     # Warnings to display to the user
@@ -374,7 +373,7 @@ class Hit:
         return _from_row(cls, row)
 
 
-HitSource = Literal["blast", "gottcha2"]
+HitSource = Literal["blast"]
 
 
 @dataclass(frozen=True)
@@ -390,10 +389,8 @@ class HitObservation:
     sample_set_id: str  # Links to Run.sample_set_id
     sample_id: str  # Source sample
     run_date: str  # ISO8601
-    sequence_id: str | None = (
-        None  # Sequence identifier (contig ID for BLAST, read ID for GOTTCHA2)
-    )
-    source: HitSource | None = None  # Hit provenance ("blast" or "gottcha2")
+    sequence_id: str | None = None  # Sequence identifier (contig ID for BLAST)
+    source: HitSource | None = None  # Hit provenance
 
     @classmethod
     def from_row(cls, row: Row) -> Self:
@@ -760,20 +757,6 @@ class RunComparison:
     avg_median_length: float  # Historical average median contig length
 
 
-# Valid values for constrained fields
-VALID_TOOLS = frozenset(
-    {
-        "stat_blast",
-        "nvd",
-        "stat",
-        "blast",
-        "stast",
-        "gottcha",
-        "all",
-        "clumpify",
-    },
-)
-
 DEFAULT_HUMAN_VIRUS_FAMILIES = (
     "Adenoviridae",
     "Anelloviridae",
@@ -831,11 +814,6 @@ class NvdParams(BaseModel):
         description="Results directory",
         json_schema_extra={"category": "Core"},
     )
-    tools: str | None = Field(
-        None,
-        description="Workflow(s) to run: all, stat_blast, gottcha, blast, clumpify",
-        json_schema_extra={"category": "Core"},
-    )
     experiment_id: str | None = Field(
         None,
         description="Experiment identifier (required for LabKey uploads)",
@@ -860,11 +838,6 @@ class NvdParams(BaseModel):
     # =========================================================================
     # Database Versions
     # =========================================================================
-    gottcha2_db_version: str | None = Field(
-        None,
-        description="GOTTCHA2 database version",
-        json_schema_extra={"category": "Databases"},
-    )
     blast_db_version: str | None = Field(
         None,
         description="BLAST database version",
@@ -879,11 +852,6 @@ class NvdParams(BaseModel):
     # =========================================================================
     # Database Paths
     # =========================================================================
-    gottcha2_db: Path | None = Field(
-        None,
-        description="Path to GOTTCHA2 database directory",
-        json_schema_extra={"category": "Databases"},
-    )
     nvd_files: Path | None = Field(
         None,
         description="Path to NVD resource files directory",
@@ -1069,11 +1037,6 @@ class NvdParams(BaseModel):
         description="Virus family names to include in human virus analysis",
         json_schema_extra={"category": "Analysis"},
     )
-    min_gottcha_reads: int = Field(
-        250,
-        description="Minimum reads for GOTTCHA2",
-        json_schema_extra={"category": "Analysis"},
-    )
     max_blast_targets: int = Field(
         100,
         description="Maximum BLAST targets to consider",
@@ -1111,21 +1074,6 @@ class NvdParams(BaseModel):
     labkey_schema: str | None = Field(
         None,
         description="LabKey database schema name",
-        json_schema_extra={"category": "LabKey"},
-    )
-    labkey_gottcha_fasta_list: str | None = Field(
-        None,
-        description="LabKey list name for GOTTCHA2 FASTA results",
-        json_schema_extra={"category": "LabKey"},
-    )
-    labkey_gottcha_full_list: str | None = Field(
-        None,
-        description="LabKey list name for full GOTTCHA2 results",
-        json_schema_extra={"category": "LabKey"},
-    )
-    labkey_gottcha_blast_verified_full_list: str | None = Field(
-        None,
-        description="LabKey list name for BLAST-verified GOTTCHA2 results",
         json_schema_extra={"category": "LabKey"},
     )
     labkey_blast_meta_hits_list: str | None = Field(
@@ -1228,7 +1176,6 @@ class NvdParams(BaseModel):
         return v
 
     @field_validator(
-        "min_gottcha_reads",
         "max_blast_targets",
         "blast_retention_count",
         "min_consecutive_bases",

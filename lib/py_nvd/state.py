@@ -550,11 +550,9 @@ def _resolve_single_database(
     return None, warning, None
 
 
-def resolve_database_versions(  # noqa: PLR0913
+def resolve_database_versions(
     blast_db: Path | None = None,
     blast_db_version: str | None = None,
-    gottcha2_db: Path | None = None,
-    gottcha2_db_version: str | None = None,
     stat_index: Path | None = None,
     stat_db_version: str | None = None,
     state_dir: Path | str | None = None,
@@ -577,8 +575,6 @@ def resolve_database_versions(  # noqa: PLR0913
     Args:
         blast_db: Path to BLAST database (None to skip)
         blast_db_version: User-provided BLAST version (None to auto-resolve)
-        gottcha2_db: Path to GOTTCHA2 database (None to skip)
-        gottcha2_db_version: User-provided GOTTCHA2 version (None to auto-resolve)
         stat_index: Path to STAT index file (None to skip)
         stat_db_version: User-provided STAT version (None to auto-resolve)
         state_dir: Optional state directory override
@@ -600,19 +596,6 @@ def resolve_database_versions(  # noqa: PLR0913
         resolution.warnings.append(blast_warning)
     if blast_reg:
         resolution.auto_registered.append(blast_reg)
-
-    # Resolve GOTTCHA2
-    gottcha2_resolved, gottcha2_warning, gottcha2_reg = _resolve_single_database(
-        "gottcha2",
-        gottcha2_db,
-        gottcha2_db_version,
-        state_dir,
-    )
-    resolution.gottcha2_db_version = gottcha2_resolved
-    if gottcha2_warning:
-        resolution.warnings.append(gottcha2_warning)
-    if gottcha2_reg:
-        resolution.auto_registered.append(gottcha2_reg)
 
     # Resolve STAT (uses stat_index as canonical path)
     stat_resolved, stat_warning, stat_reg = _resolve_single_database(
