@@ -8,32 +8,6 @@
  * - SIMD-accelerated, ~5GB RAM for panhuman index
  */
 
-process DEACON_BUILD_INDEX {
-    /*
-     * Build a deacon index from FASTA file(s).
-     * Use this for custom contaminant sequences.
-     */
-
-    tag "${fasta.simpleName}"
-    label "medium"
-
-    input:
-    path fasta
-
-    output:
-    path "*.idx", emit: index
-
-    script:
-    def prefix = fasta.simpleName
-    """
-    deacon index build \\
-        --threads ${task.cpus} \\
-        -k ${params.deacon_kmer_size} \\
-        -w ${params.deacon_window_size} \\
-        ${fasta} > ${prefix}.k${params.deacon_kmer_size}w${params.deacon_window_size}.idx
-    """
-}
-
 process DEACON_FETCH_INDEX {
     /*
      * Download a prebuilt deacon index from URL.
