@@ -1153,19 +1153,6 @@ class NvdParams(BaseModel):
     # Validators
     # =========================================================================
 
-    @field_validator("tools")
-    @classmethod
-    def validate_tools(cls, v: str | None) -> str | None:
-        """Validate tools option (supports comma-separated values)."""
-        if v is None:
-            return v
-        tools_list = [t.strip() for t in v.split(",")]
-        invalid = [t for t in tools_list if t not in VALID_TOOLS]
-        if invalid:
-            msg = f"Invalid tools: {invalid}. Valid: {sorted(VALID_TOOLS)}"
-            raise ValueError(msg)
-        return v
-
     @field_validator("cutoff_percent", "entropy", "tax_stringency")
     @classmethod
     def validate_zero_to_one(cls, v: float) -> float:
