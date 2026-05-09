@@ -62,7 +62,7 @@ process DEDUP_WITH_CLUMPIFY {
     /* Deduplicate reads using clumpify */
 
 	tag "${sample_id}"
-	label "ludicrous"
+	label "high"
 
 	errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
 	maxRetries 2
@@ -95,7 +95,7 @@ process TRIM_ADAPTERS {
 	/* Trim Illumina adapters using bbduk */
 
 	tag "${sample_id}"
-	label "ludicrous"
+	label "high"
 
 	errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
 	maxRetries 2
@@ -129,7 +129,7 @@ process FILTER_READS {
 	/* Filter reads by quality and length (pair-aware for interleaved reads) */
 
 	tag "${sample_id}"
-	label "ludicrous"
+	label "high"
 
 	errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
 	maxRetries 2
