@@ -147,7 +147,7 @@ process DEACON_FILTER_HUMAN_VIRUS_READS {
      */
 
     tag "${sample_id}"
-    label "high"
+    label "medium"
 
     errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
     maxRetries 2
