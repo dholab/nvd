@@ -19,7 +19,6 @@ include { EXTRACT_HUMAN_VIRUSES } from "../subworkflows/extract_human_virus_cont
 include { CLASSIFY_WITH_MEGABLAST } from "../subworkflows/classify_with_megablast"
 include { CLASSIFY_WITH_BLASTN } from "../subworkflows/classify_with_blastn"
 include { BUNDLE_BLAST_FOR_LABKEY } from "../subworkflows/bundle_blast_for_labkey"
-include { COUNT_READS } from "../modules/count_reads"
 include { CHECK_RUN_STATE; REGISTER_HITS; COMPLETE_RUN; NOTIFY_SLACK } from "../modules/utils"
 include { VALIDATE_LK_BLAST } from "../subworkflows/validate_lk_blast_lists.nf"
 include { VALIDATE_LK_EXP_FRESH } from "../modules/validate_blast_labkey.nf"
@@ -92,9 +91,6 @@ workflow STAT_BLAST_WORKFLOW {
                 tuple(items[0], items[1], file(items[2]), file("NO_R2"))
         }
 
-    // Count total reads across R1+R2 (paired) or single file (ONT)
-    COUNT_READS(ch_normalized_samples)
-
     // -------------------------------------------------------------------------
     // Step 1: Frontloaded deacon virus extraction
     // -------------------------------------------------------------------------
@@ -114,7 +110,15 @@ workflow STAT_BLAST_WORKFLOW {
     // -------------------------------------------------------------------------
     // Step 2: Inlined preprocessing on virus-only reads
     // -------------------------------------------------------------------------
-    ch_virus_reads = DEACON_FILTER_HUMAN_VIRUS_READS.out
+    ch_virus_reads = DEACON_FILTER_HUMAN_VIRUS_READS.out.reads
+
+    // Extract total read counts from deacon summary JSON (replaces COUNT_READS).
+    // The seqs_in field is the total input read count across R1+R2.
+    ch_read_counts = DEACON_FILTER_HUMAN_VIRUS_READS.out.stats
+        .map { sample_id, json_file ->
+            def summary = new groovy.json.JsonSlurper().parse(json_file.toFile())
+            tuple(sample_id, summary.seqs_in.toString())
+        }
 
     // 2a. Dedup
     ch_after_dedup = params.dedup
@@ -226,7 +230,7 @@ workflow STAT_BLAST_WORKFLOW {
         BUNDLE_BLAST_FOR_LABKEY(
             CLASSIFY_WITH_BLASTN.out.merged_results,
             EXTRACT_HUMAN_VIRUSES.out.contigs,
-            COUNT_READS.out.counts,
+            ch_read_counts,
             params.experiment_id,
             workflow.runName,
             EXTRACT_HUMAN_VIRUSES.out.contig_read_counts,
