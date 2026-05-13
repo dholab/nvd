@@ -156,7 +156,8 @@ process DEACON_FILTER_HUMAN_VIRUS_READS {
     tuple val(sample_id), val(platform), path(reads), path(reads2), path(deacon_idx)
 
     output:
-    tuple val(sample_id), val(platform), val(read_structure), path("${sample_id}.human_virus.fastq.gz")
+    tuple val(sample_id), val(platform), val(read_structure), path("${sample_id}.human_virus.fastq.gz"), emit: reads
+    tuple val(sample_id), path("${sample_id}.deacon_filter.json"), emit: stats
 
     script:
     read_structure = reads2.name != "NO_R2" ? "interleaved" : "single"
@@ -166,6 +167,7 @@ process DEACON_FILTER_HUMAN_VIRUS_READS {
             --threads ${task.cpus} \\
             --abs-threshold 1 \\
             --rel-threshold 0.0 \\
+            --summary ${sample_id}.deacon_filter.json \\
             --output ${sample_id}.human_virus.fastq.gz \\
             ${deacon_idx} \\
             ${reads} ${reads2}
@@ -176,6 +178,7 @@ process DEACON_FILTER_HUMAN_VIRUS_READS {
             --threads ${task.cpus} \\
             --abs-threshold 1 \\
             --rel-threshold 0.0 \\
+            --summary ${sample_id}.deacon_filter.json \\
             --output ${sample_id}.human_virus.fastq.gz \\
             ${deacon_idx} \\
             ${reads}
