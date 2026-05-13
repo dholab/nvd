@@ -19,7 +19,7 @@ include { EXTRACT_HUMAN_VIRUSES } from "../subworkflows/extract_human_virus_cont
 include { CLASSIFY_WITH_MEGABLAST } from "../subworkflows/classify_with_megablast"
 include { CLASSIFY_WITH_BLASTN } from "../subworkflows/classify_with_blastn"
 include { BUNDLE_BLAST_FOR_LABKEY } from "../subworkflows/bundle_blast_for_labkey"
-include { CHECK_RUN_STATE; REGISTER_HITS; COMPLETE_RUN; NOTIFY_SLACK } from "../modules/utils"
+include { CHECK_RUN_STATE; REGISTER_HITS; COMPLETE_RUN; NOTIFY_SLACK; ADD_READ_COUNTS_TO_BLAST } from "../modules/utils"
 include { VALIDATE_LK_BLAST } from "../subworkflows/validate_lk_blast_lists.nf"
 include { VALIDATE_LK_EXP_FRESH } from "../modules/validate_blast_labkey.nf"
 include { REGISTER_LK_EXPERIMENT } from "../modules/validate_blast_labkey.nf"
@@ -206,9 +206,16 @@ workflow STAT_BLAST_WORKFLOW {
         ch_taxonomy_dir
     )
 
+    // Add total read counts to the final merged BLAST results so they are
+    // always present in the published TSV, regardless of LabKey.
+    ch_blast_with_counts = CLASSIFY_WITH_BLASTN.out.merged_results
+        .join(ch_read_counts, by: 0)
+
+    ADD_READ_COUNTS_TO_BLAST(ch_blast_with_counts)
+
     // Register hits
     ch_register_hits_input = EXTRACT_HUMAN_VIRUSES.out.contigs
-        .join(CLASSIFY_WITH_BLASTN.out.merged_results, by: 0)
+        .join(ADD_READ_COUNTS_TO_BLAST.out, by: 0)
         .combine(ch_run_context)
         .combine(ch_hits_dir)
         .map { sample_id, contigs, blast_results, sample_set_id, state_dir, hits_dir ->
@@ -219,7 +226,7 @@ workflow STAT_BLAST_WORKFLOW {
 
     if (params.labkey) {
         VALIDATE_LK_EXP_FRESH(
-            CLASSIFY_WITH_BLASTN.out.merged_results.first()
+            ADD_READ_COUNTS_TO_BLAST.out.first()
         )
 
         ch_validation_gate = CHECK_RUN_STATE.out.ready
@@ -228,7 +235,7 @@ workflow STAT_BLAST_WORKFLOW {
             .first()
 
         BUNDLE_BLAST_FOR_LABKEY(
-            CLASSIFY_WITH_BLASTN.out.merged_results,
+            ADD_READ_COUNTS_TO_BLAST.out,
             EXTRACT_HUMAN_VIRUSES.out.contigs,
             ch_read_counts,
             params.experiment_id,
