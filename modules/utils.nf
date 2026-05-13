@@ -77,6 +77,30 @@ process ANNOTATE_LEAST_COMMON_ANCESTORS {
 
 }
 
+process ADD_READ_COUNTS_TO_BLAST {
+    /*
+     * Append total_reads column to merged BLAST results.
+     * Runs after ANNOTATE_LEAST_COMMON_ANCESTORS so the final published
+     * TSV always contains the total input read count regardless of
+     * whether LabKey is enabled.
+     */
+
+    tag "${sample_id}"
+    label "low"
+
+    input:
+    tuple val(sample_id), path(blast_tsv), val(total_reads)
+
+    output:
+    tuple val(sample_id), path("${sample_id}_blast.merged_with_lca.tsv")
+
+    script:
+    """
+    awk -v reads="${total_reads}" 'BEGIN{OFS="\\t"} NR==1{print \$0, "total_reads"} NR>1{print \$0, reads}' \\
+        ${blast_tsv} > ${sample_id}_blast.merged_with_lca.tsv
+    """
+}
+
 /*
  * Register BLAST hits with idempotent keys in the state database.
  *
