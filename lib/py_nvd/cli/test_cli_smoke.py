@@ -520,7 +520,7 @@ class TestValidateCommands:
         """validate params validates a params file."""
         # Create a valid params file
         params_file = tmp_path / "test-params.yaml"
-        params_file.write_text("tools: blast\ncutoff_percent: 0.01\n")
+        params_file.write_text("dedup: true\ncutoff_percent: 0.01\n")
 
         result = runner.invoke(app, ["validate", "params", str(params_file)])
         # Should succeed with valid params
@@ -621,7 +621,7 @@ class TestRunCommandValidation:
 
         # Create params file with samplesheet
         params_file = tmp_path / "params.yaml"
-        params_file.write_text(f"samplesheet: {samplesheet}\ntools: blast\n")
+        params_file.write_text(f"samplesheet: {samplesheet}\ndedup: true\n")
 
         result = runner.invoke(
             app,
@@ -646,26 +646,24 @@ class TestRunCommandValidation:
             "sample1,,illumina,/path/to/r1.fastq.gz,/path/to/r2.fastq.gz\n",
         )
 
-        # Create params file with tools=all
+        # Create params file with dedup_seq=true
         params_file = tmp_path / "params.yaml"
-        params_file.write_text(f"samplesheet: {samplesheet}\ntools: all\n")
+        params_file.write_text(f"samplesheet: {samplesheet}\ndedup_seq: true\n")
 
-        # CLI specifies tools=blast, should override
+        # CLI specifies --dedup, adding the umbrella dedup parameter
         result = runner.invoke(
             app,
             [
                 "run",
                 "--params-file",
                 str(params_file),
-                "--tools",
-                "blast",
+                "--dedup",
                 "--dry-run",
             ],
         )
         assert result.exit_code == 0
-        # The command output should show blast, not all
-        assert "--tools" in result.stdout
-        assert "blast" in result.stdout
+        assert "--dedup true" in result.stdout
+        assert "--dedup_seq true" in result.stdout
 
     def test_run_samplesheet_not_found_error(
         self,
@@ -682,12 +680,12 @@ class TestRunCommandValidation:
         assert result.exit_code == 1
         assert "not found" in result.stdout.lower()
 
-    def test_run_invalid_tools_error(
+    def test_run_invalid_range_error(
         self,
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """run with invalid tools option raises validation error."""
+        """run with invalid parameter value raises validation error."""
         monkeypatch.setenv("NVD_STATE_DIR", str(tmp_path))
 
         # Create a valid samplesheet
@@ -703,15 +701,14 @@ class TestRunCommandValidation:
                 "run",
                 "--samplesheet",
                 str(samplesheet),
-                "--tools",
-                "invalid",
+                "--cutoff-percent",
+                "-0.1",
                 "--dry-run",
             ],
         )
         assert result.exit_code == 1
-        # Pydantic ValidationError is raised with details about invalid tools
         assert result.exception is not None
-        assert "invalid" in str(result.exception).lower()
+        assert "between 0 and 1" in str(result.exception).lower()
 
 
 class TestRunSlackOptions:

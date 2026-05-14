@@ -22,7 +22,7 @@ import yaml
 SCHEMA_FILENAME = "nvd-params.latest.schema.json"
 
 # GitHub raw URL for schema (fallback and for generated templates)
-SCHEMA_URL = "https://raw.githubusercontent.com/dhoconno/nvd/main/schemas/nvd-params.v2.5.0.schema.json"
+SCHEMA_URL = "https://raw.githubusercontent.com/dhoconno/nvd/main/schemas/nvd-params.v3.0.0.schema.json"
 
 
 def _find_schema_path() -> Path:
@@ -246,10 +246,6 @@ def _yaml_required_section(
             "12345",
             "Experiment identifier for tracking and LabKey integration",
         ),
-        "tools": (
-            "all",
-            "Options: stat_blast, nvd, stat, blast, gottcha, all, clumpify (comma-separated for multiple)",
-        ),
         "results": ("results", "Directory for pipeline output files"),
     }
     lines.extend(
@@ -279,12 +275,10 @@ def _yaml_analysis_section(
     lines.append("# === Preprocessing ===")
     preprocess_params = [
         "preprocess",
-        "merge_pairs",
         "dedup",
         "dedup_seq",
         "dedup_pos",
         "trim_adapters",
-        "scrub_host_reads",
         "filter_reads",
     ]
     for name in preprocess_params:
@@ -331,9 +325,6 @@ def _generate_yaml_template(path: Path, schema: dict, schema_url: str) -> None:
             "labkey_project_name",
             "labkey_webdav",
             "labkey_schema",
-            "labkey_gottcha_fasta_list",
-            "labkey_gottcha_full_list",
-            "labkey_gottcha_blast_verified_full_list",
             "labkey_blast_meta_hits_list",
             "labkey_blast_fasta_list",
             "labkey_exp_id_guard_list",
@@ -346,7 +337,6 @@ def _generate_yaml_template(path: Path, schema: dict, schema_url: str) -> None:
         lines,
         "Database Paths",
         [
-            "gottcha2_db",
             "blast_db",
             "blast_db_prefix",
             "stat_index",
@@ -357,6 +347,22 @@ def _generate_yaml_template(path: Path, schema: dict, schema_url: str) -> None:
         ],
         properties,
         subheading="These paths are environment-specific. Set them in your config or here.",
+    )
+
+    _add_commented_section(
+        lines,
+        "Host/Contaminant Depletion",
+        [
+            "host_index",
+            "host_index_url",
+            "host_contaminants_fasta",
+            "host_kmer_size",
+            "host_window_size",
+            "host_abs_threshold",
+            "host_rel_threshold",
+        ],
+        properties,
+        subheading="Host depletion is off by default. Set one host index source to enable it.",
     )
 
     _add_commented_section(
@@ -373,9 +379,8 @@ def _generate_yaml_template(path: Path, schema: dict, schema_url: str) -> None:
 
     _add_commented_section(
         lines,
-        "Tool-Specific Settings",
+        "Classification Settings",
         [
-            "min_gottcha_reads",
             "max_blast_targets",
             "blast_retention_count",
             "min_consecutive_bases",

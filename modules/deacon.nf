@@ -47,8 +47,34 @@ process DEACON_UNION_INDEXES {
 
     script:
     def idx_list = indexes.collect { it.name }.join(' ')
+    def union_or_link = indexes.size() == 1
+        ? "ln -s ${idx_list} combined.idx"
+        : "deacon index union ${idx_list} > combined.idx"
     """
-    deacon index union ${idx_list} > combined.idx
+    ${union_or_link}
+    """
+}
+
+process DEACON_BUILD_INDEX_FROM_FASTA {
+    /*
+     * Build a host/contaminant deacon index from a custom FASTA file.
+     */
+
+    label "medium"
+
+    input:
+    path contaminants_fasta
+
+    output:
+    path "custom_contaminants.k${params.host_kmer_size}w${params.host_window_size}.idx", emit: index
+
+    script:
+    """
+    deacon index build \
+        -k ${params.host_kmer_size} \
+        -w ${params.host_window_size} \
+        -o custom_contaminants.k${params.host_kmer_size}w${params.host_window_size}.idx \
+        ${contaminants_fasta}
     """
 }
 
@@ -83,8 +109,8 @@ process DEACON_DEPLETE {
     deacon filter \\
         --deplete \\
         --threads ${task.cpus} \\
-        --abs-threshold ${params.deacon_abs_threshold} \\
-        --rel-threshold ${params.deacon_rel_threshold} \\
+        --abs-threshold ${params.host_abs_threshold} \\
+        --rel-threshold ${params.host_rel_threshold} \\
         --summary ${sample_id}.deacon.json \\
         --output ${sample_id}.depleted.fastq.gz \\
         ${index} \\

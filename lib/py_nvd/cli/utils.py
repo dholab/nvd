@@ -128,16 +128,6 @@ def get_editor() -> str:
     return os.environ.get("VISUAL") or os.environ.get("EDITOR") or "vi"
 
 
-VALID_TOOLS = [
-    "stat_blast",
-    "nvd",
-    "stat",
-    "blast",
-    "stast",
-    "gottcha",
-    "all",
-    "clumpify",
-]
 MAX_PREVIEW_ITEMS = 5  # Max items to show before "... and N more"
 
 # Help panel names for organizing --help output
@@ -145,7 +135,6 @@ PANEL_CORE = "Core Options"
 PANEL_PREPROCESSING = "Read Preprocessing"
 PANEL_DATABASES = "Database Paths"
 PANEL_ANALYSIS = "Analysis Parameters"
-PANEL_SRA = "SRA Submission"
 PANEL_LABKEY = "LabKey Integration"
 PANEL_NOTIFICATIONS = "Notifications"
 

@@ -159,38 +159,43 @@ def preset_register(
     ),
     dedup: bool | None = typer.Option(
         None,
-        "--dedup/--no-dedup",
+        "--dedup",
         help="Deduplicate reads (umbrella: enables both --dedup-seq and --dedup-pos)",
     ),
     dedup_seq: bool | None = typer.Option(
         None,
-        "--dedup-seq/--no-dedup-seq",
-        help="Sequence-based deduplication with clumpify",
+        "--dedup-seq",
+        help="Enable sequence-based deduplication with clumpify",
     ),
     dedup_pos: bool | None = typer.Option(
         None,
-        "--dedup-pos/--no-dedup-pos",
-        help="Positional deduplication with samtools markdup",
+        "--dedup-pos",
+        help="Enable positional deduplication with samtools markdup",
     ),
     trim_adapters: bool | None = typer.Option(
         None,
         "--trim-adapters/--no-trim-adapters",
         help="Trim adapters",
     ),
-    scrub_host_reads: bool | None = typer.Option(
+    host_index: Path | None = typer.Option(
         None,
-        "--scrub-host-reads/--no-scrub-host-reads",
-        help="Scrub host reads",
+        "--host-index",
+        help="Path to prebuilt host/contaminant index (.idx file)",
+    ),
+    host_index_url: str | None = typer.Option(
+        None,
+        "--host-index-url",
+        help="URL to download a prebuilt host/contaminant index",
+    ),
+    host_contaminants_fasta: Path | None = typer.Option(
+        None,
+        "--host-contaminants-fasta",
+        help="Custom contaminant FASTA for host depletion",
     ),
     filter_reads: bool | None = typer.Option(
         None,
         "--filter-reads/--no-filter-reads",
         help="Filter reads",
-    ),
-    min_gottcha_reads: int | None = typer.Option(
-        None,
-        "--min-gottcha-reads",
-        help="Minimum GOTTCHA2 reads",
     ),
     max_blast_targets: int | None = typer.Option(
         None,
@@ -221,7 +226,7 @@ def preset_register(
         # Update existing preset
         nvd preset register production --from-file updated.yaml
     """
-    preset_params: dict[str, str | int | float | bool | None] = {}
+    preset_params: dict[str, str | int | float | bool | Path | None] = {}
 
     # Load from file if specified
     if from_file:
@@ -238,9 +243,10 @@ def preset_register(
         "dedup_seq": dedup_seq,
         "dedup_pos": dedup_pos,
         "trim_adapters": trim_adapters,
-        "scrub_host_reads": scrub_host_reads,
+        "host_index": host_index,
+        "host_index_url": host_index_url,
+        "host_contaminants_fasta": host_contaminants_fasta,
         "filter_reads": filter_reads,
-        "min_gottcha_reads": min_gottcha_reads,
         "max_blast_targets": max_blast_targets,
         "blast_retention_count": blast_retention_count,
     }

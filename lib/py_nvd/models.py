@@ -896,44 +896,24 @@ class NvdParams(BaseModel):
         description="Enable all preprocessing steps",
         json_schema_extra={"category": "Preprocessing"},
     )
-    merge_pairs: bool | None = Field(
-        None,
-        description="Merge paired read mates based on overlaps",
-        json_schema_extra={"category": "Preprocessing"},
-    )
-    dedup: bool | None = Field(
-        None,
+    dedup: bool = Field(
+        default=False,
         description="Deduplicate reads (umbrella: enables both dedup_seq and dedup_pos)",
         json_schema_extra={"category": "Preprocessing"},
     )
-    dedup_seq: bool | None = Field(
-        None,
+    dedup_seq: bool = Field(
+        default=False,
         description="Sequence-based deduplication with clumpify (preprocessing)",
         json_schema_extra={"category": "Preprocessing"},
     )
-    dedup_pos: bool | None = Field(
-        None,
+    dedup_pos: bool = Field(
+        default=False,
         description="Positional deduplication with samtools markdup (after alignment)",
         json_schema_extra={"category": "Preprocessing"},
     )
     trim_adapters: bool | None = Field(
         None,
         description="Trim Illumina adapters",
-        json_schema_extra={"category": "Preprocessing"},
-    )
-    scrub_host_reads: bool | None = Field(
-        None,
-        description="Remove host reads with STAT (requires sra_human_db)",
-        json_schema_extra={"category": "Preprocessing"},
-    )
-    sra_human_db: Path | None = Field(
-        None,
-        description="Path to human reads STAT database for host scrubbing and SRA submission prep",
-        json_schema_extra={"category": "Preprocessing"},
-    )
-    human_read_scrub: Path | None = Field(
-        None,
-        description="DEPRECATED: Use sra_human_db instead",
         json_schema_extra={"category": "Preprocessing"},
     )
     filter_reads: bool | None = Field(
@@ -962,38 +942,38 @@ class NvdParams(BaseModel):
         json_schema_extra={"category": "Preprocessing"},
     )
 
-    # Host scrubbing with deacon
-    deacon_index: Path | None = Field(
+    # Optional host/contaminant depletion
+    host_index: Path | None = Field(
         None,
-        description="Path to prebuilt deacon index (.idx file)",
+        description="Path to prebuilt host/contaminant index (.idx file)",
         json_schema_extra={"category": "Preprocessing"},
     )
-    deacon_index_url: str = Field(
-        "https://zenodo.org/records/17288185/files/panhuman-1.k31w15.idx",
-        description="URL to download prebuilt deacon index (default: panhuman-1)",
-        json_schema_extra={"category": "Preprocessing"},
-    )
-    deacon_contaminants_fasta: Path | None = Field(
+    host_index_url: str | None = Field(
         None,
-        description="Custom contaminant FASTA to union with base index",
+        description="URL to download a prebuilt host/contaminant index",
         json_schema_extra={"category": "Preprocessing"},
     )
-    deacon_kmer_size: int = Field(
+    host_contaminants_fasta: Path | None = Field(
+        None,
+        description="Custom contaminant FASTA to build and union with other host indexes",
+        json_schema_extra={"category": "Preprocessing"},
+    )
+    host_kmer_size: int = Field(
         31,
-        description="K-mer size for deacon index (must match index if prebuilt)",
+        description="K-mer size for building a custom host/contaminant index",
         json_schema_extra={"category": "Preprocessing"},
     )
-    deacon_window_size: int = Field(
+    host_window_size: int = Field(
         15,
-        description="Minimizer window size for deacon index",
+        description="Minimizer window size for building a custom host/contaminant index",
         json_schema_extra={"category": "Preprocessing"},
     )
-    deacon_abs_threshold: int = Field(
+    host_abs_threshold: int = Field(
         2,
         description="Minimum absolute minimizer hits to classify as contaminant",
         json_schema_extra={"category": "Preprocessing"},
     )
-    deacon_rel_threshold: float = Field(
+    host_rel_threshold: float = Field(
         0.01,
         description="Minimum relative proportion of minimizers (0.0-1.0)",
         json_schema_extra={"category": "Preprocessing"},
@@ -1139,7 +1119,7 @@ class NvdParams(BaseModel):
         json_schema_extra={"category": "Internal"},
     )
     monoimage: str = Field(
-        "nrminor/nvd:v2.6.0-rc",
+        "nrminor/nvd:v3.0.0",
         description="Container image",
         json_schema_extra={"category": "Internal"},
     )
@@ -1153,7 +1133,7 @@ class NvdParams(BaseModel):
     # Validators
     # =========================================================================
 
-    @field_validator("cutoff_percent", "entropy", "tax_stringency")
+    @field_validator("cutoff_percent", "entropy", "tax_stringency", "host_rel_threshold")
     @classmethod
     def validate_zero_to_one(cls, v: float) -> float:
         """Validate that value is in 0-1 range."""
@@ -1168,6 +1148,9 @@ class NvdParams(BaseModel):
         "min_consecutive_bases",
         "min_read_length",
         "max_concurrent_downloads",
+        "host_kmer_size",
+        "host_window_size",
+        "host_abs_threshold",
     )
     @classmethod
     def validate_positive_int(cls, v: int) -> int:

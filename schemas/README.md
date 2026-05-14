@@ -6,9 +6,7 @@ This directory contains JSON Schema definitions for the NVD pipeline.
 
 | Schema | Description |
 |--------|-------------|
-| `nvd-params.v2.3.0.schema.json` | Pipeline parameters schema (version 2.3.0) |
-| `nvd-params.v2.4.0.schema.json` | Pipeline parameters schema (version 2.4.0) |
-| `nvd-params.v2.5.0.schema.json` | Pipeline parameters schema (version 2.5.0) |
+| `nvd-params.v3.0.0.schema.json` | Pipeline parameters schema (version 3.0.0) |
 | `nvd-params.latest.schema.json` | Symlink to the current version |
 
 ## Usage
@@ -22,7 +20,7 @@ Add a schema reference comment at the top of your params file:
 
 samplesheet: samples.csv
 experiment_id: 1001
-tools: all
+dedup: true
 cutoff_percent: 0.001
 ```
 
@@ -35,7 +33,7 @@ Include the `$schema` property in your JSON params file:
   "$schema": "https://raw.githubusercontent.com/dhoconno/nvd/main/schemas/nvd-params.latest.schema.json",
   "samplesheet": "samples.csv",
   "experiment_id": 1001,
-  "tools": "all",
+  "dedup": true,
   "cutoff_percent": 0.001
 }
 ```
@@ -47,7 +45,7 @@ With the schema reference, your IDE provides:
 - **Autocomplete** for parameter names
 - **Type validation** (red squiggles for wrong types)
 - **Hover documentation** (descriptions from schema)
-- **Enum suggestions** (e.g., valid `tools` values)
+- **Completion suggestions** for documented pipeline parameters
 
 ### Using with Nextflow
 
@@ -71,7 +69,7 @@ points to the current version for users who want to track updates automatically.
 For reproducibility, you can reference a specific version:
 
 ```yaml
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dhoconno/nvd/main/schemas/nvd-params.v2.5.0.schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dhoconno/nvd/main/schemas/nvd-params.v3.0.0.schema.json
 ```
 
 ## Validation

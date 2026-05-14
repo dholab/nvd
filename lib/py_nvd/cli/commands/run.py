@@ -23,7 +23,6 @@ from py_nvd.cli.utils import (
     PANEL_LABKEY,
     PANEL_NOTIFICATIONS,
     PANEL_PREPROCESSING,
-    PANEL_SRA,
     PIPELINE_ROOT,
     RESUME_FILE,
     auto_detect_profile,
@@ -257,31 +256,25 @@ def run(
     preprocess: bool | None = typer.Option(
         None,
         "--preprocess/--no-preprocess",
-        help="Enable all preprocessing steps (dedup, trim, scrub, filter)",
-        rich_help_panel=PANEL_PREPROCESSING,
-    ),
-    merge_pairs: bool | None = typer.Option(
-        None,
-        "--merge-pairs/--no-merge-pairs",
-        help="Merge paired read mates based on overlaps",
+        help="Enable default preprocessing steps",
         rich_help_panel=PANEL_PREPROCESSING,
     ),
     dedup: bool | None = typer.Option(
         None,
-        "--dedup/--no-dedup",
+        "--dedup",
         help="Deduplicate reads (umbrella: enables both --dedup-seq and --dedup-pos)",
         rich_help_panel=PANEL_PREPROCESSING,
     ),
     dedup_seq: bool | None = typer.Option(
         None,
-        "--dedup-seq/--no-dedup-seq",
-        help="Sequence-based deduplication with clumpify (default: follows --dedup)",
+        "--dedup-seq",
+        help="Enable sequence-based deduplication with clumpify",
         rich_help_panel=PANEL_PREPROCESSING,
     ),
     dedup_pos: bool | None = typer.Option(
         None,
-        "--dedup-pos/--no-dedup-pos",
-        help="Positional deduplication with samtools markdup (default: follows --dedup)",
+        "--dedup-pos",
+        help="Enable positional deduplication with samtools markdup",
         rich_help_panel=PANEL_PREPROCESSING,
     ),
     trim_adapters: bool | None = typer.Option(
@@ -290,28 +283,22 @@ def run(
         help="Trim Illumina adapters (default: follows --preprocess)",
         rich_help_panel=PANEL_PREPROCESSING,
     ),
-    scrub_host_reads: bool | None = typer.Option(
+    host_index: Path | None = typer.Option(
         None,
-        "--scrub-host-reads/--no-scrub-host-reads",
-        help="Remove host reads with STAT (requires --sra-human-db; default: follows --preprocess)",
+        "--host-index",
+        help="Path to prebuilt host/contaminant index (.idx file)",
         rich_help_panel=PANEL_PREPROCESSING,
     ),
-    deacon_index: Path | None = typer.Option(
+    host_index_url: str | None = typer.Option(
         None,
-        "--deacon-index",
-        help="Path to prebuilt deacon index (.idx file)",
+        "--host-index-url",
+        help="URL to download a prebuilt host/contaminant index",
         rich_help_panel=PANEL_PREPROCESSING,
     ),
-    deacon_index_url: str | None = typer.Option(
+    host_contaminants_fasta: Path | None = typer.Option(
         None,
-        "--deacon-index-url",
-        help="URL to download prebuilt deacon index (default: panhuman-1)",
-        rich_help_panel=PANEL_PREPROCESSING,
-    ),
-    deacon_contaminants_fasta: Path | None = typer.Option(
-        None,
-        "--deacon-contaminants-fasta",
-        help="Custom contaminant FASTA to union with base index",
+        "--host-contaminants-fasta",
+        help="Custom contaminant FASTA to build and union with other host indexes",
         rich_help_panel=PANEL_PREPROCESSING,
     ),
     filter_reads: bool | None = typer.Option(
@@ -343,22 +330,6 @@ def run(
         "--max-read-length",
         help="Maximum read length (default: no limit)",
         rich_help_panel=PANEL_PREPROCESSING,
-    ),
-    # -------------------------------------------------------------------------
-    # SRA Submission
-    # -------------------------------------------------------------------------
-    sra_human_db: Path | None = typer.Option(
-        None,
-        "--sra-human-db",
-        help="Path to human reads database for SRA submission scrubbing",
-        rich_help_panel=PANEL_SRA,
-    ),
-    # DEPRECATED: Use --sra-human-db instead
-    human_read_scrub: Path | None = typer.Option(
-        None,
-        "--human-read-scrub",
-        help="[DEPRECATED] Use --sra-human-db instead",
-        hidden=True,
     ),
     # -------------------------------------------------------------------------
     # LabKey Integration
@@ -447,7 +418,7 @@ def run(
     The command is saved to .nfresume for easy resumption with 'nvd resume'.
 
     Parameter precedence (highest to lowest):
-        1. CLI arguments (--tools, --blast-db, etc.)
+        1. CLI arguments (--blast-db, --dedup, etc.)
         2. Params file (--params-file params.yaml)
         3. Preset values (--preset production)
         4. Pipeline defaults (nextflow.config)
@@ -466,9 +437,6 @@ def run(
         # Specify profile and results directory
         nvd run -s samples.csv -e exp002 -p docker -r ./my_results
 
-        # Run only GOTTCHA2 workflow
-        nvd run -s samples.csv -e exp003 -t gottcha
-
         # Resume a failed run (two ways)
         nvd run -s samples.csv -e exp003 --resume
         nvd resume  # Uses saved command from .nfresume
@@ -483,7 +451,7 @@ def run(
         nvd run --params-file run-config.yaml
 
         # Combine params file with CLI overrides
-        nvd run -f run-config.yaml --tools blast --cutoff-percent 0.01
+        nvd run -f run-config.yaml --dedup --cutoff-percent 0.01
 
         # Pass other Nextflow options via '--' separator
         nvd run -s samples.csv -- -with-tower -with-trace
@@ -521,14 +489,6 @@ def run(
     # Nextflow-native options (profile, config, resume) are handled separately.
     # =========================================================================
 
-    # Handle deprecation warning for human_read_scrub -> sra_human_db
-    effective_sra_human_db = sra_human_db
-    if human_read_scrub is not None and sra_human_db is None:
-        warning(
-            "DEPRECATION: --human-read-scrub is deprecated. Please use --sra-human-db instead.",
-        )
-        effective_sra_human_db = human_read_scrub
-
     # All pipeline params from CLI (None values are filtered by merge)
     # NOTE: profile, config, resume are Nextflow-native, not pipeline params
     cli_args: dict[str, Any] = {
@@ -563,22 +523,18 @@ def run(
         "max_concurrent_downloads": max_concurrent_downloads,
         # Preprocessing
         "preprocess": preprocess,
-        "merge_pairs": merge_pairs,
         "dedup": dedup,
         "dedup_seq": dedup_seq,
         "dedup_pos": dedup_pos,
         "trim_adapters": trim_adapters,
-        "scrub_host_reads": scrub_host_reads,
-        "deacon_index": deacon_index,
-        "deacon_index_url": deacon_index_url,
-        "deacon_contaminants_fasta": deacon_contaminants_fasta,
+        "host_index": host_index,
+        "host_index_url": host_index_url,
+        "host_contaminants_fasta": host_contaminants_fasta,
         "filter_reads": filter_reads,
         "min_read_quality_illumina": min_read_quality_illumina,
         "min_read_quality_nanopore": min_read_quality_nanopore,
         "min_read_length": min_read_length,
         "max_read_length": max_read_length,
-        # SRA (with deprecation handling)
-        "sra_human_db": effective_sra_human_db,
         # LabKey
         "labkey": labkey,
         "labkey_server": labkey_server,

@@ -5,14 +5,14 @@
  * preprocessing, SPAdes assembly, and two-phase BLAST verification.
  *
  * Architecture: deacon virus extraction runs first on raw R1/R2 reads
- * (outputting interleaved), then preprocessing (dedup, trim, filter)
+ * (outputting interleaved), then preprocessing (dedup, trim, optional host depletion, filter)
  * operates on the tiny virus subset, then SPAdes and BLAST.
  */
 
 nextflow.enable.dsl=2
 
 include { DEACON_BUILD_INDEX_FROM_STAT_K_MERS ; DEACON_FILTER_HUMAN_VIRUS_READS } from "../modules/deacon"
-include { DEACON_FETCH_INDEX ; DEACON_DEPLETE } from "../modules/deacon"
+include { DEACON_FETCH_INDEX ; DEACON_BUILD_INDEX_FROM_FASTA ; DEACON_UNION_INDEXES ; DEACON_DEPLETE } from "../modules/deacon"
 include { DEDUP_WITH_CLUMPIFY ; TRIM_ADAPTERS ; FILTER_READS ; REPAIR_PAIRS } from "../modules/bbmap"
 include { PREPROCESS_CONTIGS } from "../subworkflows/preprocess_contigs"
 include { EXTRACT_HUMAN_VIRUSES } from "../subworkflows/extract_human_virus_contigs"
@@ -121,7 +121,8 @@ workflow STAT_BLAST_WORKFLOW {
         }
 
     // 2a. Dedup
-    ch_after_dedup = params.dedup
+    def should_dedup_seq = params.dedup || params.dedup_seq
+    ch_after_dedup = should_dedup_seq
         ? DEDUP_WITH_CLUMPIFY(ch_virus_reads)
         : ch_virus_reads
 
@@ -134,17 +135,30 @@ workflow STAT_BLAST_WORKFLOW {
         ? TRIM_ADAPTERS(ch_branched_for_trim.illumina).mix(ch_branched_for_trim.other)
         : ch_after_dedup
 
-    // 2c. Host scrub with deacon (optional)
-    def has_deacon_host_config = params.deacon_index || params.deacon_index_url || params.deacon_contaminants_fasta
-    if (params.scrub_host_reads && has_deacon_host_config) {
-        ch_local_host_index = params.deacon_index
-            ? Channel.fromPath(params.deacon_index)
+    // 2c. Host/contaminant depletion with deacon (optional)
+    def has_host_config = params.host_index || params.host_index_url || params.host_contaminants_fasta
+    if (has_host_config) {
+        ch_local_host_index = params.host_index
+            ? Channel.fromPath(params.host_index)
             : Channel.empty()
-        ch_host_fetch_url = (!params.deacon_index && params.deacon_index_url)
-            ? Channel.of(params.deacon_index_url)
+        ch_host_fetch_url = (!params.host_index && params.host_index_url)
+            ? Channel.of(params.host_index_url)
             : Channel.empty()
+        ch_host_contaminants_fasta = params.host_contaminants_fasta
+            ? Channel.fromPath(params.host_contaminants_fasta)
+            : Channel.empty()
+
         DEACON_FETCH_INDEX(ch_host_fetch_url)
-        ch_host_index = ch_local_host_index.mix(DEACON_FETCH_INDEX.out.index)
+        DEACON_BUILD_INDEX_FROM_FASTA(ch_host_contaminants_fasta)
+
+        ch_host_index_sources = ch_local_host_index
+            .mix(DEACON_FETCH_INDEX.out.index)
+            .mix(DEACON_BUILD_INDEX_FROM_FASTA.out.index)
+            .collect()
+
+        DEACON_UNION_INDEXES(ch_host_index_sources)
+        ch_host_index = DEACON_UNION_INDEXES.out.index
+
         ch_after_scrub = DEACON_DEPLETE(ch_after_trim.combine(ch_host_index)).reads
     } else {
         ch_after_scrub = ch_after_trim
@@ -166,9 +180,7 @@ workflow STAT_BLAST_WORKFLOW {
         interleaved: read_structure == "interleaved"
         other: true
     }
-    ch_repaired = params.repair_pairs
-        ? REPAIR_PAIRS(ch_branched_for_repair.interleaved)
-        : ch_branched_for_repair.interleaved
+    ch_repaired = REPAIR_PAIRS(ch_branched_for_repair.interleaved)
     ch_preprocessed = ch_repaired.mix(ch_branched_for_repair.other)
 
     // -------------------------------------------------------------------------

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://raw.githubusercontent.com/dhoconno/nvd/main/schemas/nvd-params.v2.5.0.schema.json",
+  "$id": "https://raw.githubusercontent.com/dhoconno/nvd/main/schemas/nvd-params.v3.0.0.schema.json",
   "title": "NVD Pipeline Parameters",
   "description": "Parameters for the Novel Virus Detection (NVD) metagenomics pipeline. Use with Nextflow's -params-file option or register as a preset with nvd preset register.",
   "type": "object",
@@ -112,31 +112,26 @@
     "preprocess": {
       "type": "boolean",
       "default": false,
-      "description": "Run all preprocessing steps on reads before classification (enables dedup, trim_adapters, scrub_host_reads, filter_reads)"
-    },
-    "merge_pairs": {
-      "type": "boolean",
-      "description": "Merge paired read mates based on overlaps between them"
+      "description": "Enable default preprocessing steps before classification"
     },
     "dedup": {
       "type": "boolean",
+      "default": false,
       "description": "Deduplicate sequencing reads (umbrella: enables both dedup_seq and dedup_pos)"
     },
     "dedup_seq": {
       "type": "boolean",
+      "default": false,
       "description": "Sequence-based deduplication with clumpify (preprocessing)"
     },
     "dedup_pos": {
       "type": "boolean",
+      "default": false,
       "description": "Positional deduplication with samtools markdup (after alignment)"
     },
     "trim_adapters": {
       "type": "boolean",
       "description": "Trim Illumina adapters from reads"
-    },
-    "scrub_host_reads": {
-      "type": "boolean",
-      "description": "Remove host (human) reads using STAT. Requires sra_human_db to be set."
     },
     "filter_reads": {
       "type": "boolean",
@@ -165,39 +160,44 @@
       "minimum": 1,
       "description": "Maximum read length to retain (no limit if not specified)"
     },
-    "deacon_index": {
+    "host_index": {
       "type": ["string", "null"],
       "default": null,
-      "description": "Path to prebuilt deacon index (.idx file)"
+      "description": "Path to a prebuilt host/contaminant index (.idx file). Providing this enables host depletion."
     },
-    "deacon_index_url": {
-      "type": "string",
-      "default": "https://zenodo.org/records/17288185/files/panhuman-1.k31w15.idx",
-      "description": "URL to download prebuilt deacon index (default: panhuman-1)"
-    },
-    "deacon_contaminants_fasta": {
+    "host_index_url": {
       "type": ["string", "null"],
       "default": null,
-      "description": "Custom contaminant FASTA to union with base index"
+      "description": "URL to download a prebuilt host/contaminant index. Providing this enables host depletion when host_index is not set."
     },
-    "deacon_kmer_size": {
+    "host_contaminants_fasta": {
+      "type": ["string", "null"],
+      "default": null,
+      "description": "Custom contaminant FASTA to build and union with other host indexes. Providing this enables host depletion."
+    },
+    "host_kmer_size": {
       "type": "integer",
       "default": 31,
-      "description": "K-mer size for deacon index (must match index if prebuilt)"
+      "minimum": 1,
+      "description": "K-mer size for building a custom host/contaminant index"
     },
-    "deacon_window_size": {
+    "host_window_size": {
       "type": "integer",
       "default": 15,
-      "description": "Minimizer window size for deacon index"
+      "minimum": 1,
+      "description": "Minimizer window size for building a custom host/contaminant index"
     },
-    "deacon_abs_threshold": {
+    "host_abs_threshold": {
       "type": "integer",
       "default": 2,
+      "minimum": 1,
       "description": "Minimum absolute minimizer hits to classify as contaminant"
     },
-    "deacon_rel_threshold": {
+    "host_rel_threshold": {
       "type": "number",
       "default": 0.01,
+      "minimum": 0,
+      "maximum": 1,
       "description": "Minimum relative proportion of minimizers (0.0-1.0)"
     },
     "cutoff_percent": {
@@ -298,7 +298,7 @@
     },
     "monoimage": {
       "type": "string",
-      "default": "nrminor/nvd:v2.5.0",
+      "default": "nrminor/nvd:v3.0.0",
       "description": "Container image to use for pipeline execution"
     },
     "slack_enabled": {

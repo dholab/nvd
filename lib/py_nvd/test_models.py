@@ -8,7 +8,6 @@ from pydantic import ValidationError
 
 from py_nvd.models import (
     DEFAULT_HUMAN_VIRUS_FAMILIES,
-    VALID_TOOLS,
     NvdParams,
     Run,
     TracedParams,
@@ -23,7 +22,6 @@ class TestNvdParamsInstantiation:
     def test_minimal_instantiation(self) -> None:
         """Can create NvdParams with no arguments (all defaults)."""
         p = NvdParams()
-        assert p.tools is None
         assert p.preprocess is False
         assert p.cutoff_percent == 0.001
 
@@ -31,11 +29,9 @@ class TestNvdParamsInstantiation:
         """Can create with typical required fields."""
         p = NvdParams(
             samplesheet=Path("/fake/samples.csv"),
-            tools="blast",
             experiment_id="exp001",
         )
         assert p.samplesheet == Path("/fake/samples.csv")
-        assert p.tools == "blast"
         assert p.experiment_id == "exp001"
 
     def test_all_fields(self) -> None:
@@ -44,22 +40,22 @@ class TestNvdParamsInstantiation:
             # Core
             samplesheet=Path("/fake/samples.csv"),
             results=Path("/fake/results"),
-            tools="blast,gottcha",
             experiment_id="exp001",
             max_concurrent_downloads=5,
             cleanup=True,
             work_dir=Path("/fake/work"),
             # Database versions
-            gottcha2_db_version="RefSeq-r220",
             blast_db_version="core-nt_2025-01-01",
             # Database paths
-            gottcha2_db=Path("/db/gottcha2"),
             blast_db=Path("/db/blast"),
             blast_db_prefix="nt",
             # Preprocessing
             preprocess=True,
             dedup=True,
+            dedup_seq=True,
+            dedup_pos=True,
             trim_adapters=True,
+            host_index=Path("/db/host.idx"),
             # Analysis
             cutoff_percent=0.01,
             entropy=0.85,
@@ -68,48 +64,10 @@ class TestNvdParamsInstantiation:
             labkey=True,
             labkey_server="example.com",
         )
-        assert p.tools == "blast,gottcha"
         assert p.cleanup is True
+        assert p.host_index == Path("/db/host.idx")
         assert p.cutoff_percent == 0.01
         assert p.labkey is True
-
-
-class TestNvdParamsToolsValidator:
-    """Tests for tools field validation."""
-
-    def test_valid_single_tool(self) -> None:
-        """Single valid tool is accepted."""
-        p = NvdParams(tools="blast")
-        assert p.tools == "blast"
-
-    def test_valid_multiple_tools(self) -> None:
-        """Comma-separated valid tools are accepted."""
-        p = NvdParams(tools="blast,gottcha,stat")
-        assert p.tools == "blast,gottcha,stat"
-
-    def test_valid_all_tools(self) -> None:
-        """All valid tool names are accepted."""
-        for tool in VALID_TOOLS:
-            p = NvdParams(tools=tool)
-            assert p.tools == tool
-
-    def test_none_tools_allowed(self) -> None:
-        """None is a valid value for tools."""
-        p = NvdParams(tools=None)
-        assert p.tools is None
-
-    def test_invalid_tool_rejected(self) -> None:
-        """Invalid tool name raises ValidationError."""
-        with pytest.raises(ValidationError) as exc_info:
-            NvdParams(tools="invalid_tool")
-        assert "Invalid tools" in str(exc_info.value)
-
-    def test_mixed_valid_invalid_rejected(self) -> None:
-        """Mix of valid and invalid tools is rejected."""
-        with pytest.raises(ValidationError) as exc_info:
-            NvdParams(tools="blast,invalid,gottcha")
-        assert "Invalid tools" in str(exc_info.value)
-        assert "invalid" in str(exc_info.value)
 
 
 class TestNvdParamsRangeValidators:
@@ -161,21 +119,23 @@ class TestNvdParamsRangeValidators:
 class TestNvdParamsPositiveIntValidators:
     """Tests for positive integer validators."""
 
-    def test_min_gottcha_reads_valid(self) -> None:
-        """min_gottcha_reads accepts positive integers."""
-        assert NvdParams(min_gottcha_reads=1).min_gottcha_reads == 1
-        assert NvdParams(min_gottcha_reads=250).min_gottcha_reads == 250
+    def test_host_index_build_params_valid(self) -> None:
+        """Host index build parameters accept positive integers."""
+        p = NvdParams(host_kmer_size=31, host_window_size=15, host_abs_threshold=2)
+        assert p.host_kmer_size == 31
+        assert p.host_window_size == 15
+        assert p.host_abs_threshold == 2
 
-    def test_min_gottcha_reads_zero_rejected(self) -> None:
-        """min_gottcha_reads=0 raises ValidationError."""
+    def test_host_kmer_size_zero_rejected(self) -> None:
+        """host_kmer_size=0 raises ValidationError."""
         with pytest.raises(ValidationError) as exc_info:
-            NvdParams(min_gottcha_reads=0)
+            NvdParams(host_kmer_size=0)
         assert "Must be >= 1" in str(exc_info.value)
 
-    def test_min_gottcha_reads_negative_rejected(self) -> None:
-        """Negative min_gottcha_reads raises ValidationError."""
+    def test_host_window_size_negative_rejected(self) -> None:
+        """Negative host_window_size raises ValidationError."""
         with pytest.raises(ValidationError):
-            NvdParams(min_gottcha_reads=-5)
+            NvdParams(host_window_size=-5)
 
     def test_max_blast_targets_valid(self) -> None:
         """max_blast_targets accepts positive integers."""
@@ -264,9 +224,9 @@ class TestNvdParamsTypeCoercion:
 
     def test_string_to_int(self) -> None:
         """String integers are coerced to int."""
-        p = NvdParams(min_gottcha_reads="100")  # ty: ignore[invalid-argument-type]
-        assert isinstance(p.min_gottcha_reads, int)
-        assert p.min_gottcha_reads == 100
+        p = NvdParams(max_blast_targets="100")  # ty: ignore[invalid-argument-type]
+        assert isinstance(p.max_blast_targets, int)
+        assert p.max_blast_targets == 100
 
     def test_string_to_float(self) -> None:
         """String floats are coerced to float."""
@@ -287,58 +247,58 @@ class TestNvdParamsMerge:
     def test_merge_empty_sources(self) -> None:
         """Merge with no sources returns defaults."""
         p = NvdParams.merge()
-        assert p.tools is None
         assert p.cutoff_percent == 0.001
 
     def test_merge_single_dict(self) -> None:
         """Merge with single dict source."""
-        p = NvdParams.merge({"tools": "blast", "cutoff_percent": 0.01})
-        assert p.tools == "blast"
+        p = NvdParams.merge({"dedup": True, "cutoff_percent": 0.01})
+        assert p.dedup is True
         assert p.cutoff_percent == 0.01
 
     def test_merge_precedence_later_wins(self) -> None:
         """Later sources override earlier sources."""
-        preset = {"tools": "all", "cutoff_percent": 0.01}
-        cli = {"tools": "blast"}
+        preset = {"dedup": False, "cutoff_percent": 0.01}
+        cli = {"dedup": True}
         p = NvdParams.merge(preset, cli)
-        assert p.tools == "blast"  # CLI wins
+        assert p.dedup is True  # CLI wins
         assert p.cutoff_percent == 0.01  # From preset
 
     def test_merge_three_sources(self) -> None:
         """Three-way merge with correct precedence."""
-        preset = {"tools": "all", "cutoff_percent": 0.01, "entropy": 0.8}
-        params_file = {"tools": "blast", "entropy": 0.85}
+        preset = {"dedup": True, "cutoff_percent": 0.01, "entropy": 0.8}
+        params_file = {"dedup_seq": True, "entropy": 0.85}
         cli = {"cutoff_percent": 0.005}
         p = NvdParams.merge(preset, params_file, cli)
-        assert p.tools == "blast"  # From params_file
+        assert p.dedup_seq is True  # From params_file
         assert p.cutoff_percent == 0.005  # From CLI
         assert p.entropy == 0.85  # From params_file
 
     def test_merge_none_sources_skipped(self) -> None:
         """None sources are gracefully skipped."""
-        p = NvdParams.merge(None, {"tools": "blast"}, None)
-        assert p.tools == "blast"
+        p = NvdParams.merge(None, {"dedup": True}, None)
+        assert p.dedup is True
 
     def test_merge_none_values_skipped(self) -> None:
         """None values within dicts don't override."""
-        preset = {"tools": "all", "cutoff_percent": 0.01}
-        cli = {"tools": None, "cutoff_percent": 0.005}
+        preset = {"dedup": True, "cutoff_percent": 0.01}
+        cli = {"dedup": None, "cutoff_percent": 0.005}
         p = NvdParams.merge(preset, cli)
-        assert p.tools == "all"  # None didn't override
+        assert p.dedup is True  # None didn't override
         assert p.cutoff_percent == 0.005  # Non-None did override
 
     def test_merge_with_nvdparams_instance(self) -> None:
         """Can merge NvdParams instances, not just dicts."""
-        base = NvdParams(tools="all", cutoff_percent=0.01)
-        override = {"tools": "blast"}
+        base = NvdParams(dedup=True, cutoff_percent=0.01)
+        override = {"dedup_pos": True}
         p = NvdParams.merge(base, override)
-        assert p.tools == "blast"
+        assert p.dedup is True
+        assert p.dedup_pos is True
         assert p.cutoff_percent == 0.01
 
     def test_merge_validates_result(self) -> None:
         """Merged result is validated."""
         with pytest.raises(ValidationError):
-            NvdParams.merge({"tools": "invalid_tool"})
+            NvdParams.merge({"cutoff_percent": -0.1})
 
     def test_merge_stateless_mode_precedence(self) -> None:
         """CLI stateless/taxonomy_dir override preset values."""
@@ -382,19 +342,19 @@ class TestNvdParamsToNextflowArgs:
 
     def test_params_as_double_dash_args(self) -> None:
         """Params are formatted as --param_name value (underscores for Nextflow)."""
-        p = NvdParams(tools="blast", cutoff_percent=0.01)
+        p = NvdParams(dedup=True, cutoff_percent=0.01)
         cmd = p.to_nextflow_args(Path("/pipeline"))
-        assert "--tools" in cmd
-        assert "blast" in cmd
+        assert "--dedup" in cmd
+        assert "true" in cmd
         assert "--cutoff_percent" in cmd
         assert "0.01" in cmd
 
     def test_underscores_preserved_for_nextflow(self) -> None:
         """Param names keep underscores (Nextflow/Groovy requires them)."""
-        p = NvdParams(min_gottcha_reads=100)
+        p = NvdParams(host_kmer_size=31)
         cmd = p.to_nextflow_args(Path("/pipeline"))
-        assert "--min_gottcha_reads" in cmd
-        assert "--min-gottcha-reads" not in cmd
+        assert "--host_kmer_size" in cmd
+        assert "--host-kmer-size" not in cmd
 
     def test_bool_to_string(self) -> None:
         """Booleans are converted to 'true'/'false' strings."""
@@ -415,10 +375,10 @@ class TestNvdParamsToNextflowArgs:
 
     def test_none_values_excluded(self) -> None:
         """None values are not included in command."""
-        p = NvdParams(tools=None, samplesheet=None)
+        p = NvdParams(samplesheet=None, host_index=None)
         cmd = p.to_nextflow_args(Path("/pipeline"))
-        assert "--tools" not in cmd
         assert "--samplesheet" not in cmd
+        assert "--host_index" not in cmd
 
     def test_list_to_comma_separated(self) -> None:
         """Lists are converted to comma-separated strings."""
@@ -474,9 +434,11 @@ class TestNvdParamsDefaults:
         """Default tax_stringency matches nextflow.config."""
         assert NvdParams().tax_stringency == 0.7
 
-    def test_default_min_gottcha_reads(self) -> None:
-        """Default min_gottcha_reads matches nextflow.config."""
-        assert NvdParams().min_gottcha_reads == 250
+    def test_default_host_index_url(self) -> None:
+        """Host depletion is off by default."""
+        assert NvdParams().host_index is None
+        assert NvdParams().host_index_url is None
+        assert NvdParams().host_contaminants_fasta is None
 
     def test_default_max_blast_targets(self) -> None:
         """Default max_blast_targets matches nextflow.config."""
@@ -500,7 +462,7 @@ class TestNvdParamsDefaults:
 
     def test_default_monoimage(self) -> None:
         """Default monoimage matches nextflow.config."""
-        assert NvdParams().monoimage == "nrminor/nvd:v2.5.0"
+        assert NvdParams().monoimage == "nrminor/nvd:v3.0.0"
 
 
 class TestLoadParamsFile:
@@ -509,39 +471,39 @@ class TestLoadParamsFile:
     def test_load_yaml_file(self, tmp_path: Path) -> None:
         """Can load params from YAML file."""
         yaml_file = tmp_path / "params.yaml"
-        yaml_file.write_text("tools: blast\ncutoff_percent: 0.01\n")
+        yaml_file.write_text("dedup: true\ncutoff_percent: 0.01\n")
 
         params = load_params_file(yaml_file)
-        assert params["tools"] == "blast"
+        assert params["dedup"] is True
         assert params["cutoff_percent"] == 0.01
 
     def test_load_yml_extension(self, tmp_path: Path) -> None:
         """Can load params from .yml file."""
         yml_file = tmp_path / "params.yml"
-        yml_file.write_text("tools: gottcha\n")
+        yml_file.write_text("dedup_seq: true\n")
 
         params = load_params_file(yml_file)
-        assert params["tools"] == "gottcha"
+        assert params["dedup_seq"] is True
 
     def test_load_json_file(self, tmp_path: Path) -> None:
         """Can load params from JSON file."""
         json_file = tmp_path / "params.json"
-        json_file.write_text('{"tools": "blast", "cutoff_percent": 0.01}')
+        json_file.write_text('{"dedup_pos": true, "cutoff_percent": 0.01}')
 
         params = load_params_file(json_file)
-        assert params["tools"] == "blast"
+        assert params["dedup_pos"] is True
         assert params["cutoff_percent"] == 0.01
 
     def test_strips_schema_key(self, tmp_path: Path) -> None:
         """$schema key is stripped from loaded params."""
         yaml_file = tmp_path / "params.yaml"
         yaml_file.write_text(
-            '$schema: "https://example.com/schema.json"\ntools: blast\n',
+            '$schema: "https://example.com/schema.json"\ndedup: true\n',
         )
 
         params = load_params_file(yaml_file)
         assert "$schema" not in params
-        assert params["tools"] == "blast"
+        assert params["dedup"] is True
 
     def test_empty_file_returns_empty_dict(self, tmp_path: Path) -> None:
         """Empty file returns empty dict."""
@@ -559,13 +521,13 @@ class TestLoadParamsFile:
     def test_integration_with_nvdparams_merge(self, tmp_path: Path) -> None:
         """load_params_file output works with NvdParams.merge()."""
         yaml_file = tmp_path / "params.yaml"
-        yaml_file.write_text("tools: blast\ncutoff_percent: 0.05\n")
+        yaml_file.write_text("dedup: true\ncutoff_percent: 0.05\n")
 
         file_params = load_params_file(yaml_file)
         cli_params = {"cutoff_percent": 0.01}
 
         merged = NvdParams.merge(file_params, cli_params)
-        assert merged.tools == "blast"  # From file
+        assert merged.dedup is True  # From file
         assert merged.cutoff_percent == 0.01  # CLI wins
 
 
@@ -575,33 +537,33 @@ class TestTraceMerge:
     def test_basic_tracing(self) -> None:
         """trace_merge returns TracedParams with source info."""
         traced = trace_merge(
-            ("preset", {"tools": "all", "cutoff_percent": 0.01}),
-            ("file", {"tools": "blast"}),
+            ("preset", {"dedup_seq": True, "cutoff_percent": 0.01}),
+            ("file", {"dedup": True}),
         )
 
         assert isinstance(traced, TracedParams)
-        assert traced.params.tools == "blast"
+        assert traced.params.dedup is True
+        assert traced.params.dedup_seq is True
         assert traced.params.cutoff_percent == 0.01
 
     def test_tracks_override(self) -> None:
         """Overridden values are tracked."""
         traced = trace_merge(
-            ("preset", {"tools": "all"}),
-            ("file", {"tools": "blast"}),
+            ("preset", {"cutoff_percent": 0.01}),
+            ("file", {"cutoff_percent": 0.005}),
         )
 
-        # Find the tools source
-        tools_source = next(s for s in traced.sources if s.field == "tools")
-        assert tools_source.value == "blast"
-        assert tools_source.source == "file"
-        assert tools_source.overridden_value == "all"
-        assert tools_source.overridden_source == "preset"
+        cutoff_source = next(s for s in traced.sources if s.field == "cutoff_percent")
+        assert cutoff_source.value == 0.005
+        assert cutoff_source.source == "file"
+        assert cutoff_source.overridden_value == 0.01
+        assert cutoff_source.overridden_source == "preset"
 
     def test_tracks_non_overridden(self) -> None:
         """Non-overridden values show their source without override info."""
         traced = trace_merge(
             ("preset", {"cutoff_percent": 0.01}),
-            ("file", {"tools": "blast"}),
+            ("file", {"dedup": True}),
         )
 
         # cutoff_percent came from preset, not overridden
@@ -614,7 +576,7 @@ class TestTraceMerge:
     def test_tracks_defaults(self) -> None:
         """Default values are tracked as source='default'."""
         traced = trace_merge(
-            ("file", {"tools": "blast"}),
+            ("file", {"dedup": True}),
         )
 
         # entropy should be default
@@ -625,7 +587,7 @@ class TestTraceMerge:
     def test_counts_defaults(self) -> None:
         """defaults_used counts fields using default values."""
         traced = trace_merge(
-            ("file", {"tools": "blast", "cutoff_percent": 0.01}),
+            ("file", {"dedup": True, "cutoff_percent": 0.01}),
         )
 
         # Should have many defaults (all the fields we didn't set)
@@ -635,7 +597,7 @@ class TestTraceMerge:
         """trace_merge with no sources returns all defaults."""
         traced = trace_merge()
 
-        assert traced.params.tools is None  # No default for tools
+        assert traced.params.dedup is False  # Default
         assert traced.params.cutoff_percent == 0.001  # Default
         assert traced.defaults_used > 0
 
@@ -643,44 +605,45 @@ class TestTraceMerge:
         """None sources are gracefully skipped."""
         traced = trace_merge(
             ("preset", None),
-            ("file", {"tools": "blast"}),
+            ("file", {"dedup": True}),
         )
 
-        assert traced.params.tools == "blast"
-        tools_source = next(s for s in traced.sources if s.field == "tools")
-        assert tools_source.source == "file"
+        assert traced.params.dedup is True
+        dedup_source = next(s for s in traced.sources if s.field == "dedup")
+        assert dedup_source.source == "file"
 
     def test_three_way_override(self) -> None:
         """Three-way merge tracks the immediate predecessor."""
         traced = trace_merge(
-            ("preset", {"tools": "all"}),
-            ("file", {"tools": "gottcha"}),
-            ("cli", {"tools": "blast"}),
+            ("preset", {"dedup_seq": True}),
+            ("file", {"dedup_pos": True}),
+            ("cli", {"dedup": True}),
         )
 
-        tools_source = next(s for s in traced.sources if s.field == "tools")
-        assert tools_source.value == "blast"
-        assert tools_source.source == "cli"
+        dedup_source = next(s for s in traced.sources if s.field == "dedup")
+        assert dedup_source.value is True
+        assert dedup_source.source == "cli"
         # Should show it overrode "file", not "preset"
-        assert tools_source.overridden_value == "gottcha"
-        assert tools_source.overridden_source == "file"
+        assert dedup_source.overridden_value is None
+        assert dedup_source.overridden_source is None
 
     def test_with_nvdparams_instance(self) -> None:
         """trace_merge accepts NvdParams instances as sources."""
-        preset = NvdParams(tools="all", cutoff_percent=0.01)
+        preset = NvdParams(dedup=True, cutoff_percent=0.01)
         traced = trace_merge(
             ("preset", preset),
-            ("file", {"tools": "blast"}),
+            ("file", {"dedup_pos": True}),
         )
 
-        assert traced.params.tools == "blast"
+        assert traced.params.dedup is True
+        assert traced.params.dedup_pos is True
         assert traced.params.cutoff_percent == 0.01
 
     def test_validates_merged_result(self) -> None:
         """trace_merge validates the merged params."""
         with pytest.raises(ValidationError):
             trace_merge(
-                ("file", {"tools": "invalid_tool"}),
+                ("file", {"cutoff_percent": -0.1}),
             )
 
 

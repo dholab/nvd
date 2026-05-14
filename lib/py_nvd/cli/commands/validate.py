@@ -251,7 +251,6 @@ def validate_databases(
         "stat_annotation": "STAT annotation file",
         "human_virus_taxlist": "Human virus taxlist",
         "blast_db": "BLAST database directory",
-        "gottcha2_db": "GOTTCHA2 database file",
     }
 
     console.print()

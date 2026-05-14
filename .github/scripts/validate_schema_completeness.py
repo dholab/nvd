@@ -83,11 +83,11 @@ PYDANTIC_NO_CLI_NEEDED = {
     "state_dir",
     # Exposed via negated CLI flag --no-slack
     "slack_enabled",
-    # Deacon tuning (set via params-file or preset)
-    "deacon_kmer_size",
-    "deacon_window_size",
-    "deacon_abs_threshold",
-    "deacon_rel_threshold",
+    # Host index/depletion tuning (set via params-file or preset)
+    "host_kmer_size",
+    "host_window_size",
+    "host_abs_threshold",
+    "host_rel_threshold",
 }
 
 

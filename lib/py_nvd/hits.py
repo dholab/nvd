@@ -435,9 +435,7 @@ class HitRecord:
         assert self.sample_set_id, "sample_set_id cannot be empty"
         assert self.sample_id, "sample_id cannot be empty"
         assert self.run_date, "run_date cannot be empty"
-        assert self.source == "blast", (
-            f"source must be 'blast', got {self.source!r}"
-        )
+        assert self.source == "blast", f"source must be 'blast', got {self.source!r}"
 
 
 def write_hits_parquet(
