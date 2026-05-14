@@ -92,12 +92,12 @@ process ADD_READ_COUNTS_TO_BLAST {
     tuple val(sample_id), path(blast_tsv), val(total_reads)
 
     output:
-    tuple val(sample_id), path("${sample_id}_blast.merged_with_lca.tsv")
+    tuple val(sample_id), path("${sample_id}_blast.final.tsv")
 
     script:
     """
     awk -v reads="${total_reads}" 'BEGIN{OFS="\\t"} NR==1{print \$0, "total_reads"} NR>1{print \$0, reads}' \\
-        ${blast_tsv} > ${sample_id}_blast.merged_with_lca.tsv
+        ${blast_tsv} > ${sample_id}_blast.final.tsv
     """
 }
 
