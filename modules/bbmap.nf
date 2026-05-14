@@ -253,33 +253,3 @@ process FILTER_SHORT_CONTIGS {
     minconsecutivebases=${params.min_consecutive_bases} 
 	"""
 }
-
-process SANITIZE_EXTRACTED_FASTA {
-
-    /* Reformat GOTTCHA2 extracted FASTA for downstream consumption.
-     * Taxonomic-level deduplication (strain > species) is handled by
-     * each consumer: register_gottcha2_hits.py and labkey_upload_gottcha2_fasta.py. */
-
-	tag "${sample_id}"
-	label "medium"
-
-	errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
-	maxRetries 2
-
-	cpus 4
-
-	input:
-	tuple val(sample_id), path(extracted_reads), path(full_tsv)
-
-	output:
-    tuple val(sample_id), path("${sample_id}.no_ambig.fasta"), path(full_tsv)
-
-	script:
-	"""
-	reformat.sh \
-	in=${extracted_reads} out=${sample_id}.no_ambig.fasta \
-	nullifybrokenquality=t \
-	threads=${task.cpus} -eoom
-	"""
-}
-
