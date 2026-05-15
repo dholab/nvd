@@ -12,145 +12,118 @@ from unittest.mock import MagicMock, patch
 import pytest
 from notify_slack import (
     build_message,
-    format_byte_size,
-    get_cumulative_stats,
-    get_run_stats,
+    format_cross_run_section,
+    get_highlights_safe,
+    get_report_safe,
     send_notification,
 )
+from py_nvd.models import RunReport
 from slack_sdk.errors import SlackApiError, SlackClientError
 
 
-class TestFormatByteSize:
-    """Tests for byte size formatting."""
-
-    def test_formats_zero_as_kb(self):
-        """Zero bytes displays as 0.0 KB."""
-        assert format_byte_size(0) == "0.0 KB"
-
-    def test_formats_small_size_as_kb(self):
-        """Sizes under 1MB display as KB."""
-        assert format_byte_size(500 * 1024) == "500.0 KB"
-
-    def test_formats_size_as_mb(self):
-        """Sizes 1MB-1GB display as MB."""
-        assert format_byte_size(50 * 1024**2) == "50.0 MB"
-
-    def test_formats_size_as_gb(self):
-        """Sizes over 1GB display as GB."""
-        assert format_byte_size(2 * 1024**3) == "2.0 GB"
-
-    def test_boundary_exactly_1mb(self):
-        """Exactly 1MB (1024**2 bytes) shows as MB not KB."""
-        assert format_byte_size(1024**2) == "1.0 MB"
-
-    def test_boundary_exactly_1gb(self):
-        """Exactly 1GB (1024**3 bytes) shows as GB not MB."""
-        assert format_byte_size(1024**3) == "1.0 GB"
-
-    def test_boundary_just_under_1mb(self):
-        """Just under 1MB shows as KB."""
-        assert format_byte_size(1024**2 - 1) == "1024.0 KB"
-
-    def test_fractional_gb(self):
-        """Fractional GB values display with one decimal."""
-        assert format_byte_size(int(2.5 * 1024**3)) == "2.5 GB"
-
-    def test_assertion_on_negative(self):
-        """Negative byte count raises assertion."""
-        with pytest.raises(AssertionError, match="non-negative"):
-            format_byte_size(-1)
+def make_report(**overrides) -> RunReport:
+    """Build a minimal RunReport for Slack message tests."""
+    values = {
+        "sample_set_id": "sample_set_123",
+        "run_date": "2026-01-10",
+        "samples_analyzed": 42,
+        "samples_with_viral_hits": 7,
+        "samples_negative": 35,
+        "unique_hits": 11,
+        "viral_taxa_found": 3,
+        "median_contig_length": 750,
+        "contigs_over_500bp": 8,
+        "top_findings": (),
+        "sample_summaries": (),
+    }
+    values.update(overrides)
+    return RunReport(**values)
 
 
 class TestBuildMessage:
     """Tests for Slack message formatting."""
 
     def test_formats_all_fields_correctly(self):
-        """All parameters appear in the output message."""
+        """Report, highlights, and cross-run context appear in the message."""
         message = build_message(
             experiment_id="exp_001",
             run_id="run_2026-01-10",
-            samples_analyzed=42,
-            hits_identified=7,
+            report=make_report(),
+            highlights="Adenovirus in 3 samples",
+            cross_run_section="*Cross-run context:*\n- 2 novel taxa (first time seen)",
             labkey_url="https://example.com/results",
-            cumulative={
-                "total_samples": 1000,
-                "total_hits": 500,
-                "state_size": "2.3 GB",
-            },
+            duration_str="12m 34s",
         )
 
         assert "exp_001" in message
         assert "run_2026-01-10" in message
         assert "42" in message
-        assert "7" in message
+        assert "11" in message
+        assert "3" in message
+        assert "Adenovirus in 3 samples" in message
+        assert "2 novel taxa" in message
+        assert "12m 34s" in message
         assert "https://example.com/results" in message
-        assert "1,000" in message  # formatted with comma
-        assert "500" in message
-        assert "2.3 GB" in message
 
-    def test_handles_zero_counts(self):
-        """Zero samples/hits display correctly."""
+    def test_handles_zero_report_counts(self):
+        """Zero values in a report display correctly."""
         message = build_message(
             experiment_id="exp_001",
             run_id="run_001",
-            samples_analyzed=0,
-            hits_identified=0,
+            report=make_report(
+                samples_analyzed=0,
+                samples_with_viral_hits=0,
+                samples_negative=0,
+                unique_hits=0,
+                viral_taxa_found=0,
+            ),
+            highlights="",
+            cross_run_section="",
             labkey_url="https://example.com",
-            cumulative={
-                "total_samples": 0,
-                "total_hits": 0,
-                "state_size": "0.0 KB",
-            },
         )
 
-        assert "*Samples analyzed:* 0" in message
-        assert "*Hits identified (this run):* 0" in message
-        assert "Total samples in database: 0" in message
+        assert "0 samples analyzed" in message
+        assert "0 unique contigs identified" in message
+        assert "0 taxa detected" in message
 
     def test_labkey_url_in_link_format(self):
         """URL is wrapped in Slack link syntax."""
         message = build_message(
             experiment_id="exp",
             run_id="run",
-            samples_analyzed=1,
-            hits_identified=1,
+            report=make_report(samples_analyzed=1, unique_hits=1, viral_taxa_found=1),
+            highlights="",
+            cross_run_section="",
             labkey_url="https://dholk.example.com/results",
-            cumulative={"total_samples": 1, "total_hits": 1, "state_size": "1 KB"},
         )
 
-        assert "<https://dholk.example.com/results|View Hits on LabKey>" in message
+        assert "<https://dholk.example.com/results|View on LabKey>" in message
 
     def test_starts_with_header(self):
         """Message starts with the expected header."""
         message = build_message(
             experiment_id="exp",
             run_id="run",
-            samples_analyzed=1,
-            hits_identified=1,
+            report=make_report(samples_analyzed=1, unique_hits=1, viral_taxa_found=1),
+            highlights="",
+            cross_run_section="",
             labkey_url="https://example.com",
-            cumulative={"total_samples": 1, "total_hits": 1, "state_size": "1 KB"},
         )
 
         assert message.startswith("*NVD Run Complete*")
 
-    def test_handles_string_cumulative_values(self):
-        """Handles N/A strings in cumulative stats (fallback case)."""
+    def test_handles_missing_report(self):
+        """Fallback message is used when run statistics are unavailable."""
         message = build_message(
             experiment_id="exp",
             run_id="run",
-            samples_analyzed=1,
-            hits_identified=1,
+            report=None,
+            highlights="",
+            cross_run_section="",
             labkey_url="https://example.com",
-            cumulative={
-                "total_samples": "N/A",
-                "total_hits": "N/A",
-                "state_size": "N/A",
-            },
         )
 
-        assert "Total samples in database: N/A" in message
-        assert "Total unique hits: N/A" in message
-        assert "State directory: N/A" in message
+        assert "Run statistics unavailable" in message
 
     def test_assertion_on_empty_experiment_id(self):
         """Empty experiment_id raises assertion."""
@@ -158,10 +131,10 @@ class TestBuildMessage:
             build_message(
                 experiment_id="",
                 run_id="run",
-                samples_analyzed=1,
-                hits_identified=1,
+                report=make_report(),
+                highlights="",
+                cross_run_section="",
                 labkey_url="https://example.com",
-                cumulative={"total_samples": 1, "total_hits": 1, "state_size": "1 KB"},
             )
 
     def test_assertion_on_empty_run_id(self):
@@ -170,113 +143,60 @@ class TestBuildMessage:
             build_message(
                 experiment_id="exp",
                 run_id="",
-                samples_analyzed=1,
-                hits_identified=1,
+                report=make_report(),
+                highlights="",
+                cross_run_section="",
                 labkey_url="https://example.com",
-                cumulative={"total_samples": 1, "total_hits": 1, "state_size": "1 KB"},
             )
 
-    def test_assertion_on_negative_samples(self):
-        """Negative samples_analyzed raises assertion."""
-        with pytest.raises(AssertionError, match="non-negative"):
+    def test_assertion_on_empty_labkey_url(self):
+        """Empty labkey_url raises assertion."""
+        with pytest.raises(AssertionError, match="labkey_url cannot be empty"):
             build_message(
                 experiment_id="exp",
                 run_id="run",
-                samples_analyzed=-1,
-                hits_identified=1,
-                labkey_url="https://example.com",
-                cumulative={"total_samples": 1, "total_hits": 1, "state_size": "1 KB"},
+                report=make_report(),
+                highlights="",
+                cross_run_section="",
+                labkey_url="",
             )
 
 
-class TestGetRunStats:
-    """Tests for run-specific stats extraction."""
+class TestReportHelpers:
+    """Tests for report helper fallbacks."""
 
-    def test_returns_zeros_when_stats_is_none(self, tmp_path):
-        """When get_stats_for_sample_set returns None, returns zeros."""
-        with patch(
-            "notify_slack.get_stats_for_sample_set",
-            return_value=None,
-        ) as mock_get:
-            result = get_run_stats(tmp_path, "nonexistent_sample_set")
+    def test_get_report_safe_returns_report(self, tmp_path):
+        """get_report_safe returns the report from get_run_report."""
+        report = make_report()
+        with patch("notify_slack.get_run_report", return_value=report):
+            assert get_report_safe(tmp_path, "sample_set_123") == report
 
-        assert result == {"samples_analyzed": 0, "hits_identified": 0}
-        mock_get.assert_called_once_with("nonexistent_sample_set", tmp_path)
+    def test_get_report_safe_returns_none_on_exception(self, tmp_path):
+        """get_report_safe swallows read errors and returns None."""
+        with patch("notify_slack.get_run_report", side_effect=RuntimeError("boom")):
+            assert get_report_safe(tmp_path, "sample_set_123") is None
 
-    def test_extracts_correct_fields_from_stats(self, tmp_path):
-        """Maps unique_samples → samples_analyzed, total_observations → hits_identified."""
-        mock_stats = MagicMock()
-        mock_stats.unique_samples = 42
-        mock_stats.total_observations = 7
-
-        with patch("notify_slack.get_stats_for_sample_set", return_value=mock_stats):
-            result = get_run_stats(tmp_path, "sample_set_123")
-
-        assert result == {"samples_analyzed": 42, "hits_identified": 7}
-
-    def test_assertion_on_empty_sample_set_id(self, tmp_path):
-        """Empty sample_set_id raises assertion."""
-        with pytest.raises(AssertionError, match="sample_set_id cannot be empty"):
-            get_run_stats(tmp_path, "")
+    def test_get_highlights_safe_returns_empty_string_on_exception(self, tmp_path):
+        """get_highlights_safe swallows errors and returns an empty string."""
+        with patch("notify_slack.get_highlights_string", side_effect=RuntimeError("boom")):
+            assert get_highlights_safe(tmp_path, "sample_set_123") == ""
 
 
-class TestGetCumulativeStats:
-    """Tests for cumulative stats and size formatting."""
+class TestFormatCrossRunSection:
+    """Tests for cross-run section formatting."""
 
-    def test_returns_stats_from_hit_stats(self, tmp_path):
-        """Returns unique_samples and total_hits from get_hit_stats."""
-        mock_stats = MagicMock()
-        mock_stats.unique_samples = 1000
-        mock_stats.total_hits = 500
+    def test_empty_context_returns_empty_string(self):
+        """No novel taxa or movers produce no section."""
+        assert format_cross_run_section(None, []) == ""
 
-        with patch("notify_slack.get_hit_stats", return_value=mock_stats):
-            result = get_cumulative_stats(tmp_path)
+    def test_formats_novel_taxa(self):
+        """Novel taxa counts are included."""
+        assert "2 novel taxa" in format_cross_run_section(2, [])
 
-        assert result["total_samples"] == 1000
-        assert result["total_hits"] == 500
-
-    def test_calculates_directory_size(self, tmp_path):
-        """Calculates state directory size from files."""
-        # Create some test files
-        (tmp_path / "file1.txt").write_text("x" * 1000)
-        (tmp_path / "file2.txt").write_text("y" * 2000)
-        subdir = tmp_path / "subdir"
-        subdir.mkdir()
-        (subdir / "file3.txt").write_text("z" * 500)
-
-        mock_stats = MagicMock()
-        mock_stats.unique_samples = 0
-        mock_stats.total_hits = 0
-
-        with patch("notify_slack.get_hit_stats", return_value=mock_stats):
-            result = get_cumulative_stats(tmp_path)
-
-        # Total should be 3500 bytes = 3.4 KB
-        assert result["state_size"] == "3.4 KB"
-
-    def test_handles_empty_directory(self, tmp_path):
-        """Empty state directory shows 0.0 KB."""
-        mock_stats = MagicMock()
-        mock_stats.unique_samples = 0
-        mock_stats.total_hits = 0
-
-        with patch("notify_slack.get_hit_stats", return_value=mock_stats):
-            result = get_cumulative_stats(tmp_path)
-
-        assert result["state_size"] == "0.0 KB"
-
-    def test_handles_nonexistent_directory(self, tmp_path):
-        """Nonexistent state directory shows 0.0 KB."""
-        nonexistent = tmp_path / "does_not_exist"
-
-        mock_stats = MagicMock()
-        mock_stats.unique_samples = 0
-        mock_stats.total_hits = 0
-
-        with patch("notify_slack.get_hit_stats", return_value=mock_stats):
-            result = get_cumulative_stats(nonexistent)
-
-        assert result["state_size"] == "0.0 KB"
+    def test_formats_notable_movers(self):
+        """Notable movers are included with signed percentages."""
+        section = format_cross_run_section(None, [("Adenoviridae", 42.0)])
+        assert "Adenoviridae (+42%)" in section
 
 
 class TestSendNotification:
