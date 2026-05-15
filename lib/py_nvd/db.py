@@ -416,9 +416,9 @@ def get_hits_dir(state_dir: Path | str | None = None) -> Path:
     """
     Get path to the hits directory containing parquet files.
 
-    The hits directory uses Hive-style partitioning by month:
-        Uncompacted: {state_dir}/hits/month=NULL/{sample_set_id}/{sample_id}/data.parquet
-        Compacted:   {state_dir}/hits/month=YYYY-MM/data.parquet
+    The v3 hits directory uses Hive-style partitioning by schema and month:
+        Uncompacted: {state_dir}/hits/schema=v3/month=NULL/{sample_set_id}/{sample_id}/data.parquet
+        Compacted:   {state_dir}/hits/schema=v3/month=YYYY-MM/data.parquet
 
     The directory is created if it doesn't exist.
 
@@ -429,7 +429,7 @@ def get_hits_dir(state_dir: Path | str | None = None) -> Path:
     Returns:
         Path to the hits directory
     """
-    hits_dir = get_state_dir(state_dir) / "hits"
+    hits_dir = get_state_dir(state_dir) / "hits" / "schema=v3"
     hits_dir.mkdir(parents=True, exist_ok=True)
     return hits_dir
 

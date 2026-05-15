@@ -3,7 +3,7 @@
 Hit management for metagenomic sequence identification.
 
 Provides idempotent hit registration and querying. A "hit" is a sequence
-identified by BLAST or GOTTCHA2. Hit keys are computed from canonical sequences
+identified by BLAST. Hit keys are computed from canonical sequences
 (lexicographically smaller of forward/reverse-complement), enabling:
 
 - Cross-run deduplication: same sequence in different runs → same key
@@ -25,12 +25,12 @@ Storage (Parquet-based with Hive Partitioning):
     - Efficient queries: DuckDB provides fast analytical queries across all files
     - Partition pruning: time-based queries skip irrelevant files
 
-    Storage Layout (Hive-partitioned by month):
+    Storage Layout (Hive-partitioned by schema and month):
         Uncompacted (fresh from pipeline):
-            {state_dir}/hits/month=NULL/{sample_set_id}/{sample_id}/data.parquet
+            {state_dir}/hits/schema=v3/month=NULL/{sample_set_id}/{sample_id}/data.parquet
 
         Compacted (after running `nvd hits compact`):
-            {state_dir}/hits/month=2026-01/data.parquet
+            {state_dir}/hits/schema=v3/month=2026-01/data.parquet
 
     The month=NULL partition holds uncompacted data. After compaction, data
     moves to month=YYYY-MM partitions sorted by hit_key for better compression
@@ -42,8 +42,9 @@ Storage (Parquet-based with Hive Partitioning):
         3. Readers never see partial files (glob ignores .tmp files)
 
     Query Pattern:
-        DuckDB reads all parquet files via glob with hive_partitioning=true.
-        The `month` column is extracted from the directory structure.
+        DuckDB reads all v3 parquet files via glob with hive_partitioning=true.
+        The `month` column is extracted from the directory structure; the
+        `schema` partition keeps v2 and v3 stores separate.
         The `first_seen_date` is computed at query time as MIN(run_date).
         The `effective_month` column normalizes month for both compacted and
         uncompacted data via COALESCE(month, strftime(run_date, '%Y-%m')).
@@ -102,9 +103,8 @@ COMPLEMENT = str.maketrans(
     "TGCAtgcaNnYRSWMKVHDByrswmkvhdb",
 )
 
-# Canonical parquet schema for hit records. This is the target state after
-# compaction normalizes legacy files. Column order matters for readability
-# but not for correctness (DuckDB uses column names, not positions).
+# Canonical v3 parquet schema for BLAST hit records. Column order matters for
+# readability but not for correctness (DuckDB uses column names, not positions).
 CANONICAL_HIT_SCHEMA: dict[str, pl.DataType] = {
     "hit_key": pl.Utf8,
     "sequence_length": pl.Int64,
@@ -120,50 +120,17 @@ CANONICAL_HIT_SCHEMA: dict[str, pl.DataType] = {
     "adjusted_taxid_rank": pl.Utf8,
 }
 
-# Column renames applied during normalization: old_name -> new_name.
-SCHEMA_RENAMES: dict[str, str] = {
-    "contig_id": "sequence_id",
-}
-
-# Default values for columns missing from legacy parquet files.
-SCHEMA_DEFAULTS: dict[str, object] = {
-    "source": "blast",
-    "sequence_id": None,
-}
-
 
 def normalize_schema(df: pl.DataFrame) -> pl.DataFrame:
     """
-    Normalize a DataFrame to the canonical hit schema.
+    Normalize a DataFrame to the canonical v3 BLAST hit schema.
 
-    Applies column renames (e.g. contig_id -> sequence_id), adds missing
-    columns with default values, and retains a NULL contig_id column for
-    backward compatibility with the DuckDB view's COALESCE/EXCLUDE pattern.
-    This is idempotent — normalizing an already-normalized DataFrame is a
-    no-op.
-
-    Used by compaction to ensure compacted output uses a consistent schema
-    regardless of what schema the input files had.
+    v3 intentionally does not migrate v2 parquet files. The schema=v3 path
+    partition keeps old and new hit stores separate so this function can stay
+    boring: it selects the canonical columns and lets missing required columns
+    fail loudly.
     """
-    for old_name, new_name in SCHEMA_RENAMES.items():
-        if old_name in df.columns and new_name not in df.columns:
-            df = df.rename({old_name: new_name})
-
-    for col_name, default_value in SCHEMA_DEFAULTS.items():
-        if col_name not in df.columns:
-            df = df.with_columns(pl.lit(default_value).alias(col_name))
-
-    # Retain contig_id as a NULL column so the DuckDB view's
-    # EXCLUDE (contig_id, sequence_id) + COALESCE pattern always works,
-    # even when reading only compacted files.
-    if "contig_id" not in df.columns:
-        df = df.with_columns(pl.lit(None).cast(pl.Utf8).alias("contig_id"))
-
-    # Select canonical columns plus the transition contig_id stub.
-    output_cols = [c for c in CANONICAL_HIT_SCHEMA if c in df.columns]
-    if "contig_id" not in output_cols:
-        output_cols.append("contig_id")
-    return df.select(output_cols)
+    return df.select(CANONICAL_HIT_SCHEMA)
 
 
 def is_valid_hit_key(key: str) -> bool:
@@ -319,7 +286,7 @@ def _hits_glob_pattern(state_dir: Path | str | None = None) -> str:
     """
     Get the glob pattern for reading all parquet hit files.
 
-    Returns a pattern like: /path/to/state/hits/**/*.parquet
+    Returns a pattern like: /path/to/state/hits/schema=v3/**/*.parquet
     """
     hits_dir = get_hits_dir(state_dir)
     return str(hits_dir / "**" / "*.parquet")
@@ -329,8 +296,9 @@ def _get_hits_view_sql(glob_pattern: str) -> str:
     """
     Generate SQL to create a view over all parquet files.
 
-    Uses hive_partitioning=true to extract `month` from directory structure.
-    Uses union_by_name=true for schema evolution compatibility.
+    Uses hive_partitioning=true to extract `schema` and `month` from the
+    directory structure. The schema partition is intentionally not exposed
+    through the view.
 
     The view adds an `effective_month` column that:
     - Returns the Hive-extracted `month` for compacted files (e.g., month=2026-01)
@@ -342,10 +310,9 @@ def _get_hits_view_sql(glob_pattern: str) -> str:
     return f"""
         CREATE OR REPLACE VIEW hits AS
         SELECT
-            * EXCLUDE (contig_id, sequence_id),
-            COALESCE(sequence_id, contig_id) AS sequence_id,
+            * EXCLUDE (schema),
             COALESCE(month::VARCHAR, strftime(run_date::DATE, '%Y-%m')) AS effective_month
-        FROM read_parquet('{glob_pattern}', hive_partitioning=true, union_by_name=true)
+        FROM read_parquet('{glob_pattern}', hive_partitioning=true)
     """  # SQL uses module constants, not user input
 
 
@@ -398,10 +365,7 @@ class HitRecord:
     Each row in the parquet file represents one observation of a hit in a sample.
 
     Classification fields (adjusted_taxid, adjusted_taxid_name, adjusted_taxid_rank)
-    contain the consensus taxonomic assignment. For BLAST hits this is the LCA-adjusted
-    classification; for GOTTCHA2 hits this is the direct taxonomic assignment from
-    profiling. These may be None for hits from older runs that predate classification
-    tracking.
+    contain the LCA-adjusted BLAST taxonomic assignment.
     """
 
     hit_key: str
@@ -451,7 +415,7 @@ def write_hits_parquet(
     If a file already exists for this sample, it is overwritten (last writer wins).
 
     Files are written to a Hive-partitioned structure:
-        hits/month=NULL/{sample_set_id}/{sample_id}/data.parquet
+        hits/schema=v3/month=NULL/{sample_set_id}/{sample_id}/data.parquet
 
     The month=NULL partition allows DuckDB to read uncompacted and compacted files
     together with hive_partitioning=true. After compaction, data moves to
@@ -480,9 +444,7 @@ def write_hits_parquet(
     temp_path = sample_dir / ".data.parquet.tmp"
 
     if not hits:
-        # Write empty parquet with correct schema.
-        # Includes contig_id=NULL for backward compatibility with union_by_name
-        # reads against legacy parquet files (see COALESCE strategy in plan).
+        # Write empty parquet with the canonical v3 schema.
         hits_df = pl.DataFrame(
             schema={
                 "hit_key": pl.Utf8,
@@ -493,7 +455,6 @@ def write_hits_parquet(
                 "sample_id": pl.Utf8,
                 "run_date": pl.Utf8,
                 "sequence_id": pl.Utf8,
-                "contig_id": pl.Utf8,
                 "source": pl.Utf8,
                 "adjusted_taxid": pl.Int64,
                 "adjusted_taxid_name": pl.Utf8,
@@ -502,10 +463,6 @@ def write_hits_parquet(
         )
     else:
         # Build DataFrame from hit records.
-        # Writes contig_id=NULL alongside sequence_id so that
-        # union_by_name=true always surfaces both columns when reading
-        # a mix of old and new parquet files.
-        n = len(hits)
         hits_df = pl.DataFrame(
             {
                 "hit_key": [h.hit_key for h in hits],
@@ -520,7 +477,6 @@ def write_hits_parquet(
                     [h.sequence_id for h in hits],
                     dtype=pl.Utf8,
                 ),
-                "contig_id": pl.Series("contig_id", [None] * n, dtype=pl.Utf8),
                 "source": [h.source for h in hits],
                 "adjusted_taxid": [h.adjusted_taxid for h in hits],
                 "adjusted_taxid_name": [h.adjusted_taxid_name for h in hits],
@@ -546,7 +502,7 @@ def get_sample_parquet_path(
     Get the path where a sample's uncompacted parquet file would be stored.
 
     Returns the path in the month=NULL partition:
-        hits/month=NULL/{sample_set_id}/{sample_id}/data.parquet
+        hits/schema=v3/month=NULL/{sample_set_id}/{sample_id}/data.parquet
 
     Does not check if the file exists.
     """
@@ -2597,7 +2553,7 @@ def delete_sample_hits(
     Delete the parquet file for a specific sample (uncompacted data only).
 
     Deletes the entire sample directory:
-        hits/month=NULL/{sample_set_id}/{sample_id}/
+        hits/schema=v3/month=NULL/{sample_set_id}/{sample_id}/
 
     Args:
         sample_id: The sample identifier
@@ -2628,7 +2584,7 @@ def _delete_sample_set_hits_uncompacted(
     Delete uncompacted parquet files for a sample set.
 
     Removes the sample set subdirectory under month=NULL/:
-        hits/month=NULL/{sample_set_id}/
+        hits/schema=v3/month=NULL/{sample_set_id}/
 
     Args:
         sample_set_id: The sample set identifier
@@ -2927,8 +2883,9 @@ def compact_hits(  # noqa: C901, PLR0912, PLR0915  # complexity is inherent to t
     """
     Compact uncompacted hits into monthly partitions.
 
-    Reads data from hits/month=NULL/**, groups by month (from run_date),
-    sorts by hit_key, and writes to hits/month={YYYY-MM}/data.parquet.
+    Reads data from hits/schema=v3/month=NULL/**, groups by month (from
+    run_date), sorts by hit_key, and writes to
+    hits/schema=v3/month={YYYY-MM}/data.parquet.
 
     If a compacted file already exists for a month, the new data is merged
     with the existing data.
@@ -3003,16 +2960,12 @@ def compact_hits(  # noqa: C901, PLR0912, PLR0915  # complexity is inherent to t
                 # Uses the frozen file list (not a glob) so concurrent writers
                 # cannot inject files into the read set.
                 if existing_file.exists():
-                    # Use SELECT * with UNION ALL BY NAME for schema evolution:
-                    # - Old compacted files may lack new columns (e.g., adjusted_taxid)
-                    # - New uncompacted files may have columns old compacted files lack
-                    # UNION ALL BY NAME fills missing columns with NULL
                     source_sql = f"""
                         SELECT *
-                        FROM read_parquet({file_list_sql}, union_by_name=true)
+                        FROM read_parquet({file_list_sql})
                         WHERE strftime(run_date::DATE, '%Y-%m') = '{target_month}'
 
-                        UNION ALL BY NAME
+                        UNION ALL
 
                         SELECT *
                         FROM read_parquet('{existing_file}')
@@ -3020,14 +2973,11 @@ def compact_hits(  # noqa: C901, PLR0912, PLR0915  # complexity is inherent to t
                 else:
                     source_sql = f"""
                         SELECT *
-                        FROM read_parquet({file_list_sql}, union_by_name=true)
+                        FROM read_parquet({file_list_sql})
                         WHERE strftime(run_date::DATE, '%Y-%m') = '{target_month}'
                     """  # SQL uses module constants, not user input
 
-                # Read into Polars, normalize schema, then write.
-                # normalize_schema() handles column renames (contig_id ->
-                # sequence_id) and adds missing columns (source) with defaults,
-                # ensuring compacted output always uses the canonical schema.
+                # Read into Polars, normalize column order, then write.
                 raw_df = con.execute(
                     f"{source_sql} ORDER BY hit_key, run_date",
                 ).pl()

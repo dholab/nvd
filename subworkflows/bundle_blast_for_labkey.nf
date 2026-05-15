@@ -167,8 +167,7 @@ process PREPARE_BLAST_LABKEY {
         --experiment-id ${experiment_id} \\
         --run-id '${run_id}' \\
         --total-reads ${total_reads} \\
-        --blast-db-version '${params.blast_db_version}' \\
-        --stat-db-version '${params.stat_db_version}'
+        --blast-db-version '${params.blast_db_version}'
     """
 }
 

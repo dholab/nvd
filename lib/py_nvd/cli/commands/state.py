@@ -3247,7 +3247,7 @@ def _update_setup_conf(new_state_dir: Path) -> bool:
 
 def _count_uncompacted_hits(state_dir: Path) -> int:
     """Count uncompacted hit files in the state directory."""
-    hits_dir = state_dir / "hits" / "month=NULL"
+    hits_dir = state_dir / "hits" / "schema=v3" / "month=NULL"
     if not hits_dir.exists():
         return 0
     return len(list(hits_dir.rglob("*.parquet")))

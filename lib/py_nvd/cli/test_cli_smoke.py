@@ -2048,7 +2048,7 @@ class TestHitsCommands:
         assert "Compacted" in result.stdout
         assert "2024-01" in result.stdout
 
-        compacted_path = tmp_path / "hits" / "month=2024-01" / "data.parquet"
+        compacted_path = get_hits_dir(tmp_path) / "month=2024-01" / "data.parquet"
         assert compacted_path.exists()
 
     def test_hits_compact_json(
@@ -2104,8 +2104,8 @@ class TestHitsCommands:
         assert result.exit_code == 0
         assert "2024-01" in result.stdout
 
-        jan_path = tmp_path / "hits" / "month=2024-01" / "data.parquet"
-        feb_path = tmp_path / "hits" / "month=2024-02" / "data.parquet"
+        jan_path = get_hits_dir(tmp_path) / "month=2024-01" / "data.parquet"
+        feb_path = get_hits_dir(tmp_path) / "month=2024-02" / "data.parquet"
         assert jan_path.exists()
         assert not feb_path.exists()
 

@@ -19,7 +19,7 @@ This script is a thin wrapper around py_nvd.hits that:
 4. Writes hits atomically to a per-sample parquet file
 
 Each sample's hits are stored in a Hive-partitioned structure:
-    {state_dir}/hits/month=NULL/{sample_set_id}/{sample_id}/data.parquet
+    {state_dir}/hits/schema=v3/month=NULL/{sample_set_id}/{sample_id}/data.parquet
 
 The month=NULL partition holds uncompacted data. After running `nvd hits compact`,
 data moves to month=YYYY-MM partitions for better query performance.
@@ -251,8 +251,7 @@ def write_hits_to_path(hits: list[HitRecord], output_path: Path) -> Path:
     """
     # Convert to polars DataFrame
     if not hits:
-        # Create empty DataFrame with correct schema.
-        # Includes contig_id=NULL for backward compatibility (see COALESCE strategy).
+        # Create empty DataFrame with the canonical v3 schema.
         df = pl.DataFrame(
             schema={
                 "hit_key": pl.Utf8,
@@ -263,7 +262,6 @@ def write_hits_to_path(hits: list[HitRecord], output_path: Path) -> Path:
                 "sample_id": pl.Utf8,
                 "run_date": pl.Utf8,
                 "sequence_id": pl.Utf8,
-                "contig_id": pl.Utf8,
                 "source": pl.Utf8,
                 "adjusted_taxid": pl.Int64,
                 "adjusted_taxid_name": pl.Utf8,
@@ -271,7 +269,6 @@ def write_hits_to_path(hits: list[HitRecord], output_path: Path) -> Path:
             },
         )
     else:
-        n = len(hits)
         df = pl.DataFrame(
             {
                 "hit_key": [h.hit_key for h in hits],
@@ -286,7 +283,6 @@ def write_hits_to_path(hits: list[HitRecord], output_path: Path) -> Path:
                     [h.sequence_id for h in hits],
                     dtype=pl.Utf8,
                 ),
-                "contig_id": pl.Series("contig_id", [None] * n, dtype=pl.Utf8),
                 "source": [h.source for h in hits],
                 "adjusted_taxid": [h.adjusted_taxid for h in hits],
                 "adjusted_taxid_name": [h.adjusted_taxid_name for h in hits],
@@ -330,7 +326,7 @@ def configure_logging(verbosity: int) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Register BLAST hits with idempotent keys in state database",
+        description="Register BLAST hit observations in the v3 parquet hit store",
     )
     parser.add_argument(
         "--contigs",

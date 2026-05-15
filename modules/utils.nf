@@ -35,7 +35,6 @@ process CHECK_RUN_STATE {
     script:
     def exp_arg = params.experiment_id ? "--experiment-id ${params.experiment_id}" : ""
     def blast_db_arg = params.blast_db_version ? "--blast-db-version '${params.blast_db_version}'" : ""
-    def stat_db_arg = params.stat_db_version ? "--stat-db-version '${params.stat_db_version}'" : ""
     def state_dir_arg = state_dir ? "--state-dir '${state_dir}'" : ""
     def taxonomy_dir_arg = taxonomy_dir ? "--taxonomy-dir '${taxonomy_dir}'" : ""
     def upload_types_arg = upload_types ? "--upload-types '${upload_types}'" : ""
@@ -48,7 +47,6 @@ process CHECK_RUN_STATE {
         ${taxonomy_dir_arg} \\
         ${exp_arg} \\
         ${blast_db_arg} \\
-        ${stat_db_arg} \\
         ${upload_types_arg}
     """
 }
@@ -102,7 +100,7 @@ process ADD_READ_COUNTS_TO_BLAST {
 }
 
 /*
- * Register BLAST hits with idempotent keys in the state database.
+ * Register BLAST hit observations in the v3 parquet hit store.
  *
  * This process computes deterministic hit keys from contig sequences,
  * enabling cross-run and cross-sample deduplication. The hit key is
@@ -112,13 +110,13 @@ process ADD_READ_COUNTS_TO_BLAST {
  * Input:
  *   - tuple of (sample_id, contigs, blast_results, sample_set_id, state_dir, hits_dir)
  *   - state_dir may be null in stateless mode
- *   - hits_dir is the base directory for parquet output (state_dir/hits or results/hits)
+ *   - hits_dir is the v3 parquet output directory (state_dir/hits/schema=v3 or results/hits/schema=v3)
  * Output:
  *   - tuple of (sample_id, log_file, parquet_file)
  *
  * Note: This is currently a "dead end" - output is not consumed by
- * downstream processes. The hits are registered in the state database
- * for later querying via `nvd hits export`.
+ * downstream processes. The parquet observations are available later via
+ * `nvd hits ...` commands.
  */
 process REGISTER_HITS {
 
@@ -131,7 +129,7 @@ process REGISTER_HITS {
 
     // Publish parquet file - runs on every resume even if task is cached
     // Uses Hive-partitioned structure: {hits_dir}/month=NULL/{sample_set_id}/{sample_id}/data.parquet
-    // hits_dir is either state_dir/hits (stateful) or results/hits (stateless)
+    // hits_dir is either state_dir/hits/schema=v3 (stateful) or results/hits/schema=v3 (stateless)
     publishDir "${hits_dir}/month=NULL/${sample_set_id}/${sample_id}", mode: 'copy', pattern: "data.parquet"
 
     input:
@@ -143,7 +141,6 @@ process REGISTER_HITS {
     script:
     assert hits_dir : "hits_dir cannot be null - this indicates a workflow configuration error"
     def blast_db_arg = params.blast_db_version ? "--blast-db-version '${params.blast_db_version}'" : ""
-    def stat_db_arg = params.stat_db_version ? "--stat-db-version '${params.stat_db_version}'" : ""
     def labkey_arg = params.labkey ? "--labkey" : ""
     def state_dir_arg = state_dir ? "--state-dir '${state_dir}'" : ""
     """
@@ -157,7 +154,6 @@ process REGISTER_HITS {
         --run-id '${workflow.runName}' \\
         --output data.parquet \\
         ${blast_db_arg} \\
-        ${stat_db_arg} \\
         ${labkey_arg} \\
         -v 2>&1 | tee ${sample_id}_hits_registered.log
     """

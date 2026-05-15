@@ -91,8 +91,8 @@ def make_hit_record(  # noqa: PLR0913
         sample_set_id: The sample set identifier.
         sample_id: The sample identifier.
         run_date: ISO 8601 timestamp of the run.
-        sequence_id: Optional sequence identifier (contig ID for BLAST, read ID for GOTTCHA2).
-        source: Hit provenance ("blast" or "gottcha2").
+        sequence_id: Optional BLAST contig identifier.
+        source: Hit provenance. v3 hit records are BLAST-only.
         adjusted_taxid: Optional taxonomic ID from LCA classification.
         adjusted_taxid_name: Optional taxonomic name (e.g., "Influenza A virus").
         adjusted_taxid_rank: Optional taxonomic rank (e.g., "species").
@@ -742,18 +742,19 @@ class TestHivePartitioning:
     """Tests for Hive partition column extraction."""
 
     def test_month_is_null_for_uncompacted(self, temp_state_dir: Path) -> None:
-        """Uncompacted files have month=NULL extracted from path."""
+        """Uncompacted files have schema=v3 and month=NULL extracted from path."""
         record = make_hit_record("ACGT", "set_001", "sample_a", "2024-01-15T00:00:00Z")
         write_hits_parquet([record], "sample_a", "set_001", temp_state_dir)
 
         hits_glob = temp_state_dir / "hits" / "**" / "*.parquet"
         con = duckdb.connect()
         result = con.execute(
-            f"SELECT month FROM read_parquet('{hits_glob}', hive_partitioning=true)",
+            f"SELECT schema, month FROM read_parquet('{hits_glob}', hive_partitioning=true)",
         ).fetchone()
 
         assert result is not None
-        assert result[0] is None  # month=NULL in path becomes SQL NULL
+        assert result[0] == "v3"
+        assert result[1] is None  # month=NULL in path becomes SQL NULL
 
     def test_effective_month_computed_from_run_date(self, temp_state_dir: Path) -> None:
         """effective_month is computed from run_date when month is NULL."""
@@ -771,7 +772,7 @@ class TestHivePartitioning:
         self,
         temp_state_dir: Path,
     ) -> None:
-        """Written files follow month=NULL/{sample_set_id}/{sample_id}/ structure."""
+        """Written files follow schema=v3/month=NULL/{sample_set_id}/{sample_id}/ structure."""
         record = make_hit_record("ACGT", "set_001", "sample_a", "2024-01-15T00:00:00Z")
         path = write_hits_parquet([record], "sample_a", "set_001", temp_state_dir)
 
@@ -779,6 +780,7 @@ class TestHivePartitioning:
         assert path.parent.name == "sample_a"
         assert path.parent.parent.name == "set_001"
         assert path.parent.parent.parent.name == "month=NULL"
+        assert path.parent.parent.parent.parent.name == "schema=v3"
 
 
 class TestGetHitSequence:
@@ -1172,7 +1174,7 @@ class TestDeleteSampleSetHits:
 
         compact_hits(temp_state_dir)
 
-        month_dir = temp_state_dir / "hits" / "month=2024-01"
+        month_dir = temp_state_dir / "hits" / "schema=v3" / "month=2024-01"
         assert month_dir.exists()
 
         delete_sample_set_hits("set_001", temp_state_dir)
@@ -1962,11 +1964,12 @@ class TestGetSampleParquetPath:
         """Returns correct path structure."""
         path = get_sample_parquet_path("sample_a", "set_001", temp_state_dir)
 
-        # hits/month=NULL/{sample_set_id}/{sample_id}/data.parquet
+        # hits/schema=v3/month=NULL/{sample_set_id}/{sample_id}/data.parquet
         assert path.name == "data.parquet"
         assert path.parent.name == "sample_a"
         assert path.parent.parent.name == "set_001"
         assert path.parent.parent.parent.name == "month=NULL"
+        assert path.parent.parent.parent.parent.name == "schema=v3"
         assert "hits" in str(path)
 
     def test_does_not_create_directories(self, temp_state_dir: Path) -> None:
@@ -2148,6 +2151,7 @@ class TestCompactHits:
         uncompacted_path = (
             temp_state_dir
             / "hits"
+            / "schema=v3"
             / "month=NULL"
             / "set_001"
             / "sample_a"
@@ -2156,7 +2160,9 @@ class TestCompactHits:
         assert uncompacted_path.exists()
 
         # Verify compacted file was NOT created
-        compacted_path = temp_state_dir / "hits" / "month=2024-01" / "data.parquet"
+        compacted_path = (
+            temp_state_dir / "hits" / "schema=v3" / "month=2024-01" / "data.parquet"
+        )
         assert not compacted_path.exists()
 
     def test_basic_compaction(self, temp_state_dir: Path) -> None:
@@ -2173,13 +2179,16 @@ class TestCompactHits:
         assert result.errors == []
 
         # Verify compacted file exists
-        compacted_path = temp_state_dir / "hits" / "month=2024-01" / "data.parquet"
+        compacted_path = (
+            temp_state_dir / "hits" / "schema=v3" / "month=2024-01" / "data.parquet"
+        )
         assert compacted_path.exists()
 
         # Verify uncompacted file was deleted (default behavior)
         uncompacted_path = (
             temp_state_dir
             / "hits"
+            / "schema=v3"
             / "month=NULL"
             / "set_001"
             / "sample_a"
@@ -2197,10 +2206,13 @@ class TestCompactHits:
         assert result.errors == []
 
         # Both files should exist
-        compacted_path = temp_state_dir / "hits" / "month=2024-01" / "data.parquet"
+        compacted_path = (
+            temp_state_dir / "hits" / "schema=v3" / "month=2024-01" / "data.parquet"
+        )
         uncompacted_path = (
             temp_state_dir
             / "hits"
+            / "schema=v3"
             / "month=NULL"
             / "set_001"
             / "sample_a"
@@ -2233,8 +2245,12 @@ class TestCompactHits:
         assert months == {"2024-01", "2024-02"}
 
         # Both month partitions should exist
-        assert (temp_state_dir / "hits" / "month=2024-01" / "data.parquet").exists()
-        assert (temp_state_dir / "hits" / "month=2024-02" / "data.parquet").exists()
+        assert (
+            temp_state_dir / "hits" / "schema=v3" / "month=2024-01" / "data.parquet"
+        ).exists()
+        assert (
+            temp_state_dir / "hits" / "schema=v3" / "month=2024-02" / "data.parquet"
+        ).exists()
 
     def test_month_filter_only_compacts_specified_month(
         self,
@@ -2262,13 +2278,18 @@ class TestCompactHits:
         assert result.months[0].month == "2024-01"
 
         # Only January should be compacted
-        assert (temp_state_dir / "hits" / "month=2024-01" / "data.parquet").exists()
-        assert not (temp_state_dir / "hits" / "month=2024-02" / "data.parquet").exists()
+        assert (
+            temp_state_dir / "hits" / "schema=v3" / "month=2024-01" / "data.parquet"
+        ).exists()
+        assert not (
+            temp_state_dir / "hits" / "schema=v3" / "month=2024-02" / "data.parquet"
+        ).exists()
 
         # February uncompacted file should still exist
         feb_uncompacted = (
             temp_state_dir
             / "hits"
+            / "schema=v3"
             / "month=NULL"
             / "set_001"
             / "sample_b"
@@ -2294,7 +2315,9 @@ class TestCompactHits:
         assert result.errors == []
 
         # Query the compacted file - should have both records
-        compacted_path = temp_state_dir / "hits" / "month=2024-01" / "data.parquet"
+        compacted_path = (
+            temp_state_dir / "hits" / "schema=v3" / "month=2024-01" / "data.parquet"
+        )
         con = duckdb.connect()
         result = con.execute(
             f"SELECT COUNT(*) FROM read_parquet('{compacted_path}')",
@@ -2315,7 +2338,9 @@ class TestCompactHits:
         compact_hits(temp_state_dir)
 
         # Read compacted file and verify sort order
-        compacted_path = temp_state_dir / "hits" / "month=2024-01" / "data.parquet"
+        compacted_path = (
+            temp_state_dir / "hits" / "schema=v3" / "month=2024-01" / "data.parquet"
+        )
         con = duckdb.connect()
         hit_keys = con.execute(
             f"SELECT hit_key FROM read_parquet('{compacted_path}')",
@@ -2343,77 +2368,6 @@ class TestCompactHits:
         assert result is not None
         assert result[1] == "2024-01"  # month extracted from Hive partition
         assert result[2] == "2024-01"  # effective_month matches
-
-    def test_incremental_compaction_handles_schema_evolution(
-        self,
-        temp_state_dir: Path,
-    ) -> None:
-        """Compaction merges old-schema compacted files with new-schema uncompacted files."""
-        # Create an "old" compacted file without classification columns
-        # (simulating data compacted before the schema change)
-        month_dir = temp_state_dir / "hits" / "month=2024-01"
-        month_dir.mkdir(parents=True)
-        old_compacted = month_dir / "data.parquet"
-
-        con = duckdb.connect()
-        con.execute(f"""
-            COPY (
-                SELECT
-                    'abc123def456abc123def456abc123de' as hit_key,
-                    100 as sequence_length,
-                    'AAAA'::BLOB as sequence_compressed,
-                    0.5 as gc_content,
-                    'set-old' as sample_set_id,
-                    'sample-old' as sample_id,
-                    '2024-01-15'::DATE as run_date,
-                    'contig-old' as contig_id
-            )
-            TO '{old_compacted}' (FORMAT parquet)
-        """)
-
-        # Write new uncompacted data WITH classification columns
-        record = HitRecord(
-            hit_key="def456abc123def456abc123def456ab",
-            sequence_length=200,
-            sequence_compressed=b"TTTT",
-            gc_content=0.6,
-            sample_set_id="set-new",
-            sample_id="sample-new",
-            run_date="2024-01-20",
-            sequence_id="contig-new",
-            source="blast",
-            adjusted_taxid=12345,
-            adjusted_taxid_name="Test virus",
-            adjusted_taxid_rank="species",
-        )
-        write_hits_parquet([record], "sample-new", "set-new", temp_state_dir)
-
-        # Compact - this should merge old (no classification cols) with new (has them)
-        result = compact_hits(state_dir=temp_state_dir, month="2024-01")
-
-        assert result.total_observations == 1  # Only the new uncompacted file
-        assert len(result.months) == 1
-        assert result.errors == []
-
-        # Verify the compacted file has both records with correct schema
-        compacted = con.execute(
-            f"""
-            SELECT hit_key, adjusted_taxid, adjusted_taxid_name, adjusted_taxid_rank
-            FROM read_parquet('{old_compacted}')
-            ORDER BY hit_key
-            """,
-        ).fetchall()
-
-        assert len(compacted) == 2
-        # Old record should have NULLs for classification columns
-        assert compacted[0] == ("abc123def456abc123def456abc123de", None, None, None)
-        # New record should have the classification data
-        assert compacted[1] == (
-            "def456abc123def456abc123def456ab",
-            12345,
-            "Test virus",
-            "species",
-        )
 
 
 class TestGetStatsForSampleSet:
@@ -6430,7 +6384,9 @@ class TestCompactHitsConcurrency:
         assert result.errors == []
 
         # The compacted output should exist
-        compacted = temp_state_dir / "hits" / "month=2024-01" / "data.parquet"
+        compacted = (
+            temp_state_dir / "hits" / "schema=v3" / "month=2024-01" / "data.parquet"
+        )
         assert compacted.exists()
 
         # Verify the compacted file has at least 1 row

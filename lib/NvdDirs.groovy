@@ -1,7 +1,7 @@
 /**
- * Directory resolution for NVD2 pipeline stateful and stateless modes.
+ * Directory resolution for NVD pipeline stateful and stateless modes.
  *
- * This class handles the logic for resolving state_dir, taxonomy_dir, and hits_dir
+ * This class handles the logic for resolving state_dir, taxonomy_dir, and v3 hits_dir
  * based on whether the pipeline is running in stateless mode or not. It validates
  * that required directories exist or can be created, failing early with clear
  * error messages if not.
@@ -10,7 +10,7 @@
  *     dirs = NvdDirs.resolve(params, log)
  *     // dirs.state_dir    - empty string "" in stateless mode, absolute path string otherwise
  *     // dirs.taxonomy_dir - absolute path string if explicit, empty string "" to derive from state_dir
- *     // dirs.hits_dir     - absolute path string for parquet output
+ *     // dirs.hits_dir     - absolute path string for v3 parquet output
  */
 class NvdDirs {
 
@@ -20,7 +20,7 @@ class NvdDirs {
     /** Taxonomy directory path (empty string "" if derived from state_dir) */
     final String taxonomy_dir
 
-    /** Hits directory path for parquet output */
+    /** Hits directory path for v3 parquet output */
     final String hits_dir
 
     /** Whether running in stateless mode */
@@ -39,12 +39,12 @@ class NvdDirs {
      * In stateless mode:
      *   - state_dir is empty string "" (no state tracking)
      *   - taxonomy_dir is required and must exist
-     *   - hits_dir is {results}/hits
+     *   - hits_dir is {results}/hits/schema=v3
      *
      * In stateful mode (default):
      *   - state_dir is created if needed
      *   - taxonomy_dir is optional (derived from state_dir if not set)
-     *   - hits_dir is {state_dir}/hits
+     *   - hits_dir is {state_dir}/hits/schema=v3
      *
      * @param nfParams The Nextflow params object
      * @param nfLog The Nextflow log object for info messages
@@ -82,10 +82,10 @@ class NvdDirs {
         }
         def taxonomy_dir_str = taxonomy_dir_file.getAbsolutePath()
 
-        // In stateless mode, hits go to results directory
+        // In stateless mode, v3 hits go to results directory
         def results_file = new File(nfParams.results.toString())
         ensureDirectoryExists(results_file, 'results', nfParams.results.toString())
-        def hits_dir_str = results_file.getAbsolutePath() + "/hits"
+        def hits_dir_str = results_file.getAbsolutePath() + "/hits/schema=v3"
 
         nfLog.info "Running in STATELESS mode: no state tracking, taxonomy from ${taxonomy_dir_str}"
 
@@ -120,8 +120,8 @@ class NvdDirs {
             taxonomy_dir_str = taxonomy_dir_file.getAbsolutePath()
         }
 
-        // hits_dir is inside state_dir
-        def hits_dir_str = state_dir_str + "/hits"
+        // hits_dir is inside state_dir, schema-partitioned to avoid mixing v2/v3 parquet files
+        def hits_dir_str = state_dir_str + "/hits/schema=v3"
 
         return new NvdDirs(
             state_dir_str,
