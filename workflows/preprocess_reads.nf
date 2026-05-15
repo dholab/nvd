@@ -11,7 +11,7 @@ workflow PREPROCESS_READS {
     def should_trim = params.trim_adapters ?: params.preprocess
     def should_scrub = params.scrub_host_reads ?: params.preprocess
     def should_filter = params.filter_reads ?: params.preprocess
-    def should_repair = params.repair_pairs ?: params.preprocess
+    def should_repair = params.preprocess
 
     // 1. Dedup
     ch_after_dedup = should_dedup
