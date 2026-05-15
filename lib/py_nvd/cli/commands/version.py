@@ -22,12 +22,13 @@ from py_nvd.cli.utils import (
 
 def version() -> None:
     """Show version information."""
+    pipeline_root = str(PIPELINE_ROOT) if PIPELINE_ROOT is not None else "not found"
     console.print(
         Panel.fit(
             f"[bold cyan]NVD2 CLI[/bold cyan]\n"
             f"Version: {__version__}\n\n"
             f"A user-friendly wrapper for the NVD2 Nextflow pipeline.\n"
-            f"Pipeline: {PIPELINE_ROOT}",
+            f"Pipeline: {pipeline_root}",
             title="Version Info",
             border_style="cyan",
         ),

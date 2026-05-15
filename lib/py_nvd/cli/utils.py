@@ -64,6 +64,16 @@ def _find_parent_pipeline_root(start: Path) -> Path | None:
     return None
 
 
+def _pipeline_root_error() -> RuntimeError:
+    """Build the standard missing pipeline root error."""
+    msg = (
+        "Could not find NVD pipeline root. "
+        "Either run from the repository root, set NVD_PIPELINE_ROOT, "
+        "or ensure the CLI is installed from the cloned repository."
+    )
+    return RuntimeError(msg)
+
+
 def _find_pipeline_root() -> Path:
     """
     Find the NVD pipeline root directory.
@@ -105,15 +115,29 @@ def _find_pipeline_root() -> Path:
     if cwd_root is not None:
         return cwd_root
 
-    msg = (
-        "Could not find NVD pipeline root. "
-        "Either run from the repository root, set NVD_PIPELINE_ROOT, "
-        "or ensure the CLI is installed from the cloned repository."
-    )
-    raise RuntimeError(msg)
+    raise _pipeline_root_error()
 
 
-PIPELINE_ROOT = _find_pipeline_root()
+def _find_pipeline_root_optional() -> Path | None:
+    """Find the pipeline root when available without making CLI imports fail."""
+    try:
+        return _find_pipeline_root()
+    except RuntimeError as exc:
+        if os.environ.get("NVD_PIPELINE_ROOT"):
+            raise
+        if str(exc) != str(_pipeline_root_error()):
+            raise
+        return None
+
+
+def get_pipeline_root() -> Path:
+    """Return the pipeline root, failing only when a command actually needs it."""
+    if PIPELINE_ROOT is not None:
+        return PIPELINE_ROOT
+    return _find_pipeline_root()
+
+
+PIPELINE_ROOT = _find_pipeline_root_optional()
 
 
 def get_editor() -> str:

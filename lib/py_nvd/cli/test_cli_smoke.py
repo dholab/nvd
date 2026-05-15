@@ -1081,16 +1081,19 @@ class TestPipelineRoot:
 
     def test_pipeline_root_exists(self) -> None:
         """PIPELINE_ROOT points to a valid pipeline directory."""
+        assert PIPELINE_ROOT is not None
         assert PIPELINE_ROOT.exists()
         assert (PIPELINE_ROOT / "main.nf").exists()
         assert (PIPELINE_ROOT / "nextflow.config").exists()
 
     def test_pipeline_root_is_absolute(self) -> None:
         """PIPELINE_ROOT is an absolute path."""
+        assert PIPELINE_ROOT is not None
         assert PIPELINE_ROOT.is_absolute()
 
     def test_pipeline_root_has_nvd_sentinels(self) -> None:
         """PIPELINE_ROOT points to an NVD checkout, not just any Nextflow project."""
+        assert PIPELINE_ROOT is not None
         assert cli_utils._has_nvd_sentinels(PIPELINE_ROOT)
 
     def test_unrelated_nextflow_project_is_not_nvd(self, tmp_path: Path) -> None:
@@ -1122,7 +1125,24 @@ class TestPipelineRoot:
         monkeypatch.chdir(tmp_path)
         monkeypatch.delenv("NVD_PIPELINE_ROOT", raising=False)
 
+        assert PIPELINE_ROOT is not None
         assert cli_utils._find_pipeline_root() == PIPELINE_ROOT
+
+    def test_optional_pipeline_root_allows_import_without_root(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Container image import smoke tests should not require a pipeline checkout."""
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.delenv("NVD_PIPELINE_ROOT", raising=False)
+        monkeypatch.setattr(
+            cli_utils,
+            "_find_parent_pipeline_root",
+            lambda _start: None,
+        )
+
+        assert cli_utils._find_pipeline_root_optional() is None
 
 
 class TestHitsCommands:

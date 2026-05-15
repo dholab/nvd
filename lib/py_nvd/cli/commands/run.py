@@ -23,7 +23,6 @@ from py_nvd.cli.utils import (
     PANEL_LABKEY,
     PANEL_NOTIFICATIONS,
     PANEL_PREPROCESSING,
-    PIPELINE_ROOT,
     RESUME_FILE,
     auto_detect_profile,
     check_command_exists,
@@ -32,6 +31,7 @@ from py_nvd.cli.utils import (
     find_config_file,
     format_command_for_display,
     get_default_profile,
+    get_pipeline_root,
     info,
     success,
     warning,
@@ -649,7 +649,7 @@ def run(
     # =========================================================================
 
     # Build command with pipeline params
-    cmd = params.to_nextflow_args(PIPELINE_ROOT)
+    cmd = params.to_nextflow_args(get_pipeline_root())
 
     # Add Nextflow-native options (not pipeline params)
     if effective_profile:
