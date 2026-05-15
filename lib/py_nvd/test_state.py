@@ -1748,7 +1748,9 @@ class TestSchemaMigrationSafety:
 
             columns = [
                 row[1]
-                for row in conn.execute("PRAGMA table_info(processed_samples)").fetchall()
+                for row in conn.execute(
+                    "PRAGMA table_info(processed_samples)",
+                ).fetchall()
             ]
             assert "stat_db_version" not in columns
 
@@ -1869,7 +1871,9 @@ class TestSchemaMigrationSafety:
 
             processed_columns = [
                 row[1]
-                for row in migrated.execute("PRAGMA table_info(processed_samples)").fetchall()
+                for row in migrated.execute(
+                    "PRAGMA table_info(processed_samples)",
+                ).fetchall()
             ]
             assert "stat_db_version" not in processed_columns
 
@@ -1880,13 +1884,17 @@ class TestSchemaMigrationSafety:
 
             database_types = [
                 row[0]
-                for row in migrated.execute("SELECT db_type FROM databases ORDER BY db_type").fetchall()
+                for row in migrated.execute(
+                    "SELECT db_type FROM databases ORDER BY db_type",
+                ).fetchall()
             ]
             assert database_types == ["blast"]
 
             upload_types = [
                 row[0]
-                for row in migrated.execute("SELECT upload_type FROM uploads ORDER BY upload_type").fetchall()
+                for row in migrated.execute(
+                    "SELECT upload_type FROM uploads ORDER BY upload_type",
+                ).fetchall()
             ]
             assert upload_types == ["blast"]
 
@@ -1897,12 +1905,16 @@ class TestSchemaMigrationSafety:
         try:
             old_columns = [
                 row[1]
-                for row in backup.execute("PRAGMA table_info(processed_samples)").fetchall()
+                for row in backup.execute(
+                    "PRAGMA table_info(processed_samples)",
+                ).fetchall()
             ]
             assert "stat_db_version" in old_columns
             legacy_uploads = [
                 row[0]
-                for row in backup.execute("SELECT upload_type FROM uploads ORDER BY upload_type").fetchall()
+                for row in backup.execute(
+                    "SELECT upload_type FROM uploads ORDER BY upload_type",
+                ).fetchall()
             ]
             assert legacy_uploads == ["blast", "gottcha2"]
         finally:

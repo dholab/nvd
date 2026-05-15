@@ -7,6 +7,7 @@ they need thorough coverage to ensure silent failures stay silent.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Final
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -20,8 +21,14 @@ from notify_slack import (
 from py_nvd.models import RunReport
 from slack_sdk.errors import SlackApiError, SlackClientError
 
+if TYPE_CHECKING:
+    from pathlib import Path
 
-def make_report(**overrides) -> RunReport:
+FAKE_SLACK_BOT_TOKEN: Final = "xoxb-test"  # noqa: S105 - fake Slack-shaped token for exercising WebClient wiring.
+FAKE_ENV_SLACK_BOT_TOKEN: Final = "xoxb-from-env"  # noqa: S105 - fake Slack-shaped token for env fallback coverage.
+
+
+def make_report(**overrides: object) -> RunReport:
     """Build a minimal RunReport for Slack message tests."""
     values = {
         "sample_set_id": "sample_set_123",
@@ -43,7 +50,7 @@ def make_report(**overrides) -> RunReport:
 class TestBuildMessage:
     """Tests for Slack message formatting."""
 
-    def test_formats_all_fields_correctly(self):
+    def test_formats_all_fields_correctly(self) -> None:
         """Report, highlights, and cross-run context appear in the message."""
         message = build_message(
             experiment_id="exp_001",
@@ -65,7 +72,7 @@ class TestBuildMessage:
         assert "12m 34s" in message
         assert "https://example.com/results" in message
 
-    def test_handles_zero_report_counts(self):
+    def test_handles_zero_report_counts(self) -> None:
         """Zero values in a report display correctly."""
         message = build_message(
             experiment_id="exp_001",
@@ -86,7 +93,7 @@ class TestBuildMessage:
         assert "0 unique contigs identified" in message
         assert "0 taxa detected" in message
 
-    def test_labkey_url_in_link_format(self):
+    def test_labkey_url_in_link_format(self) -> None:
         """URL is wrapped in Slack link syntax."""
         message = build_message(
             experiment_id="exp",
@@ -99,7 +106,7 @@ class TestBuildMessage:
 
         assert "<https://dholk.example.com/results|View on LabKey>" in message
 
-    def test_starts_with_header(self):
+    def test_starts_with_header(self) -> None:
         """Message starts with the expected header."""
         message = build_message(
             experiment_id="exp",
@@ -112,7 +119,7 @@ class TestBuildMessage:
 
         assert message.startswith("*NVD Run Complete*")
 
-    def test_handles_missing_report(self):
+    def test_handles_missing_report(self) -> None:
         """Fallback message is used when run statistics are unavailable."""
         message = build_message(
             experiment_id="exp",
@@ -125,7 +132,7 @@ class TestBuildMessage:
 
         assert "Run statistics unavailable" in message
 
-    def test_assertion_on_empty_experiment_id(self):
+    def test_assertion_on_empty_experiment_id(self) -> None:
         """Empty experiment_id raises assertion."""
         with pytest.raises(AssertionError, match="experiment_id cannot be empty"):
             build_message(
@@ -137,7 +144,7 @@ class TestBuildMessage:
                 labkey_url="https://example.com",
             )
 
-    def test_assertion_on_empty_run_id(self):
+    def test_assertion_on_empty_run_id(self) -> None:
         """Empty run_id raises assertion."""
         with pytest.raises(AssertionError, match="run_id cannot be empty"):
             build_message(
@@ -149,7 +156,7 @@ class TestBuildMessage:
                 labkey_url="https://example.com",
             )
 
-    def test_assertion_on_empty_labkey_url(self):
+    def test_assertion_on_empty_labkey_url(self) -> None:
         """Empty labkey_url raises assertion."""
         with pytest.raises(AssertionError, match="labkey_url cannot be empty"):
             build_message(
@@ -165,35 +172,40 @@ class TestBuildMessage:
 class TestReportHelpers:
     """Tests for report helper fallbacks."""
 
-    def test_get_report_safe_returns_report(self, tmp_path):
+    def test_get_report_safe_returns_report(self, tmp_path: Path) -> None:
         """get_report_safe returns the report from get_run_report."""
         report = make_report()
         with patch("notify_slack.get_run_report", return_value=report):
             assert get_report_safe(tmp_path, "sample_set_123") == report
 
-    def test_get_report_safe_returns_none_on_exception(self, tmp_path):
+    def test_get_report_safe_returns_none_on_exception(self, tmp_path: Path) -> None:
         """get_report_safe swallows read errors and returns None."""
         with patch("notify_slack.get_run_report", side_effect=RuntimeError("boom")):
             assert get_report_safe(tmp_path, "sample_set_123") is None
 
-    def test_get_highlights_safe_returns_empty_string_on_exception(self, tmp_path):
+    def test_get_highlights_safe_returns_empty_string_on_exception(
+        self,
+        tmp_path: Path,
+    ) -> None:
         """get_highlights_safe swallows errors and returns an empty string."""
-        with patch("notify_slack.get_highlights_string", side_effect=RuntimeError("boom")):
+        with patch(
+            "notify_slack.get_highlights_string", side_effect=RuntimeError("boom"),
+        ):
             assert get_highlights_safe(tmp_path, "sample_set_123") == ""
 
 
 class TestFormatCrossRunSection:
     """Tests for cross-run section formatting."""
 
-    def test_empty_context_returns_empty_string(self):
+    def test_empty_context_returns_empty_string(self) -> None:
         """No novel taxa or movers produce no section."""
         assert format_cross_run_section(None, []) == ""
 
-    def test_formats_novel_taxa(self):
+    def test_formats_novel_taxa(self) -> None:
         """Novel taxa counts are included."""
         assert "2 novel taxa" in format_cross_run_section(2, [])
 
-    def test_formats_notable_movers(self):
+    def test_formats_notable_movers(self) -> None:
         """Notable movers are included with signed percentages."""
         section = format_cross_run_section(None, [("Adenoviridae", 42.0)])
         assert "Adenoviridae (+42%)" in section
@@ -202,7 +214,7 @@ class TestFormatCrossRunSection:
 class TestSendNotification:
     """Tests for Slack API interaction and error handling."""
 
-    def test_returns_false_when_no_token(self, monkeypatch):
+    def test_returns_false_when_no_token(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Returns False and logs warning when SLACK_BOT_TOKEN not set."""
         monkeypatch.delenv("SLACK_BOT_TOKEN", raising=False)
 
@@ -210,13 +222,13 @@ class TestSendNotification:
 
         assert result is False
 
-    def test_returns_true_on_success(self, monkeypatch):
+    def test_returns_true_on_success(self) -> None:
         """Returns True when message posts successfully."""
         mock_client = MagicMock()
         mock_client.chat_postMessage.return_value = {"ts": "1234567890.123456"}
 
         with patch("notify_slack.WebClient", return_value=mock_client):
-            result = send_notification("C123", "test message", token="xoxb-test")
+            result = send_notification("C123", "test message", token=FAKE_SLACK_BOT_TOKEN)
 
         assert result is True
         mock_client.chat_postMessage.assert_called_once_with(
@@ -225,7 +237,7 @@ class TestSendNotification:
             mrkdwn=True,
         )
 
-    def test_handles_channel_not_found(self):
+    def test_handles_channel_not_found(self) -> None:
         """Returns False with helpful message for channel_not_found."""
         mock_client = MagicMock()
         mock_response = MagicMock()
@@ -236,11 +248,11 @@ class TestSendNotification:
         )
 
         with patch("notify_slack.WebClient", return_value=mock_client):
-            result = send_notification("C123", "test message", token="xoxb-test")
+            result = send_notification("C123", "test message", token=FAKE_SLACK_BOT_TOKEN)
 
         assert result is False
 
-    def test_handles_not_in_channel(self):
+    def test_handles_not_in_channel(self) -> None:
         """Returns False with helpful message for not_in_channel."""
         mock_client = MagicMock()
         mock_response = MagicMock()
@@ -251,11 +263,11 @@ class TestSendNotification:
         )
 
         with patch("notify_slack.WebClient", return_value=mock_client):
-            result = send_notification("C123", "test message", token="xoxb-test")
+            result = send_notification("C123", "test message", token=FAKE_SLACK_BOT_TOKEN)
 
         assert result is False
 
-    def test_handles_invalid_auth(self):
+    def test_handles_invalid_auth(self) -> None:
         """Returns False with helpful message for invalid_auth."""
         mock_client = MagicMock()
         mock_response = MagicMock()
@@ -266,43 +278,46 @@ class TestSendNotification:
         )
 
         with patch("notify_slack.WebClient", return_value=mock_client):
-            result = send_notification("C123", "test message", token="xoxb-test")
+            result = send_notification("C123", "test message", token=FAKE_SLACK_BOT_TOKEN)
 
         assert result is False
 
-    def test_handles_slack_client_error(self):
+    def test_handles_slack_client_error(self) -> None:
         """Returns False for SlackClientError (network issues)."""
         mock_client = MagicMock()
         mock_client.chat_postMessage.side_effect = SlackClientError("Network error")
 
         with patch("notify_slack.WebClient", return_value=mock_client):
-            result = send_notification("C123", "test message", token="xoxb-test")
+            result = send_notification("C123", "test message", token=FAKE_SLACK_BOT_TOKEN)
 
         assert result is False
 
-    def test_handles_unexpected_exception(self):
+    def test_handles_unexpected_exception(self) -> None:
         """Returns False and doesn't raise for unexpected errors."""
         mock_client = MagicMock()
         mock_client.chat_postMessage.side_effect = RuntimeError("Unexpected!")
 
         with patch("notify_slack.WebClient", return_value=mock_client):
-            result = send_notification("C123", "test message", token="xoxb-test")
+            result = send_notification("C123", "test message", token=FAKE_SLACK_BOT_TOKEN)
 
         assert result is False
 
-    def test_assertion_on_empty_channel(self):
+    def test_assertion_on_empty_channel(self) -> None:
         """Empty channel raises assertion."""
         with pytest.raises(AssertionError, match="channel cannot be empty"):
-            send_notification("", "test message", token="xoxb-test")
+            send_notification("", "test message", token=FAKE_SLACK_BOT_TOKEN)
 
-    def test_assertion_on_empty_message(self):
+    def test_assertion_on_empty_message(self) -> None:
         """Empty message raises assertion."""
         with pytest.raises(AssertionError, match="message cannot be empty"):
-            send_notification("C123", "", token="xoxb-test")
+            send_notification("C123", "", token=FAKE_SLACK_BOT_TOKEN)
 
-    def test_uses_env_token_when_not_provided(self, monkeypatch):
+    def test_uses_env_token_when_not_provided(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         """Uses SLACK_BOT_TOKEN from environment when token param is None."""
-        monkeypatch.setenv("SLACK_BOT_TOKEN", "xoxb-from-env")
+        monkeypatch.setenv("SLACK_BOT_TOKEN", FAKE_ENV_SLACK_BOT_TOKEN)
 
         mock_client = MagicMock()
         mock_client.chat_postMessage.return_value = {"ts": "123"}
@@ -314,4 +329,4 @@ class TestSendNotification:
             result = send_notification("C123", "test", token=None)
 
         assert result is True
-        mock_webclient.assert_called_once_with(token="xoxb-from-env")
+        mock_webclient.assert_called_once_with(token=FAKE_ENV_SLACK_BOT_TOKEN)

@@ -42,6 +42,7 @@ NVD_PIPELINE_SENTINELS = (
 SECONDS_PER_MINUTE = 60
 SECONDS_PER_HOUR = 3600
 
+
 def _has_nvd_sentinels(candidate: Path) -> bool:
     """Check whether a directory looks like an NVD source checkout."""
     return all((candidate / sentinel).exists() for sentinel in NVD_PIPELINE_SENTINELS)

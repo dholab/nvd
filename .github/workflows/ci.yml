@@ -113,16 +113,18 @@ jobs:
           
           echo "✅ Config syntax valid for ${{ matrix.profile }} profile"
       
-      - name: Verify required parameters exist
+      - name: Verify expected top-level parameters exist
         run: |
-          # Check that critical parameters are defined
-          for param in samplesheet experiment_id tools results; do
+          # Check that stable top-level parameters are defined in the rendered config.
+          # The v3 pipeline has a single main workflow, so there is no public
+          # `tools` selector parameter to validate here.
+          for param in samplesheet experiment_id results; do
             if ! grep -q "^\s*${param}\s*=" config_output.txt; then
-              echo "::error::Required parameter '${param}' not found in config"
+              echo "::error::Expected parameter '${param}' not found in config"
               exit 1
             fi
           done
-          echo "✅ All required parameters present"
+          echo "✅ All expected top-level parameters present"
 
   validate-config-includes:
     name: Validate Config File Includes
