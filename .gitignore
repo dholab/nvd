@@ -59,6 +59,7 @@
 # assets
 !/assets
 !/assets/example_samplesheet.csv
+!/assets/test_samplesheet.csv
 
 # docs
 !/docs
@@ -90,3 +91,7 @@
 !/.vscode/extensions.json
 !/.vscode/settings.json
 
+# testing data
+!/tests
+!/tests/data
+!/tests/data/*
