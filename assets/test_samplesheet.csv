@@ -1,0 +1,4 @@
+sample_id,srr,platform,fastq1,fastq2
+water,,illumina,tests/data/water_R1.fastq.gz,tests/data/water_R2.fastq.gz
+hits_only,,illumina,tests/data/hits_only_R1.fastq.gz,tests/data/hits_only_R2.fastq.gz
+water_plus_hits,,illumina,tests/data/water_plus_hits_R1.fastq.gz,tests/data/water_plus_hits_R2.fastq.gz
