@@ -90,7 +90,7 @@ def _from_row(cls: type[T], row: Row) -> T:
 # Type aliases for constrained values
 Status = Literal["running", "completed", "failed"]
 ProcessedSampleStatus = Literal["completed", "uploaded", "failed"]
-DbType = Literal["blast", "stat"]
+DbType = Literal["blast"]
 Platform = Literal["illumina", "ont", "sra"]
 UploadType = Literal["blast", "blast_fasta"]
 
@@ -167,7 +167,6 @@ class ProcessedSample:
     processed_at: str
     status: ProcessedSampleStatus
     blast_db_version: str | None = None
-    stat_db_version: str | None = None
     taxonomy_hash: str | None = None
 
     @classmethod

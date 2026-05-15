@@ -311,7 +311,7 @@ def register_database(
     before storage to ensure consistent lookups.
 
     Args:
-        db_type: Type of database (blast, stat, gottcha2)
+        db_type: Type of database (blast)
         version: Version string for this database
         path: Path to the database (will be canonicalized)
         state_dir: Optional state directory override
@@ -344,7 +344,7 @@ def get_database_by_version(
     Get database info by version.
 
     Args:
-        db_type: Type of database (blast, stat, gottcha2)
+        db_type: Type of database (blast)
         version: Version string. If None, returns most recently registered.
         state_dir: Optional state directory override
 
@@ -379,7 +379,7 @@ def get_database_by_path(
     most recently registered version and includes a warning.
 
     Args:
-        db_type: Type of database (blast, stat, gottcha2)
+        db_type: Type of database (blast)
         path: Path to the database (will be canonicalized)
         state_dir: Optional state directory override
 
@@ -430,7 +430,7 @@ def get_databases_by_path(
     Useful for debugging when multiple versions are registered at the same path.
 
     Args:
-        db_type: Type of database (blast, stat, gottcha2)
+        db_type: Type of database (blast)
         path: Path to the database (will be canonicalized)
         state_dir: Optional state directory override
 
@@ -494,7 +494,7 @@ def _resolve_single_database(
     - path set, version None: lookup, return registered version or warn
 
     Args:
-        db_type: Type of database (blast, stat, gottcha2)
+        db_type: Type of database (blast)
         path: Database path (None means skip)
         version: User-provided version (None means auto-resolve)
         state_dir: Optional state directory override
@@ -601,7 +601,6 @@ def mark_sample_completed(  # noqa: PLR0913
     sample_set_id: str,
     run_id: str,
     blast_db_version: str | None = None,
-    stat_db_version: str | None = None,
     taxonomy_hash: str | None = None,
     state_dir: Path | str | None = None,
 ) -> ProcessedSample:
@@ -619,7 +618,6 @@ def mark_sample_completed(  # noqa: PLR0913
         sample_set_id: The sample set this sample belongs to
         run_id: The run identifier (workflow.runName)
         blast_db_version: BLAST database version for provenance
-        stat_db_version: STAT database version for provenance
         taxonomy_hash: Taxonomy database hash for provenance
         state_dir: Optional state directory override
 
@@ -629,15 +627,14 @@ def mark_sample_completed(  # noqa: PLR0913
     with connect(state_dir) as conn:
         conn.execute(
             """INSERT INTO processed_samples
-               (sample_id, sample_set_id, run_id, processed_at, blast_db_version,
-                stat_db_version, taxonomy_hash, status)
-               VALUES (?, ?, ?, datetime('now'), ?, ?, ?, 'completed')""",
+                (sample_id, sample_set_id, run_id, processed_at, blast_db_version,
+                 taxonomy_hash, status)
+               VALUES (?, ?, ?, datetime('now'), ?, ?, 'completed')""",
             (
                 sample_id,
                 sample_set_id,
                 run_id,
                 blast_db_version,
-                stat_db_version,
                 taxonomy_hash,
             ),
         )
@@ -798,10 +795,8 @@ def get_uploaded_sample_ids(
 
     Used at run start to warn about/filter already-uploaded samples.
     Queries the uploads table, which tracks each upload with its type
-    (blast, blast_fasta, gottcha2, gottcha2_fasta). When upload_types is
-    provided, only uploads matching those types count — this prevents one
-    workflow's uploads from causing another workflow's CHECK_RUN_STATE to
-    incorrectly skip samples.
+    (blast, blast_fasta). When upload_types is provided, only uploads matching
+    those types count.
 
     Args:
         sample_ids: List of sample IDs to check
@@ -887,7 +882,7 @@ def record_upload(  # noqa: PLR0913
     Args:
         sample_id: The sample identifier
         sample_set_id: The sample set this sample belongs to
-        upload_type: Type of upload (blast, blast_fasta, gottcha2, gottcha2_fasta)
+        upload_type: Type of upload (blast, blast_fasta)
         upload_target: Where it was uploaded (labkey, local, globus, etc.)
         content_hash: SHA256 of the uploaded content
         target_metadata: Optional target-specific data (e.g., experiment_id, row_id)
@@ -1000,7 +995,7 @@ def list_uploads(
 
     Args:
         sample_id: Filter to uploads for a specific sample
-        upload_type: Filter by upload type ('blast', 'blast_fasta', 'gottcha2', 'gottcha2_fasta')
+        upload_type: Filter by upload type ('blast', 'blast_fasta')
         upload_target: Filter by target ('labkey', 'local', etc.)
         limit: Maximum number of uploads to return
         state_dir: Optional state directory override

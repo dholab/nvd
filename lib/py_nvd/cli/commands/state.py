@@ -657,7 +657,6 @@ def state_run(
                         "status": s.status,
                         "processed_at": s.processed_at,
                         "blast_db_version": s.blast_db_version,
-                        "stat_db_version": s.stat_db_version,
                         "taxonomy_hash": s.taxonomy_hash,
                     }
                     for s in samples
@@ -708,7 +707,6 @@ def state_run(
         table.add_column("Status")
         table.add_column("Processed At")
         table.add_column("BLAST DB")
-        table.add_column("STAT DB")
 
         for sample in samples:
             if sample.status == "uploaded":
@@ -725,7 +723,6 @@ def state_run(
                 sample_status,
                 sample.processed_at,
                 sample.blast_db_version or "-",
-                sample.stat_db_version or "-",
             )
 
         console.print(table)
@@ -827,7 +824,6 @@ def state_samples(
                     "status": s.status,
                     "processed_at": s.processed_at,
                     "blast_db_version": s.blast_db_version,
-                    "stat_db_version": s.stat_db_version,
                     "taxonomy_hash": s.taxonomy_hash,
                 }
                 for s in samples
@@ -921,7 +917,6 @@ def state_sample(
                         "status": p.status,
                         "processed_at": p.processed_at,
                         "blast_db_version": p.blast_db_version,
-                        "stat_db_version": p.stat_db_version,
                         "taxonomy_hash": p.taxonomy_hash,
                     }
                     for p in processing_history
@@ -956,7 +951,6 @@ def state_sample(
         table.add_column("Status")
         table.add_column("Processed At")
         table.add_column("BLAST DB")
-        table.add_column("STAT DB")
 
         for record in processing_history:
             if record.status == "uploaded":
@@ -973,7 +967,6 @@ def state_sample(
                 status_str,
                 record.processed_at,
                 record.blast_db_version or "-",
-                record.stat_db_version or "-",
             )
 
         console.print(table)
@@ -1015,7 +1008,7 @@ def state_sample(
 
 
 # Upload type values for CLI validation
-_UPLOAD_TYPE_VALUES = ["blast", "blast_fasta", "gottcha2", "gottcha2_fasta"]
+_UPLOAD_TYPE_VALUES = ["blast", "blast_fasta"]
 
 
 @state_app.command("uploads")
@@ -1224,7 +1217,7 @@ def database_list(
 def database_show(
     db_type: Annotated[
         str,
-        typer.Argument(help="Database type (blast, stat, gottcha2)"),
+        typer.Argument(help="Database type (blast)"),
     ],
     version: Annotated[
         str | None,
@@ -1249,7 +1242,7 @@ def database_show(
     ensure_db_exists(json_output)
 
     # Validate db_type
-    valid_types = ["blast", "stat", "gottcha2"]
+    valid_types = ["blast"]
     if db_type not in valid_types:
         if json_output:
             _output_json(
@@ -1311,7 +1304,7 @@ def database_show(
 def database_register(
     db_type: Annotated[
         str,
-        typer.Argument(help="Database type (blast, stat, gottcha2)"),
+        typer.Argument(help="Database type (blast)"),
     ],
     path: Annotated[
         Path,
@@ -1335,11 +1328,9 @@ def database_register(
     Examples:
 
         nvd state database register blast /data/blast/core-nt -v core-nt_2025-01
-        nvd state database register gottcha2 /data/gottcha2/RefSeq-r220 -v RefSeq-r220
-        nvd state database register stat /data/stat/index.k31 -v 2024-12
     """
     # Validate db_type
-    valid_types = ["blast", "stat", "gottcha2"]
+    valid_types = ["blast"]
     if db_type not in valid_types:
         if json_output:
             _output_json(
@@ -1389,7 +1380,7 @@ def database_register(
 def database_unregister(
     db_type: Annotated[
         str,
-        typer.Argument(help="Database type (blast, stat, gottcha2)"),
+        typer.Argument(help="Database type (blast)"),
     ],
     version: Annotated[
         str,
@@ -1416,7 +1407,7 @@ def database_unregister(
         nvd state database unregister blast core-nt_2024-01 --yes
     """
     # Validate db_type
-    valid_types = ["blast", "stat", "gottcha2"]
+    valid_types = ["blast"]
     if db_type not in valid_types:
         if json_output:
             _output_json(

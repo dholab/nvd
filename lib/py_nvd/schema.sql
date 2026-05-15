@@ -1,7 +1,8 @@
 -- NVD State Database Schema
 -- 
 -- This is a local cache/state database, not a production database.
--- If the schema version changes, the database is deleted and recreated.
+-- Known older schemas are migrated in place after creating a backup. Unknown
+-- schema versions still require explicit destructive recreation.
 --
 -- Phase 5 (2024-12-28): Redesigned sample and upload tracking.
 -- - Replaced `samples` with `processed_samples` (tracks processing with provenance)
@@ -9,7 +10,7 @@
 -- - Key insight: indexing uploads by sample_id enables "was this sample ever uploaded?"
 --   queries across all runs, solving the overlapping sample set problem.
 
-PRAGMA user_version = 2;
+PRAGMA user_version = 3;
 
 -- Run tracking
 CREATE TABLE IF NOT EXISTS runs (
@@ -22,7 +23,7 @@ CREATE TABLE IF NOT EXISTS runs (
 );
 
 -- Processed samples with provenance
--- Tracks which samples were processed, when, and with what database versions.
+-- Tracks which samples were processed, when, and with the BLAST database version.
 -- Keyed by (sample_id, sample_set_id) to allow intentional reprocessing with different samples.
 CREATE TABLE IF NOT EXISTS processed_samples (
     sample_id TEXT NOT NULL,
@@ -30,7 +31,6 @@ CREATE TABLE IF NOT EXISTS processed_samples (
     run_id TEXT NOT NULL REFERENCES runs(run_id),
     processed_at TEXT NOT NULL,
     blast_db_version TEXT,
-    stat_db_version TEXT,
     taxonomy_hash TEXT,
     status TEXT NOT NULL CHECK (status IN ('completed', 'uploaded', 'failed')),
     PRIMARY KEY (sample_id, sample_set_id)
@@ -42,7 +42,7 @@ CREATE INDEX IF NOT EXISTS idx_processed_samples_sample_id
 
 -- Reference database registry
 CREATE TABLE IF NOT EXISTS databases (
-    db_type TEXT NOT NULL CHECK (db_type IN ('blast', 'stat', 'hostile')),
+    db_type TEXT NOT NULL CHECK (db_type IN ('blast')),
     version TEXT NOT NULL,
     path TEXT NOT NULL,
     checksum TEXT,

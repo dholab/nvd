@@ -56,7 +56,6 @@ class BlastRecord:
     snakemake_run_id: str
     mapped_reads: int
     total_reads: int
-    stat_db_version: str
     adjusted_taxid: int | None = None
     adjustment_method: str | None = None
     adjusted_taxid_name: str | None = None
@@ -201,7 +200,6 @@ def validate_and_convert_blast_row(
     experiment_id: int,
     run_id: str,
     blast_db_version: str,
-    stat_db_version: str,
     total_reads: int,
     sample_id: str,
     validator: DataValidator,
@@ -254,7 +252,6 @@ def validate_and_convert_blast_row(
             snakemake_run_id=run_id,
             mapped_reads=mapped_reads,
             total_reads=total_reads,
-            stat_db_version=stat_db_version,
             adjusted_taxid=validator.validate_int(
                 row.get("adjusted_taxid", ""),
                 "adjusted_taxid",
@@ -287,7 +284,6 @@ def process_blast_data(
     experiment_id: int,
     run_id: str,
     blast_db_version: str,
-    stat_db_version: str,
     total_reads: int,
     meta: str,
 ) -> list[BlastRecord]:
@@ -315,7 +311,6 @@ def process_blast_data(
                         experiment_id=experiment_id,
                         run_id=run_id,
                         blast_db_version=blast_db_version,
-                        stat_db_version=stat_db_version,
                         total_reads=total_reads,
                         sample_id=meta,
                         validator=validator,
@@ -419,13 +414,6 @@ def main():
         required=True,
         help="BLAST database version",
     )
-    parser.add_argument(
-        "--stat-db-version",
-        type=str,
-        required=True,
-        help="Statistics database version",
-    )
-
     args = parser.parse_args()
 
     try:
@@ -439,7 +427,6 @@ def main():
             experiment_id=args.experiment_id,
             run_id=args.run_id,
             blast_db_version=args.blast_db_version,
-            stat_db_version=args.stat_db_version,
             total_reads=args.total_reads,
             meta=args.meta,
         )

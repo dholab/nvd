@@ -24,10 +24,10 @@ Path Resolution (hierarchical fallback):
     Taxonomy: NVD_TAXONOMY_DB env var > {state_dir}/taxdump/
 
 Schema Migration Safety:
-    When the database schema version doesn't match the expected version,
-    the database must be recreated. This is a DESTRUCTIVE operation that
-    loses all existing state (runs, samples, uploads). To prevent accidental
-    data loss:
+    Known older schema versions are backed up and migrated in place. Unknown
+    schema versions still require recreation. Recreating the database is a
+    DESTRUCTIVE operation that loses all existing state (runs, samples,
+    uploads). To prevent accidental data loss:
 
     1. Interactive mode (TTY): User is prompted for confirmation with a
        5-minute timeout. If no response, the operation is aborted.
@@ -70,7 +70,9 @@ ENV_VAR_TAXONOMY = "NVD_TAXONOMY_DB"
 DEFAULT_CONFIG_PATH = DEFAULT_NVD_HOME / "user.config"
 DEFAULT_STATE_DIR = DEFAULT_NVD_CACHE
 
-EXPECTED_VERSION = 2
+EXPECTED_VERSION = 3
+
+_MIGRATABLE_VERSION = 2
 
 # Timeout for interactive confirmation prompt (seconds)
 CONFIRMATION_TIMEOUT_SECONDS = 300  # 5 minutes
@@ -438,6 +440,88 @@ def _init_schema(conn: sqlite3.Connection) -> None:
     conn.executescript(schema)
 
 
+def _migrate_v2_to_v3(conn: sqlite3.Connection) -> None:
+    """Migrate v2 state to the BLAST-only v3 schema.
+
+    v2 state could contain STAT/GOTTCHA2-era provenance. v3 keeps the BLAST
+    workflow state that is still meaningful and drops retired workflow rows
+    from the active schema. The caller creates a full SQLite backup first.
+    """
+    conn.executescript(
+        """
+        PRAGMA foreign_keys=OFF;
+
+        DROP INDEX IF EXISTS idx_processed_samples_sample_id;
+        DROP INDEX IF EXISTS idx_databases_path;
+        DROP INDEX IF EXISTS idx_uploads_sample_id;
+        DROP INDEX IF EXISTS idx_uploads_target;
+
+        ALTER TABLE processed_samples RENAME TO processed_samples_v2;
+        CREATE TABLE processed_samples (
+            sample_id TEXT NOT NULL,
+            sample_set_id TEXT NOT NULL,
+            run_id TEXT NOT NULL REFERENCES runs(run_id),
+            processed_at TEXT NOT NULL,
+            blast_db_version TEXT,
+            taxonomy_hash TEXT,
+            status TEXT NOT NULL CHECK (status IN ('completed', 'uploaded', 'failed')),
+            PRIMARY KEY (sample_id, sample_set_id)
+        );
+        INSERT INTO processed_samples
+            (sample_id, sample_set_id, run_id, processed_at, blast_db_version, taxonomy_hash, status)
+        SELECT sample_id, sample_set_id, run_id, processed_at, blast_db_version, taxonomy_hash, status
+        FROM processed_samples_v2;
+        DROP TABLE processed_samples_v2;
+
+        ALTER TABLE databases RENAME TO databases_v2;
+        CREATE TABLE databases (
+            db_type TEXT NOT NULL CHECK (db_type IN ('blast')),
+            version TEXT NOT NULL,
+            path TEXT NOT NULL,
+            checksum TEXT,
+            registered_at TEXT NOT NULL,
+            PRIMARY KEY (db_type, version)
+        );
+        INSERT INTO databases (db_type, version, path, checksum, registered_at)
+        SELECT db_type, version, path, checksum, registered_at
+        FROM databases_v2
+        WHERE db_type = 'blast';
+        DROP TABLE databases_v2;
+
+        ALTER TABLE uploads RENAME TO uploads_v2;
+        CREATE TABLE uploads (
+            sample_id TEXT NOT NULL,
+            sample_set_id TEXT NOT NULL,
+            upload_type TEXT NOT NULL CHECK (upload_type IN ('blast', 'blast_fasta')),
+            upload_target TEXT NOT NULL,
+            content_hash TEXT NOT NULL,
+            uploaded_at TEXT NOT NULL,
+            target_metadata TEXT,
+            PRIMARY KEY (sample_id, sample_set_id, upload_type, upload_target),
+            FOREIGN KEY (sample_id, sample_set_id) REFERENCES processed_samples(sample_id, sample_set_id)
+        );
+        INSERT INTO uploads
+            (sample_id, sample_set_id, upload_type, upload_target, content_hash, uploaded_at, target_metadata)
+        SELECT sample_id, sample_set_id, upload_type, upload_target, content_hash, uploaded_at, target_metadata
+        FROM uploads_v2
+        WHERE upload_type IN ('blast', 'blast_fasta');
+        DROP TABLE uploads_v2;
+
+        CREATE INDEX IF NOT EXISTS idx_processed_samples_sample_id
+            ON processed_samples(sample_id);
+        CREATE INDEX IF NOT EXISTS idx_databases_path ON databases(db_type, path);
+        CREATE INDEX IF NOT EXISTS idx_uploads_sample_id
+            ON uploads(sample_id);
+        CREATE INDEX IF NOT EXISTS idx_uploads_target
+            ON uploads(upload_target);
+
+        PRAGMA user_version = 3;
+        PRAGMA foreign_keys=ON;
+        """,
+    )
+    conn.commit()
+
+
 def _get_version(conn: sqlite3.Connection) -> int:
     """Get the schema version from the database."""
     return conn.execute("PRAGMA user_version").fetchone()[0]
@@ -446,6 +530,22 @@ def _get_version(conn: sqlite3.Connection) -> int:
 def _check_version(conn: sqlite3.Connection) -> bool:
     """Check if database schema version matches expected."""
     return _get_version(conn) == EXPECTED_VERSION
+
+
+def _can_migrate_in_place(current_version: int) -> bool:
+    """Return True when this version has a non-destructive migration path."""
+    return current_version == _MIGRATABLE_VERSION
+
+
+def _migrate_in_place(db_path: Path, conn: sqlite3.Connection, current_version: int) -> Path:
+    """Backup and migrate a known older schema without deleting the database."""
+    if current_version != _MIGRATABLE_VERSION:
+        msg = f"No in-place migration registered for schema version {current_version}"
+        raise SchemaMismatchError(db_path, current_version, EXPECTED_VERSION) from ValueError(msg)
+
+    backup_path = _create_backup(db_path)
+    _migrate_v2_to_v3(conn)
+    return backup_path
 
 
 def _configure_connection(conn: sqlite3.Connection) -> None:
@@ -695,15 +795,15 @@ def connect(
     Context manager for state database connections.
 
     Creates the database and schema if missing. If the schema version doesn't
-    match, behavior depends on allow_destructive_update and whether stdin is
-    a TTY:
+    match, known older versions are backed up and migrated in place. Unknown
+    versions depend on allow_destructive_update and whether stdin is a TTY:
 
     - allow_destructive_update=True: Backup and recreate automatically
     - TTY available: Prompt user for confirmation (5-minute timeout)
     - Non-interactive: Raise SchemaMismatchError
 
-    In all cases where the database is recreated, a timestamped backup is
-    created first.
+    In all cases where the database is migrated or recreated, a timestamped
+    backup is created first.
 
     Args:
         state_dir: Optional explicit state directory. If None, resolves
@@ -736,17 +836,22 @@ def connect(
         conn = sqlite3.connect(db_path, timeout=30.0)
         if not _check_version(conn):
             current_version = _get_version(conn)
-            conn.close()
-            # This may raise SchemaMismatchError if user doesn't consent
-            _handle_schema_mismatch(
-                db_path,
-                current_version,
-                allow_destructive_update=allow_destructive_update,
-            )
-            # If we get here, the old database was backed up and deleted
-            conn = sqlite3.connect(db_path, timeout=30.0)
-            _configure_connection(conn)
-            _init_schema(conn)
+            if _can_migrate_in_place(current_version):
+                _configure_connection(conn)
+                _migrate_in_place(db_path, conn, current_version)
+                _configure_connection(conn)
+            else:
+                conn.close()
+                # This may raise SchemaMismatchError if user doesn't consent
+                _handle_schema_mismatch(
+                    db_path,
+                    current_version,
+                    allow_destructive_update=allow_destructive_update,
+                )
+                # If we get here, the old database was backed up and deleted
+                conn = sqlite3.connect(db_path, timeout=30.0)
+                _configure_connection(conn)
+                _init_schema(conn)
         else:
             _configure_connection(conn)
     else:

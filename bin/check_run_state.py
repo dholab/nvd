@@ -475,7 +475,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--upload-types",
         help="Comma-separated upload types to check for duplicate detection "
-        "(e.g., 'blast,blast_fasta' or 'gottcha2,gottcha2_fasta'). "
+        "(e.g., 'blast,blast_fasta'). "
         "When set, only uploads matching these types count as 'already uploaded'.",
     )
     parser.add_argument(

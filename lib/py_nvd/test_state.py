@@ -490,7 +490,6 @@ class TestProcessedSamples:
             sample_set_id=ctx.sample_set_id,
             run_id=ctx.run.run_id,
             blast_db_version="core-nt_2025-01-01",
-            stat_db_version="v1.0",
             state_dir=ctx.state_dir,
         )
 
@@ -500,7 +499,6 @@ class TestProcessedSamples:
         assert sample.run_id == "run_001"
         assert sample.status == "completed"  # Now starts as completed
         assert sample.blast_db_version == "core-nt_2025-01-01"
-        assert sample.stat_db_version == "v1.0"
 
     def test_get_processed_sample(self, registered_run: RunContext) -> None:
         """get_processed_sample retrieves a registered sample."""
@@ -894,31 +892,13 @@ class TestPerSampleStateTracking:
         )
         assert uploaded == {"s1"}
 
-        # With GOTTCHA2 filter: s1 does NOT show as uploaded
+        # With FASTA filter: s1 does NOT show as uploaded
         uploaded = get_uploaded_sample_ids(
             ["s1"],
-            upload_types=["gottcha2", "gottcha2_fasta"],
+            upload_types=["blast_fasta"],
             state_dir=temp_state_dir,
         )
         assert uploaded == set()
-
-        # Now record a GOTTCHA2 upload too
-        record_upload(
-            "s1",
-            set1,
-            "gottcha2",
-            "labkey",
-            "hash2",
-            state_dir=temp_state_dir,
-        )
-
-        # With GOTTCHA2 filter: s1 now shows as uploaded
-        uploaded = get_uploaded_sample_ids(
-            ["s1"],
-            upload_types=["gottcha2", "gottcha2_fasta"],
-            state_dir=temp_state_dir,
-        )
-        assert uploaded == {"s1"}
 
     def test_get_uploaded_sample_ids_cross_sample_set(
         self,
@@ -1205,11 +1185,11 @@ class TestUploads:
             is True
         )
 
-        # Not uploaded gottcha2 type
+        # Not uploaded FASTA type
         assert (
             was_sample_ever_uploaded(
                 ctx.sample_id,
-                upload_type="gottcha2",
+                upload_type="blast_fasta",
                 state_dir=ctx.state_dir,
             )
             is False
@@ -1315,15 +1295,6 @@ class TestUploads:
             "hash2",
             state_dir=temp_state_dir,
         )
-        record_upload(
-            "s1",
-            set1,
-            "gottcha2",
-            "labkey",
-            "hash3",
-            state_dir=temp_state_dir,
-        )
-
         uploads = list_uploads(upload_type="blast", state_dir=temp_state_dir)
         assert len(uploads) == 1
         assert uploads[0].upload_type == "blast"
@@ -1367,15 +1338,6 @@ class TestUploads:
             "hash2",
             state_dir=temp_state_dir,
         )
-        record_upload(
-            "s1",
-            set1,
-            "gottcha2",
-            "labkey",
-            "hash3",
-            state_dir=temp_state_dir,
-        )
-
         uploads = list_uploads(limit=2, state_dir=temp_state_dir)
         assert len(uploads) == 2
 
@@ -1532,7 +1494,7 @@ class TestCrossRunDeduplicationE2E:
         assert samples_to_upload == ["sample_D"]
 
     def test_dedup_respects_upload_type(self, temp_state_dir: Path) -> None:
-        """Deduplication is per upload_type - blast and gottcha2 are independent."""
+        """Deduplication is per upload_type - BLAST table and FASTA outputs are independent."""
         sample_id = "sample_X"
         sample_set_id = compute_sample_set_id([sample_id])
         run = register_run("run_001", sample_set_id, state_dir=temp_state_dir)
@@ -1563,10 +1525,10 @@ class TestCrossRunDeduplicationE2E:
             state_dir=temp_state_dir,
         )
 
-        # GOTTCHA2 should NOT be detected (different upload_type)
+        # FASTA should NOT be detected (different upload_type)
         assert not was_sample_ever_uploaded(
             sample_id,
-            upload_type="gottcha2",
+            upload_type="blast_fasta",
             upload_target="labkey",
             state_dir=temp_state_dir,
         )
@@ -1782,9 +1744,169 @@ class TestSchemaMigrationSafety:
         with connect(temp_state_dir) as conn:
             # Should succeed without any prompts
             version = conn.execute("PRAGMA user_version").fetchone()[0]
-            assert version == 2  # EXPECTED_VERSION
+            assert version == EXPECTED_VERSION
+
+            columns = [
+                row[1]
+                for row in conn.execute("PRAGMA table_info(processed_samples)").fetchall()
+            ]
+            assert "stat_db_version" not in columns
 
         assert db_path.exists()
+
+    def test_v2_database_migrates_to_blast_only_v3(self, temp_state_dir: Path) -> None:
+        """v2 state is migrated in place while retired workflow rows are dropped."""
+        db_path = temp_state_dir / "state.sqlite"
+
+        conn = sqlite3.connect(db_path)
+        conn.executescript(
+            """
+            PRAGMA user_version = 2;
+
+            CREATE TABLE runs (
+                run_id TEXT PRIMARY KEY,
+                sample_set_id TEXT NOT NULL UNIQUE,
+                experiment_id INTEGER,
+                started_at TEXT NOT NULL,
+                completed_at TEXT,
+                status TEXT NOT NULL CHECK (status IN ('running', 'completed', 'failed'))
+            );
+
+            CREATE TABLE processed_samples (
+                sample_id TEXT NOT NULL,
+                sample_set_id TEXT NOT NULL,
+                run_id TEXT NOT NULL REFERENCES runs(run_id),
+                processed_at TEXT NOT NULL,
+                blast_db_version TEXT,
+                stat_db_version TEXT,
+                taxonomy_hash TEXT,
+                status TEXT NOT NULL CHECK (status IN ('completed', 'uploaded', 'failed')),
+                PRIMARY KEY (sample_id, sample_set_id)
+            );
+
+            CREATE TABLE databases (
+                db_type TEXT NOT NULL CHECK (db_type IN ('blast', 'stat', 'hostile')),
+                version TEXT NOT NULL,
+                path TEXT NOT NULL,
+                checksum TEXT,
+                registered_at TEXT NOT NULL,
+                PRIMARY KEY (db_type, version)
+            );
+
+            CREATE TABLE uploads (
+                sample_id TEXT NOT NULL,
+                sample_set_id TEXT NOT NULL,
+                upload_type TEXT NOT NULL,
+                upload_target TEXT NOT NULL,
+                content_hash TEXT NOT NULL,
+                uploaded_at TEXT NOT NULL,
+                target_metadata TEXT,
+                PRIMARY KEY (sample_id, sample_set_id, upload_type, upload_target)
+            );
+
+            CREATE TABLE taxonomy_versions (
+                run_id TEXT PRIMARY KEY REFERENCES runs(run_id),
+                file_hash TEXT NOT NULL,
+                ncbi_rebuild_timestamp TEXT,
+                file_size INTEGER,
+                downloaded_at TEXT NOT NULL,
+                recorded_at TEXT NOT NULL
+            );
+
+            CREATE TABLE sra_cache (
+                srr_accession TEXT PRIMARY KEY,
+                download_path TEXT NOT NULL,
+                downloaded_at TEXT NOT NULL,
+                file_count INTEGER,
+                total_bytes INTEGER
+            );
+
+            CREATE TABLE presets (
+                name TEXT PRIMARY KEY,
+                description TEXT,
+                params TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE sample_locks (
+                sample_id TEXT PRIMARY KEY,
+                run_id TEXT NOT NULL REFERENCES runs(run_id),
+                hostname TEXT NOT NULL,
+                username TEXT NOT NULL,
+                locked_at TEXT NOT NULL,
+                expires_at TEXT NOT NULL
+            );
+
+            INSERT INTO runs (run_id, sample_set_id, started_at, status)
+            VALUES ('run_001', 'set_001', '2026-01-01T00:00:00Z', 'completed');
+
+            INSERT INTO processed_samples
+                (sample_id, sample_set_id, run_id, processed_at, blast_db_version,
+                 stat_db_version, taxonomy_hash, status)
+            VALUES
+                ('s1', 'set_001', 'run_001', '2026-01-01T00:01:00Z',
+                 'blast-v1', 'stat-v1', 'tax-hash', 'completed');
+
+            INSERT INTO databases (db_type, version, path, registered_at)
+            VALUES
+                ('blast', 'blast-v1', '/db/blast', '2026-01-01T00:00:00Z'),
+                ('stat', 'stat-v1', '/db/stat', '2026-01-01T00:00:00Z'),
+                ('hostile', 'hostile-v1', '/db/hostile', '2026-01-01T00:00:00Z');
+
+            INSERT INTO uploads
+                (sample_id, sample_set_id, upload_type, upload_target, content_hash, uploaded_at)
+            VALUES
+                ('s1', 'set_001', 'blast', 'labkey', 'blast-hash', '2026-01-01T00:02:00Z'),
+                ('s1', 'set_001', 'gottcha2', 'labkey', 'gottcha-hash', '2026-01-01T00:03:00Z');
+            """,
+        )
+        conn.close()
+
+        with connect(temp_state_dir) as migrated:
+            version = migrated.execute("PRAGMA user_version").fetchone()[0]
+            assert version == EXPECTED_VERSION
+
+            processed_columns = [
+                row[1]
+                for row in migrated.execute("PRAGMA table_info(processed_samples)").fetchall()
+            ]
+            assert "stat_db_version" not in processed_columns
+
+            sample = migrated.execute(
+                "SELECT sample_id, blast_db_version, taxonomy_hash FROM processed_samples",
+            ).fetchone()
+            assert tuple(sample) == ("s1", "blast-v1", "tax-hash")
+
+            database_types = [
+                row[0]
+                for row in migrated.execute("SELECT db_type FROM databases ORDER BY db_type").fetchall()
+            ]
+            assert database_types == ["blast"]
+
+            upload_types = [
+                row[0]
+                for row in migrated.execute("SELECT upload_type FROM uploads ORDER BY upload_type").fetchall()
+            ]
+            assert upload_types == ["blast"]
+
+        backups = list(temp_state_dir.glob("state.backup_*.sqlite"))
+        assert len(backups) == 1
+
+        backup = sqlite3.connect(backups[0])
+        try:
+            old_columns = [
+                row[1]
+                for row in backup.execute("PRAGMA table_info(processed_samples)").fetchall()
+            ]
+            assert "stat_db_version" in old_columns
+            legacy_uploads = [
+                row[0]
+                for row in backup.execute("SELECT upload_type FROM uploads ORDER BY upload_type").fetchall()
+            ]
+            assert legacy_uploads == ["blast", "gottcha2"]
+        finally:
+            backup.close()
 
     def test_matching_schema_version_proceeds_normally(
         self,
@@ -1837,7 +1959,7 @@ class TestSchemaMigrationSafety:
 
         # Create a database with wrong schema version and some data
         conn = sqlite3.connect(db_path)
-        conn.execute(f"PRAGMA user_version = {EXPECTED_VERSION - 1}")
+        conn.execute(f"PRAGMA user_version = {EXPECTED_VERSION - 2}")
         conn.execute("CREATE TABLE old_data (value TEXT)")
         conn.execute("INSERT INTO old_data VALUES ('important')")
         conn.commit()
@@ -1856,7 +1978,7 @@ class TestSchemaMigrationSafety:
         # Backup should contain the old data
         backup_conn = sqlite3.connect(backups[0])
         old_version = backup_conn.execute("PRAGMA user_version").fetchone()[0]
-        assert old_version == EXPECTED_VERSION - 1
+        assert old_version == EXPECTED_VERSION - 2
         row = backup_conn.execute("SELECT value FROM old_data").fetchone()
         assert row[0] == "important"
         backup_conn.close()
@@ -1870,7 +1992,7 @@ class TestSchemaMigrationSafety:
 
         # Create database with old schema and multiple tables of data
         conn = sqlite3.connect(db_path)
-        conn.execute(f"PRAGMA user_version = {EXPECTED_VERSION - 1}")
+        conn.execute(f"PRAGMA user_version = {EXPECTED_VERSION - 2}")
         conn.execute("CREATE TABLE runs (run_id TEXT PRIMARY KEY, data TEXT)")
         conn.execute("CREATE TABLE samples (sample_id TEXT, run_id TEXT)")
         for i in range(10):
@@ -2004,33 +2126,6 @@ class TestDatabasePathLookup:
         assert db is not None
         assert db.version == "v1.0"
 
-    def test_get_database_by_path_different_types_independent(
-        self,
-        temp_state_dir: Path,
-        temp_db_path: Path,
-    ) -> None:
-        """Different db_types at same path are independent."""
-        register_database(
-            "blast",
-            "blast-v1",
-            str(temp_db_path),
-            state_dir=temp_state_dir,
-        )
-        register_database(
-            "gottcha2",
-            "gottcha-v1",
-            str(temp_db_path),
-            state_dir=temp_state_dir,
-        )
-
-        blast_db, _ = get_database_by_path("blast", temp_db_path, temp_state_dir)
-        gottcha_db, _ = get_database_by_path("gottcha2", temp_db_path, temp_state_dir)
-
-        assert blast_db is not None
-        assert blast_db.version == "blast-v1"
-        assert gottcha_db is not None
-        assert gottcha_db.version == "gottcha-v1"
-
     def test_get_databases_by_path_returns_all_versions(
         self,
         temp_state_dir: Path,
@@ -2097,7 +2192,7 @@ class TestResolveDatabaseVersions:
     def temp_db_paths(self, temp_state_dir: Path) -> dict[str, Path]:
         """Create temporary 'database' directories for each type."""
         paths = {}
-        for db_type in ["blast", "gottcha2", "stat"]:
+        for db_type in ["blast"]:
             db_dir = temp_state_dir / f"fake_{db_type}_db"
             db_dir.mkdir()
             paths[db_type] = db_dir

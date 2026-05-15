@@ -382,12 +382,6 @@ def main() -> None:
         help="BLAST database version for provenance tracking",
     )
     parser.add_argument(
-        "--stat-db-version",
-        type=str,
-        default=None,
-        help="STAT database version for provenance tracking",
-    )
-    parser.add_argument(
         "--labkey",
         action="store_true",
         default=False,
@@ -489,7 +483,6 @@ def main() -> None:
                 sample_set_id=context.sample_set_id,
                 run_id=args.run_id,
                 blast_db_version=args.blast_db_version,
-                stat_db_version=args.stat_db_version,
                 state_dir=str(context.state_dir),
             )
             logger.info(
