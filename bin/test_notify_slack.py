@@ -189,7 +189,8 @@ class TestReportHelpers:
     ) -> None:
         """get_highlights_safe swallows errors and returns an empty string."""
         with patch(
-            "notify_slack.get_highlights_string", side_effect=RuntimeError("boom"),
+            "notify_slack.get_highlights_string",
+            side_effect=RuntimeError("boom"),
         ):
             assert get_highlights_safe(tmp_path, "sample_set_123") == ""
 
@@ -228,7 +229,9 @@ class TestSendNotification:
         mock_client.chat_postMessage.return_value = {"ts": "1234567890.123456"}
 
         with patch("notify_slack.WebClient", return_value=mock_client):
-            result = send_notification("C123", "test message", token=FAKE_SLACK_BOT_TOKEN)
+            result = send_notification(
+                "C123", "test message", token=FAKE_SLACK_BOT_TOKEN
+            )
 
         assert result is True
         mock_client.chat_postMessage.assert_called_once_with(
@@ -248,7 +251,9 @@ class TestSendNotification:
         )
 
         with patch("notify_slack.WebClient", return_value=mock_client):
-            result = send_notification("C123", "test message", token=FAKE_SLACK_BOT_TOKEN)
+            result = send_notification(
+                "C123", "test message", token=FAKE_SLACK_BOT_TOKEN
+            )
 
         assert result is False
 
@@ -263,7 +268,9 @@ class TestSendNotification:
         )
 
         with patch("notify_slack.WebClient", return_value=mock_client):
-            result = send_notification("C123", "test message", token=FAKE_SLACK_BOT_TOKEN)
+            result = send_notification(
+                "C123", "test message", token=FAKE_SLACK_BOT_TOKEN
+            )
 
         assert result is False
 
@@ -278,7 +285,9 @@ class TestSendNotification:
         )
 
         with patch("notify_slack.WebClient", return_value=mock_client):
-            result = send_notification("C123", "test message", token=FAKE_SLACK_BOT_TOKEN)
+            result = send_notification(
+                "C123", "test message", token=FAKE_SLACK_BOT_TOKEN
+            )
 
         assert result is False
 
@@ -288,7 +297,9 @@ class TestSendNotification:
         mock_client.chat_postMessage.side_effect = SlackClientError("Network error")
 
         with patch("notify_slack.WebClient", return_value=mock_client):
-            result = send_notification("C123", "test message", token=FAKE_SLACK_BOT_TOKEN)
+            result = send_notification(
+                "C123", "test message", token=FAKE_SLACK_BOT_TOKEN
+            )
 
         assert result is False
 
@@ -298,7 +309,9 @@ class TestSendNotification:
         mock_client.chat_postMessage.side_effect = RuntimeError("Unexpected!")
 
         with patch("notify_slack.WebClient", return_value=mock_client):
-            result = send_notification("C123", "test message", token=FAKE_SLACK_BOT_TOKEN)
+            result = send_notification(
+                "C123", "test message", token=FAKE_SLACK_BOT_TOKEN
+            )
 
         assert result is False
 

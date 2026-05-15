@@ -538,13 +538,17 @@ def _can_migrate_in_place(current_version: int) -> bool:
 
 
 def _migrate_in_place(
-    db_path: Path, conn: sqlite3.Connection, current_version: int,
+    db_path: Path,
+    conn: sqlite3.Connection,
+    current_version: int,
 ) -> Path:
     """Backup and migrate a known older schema without deleting the database."""
     if current_version != _MIGRATABLE_VERSION:
         msg = f"No in-place migration registered for schema version {current_version}"
         raise SchemaMismatchError(
-            db_path, current_version, EXPECTED_VERSION,
+            db_path,
+            current_version,
+            EXPECTED_VERSION,
         ) from ValueError(msg)
 
     backup_path = _create_backup(db_path)

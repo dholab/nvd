@@ -85,7 +85,15 @@ def test_taxonomy_sqlite(tmp_path: Path) -> Path:
 def mock_taxonomy_open(test_taxonomy_sqlite: Path, monkeypatch: pytest.MonkeyPatch):
     """Patch taxonomy.open() to use our test SQLite."""
     taxdump_dir = test_taxonomy_sqlite.parent
-    monkeypatch.setattr(taxonomy, "_ensure_taxdump", lambda _=None: taxdump_dir)
+
+    def test_taxdump_dir(*_args: object, **_kwargs: object) -> Path:
+        return taxdump_dir
+
+    monkeypatch.setattr(
+        taxonomy,
+        "_ensure_taxdump",
+        test_taxdump_dir,
+    )
 
 
 class TestFindLcaList:
