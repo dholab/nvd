@@ -77,10 +77,6 @@ rust-script = ">=0.36.0"
 [tool.pixi.pypi-dependencies]
 nvd = { path = ".", editable = true }
 
-[tool.pixi.tasks]
-# Regenerate pipeline fingerprint (run after editing main.nf or nextflow.config)
-fingerprint = "nvd-fingerprint"
-
 [dependency-groups]
 dev = [
   "basedpyright>=1.28.4",
@@ -105,7 +101,6 @@ module-name = ["py_nvd"]
 
 [project.scripts]
 "nvd" = "py_nvd.cli:main"
-"nvd-fingerprint" = "py_nvd.fingerprint:main"
 
 [tool.ruff.lint]
 select = ["ALL"]

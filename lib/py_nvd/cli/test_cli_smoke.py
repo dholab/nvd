@@ -8,6 +8,7 @@ from unittest.mock import patch
 import pytest
 from typer.testing import CliRunner
 
+from py_nvd.cli import utils as cli_utils
 from py_nvd.cli.app import app
 from py_nvd.cli.commands.resume import EDITOR_MIN_DURATION_SECONDS
 from py_nvd.cli.utils import PIPELINE_ROOT, RESUME_FILE, get_default_profile, get_editor
@@ -1087,6 +1088,41 @@ class TestPipelineRoot:
     def test_pipeline_root_is_absolute(self) -> None:
         """PIPELINE_ROOT is an absolute path."""
         assert PIPELINE_ROOT.is_absolute()
+
+    def test_pipeline_root_has_nvd_sentinels(self) -> None:
+        """PIPELINE_ROOT points to an NVD checkout, not just any Nextflow project."""
+        assert cli_utils._has_nvd_sentinels(PIPELINE_ROOT)
+
+    def test_unrelated_nextflow_project_is_not_nvd(self, tmp_path: Path) -> None:
+        """A generic Nextflow project is not enough to become the NVD root."""
+        (tmp_path / "main.nf").write_text("workflow { }\n", encoding="utf-8")
+        (tmp_path / "nextflow.config").write_text("params { }\n", encoding="utf-8")
+
+        assert not cli_utils._has_nvd_sentinels(tmp_path)
+
+    def test_explicit_invalid_pipeline_root_fails_fast(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """An invalid NVD_PIPELINE_ROOT should not silently fall back."""
+        monkeypatch.setenv("NVD_PIPELINE_ROOT", str(tmp_path))
+
+        with pytest.raises(RuntimeError, match="NVD_PIPELINE_ROOT is set"):
+            cli_utils._find_pipeline_root()
+
+    def test_package_root_preferred_over_unrelated_cwd(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Root discovery should not select an unrelated Nextflow cwd."""
+        (tmp_path / "main.nf").write_text("workflow { }\n", encoding="utf-8")
+        (tmp_path / "nextflow.config").write_text("params { }\n", encoding="utf-8")
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.delenv("NVD_PIPELINE_ROOT", raising=False)
+
+        assert cli_utils._find_pipeline_root() == PIPELINE_ROOT
 
 
 class TestHitsCommands:

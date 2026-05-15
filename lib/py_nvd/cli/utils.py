@@ -21,7 +21,6 @@ import typer
 from rich.console import Console
 
 from py_nvd.db import DEFAULT_CONFIG_PATH, get_config_path, get_state_db_path
-from py_nvd.fingerprint import is_dev_mode, verify_pipeline
 
 # Re-export for backward compatibility (prefer get_config_path() for new code)
 DEFAULT_CONFIG = DEFAULT_CONFIG_PATH
@@ -29,33 +28,39 @@ DEFAULT_CONFIG = DEFAULT_CONFIG_PATH
 # Resume file for `nvd resume` command (stored in launch directory)
 RESUME_FILE = Path(".nfresume")
 
-# Maximum directory depth to search when looking for pipeline root
-MAX_PIPELINE_ROOT_DEPTH = 10
+# Files and directories that distinguish NVD from an arbitrary Nextflow project.
+NVD_PIPELINE_SENTINELS = (
+    "main.nf",
+    "nextflow.config",
+    "pyproject.toml",
+    "lib/py_nvd",
+    "modules",
+    "subworkflows",
+)
 
 # Time constants for duration formatting
 SECONDS_PER_MINUTE = 60
 SECONDS_PER_HOUR = 3600
 
+def _has_nvd_sentinels(candidate: Path) -> bool:
+    """Check whether a directory looks like an NVD source checkout."""
+    return all((candidate / sentinel).exists() for sentinel in NVD_PIPELINE_SENTINELS)
 
-def _has_pipeline_files(candidate: Path) -> bool:
-    """Check if a directory contains the core pipeline files."""
-    return (candidate / "main.nf").exists() and (candidate / "nextflow.config").exists()
 
+def _find_parent_pipeline_root(start: Path) -> Path | None:
+    """Walk upward from a path until an NVD pipeline root is found."""
+    current = start.resolve()
+    if current.is_file():
+        current = current.parent
 
-def _is_verified_nvd_pipeline(candidate: Path) -> bool:
-    """
-    Verify a candidate directory is the authentic NVD pipeline.
+    while True:
+        if _has_nvd_sentinels(current):
+            return current
+        if current.parent == current:
+            break
+        current = current.parent
 
-    In dev mode (editable install or NVD_DEV_MODE set), only checks for
-    file presence. In production, verifies blake3 hashes match the
-    fingerprint file.
-    """
-    if not _has_pipeline_files(candidate):
-        return False
-
-    # In dev mode, skip hash verification (files change during development)
-    # In production, verify hashes match
-    return verify_pipeline(candidate, strict=not is_dev_mode())
+    return None
 
 
 def _find_pipeline_root() -> Path:
@@ -64,15 +69,12 @@ def _find_pipeline_root() -> Path:
 
     Strategy (in order of precedence):
     1. NVD_PIPELINE_ROOT environment variable (explicit override)
-    2. Current working directory (if main.nf exists there)
-    3. Walk up from this file's location (development/editable install)
+    2. Walk up from this file's location (development/editable install)
+    3. Current working directory (container bind-mount fallback)
 
-    Each candidate is verified against the pipeline fingerprint to ensure
-    it's actually the NVD pipeline and not some other Nextflow project.
-    In dev mode, verification is relaxed to allow for local edits.
-
-    The cwd check (strategy 2) enables running the CLI from within a container
-    when the repo is bind-mounted to the working directory.
+    Candidates must contain NVD-specific sentinel paths so the CLI does not
+    accidentally run an unrelated Nextflow project that merely has main.nf and
+    nextflow.config.
 
     Returns:
         Path to the pipeline root directory.
@@ -83,27 +85,27 @@ def _find_pipeline_root() -> Path:
     # Strategy 1: Explicit override via environment variable
     if env_root := os.environ.get("NVD_PIPELINE_ROOT"):
         candidate = Path(env_root).resolve()
-        if _is_verified_nvd_pipeline(candidate):
+        if _has_nvd_sentinels(candidate):
             return candidate
-        # If explicitly set but invalid, warn and continue to other strategies
-        # (could also raise here, but graceful fallback seems friendlier)
 
-    # Strategy 2: Current working directory (container-friendly)
-    cwd = Path.cwd()
-    if _is_verified_nvd_pipeline(cwd):
-        return cwd
+        msg = (
+            "NVD_PIPELINE_ROOT is set, but does not point to an NVD pipeline root: "
+            f"{candidate}"
+        )
+        raise RuntimeError(msg)
 
-    # Strategy 3: Walk up from installed package location (original behavior)
-    current = Path(__file__).resolve().parent
-    for _ in range(MAX_PIPELINE_ROOT_DEPTH):
-        if _is_verified_nvd_pipeline(current):
-            return current
-        if current.parent == current:  # Hit filesystem root
-            break
-        current = current.parent
+    # Strategy 2: Walk up from installed package location.
+    package_root = _find_parent_pipeline_root(Path(__file__))
+    if package_root is not None:
+        return package_root
+
+    # Strategy 3: Current working directory fallback for container bind mounts.
+    cwd_root = _find_parent_pipeline_root(Path.cwd())
+    if cwd_root is not None:
+        return cwd_root
 
     msg = (
-        "Could not find NVD pipeline root (main.nf not found or fingerprint mismatch). "
+        "Could not find NVD pipeline root. "
         "Either run from the repository root, set NVD_PIPELINE_ROOT, "
         "or ensure the CLI is installed from the cloned repository."
     )
