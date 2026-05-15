@@ -467,10 +467,6 @@ def parse_args() -> argparse.Namespace:
         help="BLAST database version (ignored - now passed to register_hits.py)",
     )
     parser.add_argument(
-        "--stat-db-version",
-        help="STAT database version (ignored - now passed to register_hits.py)",
-    )
-    parser.add_argument(
         "--lock-ttl",
         type=int,
         default=DEFAULT_LOCK_TTL_HOURS,

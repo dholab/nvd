@@ -71,10 +71,6 @@
       "type": "string",
       "description": "BLAST database version identifier"
     },
-    "stat_db_version": {
-      "type": "string",
-      "description": "STAT database version identifier"
-    },
     "nvd_files": {
       "type": "string",
       "format": "path",
@@ -89,25 +85,45 @@
       "type": "string",
       "description": "BLAST database name prefix"
     },
-    "stat_index": {
-      "type": "string",
-      "format": "path",
-      "description": "Path to STAT index file"
+    "virus_index": {
+      "type": ["string", "null"],
+      "default": null,
+      "description": "Path to a prebuilt vertebrate-infecting virus deacon index (.idx file). Providing this enables virus read enrichment."
     },
-    "stat_dbss": {
-      "type": "string",
-      "format": "path",
-      "description": "Path to STAT DBSS file"
+    "virus_index_url": {
+      "type": ["string", "null"],
+      "default": null,
+      "description": "URL to download a prebuilt vertebrate-infecting virus deacon index. Providing this enables virus read enrichment when virus_index is not set."
     },
-    "stat_annotation": {
-      "type": "string",
-      "format": "path",
-      "description": "Path to STAT annotation file"
+    "virus_reference_fasta": {
+      "type": ["string", "null"],
+      "default": null,
+      "description": "Custom vertebrate-infecting virus FASTA to build and union with other virus indexes. Providing this enables virus read enrichment."
     },
-    "human_virus_taxlist": {
-      "type": "string",
-      "format": "path",
-      "description": "Path to human virus taxonomy list file"
+    "virus_kmer_size": {
+      "type": "integer",
+      "default": 31,
+      "minimum": 1,
+      "description": "K-mer size for building a custom virus enrichment index"
+    },
+    "virus_window_size": {
+      "type": "integer",
+      "default": 1,
+      "minimum": 1,
+      "description": "Minimizer window size for building a custom virus enrichment index"
+    },
+    "virus_abs_threshold": {
+      "type": "integer",
+      "default": 1,
+      "minimum": 1,
+      "description": "Minimum absolute minimizer hits for virus read enrichment"
+    },
+    "virus_rel_threshold": {
+      "type": "number",
+      "default": 0.0,
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Minimum relative proportion of minimizers for virus read enrichment (0.0-1.0)"
     },
     "preprocess": {
       "type": "boolean",

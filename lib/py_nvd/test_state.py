@@ -2108,8 +2108,6 @@ class TestResolveDatabaseVersions:
         resolution = resolve_database_versions(state_dir=temp_state_dir)
 
         assert resolution.blast_db_version is None
-        assert resolution.gottcha2_db_version is None
-        assert resolution.stat_db_version is None
         assert resolution.warnings == []
         assert resolution.auto_registered == []
 
@@ -2266,27 +2264,21 @@ class TestResolveDatabaseVersions:
         # No registrations
         assert resolution.auto_registered == []
 
-    def test_resolves_all_database_types(
+    def test_resolves_blast_database(
         self,
         temp_state_dir: Path,
         temp_db_paths: dict[str, Path],
     ) -> None:
-        """Resolves all three database types independently."""
+        """Resolves BLAST database paths and versions."""
         resolution = resolve_database_versions(
             blast_db=temp_db_paths["blast"],
             blast_db_version="blast-v1",
-            gottcha2_db=temp_db_paths["gottcha2"],
-            gottcha2_db_version="gottcha-v1",
-            stat_index=temp_db_paths["stat"],
-            stat_db_version="stat-v1",
             state_dir=temp_state_dir,
         )
 
         assert resolution.blast_db_version == "blast-v1"
-        assert resolution.gottcha2_db_version == "gottcha-v1"
-        assert resolution.stat_db_version == "stat-v1"
         assert resolution.warnings == []
-        assert len(resolution.auto_registered) == 3
+        assert len(resolution.auto_registered) == 1
 
     def test_mixed_resolution_scenarios(
         self,
@@ -2305,24 +2297,14 @@ class TestResolveDatabaseVersions:
         resolution = resolve_database_versions(
             # BLAST: path only, should resolve from registry
             blast_db=temp_db_paths["blast"],
-            # GOTTCHA2: path + version, should auto-register
-            gottcha2_db=temp_db_paths["gottcha2"],
-            gottcha2_db_version="gottcha-v1",
-            # STAT: path only, not registered, should warn
-            stat_index=temp_db_paths["stat"],
             state_dir=temp_state_dir,
         )
 
         # BLAST resolved from registry
         assert resolution.blast_db_version == "blast-v1"
 
-        # GOTTCHA2 auto-registered
-        assert resolution.gottcha2_db_version == "gottcha-v1"
-        assert any(r[0] == "gottcha2" for r in resolution.auto_registered)
-
-        # STAT unresolved with warning
-        assert resolution.stat_db_version is None
-        assert any("stat" in w and "not registered" in w for w in resolution.warnings)
+        assert resolution.warnings == []
+        assert resolution.auto_registered == []
 
     def test_path_canonicalization_in_resolution(
         self,

@@ -553,8 +553,6 @@ def _resolve_single_database(
 def resolve_database_versions(
     blast_db: Path | None = None,
     blast_db_version: str | None = None,
-    stat_index: Path | None = None,
-    stat_db_version: str | None = None,
     state_dir: Path | str | None = None,
 ) -> DatabaseResolution:
     """
@@ -575,8 +573,6 @@ def resolve_database_versions(
     Args:
         blast_db: Path to BLAST database (None to skip)
         blast_db_version: User-provided BLAST version (None to auto-resolve)
-        stat_index: Path to STAT index file (None to skip)
-        stat_db_version: User-provided STAT version (None to auto-resolve)
         state_dir: Optional state directory override
 
     Returns:
@@ -596,19 +592,6 @@ def resolve_database_versions(
         resolution.warnings.append(blast_warning)
     if blast_reg:
         resolution.auto_registered.append(blast_reg)
-
-    # Resolve STAT (uses stat_index as canonical path)
-    stat_resolved, stat_warning, stat_reg = _resolve_single_database(
-        "stat",
-        stat_index,
-        stat_db_version,
-        state_dir,
-    )
-    resolution.stat_db_version = stat_resolved
-    if stat_warning:
-        resolution.warnings.append(stat_warning)
-    if stat_reg:
-        resolution.auto_registered.append(stat_reg)
 
     return resolution
 

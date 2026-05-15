@@ -207,7 +207,6 @@ class DatabaseResolution:
 
     # Resolved versions (None if path not provided or unresolvable)
     blast_db_version: str | None = None
-    stat_db_version: str | None = None
 
     # Warnings to display to the user
     warnings: list[str] = Field(default_factory=list)
@@ -843,11 +842,6 @@ class NvdParams(BaseModel):
         description="BLAST database version",
         json_schema_extra={"category": "Databases"},
     )
-    stat_db_version: str | None = Field(
-        None,
-        description="STAT database version",
-        json_schema_extra={"category": "Databases"},
-    )
 
     # =========================================================================
     # Database Paths
@@ -867,24 +861,39 @@ class NvdParams(BaseModel):
         description="BLAST database name prefix",
         json_schema_extra={"category": "Databases"},
     )
-    stat_index: Path | None = Field(
+    virus_index: Path | None = Field(
         None,
-        description="Path to STAT index file",
+        description="Path to prebuilt vertebrate-infecting virus deacon index (.idx file)",
         json_schema_extra={"category": "Databases"},
     )
-    stat_dbss: Path | None = Field(
+    virus_index_url: str | None = Field(
         None,
-        description="Path to STAT DBSS file",
+        description="URL to download a prebuilt vertebrate-infecting virus deacon index",
         json_schema_extra={"category": "Databases"},
     )
-    stat_annotation: Path | None = Field(
+    virus_reference_fasta: Path | None = Field(
         None,
-        description="Path to STAT annotation file",
+        description="Custom vertebrate-infecting virus FASTA for building an enrichment index",
         json_schema_extra={"category": "Databases"},
     )
-    human_virus_taxlist: Path | None = Field(
-        None,
-        description="Path to human virus taxonomy list file",
+    virus_kmer_size: int = Field(
+        31,
+        description="K-mer size for building a custom virus enrichment index",
+        json_schema_extra={"category": "Databases"},
+    )
+    virus_window_size: int = Field(
+        1,
+        description="Minimizer window size for building a custom virus enrichment index",
+        json_schema_extra={"category": "Databases"},
+    )
+    virus_abs_threshold: int = Field(
+        1,
+        description="Minimum absolute minimizer hits for virus read enrichment",
+        json_schema_extra={"category": "Databases"},
+    )
+    virus_rel_threshold: float = Field(
+        0.0,
+        description="Minimum relative proportion of minimizers for virus read enrichment (0.0-1.0)",
         json_schema_extra={"category": "Databases"},
     )
 
@@ -1133,7 +1142,13 @@ class NvdParams(BaseModel):
     # Validators
     # =========================================================================
 
-    @field_validator("cutoff_percent", "entropy", "tax_stringency", "host_rel_threshold")
+    @field_validator(
+        "cutoff_percent",
+        "entropy",
+        "tax_stringency",
+        "host_rel_threshold",
+        "virus_rel_threshold",
+    )
     @classmethod
     def validate_zero_to_one(cls, v: float) -> float:
         """Validate that value is in 0-1 range."""
@@ -1151,6 +1166,9 @@ class NvdParams(BaseModel):
         "host_kmer_size",
         "host_window_size",
         "host_abs_threshold",
+        "virus_kmer_size",
+        "virus_window_size",
+        "virus_abs_threshold",
     )
     @classmethod
     def validate_positive_int(cls, v: int) -> int:

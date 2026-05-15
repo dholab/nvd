@@ -154,28 +154,46 @@ def run(
         help="Override BLAST database prefix",
         rich_help_panel=PANEL_DATABASES,
     ),
-    stat_index: Path | None = typer.Option(
+    virus_index: Path | None = typer.Option(
         None,
-        "--stat-index",
-        help="Override STAT index file",
+        "--virus-index",
+        help="Path to prebuilt vertebrate-infecting virus deacon index (.idx file)",
         rich_help_panel=PANEL_DATABASES,
     ),
-    stat_dbss: Path | None = typer.Option(
+    virus_index_url: str | None = typer.Option(
         None,
-        "--stat-dbss",
-        help="Override STAT dbss file",
+        "--virus-index-url",
+        help="URL to download a prebuilt vertebrate-infecting virus deacon index",
         rich_help_panel=PANEL_DATABASES,
     ),
-    stat_annotation: Path | None = typer.Option(
+    virus_reference_fasta: Path | None = typer.Option(
         None,
-        "--stat-annotation",
-        help="Override STAT annotation file",
+        "--virus-reference-fasta",
+        help="Custom vertebrate-infecting virus FASTA for building an enrichment index",
         rich_help_panel=PANEL_DATABASES,
     ),
-    human_virus_taxlist: Path | None = typer.Option(
+    virus_kmer_size: int | None = typer.Option(
         None,
-        "--human-virus-taxlist",
-        help="Override human virus taxlist file",
+        "--virus-kmer-size",
+        help="K-mer size for building a custom virus enrichment index (default: 31)",
+        rich_help_panel=PANEL_DATABASES,
+    ),
+    virus_window_size: int | None = typer.Option(
+        None,
+        "--virus-window-size",
+        help="Minimizer window size for building a custom virus enrichment index (default: 1)",
+        rich_help_panel=PANEL_DATABASES,
+    ),
+    virus_abs_threshold: int | None = typer.Option(
+        None,
+        "--virus-abs-threshold",
+        help="Minimum absolute minimizer hits for virus read enrichment (default: 1)",
+        rich_help_panel=PANEL_DATABASES,
+    ),
+    virus_rel_threshold: float | None = typer.Option(
+        None,
+        "--virus-rel-threshold",
+        help="Minimum relative minimizer proportion for virus read enrichment (default: 0.0)",
         rich_help_panel=PANEL_DATABASES,
     ),
     # -------------------------------------------------------------------------
@@ -185,12 +203,6 @@ def run(
         None,
         "--blast-db-version",
         help="BLAST database version (auto-resolved from registry if path registered)",
-        rich_help_panel=PANEL_DATABASES,
-    ),
-    stat_db_version: str | None = typer.Option(
-        None,
-        "--stat-db-version",
-        help="STAT database version (auto-resolved from registry if path registered)",
         rich_help_panel=PANEL_DATABASES,
     ),
     # -------------------------------------------------------------------------
@@ -504,13 +516,15 @@ def run(
         # Database paths
         "blast_db": blast_db,
         "blast_db_prefix": blast_db_prefix,
-        "stat_index": stat_index,
-        "stat_dbss": stat_dbss,
-        "stat_annotation": stat_annotation,
-        "human_virus_taxlist": human_virus_taxlist,
+        "virus_index": virus_index,
+        "virus_index_url": virus_index_url,
+        "virus_reference_fasta": virus_reference_fasta,
+        "virus_kmer_size": virus_kmer_size,
+        "virus_window_size": virus_window_size,
+        "virus_abs_threshold": virus_abs_threshold,
+        "virus_rel_threshold": virus_rel_threshold,
         # Database versions
         "blast_db_version": blast_db_version,
-        "stat_db_version": stat_db_version,
         # Analysis
         "cutoff_percent": cutoff_percent,
         "tax_stringency": tax_stringency,
@@ -577,8 +591,6 @@ def run(
     resolution = resolve_database_versions(
         blast_db=params.blast_db,
         blast_db_version=params.blast_db_version,
-        stat_index=params.stat_index,
-        stat_db_version=params.stat_db_version,
         state_dir=state_dir,
     )
 
@@ -594,8 +606,6 @@ def run(
     resolved_updates: dict[str, Any] = {}
     if resolution.blast_db_version is not None:
         resolved_updates["blast_db_version"] = resolution.blast_db_version
-    if resolution.stat_db_version is not None:
-        resolved_updates["stat_db_version"] = resolution.stat_db_version
 
     if resolved_updates:
         params = NvdParams.merge(params, resolved_updates)

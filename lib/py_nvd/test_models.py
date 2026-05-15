@@ -126,6 +126,13 @@ class TestNvdParamsPositiveIntValidators:
         assert p.host_window_size == 15
         assert p.host_abs_threshold == 2
 
+    def test_virus_index_build_params_valid(self) -> None:
+        """Virus index build parameters accept positive integers."""
+        p = NvdParams(virus_kmer_size=31, virus_window_size=1, virus_abs_threshold=1)
+        assert p.virus_kmer_size == 31
+        assert p.virus_window_size == 1
+        assert p.virus_abs_threshold == 1
+
     def test_host_kmer_size_zero_rejected(self) -> None:
         """host_kmer_size=0 raises ValidationError."""
         with pytest.raises(ValidationError) as exc_info:
@@ -136,6 +143,11 @@ class TestNvdParamsPositiveIntValidators:
         """Negative host_window_size raises ValidationError."""
         with pytest.raises(ValidationError):
             NvdParams(host_window_size=-5)
+
+    def test_virus_window_size_zero_rejected(self) -> None:
+        """virus_window_size=0 raises ValidationError."""
+        with pytest.raises(ValidationError):
+            NvdParams(virus_window_size=0)
 
     def test_max_blast_targets_valid(self) -> None:
         """max_blast_targets accepts positive integers."""
@@ -439,6 +451,16 @@ class TestNvdParamsDefaults:
         assert NvdParams().host_index is None
         assert NvdParams().host_index_url is None
         assert NvdParams().host_contaminants_fasta is None
+
+    def test_default_virus_index_sources(self) -> None:
+        """Virus enrichment has no index source by default."""
+        assert NvdParams().virus_index is None
+        assert NvdParams().virus_index_url is None
+        assert NvdParams().virus_reference_fasta is None
+        assert NvdParams().virus_kmer_size == 31
+        assert NvdParams().virus_window_size == 1
+        assert NvdParams().virus_abs_threshold == 1
+        assert NvdParams().virus_rel_threshold == 0.0
 
     def test_default_max_blast_targets(self) -> None:
         """Default max_blast_targets matches nextflow.config."""

@@ -246,10 +246,6 @@ def validate_databases(
 
     # Database parameters to check
     db_params = {
-        "stat_index": "STAT index file",
-        "stat_dbss": "STAT dbss file",
-        "stat_annotation": "STAT annotation file",
-        "human_virus_taxlist": "Human virus taxlist",
         "blast_db": "BLAST database directory",
     }
 
