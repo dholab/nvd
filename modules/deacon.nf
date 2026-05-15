@@ -118,39 +118,33 @@ process DEACON_DEPLETE {
     """
 }
 
-process DEACON_BUILD_INDEX_FROM_STAT_K_MERS {
+process DEACON_BUILD_VIRUS_INDEX_FROM_FASTA {
     /*
-     * Build a deacon index from k-mers extracted from a STAT .dbss database.
+     * Build a deacon virus index from a reference FASTA file.
      *
-     * Converts STAT's MSB-first 2-bit k-mers to deacon's LSB-first format,
-     * filtered by a list of target tax IDs (e.g., human-infecting viruses).
-     * Uses k=31, w=1 with dual truncation for maximum sensitivity — captures
-     * 100% of STAT's virus signal while running 60-80x faster per sample.
+     * Use this when providing virus_reference_fasta instead of a
+     * pre-built index (virus_index) or URL (virus_index_url).
+     * Uses virus_kmer_size/virus_window_size for maximum sensitivity
+     * (k=31, w=1 by default) to match the behavior of STAT-derived indexes.
      *
-     * This runs ONCE per pipeline invocation (not per-sample) since the
-     * reference files are the same for all samples. The resulting .idx is
-     * then .combine()'d with per-sample reads for filtering.
+     * This runs ONCE per pipeline invocation (not per-sample).
      */
 
     label "medium"
 
     input:
-    path stat_dbss
-    path stat_annotation
-    path human_virus_taxlist
+    path virus_fasta
 
     output:
-    path "human_viruses.k31w1.idx", emit: index
+    path "virus_reference.k${params.virus_kmer_size}w${params.virus_window_size}.idx", emit: index
 
     script:
     """
-    stat_to_deacon.rs \\
-        --target-k 31 \\
-        --window-size 1 \\
-        --dbss ${stat_dbss} \\
-        --annotation ${stat_annotation} \\
-        --taxids ${human_virus_taxlist} \\
-        --output human_viruses.k31w1.idx
+    deacon index build \\
+        -k ${params.virus_kmer_size} \\
+        -w ${params.virus_window_size} \\
+        -o virus_reference.k${params.virus_kmer_size}w${params.virus_window_size}.idx \\
+        ${virus_fasta}
     """
 }
 
@@ -158,18 +152,13 @@ process DEACON_FILTER_HUMAN_VIRUS_READS {
     /*
      * Extract human virus reads using deacon filter in non-deplete mode.
      *
-     * Replaces STAT aligns_to + seqkit grep for human virus read extraction.
-     * Uses a deacon index built from STAT k-mers (via DEACON_BUILD_INDEX_FROM_STAT_K_MERS).
-     * Threshold settings (abs=1, rel=0.0) match STAT's single-kmer-hit behavior.
-     *
      * Accepts pre-interleave input directly from GATHER_READS:
      * - Paired (Illumina): takes R1/R2 as separate files. Deacon does pair-aware
-     *   k-mer counting and outputs interleaved FASTQ in a single pass, replacing
-     *   both INTERLEAVE_PAIRS and the old STAT extraction step.
+     *   k-mer counting and outputs interleaved FASTQ in a single pass.
      * - Single-end (ONT): takes a single file, filtered as individual reads.
      *
      * Output is always tuple(sample_id, platform, read_structure, fastq) matching
-     * the shape expected by PREPROCESS_READS and downstream SPAdes.
+     * the shape expected by downstream preprocessing and SPAdes.
      */
 
     tag "${sample_id}"
@@ -191,8 +180,8 @@ process DEACON_FILTER_HUMAN_VIRUS_READS {
         """
         deacon filter \\
             --threads ${task.cpus} \\
-            --abs-threshold 1 \\
-            --rel-threshold 0.0 \\
+            --abs-threshold ${params.virus_abs_threshold} \\
+            --rel-threshold ${params.virus_rel_threshold} \\
             --summary ${sample_id}.deacon_filter.json \\
             --output ${sample_id}.human_virus.fastq.gz \\
             ${deacon_idx} \\
@@ -202,11 +191,50 @@ process DEACON_FILTER_HUMAN_VIRUS_READS {
         """
         deacon filter \\
             --threads ${task.cpus} \\
-            --abs-threshold 1 \\
-            --rel-threshold 0.0 \\
+            --abs-threshold ${params.virus_abs_threshold} \\
+            --rel-threshold ${params.virus_rel_threshold} \\
             --summary ${sample_id}.deacon_filter.json \\
             --output ${sample_id}.human_virus.fastq.gz \\
             ${deacon_idx} \\
             ${reads}
         """
+}
+
+process DEACON_FILTER_CONTIGS {
+    /*
+     * Extract human virus contigs using deacon filter on assembled FASTA.
+     *
+     * Replaces the 5-process STAT contig classification chain:
+     * CLASSIFY_CONTIGS_FIRST_PASS → GENERATE_CONTIGS_TAXA_LIST →
+     * CLASSIFY_CONTIGS_SECOND_PASS → IDENTIFY_HUMAN_VIRUS_FAMILY_CONTIGS →
+     * EXTRACT_HUMAN_VIRUS_CONTIGS
+     *
+     * Uses the same virus index as read extraction so no additional reference
+     * is needed. Contigs are already ≥200 bp (FILTER_SHORT_CONTIGS), so
+     * incidental single k-mer matches are rare — the signal-to-noise ratio
+     * improves vs reads because contigs have far more k-mers per sequence.
+     */
+
+    tag "${sample_id}"
+    label "medium"
+
+    errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
+    maxRetries 2
+
+    input:
+    tuple val(sample_id), val(platform), val(read_structure), path(fasta), path(deacon_idx)
+
+    output:
+    tuple val(sample_id), path("${sample_id}.human_virus.fasta")
+
+    script:
+    """
+    deacon filter \\
+        --threads ${task.cpus} \\
+        --abs-threshold ${params.virus_abs_threshold} \\
+        --rel-threshold ${params.virus_rel_threshold} \\
+        --output ${sample_id}.human_virus.fasta \\
+        ${deacon_idx} \\
+        ${fasta}
+    """
 }

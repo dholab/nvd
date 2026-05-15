@@ -11,8 +11,13 @@
 
 nextflow.enable.dsl=2
 
-include { DEACON_BUILD_INDEX_FROM_STAT_K_MERS ; DEACON_FILTER_HUMAN_VIRUS_READS } from "../modules/deacon"
-include { DEACON_FETCH_INDEX ; DEACON_BUILD_INDEX_FROM_FASTA ; DEACON_UNION_INDEXES ; DEACON_DEPLETE } from "../modules/deacon"
+include { DEACON_FETCH_INDEX as DEACON_FETCH_VIRUS_INDEX  } from "../modules/deacon"
+include { DEACON_FETCH_INDEX as DEACON_FETCH_HOST_INDEX   } from "../modules/deacon"
+include { DEACON_BUILD_VIRUS_INDEX_FROM_FASTA             } from "../modules/deacon"
+include { DEACON_BUILD_INDEX_FROM_FASTA                   } from "../modules/deacon"
+include { DEACON_UNION_INDEXES                            } from "../modules/deacon"
+include { DEACON_FILTER_HUMAN_VIRUS_READS                 } from "../modules/deacon"
+include { DEACON_DEPLETE                                  } from "../modules/deacon"
 include { DEDUP_WITH_CLUMPIFY ; TRIM_ADAPTERS ; FILTER_READS ; REPAIR_PAIRS } from "../modules/bbmap"
 include { PREPROCESS_CONTIGS } from "../subworkflows/preprocess_contigs"
 include { EXTRACT_HUMAN_VIRUSES } from "../subworkflows/extract_human_virus_contigs"
@@ -35,22 +40,16 @@ workflow STAT_BLAST_WORKFLOW {
 
     // Validate required params
     assert (
-        params.blast_db              && file(params.blast_db).isDirectory()         &&
-        params.stat_index            && file(params.stat_index).exists()            &&
-        params.stat_dbss             && file(params.stat_dbss).exists()             &&
-        params.stat_annotation       && file(params.stat_annotation).exists()       &&
-        params.human_virus_taxlist   && file(params.human_virus_taxlist).exists()
+        params.blast_db && file(params.blast_db).isDirectory() &&
+        (params.virus_index || params.virus_index_url || params.virus_reference_fasta)
     ) :
     """
     One or more required parameters are missing or point to non-existent files:
 
-      blast_db            -> ${params.blast_db}
-      stat_index          -> ${params.stat_index}
-      stat_dbss           -> ${params.stat_dbss}
-      stat_annotation     -> ${params.stat_annotation}
-      human_virus_taxlist -> ${params.human_virus_taxlist}
+      blast_db                        -> ${params.blast_db}
+      virus_index / virus_index_url / virus_reference_fasta: at least one must be set
 
-    Please supply all of the above in your `-c nextflow.config` or via `-params-file`, and ensure each path exists.
+    Please supply the above in your `-c nextflow.config` or via `-params-file`.
     """
 
     if (params.labkey) {
@@ -59,10 +58,6 @@ workflow STAT_BLAST_WORKFLOW {
 
     // Reference channels
     ch_blast_db_files = Channel.fromPath(params.blast_db)
-    ch_stat_index     = Channel.fromPath(params.stat_index)
-    ch_stat_dbss      = Channel.fromPath(params.stat_dbss)
-    ch_stat_annotation     = Channel.fromPath(params.stat_annotation)
-    ch_human_virus_taxlist = Channel.fromPath(params.human_virus_taxlist)
 
     // Resolve directories for stateful vs stateless mode.
     dirs = NvdDirs.resolve(params, log)
@@ -92,19 +87,32 @@ workflow STAT_BLAST_WORKFLOW {
         }
 
     // -------------------------------------------------------------------------
-    // Step 1: Frontloaded deacon virus extraction
+    // Step 1: Resolve virus index and frontloaded extraction
     // -------------------------------------------------------------------------
-    // Build deacon virus index from STAT k-mers (runs once, not per-sample).
-    DEACON_BUILD_INDEX_FROM_STAT_K_MERS(
-        ch_stat_dbss,
-        ch_stat_annotation,
-        ch_human_virus_taxlist
-    )
+    // Priority: explicit local path → URL download → build from reference FASTA.
+    // Each condition guards against the higher-priority source being set, so at
+    // most one channel is non-empty and the mix passes through exactly one index.
+    ch_local_virus_index = params.virus_index
+        ? Channel.fromPath(params.virus_index)
+        : Channel.empty()
+    ch_virus_fetch_url = (!params.virus_index && params.virus_index_url)
+        ? Channel.of(params.virus_index_url)
+        : Channel.empty()
+    ch_virus_ref_fasta = (!params.virus_index && !params.virus_index_url && params.virus_reference_fasta)
+        ? Channel.fromPath(params.virus_reference_fasta)
+        : Channel.empty()
+
+    DEACON_FETCH_VIRUS_INDEX(ch_virus_fetch_url)
+    DEACON_BUILD_VIRUS_INDEX_FROM_FASTA(ch_virus_ref_fasta)
+
+    ch_virus_index = ch_local_virus_index
+        .mix(DEACON_FETCH_VIRUS_INDEX.out.index)
+        .mix(DEACON_BUILD_VIRUS_INDEX_FROM_FASTA.out.index)
 
     // Extract virus reads — runs BEFORE any preprocessing. For paired reads,
     // deacon takes R1/R2 and outputs interleaved FASTQ in one step.
     DEACON_FILTER_HUMAN_VIRUS_READS(
-        ch_normalized_samples.combine(DEACON_BUILD_INDEX_FROM_STAT_K_MERS.out.index)
+        ch_normalized_samples.combine(ch_virus_index)
     )
 
     // -------------------------------------------------------------------------
@@ -148,11 +156,11 @@ workflow STAT_BLAST_WORKFLOW {
             ? Channel.fromPath(params.host_contaminants_fasta)
             : Channel.empty()
 
-        DEACON_FETCH_INDEX(ch_host_fetch_url)
+        DEACON_FETCH_HOST_INDEX(ch_host_fetch_url)
         DEACON_BUILD_INDEX_FROM_FASTA(ch_host_contaminants_fasta)
 
         ch_host_index_sources = ch_local_host_index
-            .mix(DEACON_FETCH_INDEX.out.index)
+            .mix(DEACON_FETCH_HOST_INDEX.out.index)
             .mix(DEACON_BUILD_INDEX_FROM_FASTA.out.index)
             .collect()
 
@@ -196,11 +204,7 @@ workflow STAT_BLAST_WORKFLOW {
     EXTRACT_HUMAN_VIRUSES(
         PREPROCESS_CONTIGS.out.contigs,
         PREPROCESS_CONTIGS.out.viral_reads,
-        ch_stat_index,
-        ch_stat_dbss,
-        ch_stat_annotation,
-        ch_state_dir,
-        ch_taxonomy_dir
+        ch_virus_index
     )
 
     CLASSIFY_WITH_MEGABLAST(
