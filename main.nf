@@ -3,7 +3,7 @@
 nextflow.enable.dsl = 2
 
 include { GATHER_READS         } from "./workflows/gather_reads"
-include { STAT_BLAST_WORKFLOW  } from "./workflows/stat_blast_workflow"
+include { NVD_MAIN             } from "./workflows/nvd_main"
 
 workflow {
 
@@ -17,10 +17,10 @@ workflow {
 
     GATHER_READS(ch_input_samplesheet)
 
-    def stat_blast_results = STAT_BLAST_WORKFLOW(GATHER_READS.out)
+    def nvd_main_results = NVD_MAIN(GATHER_READS.out)
 
     if (params.labkey) {
-        stat_blast_results.labkey_log.collectFile(
+        nvd_main_results.labkey_log.collectFile(
             name: 'final_labkey_upload.log',
             storeDir: params.results,
         )

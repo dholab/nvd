@@ -1,5 +1,5 @@
 /*
- * STAT+BLAST Workflow
+ * NVD main workflow
  *
  * Human virus detection pipeline: deacon-based virus read extraction,
  * preprocessing, SPAdes assembly, and two-phase BLAST verification.
@@ -30,7 +30,7 @@ include { VALIDATE_LK_EXP_FRESH } from "../modules/validate_blast_labkey.nf"
 include { REGISTER_LK_EXPERIMENT } from "../modules/validate_blast_labkey.nf"
 
 
-workflow STAT_BLAST_WORKFLOW {
+workflow NVD_MAIN {
     take:
     ch_sample_fastqs  // Queue channel: pre-interleave tuples from GATHER_READS
                       // Paired: tuple(sample_id, platform, R1, R2)
@@ -299,6 +299,6 @@ workflow STAT_BLAST_WORKFLOW {
     }
 
     emit:
-    completion = ch_terminal.count().map { n -> "STAT+BLAST complete: ${n} samples processed" }
+    completion = ch_terminal.count().map { n -> "NVD main workflow complete: ${n} samples processed" }
     labkey_log = labkey_log_ch
 }
