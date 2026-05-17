@@ -9,10 +9,13 @@ from pathlib import Path
 
 import pytest
 
+from py_nvd import db as nvd_db
 from py_nvd.db import (
     SchemaMismatchError,
     StateUnavailableError,
     format_state_warning,
+    get_config_path,
+    get_state_dir,
     get_taxdump_dir,
 )
 
@@ -259,6 +262,85 @@ class TestFormatStateWarning:
         )
 
         assert str(tmp_path / "state.sqlite") in warning
+
+
+class TestGetConfigPath:
+    """Tests for NVD config file path resolution."""
+
+    def test_explicit_config_path_takes_precedence_over_env_var(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Explicit config path wins over NVD_CONFIG."""
+        env_config = tmp_path / "env.config"
+        explicit_config = tmp_path / "explicit.config"
+        monkeypatch.setenv("NVD_CONFIG", str(env_config))
+
+        assert get_config_path(explicit_config) == explicit_config
+
+    def test_env_var_used_when_explicit_config_path_is_none(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """NVD_CONFIG sets the config file path when no explicit path is provided."""
+        env_config = tmp_path / "user.config"
+        monkeypatch.setenv("NVD_CONFIG", str(env_config))
+
+        assert get_config_path() == env_config
+
+    def test_default_config_path_is_user_config_under_nvd_home(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Default config path remains ~/.nvd/user.config."""
+        monkeypatch.delenv("NVD_CONFIG", raising=False)
+
+        assert get_config_path() == Path.home() / ".nvd" / "user.config"
+
+
+class TestGetStateDir:
+    """Tests for NVD state/local-data directory resolution."""
+
+    def test_explicit_state_dir_takes_precedence_over_env_var(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Explicit state directory wins over NVD_STATE_DIR."""
+        env_state = tmp_path / "env_state"
+        explicit_state = tmp_path / "explicit_state"
+        monkeypatch.setenv("NVD_STATE_DIR", str(env_state))
+
+        assert get_state_dir(explicit_state) == explicit_state
+        assert explicit_state.is_dir()
+        assert not env_state.exists()
+
+    def test_env_var_used_when_explicit_state_dir_is_none(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """NVD_STATE_DIR sets the local-data root when no explicit path is provided."""
+        env_state = tmp_path / "env_state"
+        monkeypatch.setenv("NVD_STATE_DIR", str(env_state))
+
+        assert get_state_dir() == env_state
+        assert env_state.is_dir()
+
+    def test_default_state_dir_is_cache_nvd(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Default state/local-data root remains ~/.cache/nvd."""
+        default_state = tmp_path / ".cache" / "nvd"
+        monkeypatch.setattr(nvd_db, "DEFAULT_STATE_DIR", default_state)
+        monkeypatch.delenv("NVD_STATE_DIR", raising=False)
+
+        assert get_state_dir() == default_state
+        assert default_state.is_dir()
 
 
 class TestGetTaxdumpDir:
