@@ -91,6 +91,22 @@ class TestCLIHelp:
         result = runner.invoke(app, ["config", "--help"])
         assert result.exit_code == 0
 
+    def test_taxonomy_help(self) -> None:
+        """taxonomy --help exits cleanly."""
+        result = runner.invoke(app, ["taxonomy", "--help"])
+        assert result.exit_code == 0
+        assert "taxonomy" in result.stdout.lower()
+
+    def test_taxonomy_status_help(self) -> None:
+        """taxonomy status --help exits cleanly."""
+        result = runner.invoke(app, ["taxonomy", "status", "--help"])
+        assert result.exit_code == 0
+
+    def test_taxonomy_ensure_help(self) -> None:
+        """taxonomy ensure --help exits cleanly."""
+        result = runner.invoke(app, ["taxonomy", "ensure", "--help"])
+        assert result.exit_code == 0
+
     def test_config_edit_help(self) -> None:
         """config edit --help exits cleanly."""
         result = runner.invoke(app, ["config", "edit", "--help"])
@@ -111,6 +127,61 @@ class TestCLIHelp:
         result = runner.invoke(app, ["config", "edit"])
         assert result.exit_code == 1
         assert "No config file found" in result.stdout
+
+
+class TestTaxonomyCommands:
+    """Verify retained taxonomy commands work without the state command group."""
+
+    def test_taxonomy_status_json_for_explicit_missing_dir(self, tmp_path: Path) -> None:
+        """taxonomy status reports explicit taxonomy directory without creating it."""
+        taxonomy_dir = tmp_path / "missing-taxonomy"
+
+        result = runner.invoke(
+            app,
+            ["taxonomy", "status", "--taxonomy-dir", str(taxonomy_dir), "--json"],
+        )
+
+        assert result.exit_code == 0
+        payload = json.loads(result.stdout)
+        assert payload["taxdump_dir"] == str(taxonomy_dir)
+        assert not payload["taxdump_exists"]
+        assert payload["taxonomy_db"]["path"] == str(taxonomy_dir / "taxonomy.sqlite")
+        assert not payload["taxonomy_db"]["exists"]
+        assert not taxonomy_dir.exists()
+
+    def test_taxonomy_ensure_json_uses_runtime_ensure(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """taxonomy ensure delegates cache preparation to py_nvd.taxonomy."""
+        taxonomy_dir = tmp_path / "taxdump"
+        taxonomy_dir.mkdir()
+        taxonomy_db = taxonomy_dir / "taxonomy.sqlite"
+        taxonomy_db.write_bytes(b"sqlite-placeholder")
+
+        with patch(
+            "py_nvd.cli.commands.taxonomy.taxonomy_runtime.ensure_taxonomy_available",
+            return_value=taxonomy_dir,
+        ) as ensure_taxonomy_available:
+            result = runner.invoke(
+                app,
+                [
+                    "taxonomy",
+                    "ensure",
+                    "--taxonomy-dir",
+                    str(taxonomy_dir),
+                    "--json",
+                ],
+            )
+
+        assert result.exit_code == 0
+        ensure_taxonomy_available.assert_called_once_with(
+            state_dir=None,
+            taxonomy_dir=taxonomy_dir,
+        )
+        payload = json.loads(result.stdout)
+        assert payload["taxdump_dir"] == str(taxonomy_dir)
+        assert payload["taxonomy_db"]["exists"]
 
 
 class TestVersionCommand:

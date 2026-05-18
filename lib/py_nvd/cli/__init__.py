@@ -15,6 +15,7 @@ from py_nvd.cli.app import app, main
 from py_nvd.cli.commands.config import config_app
 from py_nvd.cli.commands.params import params_app
 from py_nvd.cli.commands.preset import preset_app
+from py_nvd.cli.commands.taxonomy import taxonomy_app
 from py_nvd.cli.commands.validate import validate_app
 from py_nvd.cli.utils import (
     DEFAULT_CONFIG,
@@ -48,6 +49,7 @@ __all__ = [
     "params_app",
     "preset_app",
     "success",
+    "taxonomy_app",
     "validate_app",
     "warning",
 ]

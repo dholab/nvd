@@ -30,6 +30,7 @@ from py_nvd.cli.commands.samplesheet import samplesheet_app
 from py_nvd.cli.commands.secrets import secrets_app
 from py_nvd.cli.commands.setup import setup_app
 from py_nvd.cli.commands.state import state_app
+from py_nvd.cli.commands.taxonomy import taxonomy_app
 from py_nvd.cli.commands.validate import validate_app
 from py_nvd.cli.commands.version import version
 from py_nvd.cli.utils import console
@@ -77,6 +78,9 @@ app.add_typer(config_app, name="cfg", hidden=True)  # Alias
 
 # State commands
 app.add_typer(state_app, name="state")
+
+# Taxonomy commands
+app.add_typer(taxonomy_app, name="taxonomy")
 
 # Hits commands
 app.add_typer(hits_app, name="hits")
