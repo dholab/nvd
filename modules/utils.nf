@@ -170,66 +170,6 @@ process CONCATENATE_EXPERIMENT_BLAST {
 }
 
 /*
- * Register BLAST hit observations in the v3 parquet hit store.
- *
- * This process computes deterministic hit keys from contig sequences,
- * enabling cross-run and cross-sample deduplication. The hit key is
- * derived from the canonical sequence (lexicographically smaller of
- * the sequence and its reverse complement).
- *
- * Input:
- *   - tuple of (sample_id, contigs, blast_results, sample_set_id, state_dir, hits_dir)
- *   - state_dir may be null in stateless mode
- *   - hits_dir is the v3 parquet output directory (state_dir/hits/schema=v3 or results/hits/schema=v3)
- * Output:
- *   - tuple of (sample_id, log_file, parquet_file)
- *
- * Note: This is currently a "dead end" - output is not consumed by
- * downstream processes. The parquet observations are available later via
- * `nvd hits ...` commands.
- */
-process REGISTER_HITS {
-
-    tag "${sample_id}"
-    label "low"
-    maxForks 1
-
-    errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
-    maxRetries 2
-
-    // Publish parquet file - runs on every resume even if task is cached
-    // Uses Hive-partitioned structure: {hits_dir}/month=NULL/{sample_set_id}/{sample_id}/data.parquet
-    // hits_dir is either state_dir/hits/schema=v3 (stateful) or results/hits/schema=v3 (stateless)
-    publishDir "${hits_dir}/month=NULL/${sample_set_id}/${sample_id}", mode: 'copy', pattern: "data.parquet"
-
-    input:
-    tuple val(sample_id), path(contigs), path(blast_results), val(sample_set_id), val(state_dir), val(hits_dir)
-
-    output:
-    tuple val(sample_id), path("${sample_id}_hits_registered.log"), path("data.parquet")
-
-    script:
-    assert hits_dir : "hits_dir cannot be null - this indicates a workflow configuration error"
-    def blast_db_arg = params.blast_db_version ? "--blast-db-version '${params.blast_db_version}'" : ""
-    def labkey_arg = params.labkey ? "--labkey" : ""
-    def state_dir_arg = state_dir ? "--state-dir '${state_dir}'" : ""
-    """
-    set -o pipefail
-    register_hits.py \\
-        --contigs ${contigs} \\
-        --blast-results ${blast_results} \\
-        ${state_dir_arg} \\
-        --sample-set-id '${sample_set_id}' \\
-        --sample-id '${sample_id}' \\
-        --run-id '${workflow.runName}' \\
-        --output data.parquet \\
-        ${blast_db_arg} \\
-        ${labkey_arg} \\
-        -v 2>&1 | tee ${sample_id}_hits_registered.log
-    """
-}
-
-/*
  * Mark a pipeline run as completed or failed.
  *
  * This process should be called at the end of the workflow, gated on

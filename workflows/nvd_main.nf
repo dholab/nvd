@@ -24,7 +24,7 @@ include { EXTRACT_HUMAN_VIRUSES } from "../subworkflows/extract_human_virus_cont
 include { CLASSIFY_WITH_MEGABLAST } from "../subworkflows/classify_with_megablast"
 include { CLASSIFY_WITH_BLASTN } from "../subworkflows/classify_with_blastn"
 include { BUNDLE_BLAST_FOR_LABKEY } from "../subworkflows/bundle_blast_for_labkey"
-include { CHECK_RUN_STATE; ENSURE_TAXONOMY; REGISTER_HITS; COMPLETE_RUN; NOTIFY_SLACK; ADD_READ_COUNTS_TO_BLAST; CONCATENATE_EXPERIMENT_BLAST } from "../modules/utils"
+include { CHECK_RUN_STATE; ENSURE_TAXONOMY; COMPLETE_RUN; NOTIFY_SLACK; ADD_READ_COUNTS_TO_BLAST; CONCATENATE_EXPERIMENT_BLAST } from "../modules/utils"
 include { VALIDATE_LK_BLAST } from "../subworkflows/validate_lk_blast_lists.nf"
 include { VALIDATE_LK_EXP_FRESH } from "../modules/validate_blast_labkey.nf"
 include { REGISTER_LK_EXPERIMENT } from "../modules/validate_blast_labkey.nf"
@@ -203,8 +203,6 @@ workflow NVD_MAIN {
     ch_run_context = CHECK_RUN_STATE.out.run_context.first()
     ch_state_dir = ch_run_context.map { _sample_set_id, state_dir -> state_dir }
     ch_taxonomy_dir = ENSURE_TAXONOMY.out.taxonomy_dir.first()
-    ch_hits_dir = Channel.value(dirs.hits_dir)
-
     EXTRACT_HUMAN_VIRUSES(
         PREPROCESS_CONTIGS.out.contigs,
         PREPROCESS_CONTIGS.out.viral_reads,
@@ -238,17 +236,6 @@ workflow NVD_MAIN {
     CONCATENATE_EXPERIMENT_BLAST(
         ADD_READ_COUNTS_TO_BLAST.out.map { _sample_id, tsv -> tsv }.collect()
     )
-
-    // Register hits
-    ch_register_hits_input = EXTRACT_HUMAN_VIRUSES.out.contigs
-        .join(ADD_READ_COUNTS_TO_BLAST.out, by: 0)
-        .combine(ch_run_context)
-        .combine(ch_hits_dir)
-        .map { sample_id, contigs, blast_results, sample_set_id, state_dir, hits_dir ->
-            tuple(sample_id, contigs, blast_results, sample_set_id, state_dir, hits_dir)
-        }
-
-    REGISTER_HITS(ch_register_hits_input)
 
     if (params.labkey) {
         VALIDATE_LK_EXP_FRESH(
@@ -284,10 +271,10 @@ workflow NVD_MAIN {
     } else {
         labkey_log_ch = Channel.empty()
 
-        ch_run_complete_gate = REGISTER_HITS.out.collect()
+        ch_run_complete_gate = ADD_READ_COUNTS_TO_BLAST.out.collect()
             .map { _logs -> true }
 
-        ch_terminal = REGISTER_HITS.out
+        ch_terminal = ADD_READ_COUNTS_TO_BLAST.out
     }
 
     COMPLETE_RUN(

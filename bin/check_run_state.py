@@ -21,8 +21,7 @@ Key behavior:
 - If NO samples are uploaded: proceed normally
 
 Individual samples are NOT registered here - they are marked 'completed'
-by REGISTER_HITS after processing succeeds, and 'uploaded' after LabKey
-upload succeeds.
+after processing succeeds, and 'uploaded' after LabKey upload succeeds.
 
 The sample_set_id is output to stdout for Nextflow to capture.
 All logging goes to stderr to avoid polluting the stdout output.
@@ -206,7 +205,7 @@ class RunRegistration:
         Register the run in the state database.
 
         Note: Individual samples are NOT registered here. They are marked
-        'completed' by REGISTER_HITS after processing succeeds.
+        'completed' after processing succeeds.
 
         Returns:
             True if a new run was registered, False if sample_set_id already exists
@@ -458,7 +457,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--blast-db-version",
-        help="BLAST database version (ignored - now passed to register_hits.py)",
+        help="BLAST database version (ignored by run state checks)",
     )
     parser.add_argument(
         "--lock-ttl",
