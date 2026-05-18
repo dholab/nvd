@@ -21,7 +21,6 @@ import sys
 import typer
 
 from py_nvd.cli.commands.config import config_app
-from py_nvd.cli.commands.hits import hits_app
 from py_nvd.cli.commands.params import params_app
 from py_nvd.cli.commands.preset import preset_app
 from py_nvd.cli.commands.resume import resume
@@ -81,9 +80,6 @@ app.add_typer(state_app, name="state")
 
 # Taxonomy commands
 app.add_typer(taxonomy_app, name="taxonomy")
-
-# Hits commands
-app.add_typer(hits_app, name="hits")
 
 # Samplesheet commands
 app.add_typer(samplesheet_app, name="samplesheet")
