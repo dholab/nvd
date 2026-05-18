@@ -99,6 +99,48 @@ process ADD_READ_COUNTS_TO_BLAST {
     """
 }
 
+process CONCATENATE_EXPERIMENT_BLAST {
+    /*
+     * Concatenate all per-sample _blast.final.tsv files into a single
+     * experiment-level TSV. Runs unconditionally (does not require LabKey).
+     * Header is taken from the first file; subsequent files contribute
+     * data rows only.
+     */
+
+    label "low"
+
+    input:
+    path "sample_results/*"
+
+    output:
+    path "experiment_blast_results.tsv", emit: concatenated_tsv
+
+    script:
+    """
+    #!/usr/bin/env python3
+    from pathlib import Path
+
+    files = sorted(Path("sample_results").glob("*.tsv"))
+
+    if not files:
+        Path("experiment_blast_results.tsv").write_text("")
+    else:
+        with open("experiment_blast_results.tsv", "w") as out:
+            # Write header from first file
+            with open(files[0]) as f:
+                header = f.readline()
+                out.write(header)
+                for line in f:
+                    out.write(line)
+            # Append data rows from remaining files
+            for tsv in files[1:]:
+                with open(tsv) as f:
+                    f.readline()  # skip header
+                    for line in f:
+                        out.write(line)
+    """
+}
+
 /*
  * Register BLAST hit observations in the v3 parquet hit store.
  *
