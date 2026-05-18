@@ -24,7 +24,7 @@ include { EXTRACT_HUMAN_VIRUSES } from "../subworkflows/extract_human_virus_cont
 include { CLASSIFY_WITH_MEGABLAST } from "../subworkflows/classify_with_megablast"
 include { CLASSIFY_WITH_BLASTN } from "../subworkflows/classify_with_blastn"
 include { BUNDLE_BLAST_FOR_LABKEY } from "../subworkflows/bundle_blast_for_labkey"
-include { CHECK_RUN_STATE; REGISTER_HITS; COMPLETE_RUN; NOTIFY_SLACK; ADD_READ_COUNTS_TO_BLAST; CONCATENATE_EXPERIMENT_BLAST } from "../modules/utils"
+include { CHECK_RUN_STATE; ENSURE_TAXONOMY; REGISTER_HITS; COMPLETE_RUN; NOTIFY_SLACK; ADD_READ_COUNTS_TO_BLAST; CONCATENATE_EXPERIMENT_BLAST } from "../modules/utils"
 include { VALIDATE_LK_BLAST } from "../subworkflows/validate_lk_blast_lists.nf"
 include { VALIDATE_LK_EXP_FRESH } from "../modules/validate_blast_labkey.nf"
 include { REGISTER_LK_EXPERIMENT } from "../modules/validate_blast_labkey.nf"
@@ -65,9 +65,13 @@ workflow NVD_MAIN {
     // Check run state upfront (prevents duplicate processing of same sample set)
     ch_run_state_input = Channel.fromPath(params.samplesheet)
         .combine(Channel.value(dirs.state_dir))
-        .combine(Channel.value(dirs.taxonomy_dir))
 
     CHECK_RUN_STATE(ch_run_state_input, "blast,blast_fasta")
+
+    ENSURE_TAXONOMY(
+        Channel.value(dirs.state_dir),
+        Channel.value(dirs.taxonomy_dir)
+    )
 
     if (params.labkey) {
         VALIDATE_LK_BLAST()
@@ -198,7 +202,7 @@ workflow NVD_MAIN {
 
     ch_run_context = CHECK_RUN_STATE.out.run_context.first()
     ch_state_dir = ch_run_context.map { _sample_set_id, state_dir -> state_dir }
-    ch_taxonomy_dir = Channel.value(dirs.taxonomy_dir)
+    ch_taxonomy_dir = ENSURE_TAXONOMY.out.taxonomy_dir.first()
     ch_hits_dir = Channel.value(dirs.hits_dir)
 
     EXTRACT_HUMAN_VIRUSES(

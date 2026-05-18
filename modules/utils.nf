@@ -10,7 +10,7 @@
  * (database versions) for tracking.
  *
  * Input: 
- *   - tuple of (samplesheet, state_dir, taxonomy_dir) - combined to ensure they travel together
+ *   - tuple of (samplesheet, state_dir) - combined to ensure they travel together
  * Output: 
  *   - ready: val true (gates downstream processes, for combine() with other validation gates)
  *   - run_context: tuple of (sample_set_id, state_dir) - bundled for downstream upload processes
@@ -25,7 +25,7 @@ process CHECK_RUN_STATE {
     cache false  // Always run this check
 
     input:
-    tuple path(samplesheet), val(state_dir), val(taxonomy_dir)
+    tuple path(samplesheet), val(state_dir)
     val upload_types  // Comma-separated upload types for duplicate detection (e.g., "blast,blast_fasta")
 
     output:
@@ -36,7 +36,6 @@ process CHECK_RUN_STATE {
     def exp_arg = params.experiment_id ? "--experiment-id ${params.experiment_id}" : ""
     def blast_db_arg = params.blast_db_version ? "--blast-db-version '${params.blast_db_version}'" : ""
     def state_dir_arg = state_dir ? "--state-dir '${state_dir}'" : ""
-    def taxonomy_dir_arg = taxonomy_dir ? "--taxonomy-dir '${taxonomy_dir}'" : ""
     def upload_types_arg = upload_types ? "--upload-types '${upload_types}'" : ""
     """
     check_run_state.py \\
@@ -44,10 +43,39 @@ process CHECK_RUN_STATE {
         --samplesheet ${samplesheet} \\
         --run-id '${workflow.runName}' \\
         ${state_dir_arg} \\
-        ${taxonomy_dir_arg} \\
         ${exp_arg} \\
         ${blast_db_arg} \\
         ${upload_types_arg}
+    """
+}
+
+/*
+ * Ensure the NCBI taxonomy cache is ready before distributed annotation workers run.
+ *
+ * This process intentionally owns only taxonomy preflight. Run/sample state
+ * registration remains in CHECK_RUN_STATE until later v3 refactor commits remove
+ * the old state database plumbing deliberately.
+ */
+process ENSURE_TAXONOMY {
+
+    label "low"
+    cache false
+
+    input:
+    val state_dir
+    val taxonomy_dir
+
+    output:
+    val taxonomy_dir, emit: taxonomy_dir
+
+    script:
+    def state_dir_arg = state_dir ? "--state-dir '${state_dir}'" : ""
+    def taxonomy_dir_arg = taxonomy_dir ? "--taxonomy-dir '${taxonomy_dir}'" : ""
+    """
+    ensure_taxonomy.py \
+        --verbose \
+        ${state_dir_arg} \
+        ${taxonomy_dir_arg}
     """
 }
 

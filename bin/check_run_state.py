@@ -55,7 +55,6 @@ from py_nvd.db import (
     StateUnavailableError,
     format_state_warning,
     get_state_db_path,
-    get_taxdump_dir,
 )
 from py_nvd.state import (
     DEFAULT_LOCK_TTL_HOURS,
@@ -65,7 +64,6 @@ from py_nvd.state import (
     register_run,
     update_run_id,
 )
-from py_nvd.taxonomy import ensure_taxonomy_available, format_taxonomy_warning
 
 
 @dataclass
@@ -454,10 +452,6 @@ def parse_args() -> argparse.Namespace:
         help="State directory for SQLite database (default: ~/.nvd/ or NVD_STATE_DIR)",
     )
     parser.add_argument(
-        "--taxonomy-dir",
-        help="Explicit taxonomy directory (takes precedence over --state-dir for taxonomy)",
-    )
-    parser.add_argument(
         "--experiment-id",
         type=str,
         help="Experiment ID for tracking",
@@ -523,40 +517,6 @@ def main() -> None:
 
     logger.info(f"Found {len(sample_ids)} unique samples")
     logger.debug(f"Sample IDs: {sample_ids}")
-
-    # Ensure taxonomy database is available before workers start
-    # This downloads from NCBI if needed (once, on submit node) so workers
-    # don't all race to download simultaneously
-    logger.info("Ensuring taxonomy database is available...")
-    taxdump_dir = get_taxdump_dir(args.state_dir, args.taxonomy_dir)
-    if (taxdump_dir / "taxonomy.sqlite").exists():
-        logger.info(f"Taxonomy database found: {taxdump_dir}")
-    else:
-        logger.info("Taxonomy database not found, downloading from NCBI...")
-        logger.info("(This may take a few minutes on first run)")
-        try:
-            ensure_taxonomy_available(args.state_dir, args.taxonomy_dir)
-            logger.info(f"Taxonomy database ready: {taxdump_dir}")
-        except Exception as e:
-            # Taxonomy download failed
-            if args.sync:
-                logger.error(f"Taxonomy download failed and --sync was specified: {e}")
-                sys.exit(1)
-            else:
-                # Graceful degradation: warn but continue
-                # Workers will attempt lazy download when they need taxonomy
-                warning = format_taxonomy_warning(
-                    operation="Pre-downloading taxonomy database",
-                    context="Preparing taxonomy for distributed workers",
-                    error=e,
-                    taxdump_dir=taxdump_dir,
-                    will_download=True,
-                )
-                logger.warning(warning)
-                logger.warning(
-                    "Workers will attempt to download taxonomy when needed. "
-                    "This may cause delays and potential version inconsistencies.",
-                )
 
     # Create registration object
     upload_types = (
