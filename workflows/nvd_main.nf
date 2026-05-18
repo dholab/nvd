@@ -24,7 +24,7 @@ include { EXTRACT_HUMAN_VIRUSES } from "../subworkflows/extract_human_virus_cont
 include { CLASSIFY_WITH_MEGABLAST } from "../subworkflows/classify_with_megablast"
 include { CLASSIFY_WITH_BLASTN } from "../subworkflows/classify_with_blastn"
 include { BUNDLE_BLAST_FOR_LABKEY } from "../subworkflows/bundle_blast_for_labkey"
-include { CHECK_RUN_STATE; REGISTER_HITS; COMPLETE_RUN; NOTIFY_SLACK; ADD_READ_COUNTS_TO_BLAST } from "../modules/utils"
+include { CHECK_RUN_STATE; REGISTER_HITS; COMPLETE_RUN; NOTIFY_SLACK; ADD_READ_COUNTS_TO_BLAST; CONCATENATE_EXPERIMENT_BLAST } from "../modules/utils"
 include { VALIDATE_LK_BLAST } from "../subworkflows/validate_lk_blast_lists.nf"
 include { VALIDATE_LK_EXP_FRESH } from "../modules/validate_blast_labkey.nf"
 include { REGISTER_LK_EXPERIMENT } from "../modules/validate_blast_labkey.nf"
@@ -228,6 +228,12 @@ workflow NVD_MAIN {
         .join(ch_read_counts, by: 0)
 
     ADD_READ_COUNTS_TO_BLAST(ch_blast_with_counts)
+
+    // Concatenate all per-sample final BLAST results into a single experiment-level TSV.
+    // Runs unconditionally so every run produces an experiment summary, not just LabKey runs.
+    CONCATENATE_EXPERIMENT_BLAST(
+        ADD_READ_COUNTS_TO_BLAST.out.map { _sample_id, tsv -> tsv }.collect()
+    )
 
     // Register hits
     ch_register_hits_input = EXTRACT_HUMAN_VIRUSES.out.contigs
