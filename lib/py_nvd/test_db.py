@@ -10,14 +10,13 @@ from pathlib import Path
 import pytest
 
 from py_nvd import db as nvd_db
+from py_nvd import paths as nvd_paths
 from py_nvd.db import (
     SchemaMismatchError,
     StateUnavailableError,
     format_state_warning,
-    get_config_path,
-    get_state_dir,
-    get_taxdump_dir,
 )
+from py_nvd.paths import get_config_path, get_state_dir, get_taxdump_dir
 
 
 class TestStateUnavailableError:
@@ -72,6 +71,17 @@ class TestStateUnavailableError:
         )
 
         assert error.original_error is None
+
+
+class TestDbPathCompatibility:
+    """Tests for temporary path-helper compatibility re-exports."""
+
+    def test_db_reexports_state_neutral_path_helpers(self) -> None:
+        """Existing py_nvd.db imports keep working during the v3 refactor."""
+        assert nvd_db.get_config_path is nvd_paths.get_config_path
+        assert nvd_db.get_state_dir is nvd_paths.get_state_dir
+        assert nvd_db.get_taxdump_dir is nvd_paths.get_taxdump_dir
+        assert nvd_db.get_taxonomy_db_path is nvd_paths.get_taxonomy_db_path
 
 
 class TestFormatStateWarning:
@@ -336,7 +346,7 @@ class TestGetStateDir:
     ) -> None:
         """Default state/local-data root remains ~/.cache/nvd."""
         default_state = tmp_path / ".cache" / "nvd"
-        monkeypatch.setattr(nvd_db, "DEFAULT_STATE_DIR", default_state)
+        monkeypatch.setattr(nvd_paths, "DEFAULT_STATE_DIR", default_state)
         monkeypatch.delenv("NVD_STATE_DIR", raising=False)
 
         assert get_state_dir() == default_state

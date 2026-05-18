@@ -16,7 +16,7 @@ from pathlib import Path
 import pytest
 
 from py_nvd import taxonomy
-from py_nvd.db import get_taxdump_dir
+from py_nvd.paths import get_taxdump_dir
 
 
 @pytest.fixture

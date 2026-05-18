@@ -39,7 +39,6 @@ Schema Migration Safety:
 
 from __future__ import annotations
 
-import os
 import select
 import shutil
 import sqlite3
@@ -50,25 +49,10 @@ from importlib.resources import files
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from py_nvd import paths as nvd_paths
+
 if TYPE_CHECKING:
     from collections.abc import Generator
-
-# The NVD config directory - user-facing configuration lives here
-DEFAULT_NVD_HOME = Path.home() / ".nvd"
-
-# The NVD cache directory - operational state (database, taxonomy, hits) lives here.
-# This matches the Nextflow config default in nextflow.config and follows the
-# XDG convention of putting mutable cache/state data under ~/.cache/.
-DEFAULT_NVD_CACHE = Path.home() / ".cache" / "nvd"
-
-# Environment variables for overriding default paths
-ENV_VAR_CONFIG = "NVD_CONFIG"
-ENV_VAR = "NVD_STATE_DIR"  # Keep short name for backward compatibility
-ENV_VAR_TAXONOMY = "NVD_TAXONOMY_DB"
-
-# Default paths
-DEFAULT_CONFIG_PATH = DEFAULT_NVD_HOME / "user.config"
-DEFAULT_STATE_DIR = DEFAULT_NVD_CACHE
 
 EXPECTED_VERSION = 3
 
@@ -79,6 +63,20 @@ CONFIRMATION_TIMEOUT_SECONDS = 300  # 5 minutes
 
 # Bytes per kibibyte (used for human-readable file size formatting)
 _BYTES_PER_KIBIBYTE = 1024
+
+# Backward-compatible names for callers that still import path helpers from
+# py_nvd.db while the state database module is being decomposed.
+DEFAULT_NVD_HOME = nvd_paths.DEFAULT_NVD_HOME
+DEFAULT_NVD_CACHE = nvd_paths.DEFAULT_NVD_CACHE
+ENV_VAR_CONFIG = nvd_paths.ENV_VAR_CONFIG
+ENV_VAR = nvd_paths.ENV_VAR
+ENV_VAR_TAXONOMY = nvd_paths.ENV_VAR_TAXONOMY
+DEFAULT_CONFIG_PATH = nvd_paths.DEFAULT_CONFIG_PATH
+DEFAULT_STATE_DIR = nvd_paths.DEFAULT_STATE_DIR
+get_config_path = nvd_paths.get_config_path
+get_state_dir = nvd_paths.get_state_dir
+get_taxdump_dir = nvd_paths.get_taxdump_dir
+get_taxonomy_db_path = nvd_paths.get_taxonomy_db_path
 
 
 def utc_now_iso() -> str:
@@ -310,106 +308,9 @@ Resolution:
 """.strip()
 
 
-def get_config_path(explicit_path: Path | str | None = None) -> Path:
-    """
-    Resolve the NVD config file path using hierarchical fallback.
-
-    Priority:
-        1. Explicit path argument (from CLI)
-        2. NVD_CONFIG environment variable
-        3. Default: ~/.nvd/user.config
-
-    Unlike state/taxonomy directories, this does NOT create the file
-    if it doesn't exist - config files should be created explicitly.
-
-    Args:
-        explicit_path: Optional explicit path from CLI
-
-    Returns:
-        Resolved Path to config file
-    """
-    if explicit_path is not None:
-        return Path(explicit_path)
-    if ENV_VAR_CONFIG in os.environ:
-        return Path(os.environ[ENV_VAR_CONFIG])
-    return DEFAULT_CONFIG_PATH
-
-
-def get_state_dir(explicit_path: Path | str | None = None) -> Path:
-    """
-    Resolve the NVD state directory using hierarchical fallback.
-
-    Priority:
-        1. Explicit path argument (from CLI or Nextflow param)
-        2. NVD_STATE_DIR environment variable
-        3. Default: ~/.cache/nvd/
-
-    The directory is created if it doesn't exist.
-
-    Args:
-        explicit_path: Optional explicit path from CLI/Nextflow
-
-    Returns:
-        Resolved Path to state directory
-    """
-    if explicit_path is not None:
-        state_dir = Path(explicit_path)
-    elif ENV_VAR in os.environ:
-        state_dir = Path(os.environ[ENV_VAR])
-    else:
-        state_dir = DEFAULT_STATE_DIR
-
-    state_dir.mkdir(parents=True, exist_ok=True)
-    return state_dir
-
-
 def get_state_db_path(state_dir: Path | str | None = None) -> Path:
     """Get path to the state database."""
     return get_state_dir(state_dir) / "state.sqlite"
-
-
-def get_taxdump_dir(
-    state_dir: Path | str | None = None,
-    taxonomy_dir: Path | str | None = None,
-) -> Path:
-    """
-    Get path to the taxdump directory containing .dmp files and taxonomy.sqlite.
-
-    Priority:
-        1. Explicit taxonomy_dir argument (from CLI or Nextflow param)
-        2. NVD_TAXONOMY_DB environment variable (for shared cluster installs)
-        3. {state_dir}/taxdump (default)
-
-    The explicit taxonomy_dir parameter enables stateless mode where taxonomy
-    is decoupled from the state directory. The NVD_TAXONOMY_DB override is
-    useful for cluster environments where taxonomy data is pre-downloaded
-    to a shared location.
-
-    Args:
-        state_dir: Optional explicit state directory for fallback resolution.
-        taxonomy_dir: Optional explicit taxonomy directory (takes precedence).
-
-    Returns:
-        Path to the taxdump directory.
-
-    Raises:
-        ValueError: If taxonomy_dir is None, NVD_TAXONOMY_DB is not set,
-                    and state_dir is also None (cannot resolve path).
-    """
-    if taxonomy_dir is not None:
-        return Path(taxonomy_dir)
-    if ENV_VAR_TAXONOMY in os.environ:
-        return Path(os.environ[ENV_VAR_TAXONOMY])
-    if state_dir is None and ENV_VAR not in os.environ:
-        # In stateless mode with no taxonomy_dir, we can't derive a path
-        # Let get_state_dir handle this - it will use DEFAULT_STATE_DIR
-        pass
-    return get_state_dir(state_dir) / "taxdump"
-
-
-def get_taxonomy_db_path(state_dir: Path | str | None = None) -> Path:
-    """Get path to the taxonomy SQLite database (inside taxdump directory)."""
-    return get_taxdump_dir(state_dir) / "taxonomy.sqlite"
 
 
 def get_hits_dir(state_dir: Path | str | None = None) -> Path:

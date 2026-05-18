@@ -20,7 +20,8 @@ from typing import NoReturn
 import typer
 from rich.console import Console
 
-from py_nvd.db import DEFAULT_CONFIG_PATH, get_config_path, get_state_db_path
+from py_nvd.db import get_state_db_path
+from py_nvd.paths import DEFAULT_CONFIG_PATH, get_config_path
 
 # Re-export for backward compatibility (prefer get_config_path() for new code)
 DEFAULT_CONFIG = DEFAULT_CONFIG_PATH

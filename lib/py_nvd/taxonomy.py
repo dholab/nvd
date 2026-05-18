@@ -35,8 +35,9 @@ import taxopy
 import taxopy.utilities
 from taxopy.exceptions import TaxidError
 
-from py_nvd.db import ResourceUnavailableError, get_taxdump_dir
+from py_nvd.db import ResourceUnavailableError
 from py_nvd.models import Taxon
+from py_nvd.paths import get_taxdump_dir
 
 # Save builtin open before we shadow it with our context manager
 _open = builtins.open
