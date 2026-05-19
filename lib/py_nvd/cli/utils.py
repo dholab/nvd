@@ -21,10 +21,10 @@ import typer
 from rich.console import Console
 
 from py_nvd.db import get_state_db_path
-from py_nvd.paths import DEFAULT_CONFIG_PATH, get_config_path
+from py_nvd.paths import get_config_path, get_setup_conf_path
 
 # Re-export for backward compatibility (prefer get_config_path() for new code)
-DEFAULT_CONFIG = DEFAULT_CONFIG_PATH
+DEFAULT_CONFIG = get_config_path()
 
 # Resume file for `nvd resume` command (stored in launch directory)
 RESUME_FILE = Path(".nfresume")
@@ -262,7 +262,7 @@ def find_config_file(custom_path: Path | None = None) -> Path | None:
     Priority:
         1. Explicit custom_path argument
         2. NVD_CONFIG environment variable
-        3. Default: ~/.nvd/user.config
+        3. Default: {NVD_CONFIG_DIR}/user.config, usually ~/.config/nvd/user.config
 
     Returns None if no config file exists at the resolved path.
     """
@@ -338,12 +338,12 @@ def docker_is_running() -> bool:
 
 def get_default_profile() -> str | None:
     """
-    Read default profile from ~/.nvd/setup.conf if configured.
+    Read default profile from setup.conf in NVD_CONFIG_DIR if configured.
 
     Returns:
         The configured default profile, or None if not set.
     """
-    setup_conf = Path.home() / ".nvd" / "setup.conf"
+    setup_conf = get_setup_conf_path()
     if not setup_conf.exists():
         return None
 

@@ -305,7 +305,7 @@ def ensure_taxonomy_available(
 
     This is the public API for pre-downloading taxonomy data before
     distributed workers need it. Call this once on the submit node
-    (e.g., in CHECK_RUN_STATE) to avoid multiple workers racing to
+    (e.g., in ENSURE_TAXONOMY) to avoid multiple workers racing to
     download simultaneously.
 
     Args:
@@ -809,7 +809,7 @@ def open(  # noqa: A001, C901, PLR0912, PLR0915
             # "unable to write to readonly database" errors.
             msg = (
                 f"Taxonomy database not found at {sqlite_path} and offline mode is enabled. "
-                f"Run 'nvd taxonomy ensure' or ensure CHECK_RUN_STATE runs locally before "
+                f"Run 'nvd taxonomy ensure' or ensure ENSURE_TAXONOMY runs locally before "
                 f"launching distributed jobs."
             )
             raise TaxonomyOfflineError(msg)

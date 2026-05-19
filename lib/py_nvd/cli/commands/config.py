@@ -42,7 +42,7 @@ def config_show(
         None,
         "--config",
         "-c",
-        help="Config file to display (default: ~/.nvd/user.config or NVD_CONFIG)",
+        help="Config file to display (default: NVD_CONFIG_DIR/user.config or NVD_CONFIG)",
     ),
     params: bool = typer.Option(
         False,
@@ -118,7 +118,7 @@ def config_edit(
         None,
         "--config",
         "-c",
-        help="Config file to edit (default: ~/.nvd/user.config or NVD_CONFIG)",
+        help="Config file to edit (default: NVD_CONFIG_DIR/user.config or NVD_CONFIG)",
     ),
 ) -> None:
     """

@@ -5,22 +5,54 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-# The NVD config directory: user-facing configuration lives here.
-DEFAULT_NVD_HOME = Path.home() / ".nvd"
+# The NVD config directory: user-facing configuration and small control-plane
+# data live here. The repository installer may still use ~/.nvd for versioned
+# checkouts; that install location is deliberately separate from this runtime
+# config root.
+DEFAULT_CONFIG_DIR = Path.home() / ".config" / "nvd"
 
-# The NVD cache directory: mutable local data lives here. The name is retained
-# as state for compatibility with existing parameters and environment variables,
-# even as v3 removes the old state database product.
+# Legacy locations retained for read/compatibility fallbacks during the v3
+# transition. New writes should use DEFAULT_CONFIG_DIR unless explicitly
+# overridden.
+LEGACY_NVD_HOME = Path.home() / ".nvd"
+DEFAULT_NVD_HOME = LEGACY_NVD_HOME
+
+# The old cache directory name is retained only as a compatibility fallback for
+# callers still passing state_dir or NVD_STATE_DIR while the public state DB is
+# removed.
 DEFAULT_NVD_CACHE = Path.home() / ".cache" / "nvd"
 
 # Environment variables for overriding default paths.
 ENV_VAR_CONFIG = "NVD_CONFIG"
-ENV_VAR = "NVD_STATE_DIR"  # Keep short name for backward compatibility.
+ENV_VAR_CONFIG_DIR = "NVD_CONFIG_DIR"
+ENV_VAR = "NVD_STATE_DIR"  # Legacy compatibility alias, not canonical v3 config.
 ENV_VAR_TAXONOMY = "NVD_TAXONOMY_DB"
 
 # Default paths.
-DEFAULT_CONFIG_PATH = DEFAULT_NVD_HOME / "user.config"
+DEFAULT_CONFIG_PATH = DEFAULT_CONFIG_DIR / "user.config"
 DEFAULT_STATE_DIR = DEFAULT_NVD_CACHE
+
+
+def get_config_dir(explicit_path: Path | str | None = None) -> Path:
+    """Resolve the NVD configuration directory.
+
+    Priority:
+        1. Explicit path argument
+        2. NVD_CONFIG_DIR environment variable
+        3. Default: ~/.config/nvd
+
+    The directory is created because this is the canonical home for setup.conf,
+    user.config, shell completions, and the temporary SQLite preset store.
+    """
+    if explicit_path is not None:
+        config_dir = Path(explicit_path)
+    elif ENV_VAR_CONFIG_DIR in os.environ:
+        config_dir = Path(os.environ[ENV_VAR_CONFIG_DIR])
+    else:
+        config_dir = DEFAULT_CONFIG_DIR
+
+    config_dir.mkdir(parents=True, exist_ok=True)
+    return config_dir
 
 
 def get_config_path(explicit_path: Path | str | None = None) -> Path:
@@ -30,7 +62,8 @@ def get_config_path(explicit_path: Path | str | None = None) -> Path:
     Priority:
         1. Explicit path argument (from CLI)
         2. NVD_CONFIG environment variable
-        3. Default: ~/.nvd/user.config
+        3. {NVD_CONFIG_DIR}/user.config, defaulting to ~/.config/nvd/user.config
+        4. Legacy fallback: ~/.nvd/user.config if it already exists
 
     Unlike state/taxonomy directories, this does not create the file if it does
     not exist. Config files should be created explicitly.
@@ -39,17 +72,22 @@ def get_config_path(explicit_path: Path | str | None = None) -> Path:
         return Path(explicit_path)
     if ENV_VAR_CONFIG in os.environ:
         return Path(os.environ[ENV_VAR_CONFIG])
-    return DEFAULT_CONFIG_PATH
+    config_path = get_config_dir() / "user.config"
+    legacy_path = LEGACY_NVD_HOME / "user.config"
+    if not config_path.exists() and legacy_path.exists():
+        return legacy_path
+    return config_path
 
 
 def get_state_dir(explicit_path: Path | str | None = None) -> Path:
     """
-    Resolve the NVD state/local-data directory using hierarchical fallback.
+    Resolve the legacy NVD state/local-data directory using hierarchical fallback.
 
     Priority:
         1. Explicit path argument (from CLI or Nextflow param)
         2. NVD_STATE_DIR environment variable
-        3. Default: ~/.cache/nvd/
+        3. NVD_CONFIG_DIR environment variable
+        4. Default: ~/.config/nvd/
 
     The directory is created if it does not exist.
     """
@@ -57,8 +95,10 @@ def get_state_dir(explicit_path: Path | str | None = None) -> Path:
         state_dir = Path(explicit_path)
     elif ENV_VAR in os.environ:
         state_dir = Path(os.environ[ENV_VAR])
+    elif ENV_VAR_CONFIG_DIR in os.environ:
+        state_dir = Path(os.environ[ENV_VAR_CONFIG_DIR])
     else:
-        state_dir = DEFAULT_STATE_DIR
+        state_dir = get_config_dir()
 
     state_dir.mkdir(parents=True, exist_ok=True)
     return state_dir
@@ -74,13 +114,26 @@ def get_taxdump_dir(
     Priority:
         1. Explicit taxonomy_dir argument (from CLI or Nextflow param)
         2. NVD_TAXONOMY_DB environment variable (for shared cluster installs)
-        3. {state_dir}/taxdump (default)
+        3. {state_dir}/taxdump when an explicit/legacy state_dir is provided
+        4. {NVD_CONFIG_DIR}/taxdump, defaulting to ~/.config/nvd/taxdump
     """
     if taxonomy_dir is not None:
         return Path(taxonomy_dir)
     if ENV_VAR_TAXONOMY in os.environ:
         return Path(os.environ[ENV_VAR_TAXONOMY])
-    return get_state_dir(state_dir) / "taxdump"
+    if state_dir is not None or ENV_VAR in os.environ:
+        return get_state_dir(state_dir) / "taxdump"
+    return get_config_dir() / "taxdump"
+
+
+def get_setup_conf_path() -> Path:
+    """Return the canonical setup.conf path."""
+    return get_config_dir() / "setup.conf"
+
+
+def get_preset_db_path() -> Path:
+    """Return the temporary SQLite preset registry path."""
+    return get_config_dir() / "presets.sqlite"
 
 
 def get_taxonomy_db_path(state_dir: Path | str | None = None) -> Path:

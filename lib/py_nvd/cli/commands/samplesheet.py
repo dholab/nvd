@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import csv
 import re
-import sqlite3
 import sys
 from collections import Counter
 from dataclasses import dataclass, field
@@ -31,8 +30,6 @@ from py_nvd.cli.prompts import (
     prompt_with_timeout,
 )
 from py_nvd.cli.utils import console, error, info, success, warning
-from py_nvd.db import SchemaMismatchError
-from py_nvd.state import get_sample_history, was_sample_ever_uploaded
 
 REQUIRED_COLUMNS = ("sample_id", "srr", "platform", "fastq1", "fastq2")
 VALID_PLATFORMS = {"illumina", "ont", ""}
@@ -466,87 +463,6 @@ def format_samples_table(samples: list[SampleEntry], platform: str) -> Table:
     return table
 
 
-@dataclass
-class PreviousProcessingInfo:
-    """Information about a sample's previous processing history."""
-
-    sample_id: str
-    run_ids: list[str]
-    was_uploaded: bool
-
-
-def check_samples_against_state(
-    sample_ids: list[str],
-    state_dir: Path | str | None = None,
-) -> list[PreviousProcessingInfo]:
-    """
-    Check if any samples were previously processed (read-only state query).
-
-    This is a lightweight check that queries the state database without
-    modifying it. Useful for warning users about potential duplicates
-    before they run the pipeline.
-
-    Args:
-        sample_ids: List of sample IDs to check
-        state_dir: Optional state directory override
-
-    Returns:
-        List of PreviousProcessingInfo for samples that were previously processed
-    """
-    previously_processed: list[PreviousProcessingInfo] = []
-
-    for sid in sample_ids:
-        history = get_sample_history(sid, state_dir=state_dir)
-        if history:
-            # Get unique run IDs from history
-            run_ids = list(dict.fromkeys(h.run_id for h in history))
-            was_uploaded = was_sample_ever_uploaded(sid, state_dir=state_dir)
-            previously_processed.append(
-                PreviousProcessingInfo(
-                    sample_id=sid,
-                    run_ids=run_ids,
-                    was_uploaded=was_uploaded,
-                ),
-            )
-
-    return previously_processed
-
-
-_MAX_DISPLAYED_SAMPLES = 10
-_MAX_DISPLAYED_RUNS = 3
-
-
-def format_state_warnings(previously_processed: list[PreviousProcessingInfo]) -> None:
-    """Display warnings about previously processed samples."""
-    if not previously_processed:
-        return
-
-    console.print()
-    warning(
-        f"[bold]{len(previously_processed)} sample(s) were previously processed:[/bold]",
-    )
-
-    # Show details for each previously processed sample
-    for prev in previously_processed[:_MAX_DISPLAYED_SAMPLES]:
-        run_str = ", ".join(prev.run_ids[:_MAX_DISPLAYED_RUNS])
-        if len(prev.run_ids) > _MAX_DISPLAYED_RUNS:
-            run_str += f" (+{len(prev.run_ids) - _MAX_DISPLAYED_RUNS} more)"
-
-        upload_marker = " [dim](uploaded)[/dim]" if prev.was_uploaded else ""
-        console.print(f"  • [cyan]{prev.sample_id}[/cyan] → {run_str}{upload_marker}")
-
-    if len(previously_processed) > _MAX_DISPLAYED_SAMPLES:
-        console.print(
-            f"  [dim]... and {len(previously_processed) - _MAX_DISPLAYED_SAMPLES} more[/dim]",
-        )
-
-    console.print()
-    info(
-        "These samples may be skipped or cause duplicate detection errors. "
-        "Use --force to proceed anyway.",
-    )
-
-
 samplesheet_app = typer.Typer(
     name="samplesheet",
     help="Samplesheet generation and validation",
@@ -605,9 +521,6 @@ def generate(
     Scans a directory for FASTQ files, pairs them by sample name, and creates
     a properly formatted samplesheet. The generated samplesheet is validated
     before writing.
-
-    If a state database exists, automatically checks for previously processed
-    samples and warns about potential duplicates.
 
     Examples:
 
@@ -681,17 +594,6 @@ def generate(
 
     if not samples:
         error("No samples found")
-
-    # Check for previously processed samples (read-only state query)
-    sample_ids = [s.sample_id for s in samples]
-    try:
-        previously_processed = check_samples_against_state(sample_ids)
-        if previously_processed:
-            format_state_warnings(previously_processed)
-    except (SchemaMismatchError, sqlite3.OperationalError, PermissionError):
-        warning(
-            "Could not check for previously processed samples (state database unavailable)",
-        )
 
     # Display preview
     console.print()

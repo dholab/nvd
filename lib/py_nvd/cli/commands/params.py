@@ -18,7 +18,7 @@ from pydantic import ValidationError
 from rich.panel import Panel
 from rich.table import Table
 
-from py_nvd import params, state
+from py_nvd import params
 from py_nvd.cli.utils import (
     console,
     error,
@@ -35,6 +35,7 @@ from py_nvd.models import (
     trace_merge,
 )
 from py_nvd.params import get_schema_url, load_params_file
+from py_nvd.presets import get_preset_store
 
 # Display/truncation thresholds
 _MAX_LIST_PREVIEW_ITEMS = 3
@@ -174,10 +175,11 @@ def params_check(
     preset_params: dict = {}
     preset_name = None
     if preset:
-        preset_obj = state.get_preset(preset)
+        preset_store = get_preset_store()
+        preset_obj = preset_store.get(preset)
         if not preset_obj:
             error(f"Preset not found: {preset}")
-            available = state.list_presets()
+            available = preset_store.list()
             if available:
                 console.print("\n[cyan]Available presets:[/cyan]")
                 for p in available:

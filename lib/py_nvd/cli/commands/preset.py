@@ -25,7 +25,7 @@ from pydantic import ValidationError
 from rich.panel import Panel
 from rich.table import Table
 
-from py_nvd import params, state
+from py_nvd import params
 from py_nvd.cli.utils import (
     console,
     error,
@@ -40,6 +40,7 @@ from py_nvd.models import (
     get_field_category,
     trace_merge,
 )
+from py_nvd.presets import PresetStore, get_preset_store
 
 # Display/truncation thresholds
 _MAX_VALUE_DISPLAY_LENGTH = 40
@@ -54,6 +55,10 @@ preset_app = typer.Typer(
 )
 
 
+def _store() -> PresetStore:
+    return get_preset_store()
+
+
 @preset_app.command("list")
 @preset_app.command("ls", hidden=True)  # Alias
 def preset_list() -> None:
@@ -62,7 +67,7 @@ def preset_list() -> None:
 
     Shows preset names, descriptions, parameter counts, and creation dates.
     """
-    presets = state.list_presets()
+    presets = _store().list()
 
     if not presets:
         info("No presets registered yet.")
@@ -100,7 +105,7 @@ def preset_show(
 
     Displays all parameters and their values.
     """
-    preset = state.get_preset(name)
+    preset = _store().get(name)
 
     if not preset:
         error(f"Preset not found: {name}")
@@ -310,9 +315,9 @@ def preset_register(
         raise typer.Exit(1) from None
 
     # Check if updating existing
-    existing = state.get_preset(name)
+    existing = _store().get(name)
 
-    preset = state.register_preset(name, preset_params, description)
+    preset = _store().upsert(name, preset_params, description)
 
     if existing:
         success(f"Updated preset '{preset.name}' ({len(preset.params)} parameters)")
@@ -363,10 +368,10 @@ def preset_merge(
     # Load all presets with labels for trace_merge
     labeled_sources: list[tuple[str, dict]] = []
     for preset_name in presets:
-        preset_obj = state.get_preset(preset_name)
+        preset_obj = _store().get(preset_name)
         if not preset_obj:
             error(f"Preset not found: {preset_name}")
-            available = state.list_presets()
+            available = _store().list()
             if available:
                 console.print("\n[cyan]Available presets:[/cyan]")
                 for p in available:
@@ -387,7 +392,7 @@ def preset_merge(
         raise typer.Exit(1) from None
 
     # Check if name already exists
-    existing = state.get_preset(name)
+    existing = _store().get(name)
     if existing:
         console.print(f"[yellow]Preset '{name}' already exists.[/yellow]")
         if not typer.confirm("Overwrite?"):
@@ -405,7 +410,7 @@ def preset_merge(
     }
 
     # Register the new preset
-    new_preset = state.register_preset(name, merged_params, description)
+    new_preset = _store().upsert(name, merged_params, description)
 
     # Display merge summary
     _display_preset_merge_summary(presets, traced, new_preset.name, explicitly_set)
@@ -519,7 +524,7 @@ def preset_export(
         nvd preset export production -o production.yaml
         nvd preset export production -o production.json --format json
     """
-    preset = state.get_preset(name)
+    preset = _store().get(name)
     if not preset:
         error(f"Preset not found: {name}")
 
@@ -609,9 +614,9 @@ def preset_import(
         raise typer.Exit(1) from None
 
     # Check if updating existing
-    existing = state.get_preset(name)
+    existing = _store().get(name)
 
-    preset = state.register_preset(name, preset_params, description)
+    preset = _store().upsert(name, preset_params, description)
 
     if existing:
         success(
@@ -643,7 +648,7 @@ def preset_delete(
         nvd preset rm old-preset --force
     """
     # Check if exists
-    preset = state.get_preset(name)
+    preset = _store().get(name)
     if not preset:
         error(f"Preset not found: {name}")
 
@@ -655,7 +660,7 @@ def preset_delete(
         if not typer.confirm("Continue?"):
             raise typer.Abort
 
-    deleted = state.delete_preset(name)
+    deleted = _store().delete(name)
     if deleted:
         success(f"Deleted preset '{name}'")
     else:
@@ -679,12 +684,12 @@ def preset_diff(
         nvd preset diff defaults my-settings
     """
     # Load both presets
-    p1 = state.get_preset(preset1)
+    p1 = _store().get(preset1)
     if not p1:
         error(f"Preset not found: {preset1}")
         raise typer.Exit(1)
 
-    p2 = state.get_preset(preset2)
+    p2 = _store().get(preset2)
     if not p2:
         error(f"Preset not found: {preset2}")
         raise typer.Exit(1)

@@ -110,7 +110,7 @@ def taxonomy_status(
         Path | None,
         typer.Option(
             "--taxonomy-dir",
-            help="Explicit taxonomy directory; overrides state directory fallback",
+            help="Explicit taxonomy directory; overrides config-directory fallback",
         ),
     ] = None,
     json_output: Annotated[
@@ -139,7 +139,7 @@ def taxonomy_ensure(
         Path | None,
         typer.Option(
             "--taxonomy-dir",
-            help="Explicit taxonomy directory; overrides state directory fallback",
+            help="Explicit taxonomy directory; overrides config-directory fallback",
         ),
     ] = None,
     json_output: Annotated[

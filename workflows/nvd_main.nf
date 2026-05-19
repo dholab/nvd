@@ -24,7 +24,7 @@ include { EXTRACT_HUMAN_VIRUSES } from "../subworkflows/extract_human_virus_cont
 include { CLASSIFY_WITH_MEGABLAST } from "../subworkflows/classify_with_megablast"
 include { CLASSIFY_WITH_BLASTN } from "../subworkflows/classify_with_blastn"
 include { BUNDLE_BLAST_FOR_LABKEY } from "../subworkflows/bundle_blast_for_labkey"
-include { CHECK_RUN_STATE; ENSURE_TAXONOMY; COMPLETE_RUN; NOTIFY_SLACK; ADD_READ_COUNTS_TO_BLAST; CONCATENATE_EXPERIMENT_BLAST } from "../modules/utils"
+include { COMPUTE_RUN_CONTEXT; ENSURE_TAXONOMY; NOTIFY_SLACK; ADD_READ_COUNTS_TO_BLAST; CONCATENATE_EXPERIMENT_BLAST } from "../modules/utils"
 include { VALIDATE_LK_BLAST } from "../subworkflows/validate_lk_blast_lists.nf"
 include { VALIDATE_LK_EXP_FRESH } from "../modules/validate_blast_labkey.nf"
 include { REGISTER_LK_EXPERIMENT } from "../modules/validate_blast_labkey.nf"
@@ -62,11 +62,11 @@ workflow NVD_MAIN {
     // Resolve directories for stateful vs stateless mode.
     dirs = NvdDirs.resolve(params, log)
 
-    // Check run state upfront (prevents duplicate processing of same sample set)
+    // Compute stateless run context upfront.
     ch_run_state_input = Channel.fromPath(params.samplesheet)
         .combine(Channel.value(dirs.state_dir))
 
-    CHECK_RUN_STATE(ch_run_state_input, "blast,blast_fasta")
+    COMPUTE_RUN_CONTEXT(ch_run_state_input)
 
     ENSURE_TAXONOMY(
         Channel.value(dirs.state_dir),
@@ -200,7 +200,7 @@ workflow NVD_MAIN {
     // -------------------------------------------------------------------------
     PREPROCESS_CONTIGS(ch_preprocessed)
 
-    ch_run_context = CHECK_RUN_STATE.out.run_context.first()
+    ch_run_context = COMPUTE_RUN_CONTEXT.out.run_context.first()
     ch_state_dir = ch_run_context.map { _sample_set_id, state_dir -> state_dir }
     ch_taxonomy_dir = ENSURE_TAXONOMY.out.taxonomy_dir.first()
     EXTRACT_HUMAN_VIRUSES(
@@ -242,7 +242,7 @@ workflow NVD_MAIN {
             ADD_READ_COUNTS_TO_BLAST.out.first()
         )
 
-        ch_validation_gate = CHECK_RUN_STATE.out.ready
+        ch_validation_gate = COMPUTE_RUN_CONTEXT.out.ready
             .combine(VALIDATE_LK_EXP_FRESH.out.validated)
             .map { _ready, _validated -> true }
             .first()
@@ -254,8 +254,7 @@ workflow NVD_MAIN {
             params.experiment_id,
             workflow.runName,
             EXTRACT_HUMAN_VIRUSES.out.contig_read_counts,
-            ch_validation_gate,
-            ch_run_context
+            ch_validation_gate
         )
 
         REGISTER_LK_EXPERIMENT(
@@ -277,19 +276,13 @@ workflow NVD_MAIN {
         ch_terminal = ADD_READ_COUNTS_TO_BLAST.out
     }
 
-    COMPLETE_RUN(
-        ch_run_complete_gate,
-        ch_state_dir,
-        "completed"
-    )
-
     if (params.slack_enabled && params.slack_channel && params.labkey) {
         ch_labkey_url = Channel.value(
             "https://${params.labkey_server}/${params.labkey_project_name}/list-grid.view?name=${params.labkey_blast_meta_hits_list}"
         )
 
         NOTIFY_SLACK(
-            COMPLETE_RUN.out.done,
+            ch_run_complete_gate,
             ch_run_context,
             ch_labkey_url
         )

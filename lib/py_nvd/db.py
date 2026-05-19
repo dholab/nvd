@@ -67,13 +67,16 @@ _BYTES_PER_KIBIBYTE = 1024
 # Backward-compatible names for callers that still import path helpers from
 # py_nvd.db while the state database module is being decomposed.
 DEFAULT_NVD_HOME = nvd_paths.DEFAULT_NVD_HOME
+DEFAULT_CONFIG_DIR = nvd_paths.DEFAULT_CONFIG_DIR
 DEFAULT_NVD_CACHE = nvd_paths.DEFAULT_NVD_CACHE
 ENV_VAR_CONFIG = nvd_paths.ENV_VAR_CONFIG
+ENV_VAR_CONFIG_DIR = nvd_paths.ENV_VAR_CONFIG_DIR
 ENV_VAR = nvd_paths.ENV_VAR
 ENV_VAR_TAXONOMY = nvd_paths.ENV_VAR_TAXONOMY
 DEFAULT_CONFIG_PATH = nvd_paths.DEFAULT_CONFIG_PATH
 DEFAULT_STATE_DIR = nvd_paths.DEFAULT_STATE_DIR
 get_config_path = nvd_paths.get_config_path
+get_config_dir = nvd_paths.get_config_dir
 get_state_dir = nvd_paths.get_state_dir
 get_taxdump_dir = nvd_paths.get_taxdump_dir
 get_taxonomy_db_path = nvd_paths.get_taxonomy_db_path

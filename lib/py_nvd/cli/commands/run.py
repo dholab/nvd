@@ -14,7 +14,6 @@ from typing import Any
 
 import typer
 
-from py_nvd import state
 from py_nvd.cli.utils import (
     DEFAULT_CONFIG,
     PANEL_ANALYSIS,
@@ -38,7 +37,7 @@ from py_nvd.cli.utils import (
 )
 from py_nvd.models import NvdParams
 from py_nvd.params import load_params_file
-from py_nvd.state import resolve_database_versions
+from py_nvd.presets import get_preset_store
 
 
 def run(
@@ -81,7 +80,7 @@ def run(
         None,
         "--config",
         "-c",
-        help="Custom config file (default: ~/.nvd/user.config or NVD_CONFIG)",
+        help="Custom config file (default: NVD_CONFIG_DIR/user.config or NVD_CONFIG)",
         exists=True,
         rich_help_panel=PANEL_CORE,
     ),
@@ -107,13 +106,13 @@ def run(
     state_dir: Path | None = typer.Option(
         None,
         "--state-dir",
-        help="State directory for run tracking (default: ~/.nvd/ or NVD_STATE_DIR)",
+        help="Legacy local-data directory override (prefer NVD_CONFIG_DIR or --taxonomy-dir)",
         rich_help_panel=PANEL_CORE,
     ),
     stateless: bool | None = typer.Option(
         None,
         "--stateless/--no-stateless",
-        help="Run without state management (disables run tracking, LabKey, Slack)",
+        help="Deprecated compatibility flag; v3 no longer uses run-state tracking",
         rich_help_panel=PANEL_CORE,
     ),
     taxonomy_dir: Path | None = typer.Option(
@@ -424,7 +423,7 @@ def run(
 
     This command wraps 'nextflow run' with a simpler interface, running the
     pipeline from the local installation. Database paths and settings are
-    loaded from ~/.nvd/user.config unless overridden with command-line
+    loaded from NVD_CONFIG_DIR/user.config unless overridden with command-line
     options or NVD_CONFIG env var.
 
     The command is saved to .nfresume for easy resumption with 'nvd resume'.
@@ -474,9 +473,10 @@ def run(
     # =========================================================================
     preset_params: dict[str, Any] = {}
     if preset:
-        preset_obj = state.get_preset(preset)
+        preset_store = get_preset_store()
+        preset_obj = preset_store.get(preset)
         if not preset_obj:
-            available = state.list_presets()
+            available = preset_store.list()
             console.print(f"[red]✗ Preset not found: {preset}[/red]")
             if available:
                 console.print("\n[cyan]Available presets:[/cyan]")
@@ -586,37 +586,12 @@ def run(
         raise typer.Exit(1)
 
     # =========================================================================
-    # STEP 3b: Resolve database versions from registry
-    # =========================================================================
-    resolution = resolve_database_versions(
-        blast_db=params.blast_db,
-        blast_db_version=params.blast_db_version,
-        state_dir=state_dir,
-    )
-
-    # Display warnings (unregistered paths, version mismatches)
-    for warn in resolution.warnings:
-        warning(warn)
-
-    # Display info for auto-registrations
-    for db_type, version, path in resolution.auto_registered:
-        info(f"Registered {db_type} database: {version} at {path}")
-
-    # Apply resolved versions to params
-    resolved_updates: dict[str, Any] = {}
-    if resolution.blast_db_version is not None:
-        resolved_updates["blast_db_version"] = resolution.blast_db_version
-
-    if resolved_updates:
-        params = NvdParams.merge(params, resolved_updates)
-
-    # =========================================================================
     # STEP 4: Handle Nextflow-native options (not pipeline params)
     # =========================================================================
 
     # Determine execution profile:
     # 1. Command-line --profile takes precedence
-    # 2. NVD_DEFAULT_PROFILE from ~/.nvd/setup.conf
+    # 2. NVD_DEFAULT_PROFILE from NVD_CONFIG_DIR/setup.conf
     # 3. Auto-detect based on available container runtime
     effective_profile = profile
     if effective_profile is None:

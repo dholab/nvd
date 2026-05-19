@@ -8,7 +8,6 @@ workflow BUNDLE_BLAST_FOR_LABKEY {
     run_id               // value channel: workflow run ID (single, broadcast)
     contig_read_counts   // queue channel: [ meta, mapped_counts.tsv ] - one per sample
     validation_complete  // value channel: gate ensuring validation passed (single)
-    run_context          // value channel: [ sample_set_id, state_dir ] - bundled tuple from CHECK_RUN_STATE, converted via .first()
 
     main:
 
@@ -70,16 +69,14 @@ workflow BUNDLE_BLAST_FOR_LABKEY {
     LABKEY_UPLOAD_BLAST(
         PREPARE_BLAST_LABKEY.out.csv,
         experiment_id,
-        run_id,
-        run_context
+        run_id
     )
 
     // Upload FASTA results to LabKey (eager: one process invocation per sample)
     LABKEY_UPLOAD_FASTA(
         PREPARE_FASTA_LABKEY.out.csv,
         experiment_id,
-        run_id,
-        run_context
+        run_id
     )
 
     emit:
@@ -256,20 +253,15 @@ process LABKEY_UPLOAD_BLAST {
     tuple val(sample_id), path(csv_file)  // per-sample prepared CSV from PREPARE_BLAST_LABKEY
     val experiment_id
     val run_id
-    tuple val(sample_set_id), val(state_dir)  // run_context: bundled from CHECK_RUN_STATE
 
     output:
     path "blast_labkey_upload.log", emit: log
 
     script:
-    def sample_set_arg = sample_set_id ? "--sample-set-id '${sample_set_id}'" : ""
-    def state_dir_arg = state_dir ? "--state-dir '${state_dir}'" : ""
     """
     labkey_upload_blast_results.py \
     --experiment-id '${experiment_id}' \
     --run-id '${run_id}' \
-    ${sample_set_arg} \
-    ${state_dir_arg} \
     --labkey-server '${params.labkey_server}' \
     --labkey-project-name '${params.labkey_project_name}' \
     --labkey-api-key \$LABKEY_API_KEY \
@@ -289,20 +281,15 @@ process LABKEY_UPLOAD_FASTA {
     tuple val(sample_id), path(csv_file)  // per-sample prepared CSV from PREPARE_FASTA_LABKEY
     val experiment_id
     val run_id
-    tuple val(sample_set_id), val(state_dir)  // run_context: bundled from CHECK_RUN_STATE
 
     output:
     path "fasta_labkey_upload.log", emit: log
 
     script:
-    def sample_set_arg = sample_set_id ? "--sample-set-id '${sample_set_id}'" : ""
-    def state_dir_arg = state_dir ? "--state-dir '${state_dir}'" : ""
     """
     labkey_upload_blast_fasta.py \
     --experiment-id '${experiment_id}' \
     --run-id '${run_id}' \
-    ${sample_set_arg} \
-    ${state_dir_arg} \
     --labkey-server '${params.labkey_server}' \
     --labkey-project-name '${params.labkey_project_name}' \
     --labkey-api-key \$LABKEY_API_KEY \

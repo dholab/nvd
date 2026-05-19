@@ -15,7 +15,6 @@ Command implementations are in py_nvd.cli.commands.* modules.
 
 from __future__ import annotations
 
-import datetime
 import sys
 
 import typer
@@ -28,7 +27,6 @@ from py_nvd.cli.commands.run import run
 from py_nvd.cli.commands.samplesheet import samplesheet_app
 from py_nvd.cli.commands.secrets import secrets_app
 from py_nvd.cli.commands.setup import setup_app
-from py_nvd.cli.commands.state import state_app
 from py_nvd.cli.commands.taxonomy import taxonomy_app
 from py_nvd.cli.commands.validate import validate_app
 from py_nvd.cli.commands.version import version
@@ -75,9 +73,6 @@ app.add_typer(preset_app, name="preset")
 app.add_typer(config_app, name="config")
 app.add_typer(config_app, name="cfg", hidden=True)  # Alias
 
-# State commands
-app.add_typer(state_app, name="state")
-
 # Taxonomy commands
 app.add_typer(taxonomy_app, name="taxonomy")
 
@@ -91,22 +86,6 @@ app.add_typer(secrets_app, name="secrets")
 
 # Setup commands
 app.add_typer(setup_app, name="setup")
-
-# Wrapped command (seasonal easter egg - Dec 15 to Jan 15)
-_WRAPPED_MONTH_DEC = 12  # December
-_WRAPPED_MONTH_JAN = 1  # January
-_WRAPPED_DAY_START = 15  # Season starts Dec 15, ends Jan 15
-_today = datetime.datetime.now(tz=datetime.UTC)
-_is_wrapped_season = (
-    _today.month == _WRAPPED_MONTH_DEC and _today.day >= _WRAPPED_DAY_START
-) or (_today.month == _WRAPPED_MONTH_JAN and _today.day <= _WRAPPED_DAY_START)
-
-if _is_wrapped_season:
-    # Local import intentional: avoid loading wrapped module outside of season
-    from py_nvd.cli.commands.wrapped import wrapped
-
-    app.command("wrapped")(wrapped)
-
 
 def _normalize_nextflow_args() -> None:
     """Rewrite Nextflow-style single-dash long options before Typer parses them.

@@ -12,7 +12,6 @@ import getpass
 import os
 import shutil
 import socket
-import sqlite3
 import subprocess
 import tempfile
 from datetime import UTC, datetime
@@ -33,13 +32,15 @@ from py_nvd.cli.utils import (
     success,
     warning,
 )
+from py_nvd.paths import get_config_dir, get_setup_conf_path
 
 # Separate console for stderr output (used by shell-hook to not pollute stdout)
 stderr_console = Console(stderr=True)
 
-# Default paths
-NVD_HOME = Path.home() / ".nvd"
-CHTC_DEFAULT_STATE_DIR = Path("/staging/groups/oconnor_group/nvd/state-db")
+# Default paths. INSTALL_HOME is the versioned repository checkout root used by
+# install.sh; runtime configuration lives under NVD_CONFIG_DIR / ~/.config/nvd.
+INSTALL_HOME = Path.home() / ".nvd"
+CHTC_DEFAULT_CONFIG_DIR = Path("/staging/groups/oconnor_group/nvd/config")
 
 
 def _is_oconnor_chtc() -> bool:
@@ -208,7 +209,7 @@ SETUP_CONF_TEMPLATE = """\
 # Date: {date}
 
 NVD_REPO={nvd_repo}
-NVD_STATE_DIR={state_dir}
+NVD_CONFIG_DIR={config_dir}
 {default_profile_line}
 """
 
@@ -254,7 +255,7 @@ def _get_stable_repo_path(repo_path: Path) -> Path:
     the original path unchanged.
     """
     resolved = repo_path.resolve()
-    nvd_home = (Path.home() / ".nvd").resolve()
+    nvd_home = INSTALL_HOME.resolve()
     latest_link = nvd_home / "latest"
 
     is_versioned_install = resolved.parent == nvd_home and resolved.name.startswith("v")
@@ -286,7 +287,7 @@ def _generate_wrapper_script(nvd_repo: Path) -> str:
 
 def _generate_setup_conf(
     nvd_repo: Path,
-    state_dir: Path,
+    config_dir: Path,
     default_profile: str | None = None,
 ) -> str:
     """Generate the setup.conf content."""
@@ -299,7 +300,7 @@ def _generate_setup_conf(
         version=__version__,
         date=datetime.now(UTC).strftime("%Y-%m-%d"),
         nvd_repo=nvd_repo,
-        state_dir=state_dir,
+        config_dir=config_dir,
         default_profile_line=profile_line,
     )
 
@@ -330,19 +331,19 @@ def _install_wrapper_script(
 
 def _write_setup_conf(
     nvd_repo: Path,
-    state_dir: Path,
+    config_dir: Path,
     default_profile: str | None = None,
 ) -> Path:
     """
     Write the setup.conf file to ~/.nvd/.
 
-    This file stores the NVD_REPO path, state directory, and optional
+    This file stores the NVD_REPO path, config directory, and optional
     default profile for the shell hook and nvd run to read.
     """
-    conf_path = NVD_HOME / "setup.conf"
+    conf_path = get_setup_conf_path()
     conf_path.parent.mkdir(parents=True, exist_ok=True)
 
-    conf_content = _generate_setup_conf(nvd_repo, state_dir, default_profile)
+    conf_content = _generate_setup_conf(nvd_repo, config_dir, default_profile)
     conf_path.write_text(conf_content)
 
     return conf_path
@@ -369,7 +370,7 @@ def _generate_completions(shell_type: str) -> Path:
         shell=shell_type,
     )
 
-    completions_path = NVD_HOME / f"completions.{shell_type}"
+    completions_path = get_config_dir() / f"completions.{shell_type}"
     completions_path.parent.mkdir(parents=True, exist_ok=True)
     completions_path.write_text(script)
 
@@ -415,9 +416,9 @@ def _install_shell_hook(rc_file: Path) -> bool:
         return False
 
 
-def _validate_state_dir(path: Path) -> tuple[bool, str]:
+def _validate_config_dir(path: Path) -> tuple[bool, str]:
     """
-    Validate a state directory path.
+    Validate a config directory path.
 
     Checks:
     1. Path exists or can be created
@@ -454,37 +455,16 @@ def _validate_state_dir(path: Path) -> tuple[bool, str]:
             return False, f"Cannot create directory: {e}"
 
 
-def _check_existing_database(state_dir: Path) -> tuple[bool, str]:
+def _prompt_config_dir(default: Path, non_interactive: bool) -> Path:
     """
-    Check if an existing state database is valid.
-
-    Returns:
-        (is_valid, message) tuple. If no database exists, returns (True, "No existing database").
-    """
-    db_path = state_dir / "state.sqlite"
-    if not db_path.exists():
-        return True, "No existing database"
-
-    try:
-        conn = sqlite3.connect(str(db_path))
-        conn.execute("SELECT 1")
-        conn.execute("PRAGMA integrity_check")
-        conn.close()
-        return True, f"Existing database is valid: {db_path}"
-    except sqlite3.DatabaseError as e:
-        return False, f"Existing database appears corrupted: {e}"
-
-
-def _prompt_state_dir(default: Path, non_interactive: bool) -> Path:
-    """
-    Prompt user for state directory with validation.
+    Prompt user for config directory with validation.
 
     In non-interactive mode, just returns the default.
     """
     if non_interactive:
         return default
 
-    console.print(f"State directory [{default}]: ", end="", markup=False)
+    console.print(f"Config directory [{default}]: ", end="", markup=False)
     user_input = input().strip()
 
     if not user_input:
@@ -498,7 +478,7 @@ CONTAINER_IMAGE_URI = "docker://nrminor/nvd:v{version}"
 
 def _get_container_path(version: str) -> Path:
     """Get the path where the container image should be stored."""
-    return NVD_HOME / f"nvd-v{version}.sif"
+    return INSTALL_HOME / f"nvd-v{version}.sif"
 
 
 def _pull_apptainer_image(version: str) -> tuple[bool, str]:
@@ -550,10 +530,10 @@ def setup(
         "--shell",
         help="Shell to configure (bash, zsh). Auto-detected if not specified.",
     ),
-    state_dir: Path | None = typer.Option(
+    config_dir: Path | None = typer.Option(
         None,
-        "--state-dir",
-        help="State directory for run tracking and taxonomy cache",
+        "--config-dir",
+        help="NVD configuration directory (default: NVD_CONFIG_DIR or ~/.config/nvd)",
     ),
     skip_shell_hook: bool = typer.Option(
         False,
@@ -577,20 +557,20 @@ def setup(
     This command configures NVD for your environment:
 
     1. Detects your environment (CHTC O'Connor lab vs generic)
-    2. Creates ~/.nvd/user.config with appropriate settings
+    2. Creates user.config under NVD_CONFIG_DIR / ~/.config/nvd
     3. Installs a shell hook for PATH, environment variables, and completions
     4. On CHTC, optionally pre-pulls the Apptainer container image
 
     After setup, 'nvd' will be available in new shell sessions with
-    tab completion and the correct state directory configured.
+    tab completion and the correct config directory configured.
 
     Examples:
 
         # Interactive setup (recommended for first-time users)
         nvd setup
 
-        # Non-interactive setup with custom state directory
-        nvd setup --non-interactive --state-dir /scratch/nvd
+        # Non-interactive setup with custom config directory
+        nvd setup --non-interactive --config-dir /scratch/nvd-config
 
         # Re-run setup, overwriting existing config
         nvd setup --force
@@ -630,7 +610,10 @@ def setup(
 
     console.print()
 
-    config_path = NVD_HOME / "user.config"
+    if config_dir is not None:
+        os.environ["NVD_CONFIG_DIR"] = str(config_dir.expanduser().resolve())
+
+    config_path = get_config_dir() / "user.config"
     should_write_config = False
 
     if is_chtc:
@@ -697,35 +680,24 @@ def setup(
                 info("Custom config creation not yet implemented for generic systems")
         console.print()
 
-    if state_dir is not None:
-        # User provided explicit state_dir via CLI
-        effective_state_dir = state_dir.expanduser().resolve()
+    if config_dir is not None:
+        effective_config_dir = config_dir.expanduser().resolve()
     elif is_chtc:
-        default_state_dir = CHTC_DEFAULT_STATE_DIR
-        effective_state_dir = _prompt_state_dir(default_state_dir, non_interactive)
+        default_config_dir = CHTC_DEFAULT_CONFIG_DIR
+        effective_config_dir = _prompt_config_dir(default_config_dir, non_interactive)
     else:
-        default_state_dir = NVD_HOME
-        effective_state_dir = _prompt_state_dir(default_state_dir, non_interactive)
+        default_config_dir = get_config_dir()
+        effective_config_dir = _prompt_config_dir(default_config_dir, non_interactive)
 
-    # Validate state directory
-    is_valid, message = _validate_state_dir(effective_state_dir)
+    os.environ["NVD_CONFIG_DIR"] = str(effective_config_dir)
+
+    # Validate config directory
+    is_valid, message = _validate_config_dir(effective_config_dir)
     if not is_valid:
-        error(f"Invalid state directory: {message}")
+        error(f"Invalid config directory: {message}")
         raise typer.Exit(1)
 
-    # Check existing database if present
-    db_valid, db_message = _check_existing_database(effective_state_dir)
-    if not db_valid:
-        warning(db_message)
-        if not non_interactive:
-            proceed = typer.confirm(
-                "Continue anyway? (existing data may be lost)",
-                default=False,
-            )
-            if not proceed:
-                raise typer.Exit(1)
-
-    console.print(f"[green]State directory:[/green] {effective_state_dir}")
+    console.print(f"[green]Config directory:[/green] {effective_config_dir}")
     console.print()
 
     try:
@@ -760,7 +732,7 @@ def setup(
     default_profile = "chtc_htc" if is_chtc else None
 
     # Write setup.conf
-    conf_path = _write_setup_conf(nvd_repo, effective_state_dir, default_profile)
+    conf_path = _write_setup_conf(nvd_repo, effective_config_dir, default_profile)
     success(f"Setup config written to {conf_path}")
     if default_profile:
         info(f"Default profile set to: {default_profile}")
@@ -928,7 +900,7 @@ def shell_hook(
     (~/.bashrc or ~/.zshrc). The code sets up:
 
     1. PATH to include the nvd wrapper
-    2. NVD_STATE_DIR environment variable
+    2. NVD_CONFIG_DIR environment variable
     3. Shell completions for the nvd command
 
     Typically installed via 'nvd setup', but can be used manually:
@@ -954,18 +926,18 @@ def shell_hook(
         error(f"Unsupported shell: {detected_shell}. Only bash and zsh are supported.")
         raise typer.Exit(1)
 
-    # Read state_dir from setup.conf if it exists
-    setup_conf_path = NVD_HOME / "setup.conf"
-    state_dir_value = str(NVD_HOME)  # Default
+    # Read config_dir from setup.conf if it exists
+    setup_conf_path = get_setup_conf_path()
+    config_dir_value = str(get_config_dir())
 
     if setup_conf_path.exists():
         for line in setup_conf_path.read_text().splitlines():
-            if line.startswith("NVD_STATE_DIR="):
-                state_dir_value = line.split("=", 1)[1].strip()
+            if line.startswith("NVD_CONFIG_DIR="):
+                config_dir_value = line.split("=", 1)[1].strip()
                 break
 
     # Path to static completions file
-    completions_file = NVD_HOME / f"completions.{detected_shell}"
+    completions_file = get_config_dir() / f"completions.{detected_shell}"
 
     # Output shell code to stdout (this is what gets eval'd)
     # Using print() directly to avoid Rich formatting
@@ -976,8 +948,8 @@ def shell_hook(
 # Wrapper script location
 export PATH="$HOME/.local/bin:$PATH"
 
-# State directory
-export NVD_STATE_DIR="{state_dir_value}"
+# NVD configuration directory
+export NVD_CONFIG_DIR="{config_dir_value}"
 
 # Shell completions ({detected_shell})
 # Sourced from static file for fast shell startup
