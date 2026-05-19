@@ -9,11 +9,14 @@ Commands:
 from __future__ import annotations
 
 import getpass
+import hashlib
 import os
 import shutil
 import socket
 import subprocess
 import tempfile
+import urllib.error
+import urllib.request
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -38,9 +41,12 @@ from py_nvd.paths import get_config_dir, get_setup_conf_path
 stderr_console = Console(stderr=True)
 
 # Default paths. INSTALL_HOME is the versioned repository checkout root used by
-# install.sh; runtime configuration lives under NVD_CONFIG_DIR / ~/.config/nvd.
+# install.sh. Generic runtime configuration defaults to ~/.config/nvd, but CHTC
+# keeps per-user runtime files under ~/.nvd and shares only the preset store.
 INSTALL_HOME = Path.home() / ".nvd"
-CHTC_DEFAULT_CONFIG_DIR = Path("/staging/groups/oconnor_group/nvd/config")
+CHTC_SHARED_DIR = Path("/staging/groups/oconnor_group/nvd")
+CHTC_DEFAULT_CONFIG_DIR = INSTALL_HOME
+CHTC_DEFAULT_PRESET_STORE = CHTC_SHARED_DIR / "presets.sqlite"
 
 
 def _is_oconnor_chtc() -> bool:
@@ -210,8 +216,12 @@ SETUP_CONF_TEMPLATE = """\
 
 NVD_REPO={nvd_repo}
 NVD_CONFIG_DIR={config_dir}
+{preset_store_line}
 {default_profile_line}
 """
+
+_PRESET_STORE_LINE_SET = "NVD_PRESET_STORE={preset_store}"
+_PRESET_STORE_LINE_COMMENT = "# NVD_PRESET_STORE=/shared/path/presets.sqlite"
 
 # Profile line templates
 _PROFILE_LINE_SET = "NVD_DEFAULT_PROFILE={profile}"
@@ -289,18 +299,24 @@ def _generate_setup_conf(
     nvd_repo: Path,
     config_dir: Path,
     default_profile: str | None = None,
+    preset_store: Path | None = None,
 ) -> str:
     """Generate the setup.conf content."""
     if default_profile:
         profile_line = _PROFILE_LINE_SET.format(profile=default_profile)
     else:
         profile_line = _PROFILE_LINE_COMMENT
+    if preset_store is not None:
+        preset_store_line = _PRESET_STORE_LINE_SET.format(preset_store=preset_store)
+    else:
+        preset_store_line = _PRESET_STORE_LINE_COMMENT
 
     return SETUP_CONF_TEMPLATE.format(
         version=__version__,
         date=datetime.now(UTC).strftime("%Y-%m-%d"),
         nvd_repo=nvd_repo,
         config_dir=config_dir,
+        preset_store_line=preset_store_line,
         default_profile_line=profile_line,
     )
 
@@ -333,6 +349,7 @@ def _write_setup_conf(
     nvd_repo: Path,
     config_dir: Path,
     default_profile: str | None = None,
+    preset_store: Path | None = None,
 ) -> Path:
     """
     Write the setup.conf file to ~/.nvd/.
@@ -343,7 +360,12 @@ def _write_setup_conf(
     conf_path = get_setup_conf_path()
     conf_path.parent.mkdir(parents=True, exist_ok=True)
 
-    conf_content = _generate_setup_conf(nvd_repo, config_dir, default_profile)
+    conf_content = _generate_setup_conf(
+        nvd_repo,
+        config_dir,
+        default_profile,
+        preset_store,
+    )
     conf_path.write_text(conf_content)
 
     return conf_path
@@ -369,12 +391,22 @@ def _generate_completions(shell_type: str) -> Path:
         complete_var="_NVD_COMPLETE",
         shell=shell_type,
     )
+    if shell_type == "bash":
+        script = _guard_bash_completion_script(script)
 
     completions_path = get_config_dir() / f"completions.{shell_type}"
     completions_path.parent.mkdir(parents=True, exist_ok=True)
     completions_path.write_text(script)
 
     return completions_path
+
+
+def _guard_bash_completion_script(script: str) -> str:
+    """Skip bash completion registration when sourced outside bash."""
+    return script.replace(
+        "complete -o default -F _nvd_completion nvd",
+        "if type complete >/dev/null 2>&1; then\n    complete -o default -F _nvd_completion nvd\nfi",
+    )
 
 
 SHELL_HOOK_MARKER = "nvd setup shell-hook"
@@ -473,41 +505,101 @@ def _prompt_config_dir(default: Path, non_interactive: bool) -> Path:
     return Path(user_input).expanduser().resolve()
 
 
-CONTAINER_IMAGE_URI = "docker://nrminor/nvd:v{version}"
+RELEASE_BASE_URL = "https://dholk.primate.wisc.edu/_webdav/dho/projects/lungfish/InfinitePath/public/%40files/release-v3.0.0/v3.0.0"
+CHECKSUMS_URL = f"{RELEASE_BASE_URL}/checksums_v3_0.txt"
+CONTAINER_IMAGE_URL = f"{RELEASE_BASE_URL}/nvd-v3.0.0-rc.sif"
+CONTAINER_IMAGE_NAME = "nvd-v3.0.0-rc.sif"
+_CHECKSUM_LINE_MIN_PARTS = 2
+_MD5_HEX_LENGTH = 32
+_SHA256_HEX_LENGTH = 64
 
 
-def _get_container_path(version: str) -> Path:
+def _get_container_path() -> Path:
     """Get the path where the container image should be stored."""
-    return INSTALL_HOME / f"nvd-v{version}.sif"
+    return INSTALL_HOME / CONTAINER_IMAGE_NAME
 
 
-def _pull_apptainer_image(version: str) -> tuple[bool, str]:
+def _download_url(url: str, destination: Path) -> None:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with urllib.request.urlopen(url) as response, destination.open("wb") as output:  # noqa: S310 - fixed HTTPS release URL
+        shutil.copyfileobj(response, output)
+
+
+def _fetch_checksum_manifest() -> str | None:
+    try:
+        with urllib.request.urlopen(CHECKSUMS_URL, timeout=30) as response:  # noqa: S310 - fixed HTTPS release URL
+            return response.read().decode("utf-8")
+    except (OSError, UnicodeDecodeError, urllib.error.URLError) as e:
+        warning(
+            f"Could not fetch checksum manifest; continuing without checksum verification: {e}",
+        )
+        return None
+
+
+def _checksum_for_file(manifest: str, filename: str) -> str | None:
+    for line in manifest.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        parts = stripped.split()
+        if len(parts) < _CHECKSUM_LINE_MIN_PARTS:
+            continue
+        checksum, path = parts[0], parts[1].lstrip("*").removeprefix("./")
+        if path == filename or Path(path).name == filename:
+            return checksum
+    return None
+
+
+def _verify_checksum(path: Path, expected: str) -> tuple[bool, str]:
+    if len(expected) == _MD5_HEX_LENGTH:
+        actual = hashlib.md5(path.read_bytes()).hexdigest()  # noqa: S324 - file integrity, not security
+        algorithm = "MD5"
+    elif len(expected) == _SHA256_HEX_LENGTH:
+        actual = hashlib.sha256(path.read_bytes()).hexdigest()
+        algorithm = "SHA256"
+    else:
+        return (
+            True,
+            f"Unsupported checksum length for {path.name}; skipping verification",
+        )
+
+    if actual != expected:
+        return (
+            False,
+            f"Checksum mismatch for {path.name} ({algorithm}): expected {expected}, got {actual}",
+        )
+    return True, f"Checksum verified for {path.name} ({algorithm})"
+
+
+def _pull_apptainer_image() -> tuple[bool, str]:
     """
     Pull the NVD container image using Apptainer.
 
     Returns:
         (success, message) tuple
     """
-    sif_path = _get_container_path(version)
-    image_uri = CONTAINER_IMAGE_URI.format(version=version)
+    sif_path = _get_container_path()
 
     # Ensure ~/.nvd exists
     sif_path.parent.mkdir(parents=True, exist_ok=True)
 
     try:
-        result = subprocess.run(  # noqa: S603
-            ["apptainer", "pull", "--force", str(sif_path), image_uri],  # noqa: S607
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-        if result.returncode == 0:
-            return True, f"Container image pulled to {sif_path}"
-        return False, f"Apptainer pull failed: {result.stderr}"
-    except FileNotFoundError:
-        return False, "Apptainer not found. Is it installed?"
-    except (OSError, subprocess.SubprocessError) as e:
-        return False, f"Container pull failed: {e}"
+        _download_url(CONTAINER_IMAGE_URL, sif_path)
+        manifest = _fetch_checksum_manifest()
+        if manifest is None:
+            return True, f"Container image downloaded to {sif_path}"
+        expected = _checksum_for_file(manifest, CONTAINER_IMAGE_NAME)
+        if expected is None:
+            warning(
+                f"No checksum entry found for {CONTAINER_IMAGE_NAME}; continuing without checksum verification",
+            )
+            return True, f"Container image downloaded to {sif_path}"
+        verified, message = _verify_checksum(sif_path, expected)
+        if not verified:
+            return False, message
+        return True, f"Container image downloaded to {sif_path}. {message}"
+    except (OSError, urllib.error.URLError) as e:
+        return False, f"Container download failed: {e}"
 
 
 setup_app = typer.Typer(
@@ -611,7 +703,16 @@ def setup(
     console.print()
 
     if config_dir is not None:
-        os.environ["NVD_CONFIG_DIR"] = str(config_dir.expanduser().resolve())
+        effective_config_dir = config_dir.expanduser().resolve()
+    elif is_chtc:
+        effective_config_dir = _prompt_config_dir(
+            CHTC_DEFAULT_CONFIG_DIR,
+            non_interactive,
+        )
+    else:
+        effective_config_dir = _prompt_config_dir(get_config_dir(), non_interactive)
+
+    os.environ["NVD_CONFIG_DIR"] = str(effective_config_dir)
 
     config_path = get_config_dir() / "user.config"
     should_write_config = False
@@ -680,17 +781,6 @@ def setup(
                 info("Custom config creation not yet implemented for generic systems")
         console.print()
 
-    if config_dir is not None:
-        effective_config_dir = config_dir.expanduser().resolve()
-    elif is_chtc:
-        default_config_dir = CHTC_DEFAULT_CONFIG_DIR
-        effective_config_dir = _prompt_config_dir(default_config_dir, non_interactive)
-    else:
-        default_config_dir = get_config_dir()
-        effective_config_dir = _prompt_config_dir(default_config_dir, non_interactive)
-
-    os.environ["NVD_CONFIG_DIR"] = str(effective_config_dir)
-
     # Validate config directory
     is_valid, message = _validate_config_dir(effective_config_dir)
     if not is_valid:
@@ -730,9 +820,15 @@ def setup(
 
     # Determine default profile (CHTC uses chtc_htc profile from user.config)
     default_profile = "chtc_htc" if is_chtc else None
+    preset_store = CHTC_DEFAULT_PRESET_STORE if is_chtc else None
 
     # Write setup.conf
-    conf_path = _write_setup_conf(nvd_repo, effective_config_dir, default_profile)
+    conf_path = _write_setup_conf(
+        nvd_repo,
+        effective_config_dir,
+        default_profile,
+        preset_store,
+    )
     success(f"Setup config written to {conf_path}")
     if default_profile:
         info(f"Default profile set to: {default_profile}")
@@ -797,7 +893,7 @@ def setup(
         console.print()
 
     if is_chtc and not skip_container:
-        sif_path = _get_container_path(__version__)
+        sif_path = _get_container_path()
 
         if sif_path.exists():
             info(f"Container image already exists: {sif_path}")
@@ -808,25 +904,23 @@ def setup(
                     console.print(
                         "Pulling container image (~2GB)... [dim]This may take a few minutes.[/dim]",
                     )
-                    pull_success, pull_message = _pull_apptainer_image(__version__)
+                    pull_success, pull_message = _pull_apptainer_image()
                     if pull_success:
                         success(pull_message)
                     else:
                         warning(pull_message)
                         console.print()
-                        console.print("You can pull manually later with:")
+                        console.print("You can download manually later with:")
                         console.print(
-                            f"  [cyan]apptainer pull {sif_path} "
-                            f"{CONTAINER_IMAGE_URI.format(version=__version__)}[/cyan]",
+                            f"  [cyan]curl -fL -o {sif_path} {CONTAINER_IMAGE_URL}[/cyan]",
                         )
         elif non_interactive:
             # In non-interactive mode, skip container pull by default
             info("Skipping container pull in non-interactive mode")
             console.print()
-            console.print("Pull manually with:")
+            console.print("Download manually with:")
             console.print(
-                f"  [cyan]apptainer pull {sif_path} "
-                f"{CONTAINER_IMAGE_URI.format(version=__version__)}[/cyan]",
+                f"  [cyan]curl -fL -o {sif_path} {CONTAINER_IMAGE_URL}[/cyan]",
             )
         else:
             console.print()
@@ -840,24 +934,22 @@ def setup(
                 console.print(
                     "Pulling container image... [dim]This may take a few minutes.[/dim]",
                 )
-                pull_success, pull_message = _pull_apptainer_image(__version__)
+                pull_success, pull_message = _pull_apptainer_image()
                 if pull_success:
                     success(pull_message)
                 else:
                     warning(pull_message)
                     console.print()
-                    console.print("You can pull manually later with:")
+                    console.print("You can download manually later with:")
                     console.print(
-                        f"  [cyan]apptainer pull {sif_path} "
-                        f"{CONTAINER_IMAGE_URI.format(version=__version__)}[/cyan]",
+                        f"  [cyan]curl -fL -o {sif_path} {CONTAINER_IMAGE_URL}[/cyan]",
                     )
             else:
                 info("Skipping container pull")
                 console.print()
-                console.print("Pull manually later with:")
+                console.print("Download manually later with:")
                 console.print(
-                    f"  [cyan]apptainer pull {sif_path} "
-                    f"{CONTAINER_IMAGE_URI.format(version=__version__)}[/cyan]",
+                    f"  [cyan]curl -fL -o {sif_path} {CONTAINER_IMAGE_URL}[/cyan]",
                 )
 
         console.print()
@@ -865,12 +957,9 @@ def setup(
     elif is_chtc and skip_container:
         info("Skipping container pull (--skip-container)")
         console.print()
-        console.print("Pull manually later with:")
-        sif_path = _get_container_path(__version__)
-        console.print(
-            f"  [cyan]apptainer pull {sif_path} "
-            f"{CONTAINER_IMAGE_URI.format(version=__version__)}[/cyan]",
-        )
+        console.print("Download manually later with:")
+        sif_path = _get_container_path()
+        console.print(f"  [cyan]curl -fL -o {sif_path} {CONTAINER_IMAGE_URL}[/cyan]")
         console.print()
 
     success("Setup complete!")
@@ -926,18 +1015,28 @@ def shell_hook(
         error(f"Unsupported shell: {detected_shell}. Only bash and zsh are supported.")
         raise typer.Exit(1)
 
-    # Read config_dir from setup.conf if it exists
+    # Read config_dir from setup.conf if it exists. The ~/.nvd fallback keeps
+    # CHTC shell startup working before NVD_CONFIG_DIR has been exported.
     setup_conf_path = get_setup_conf_path()
+    if not setup_conf_path.exists():
+        setup_conf_path = INSTALL_HOME / "setup.conf"
     config_dir_value = str(get_config_dir())
+    preset_store_value: str | None = None
 
     if setup_conf_path.exists():
         for line in setup_conf_path.read_text().splitlines():
             if line.startswith("NVD_CONFIG_DIR="):
                 config_dir_value = line.split("=", 1)[1].strip()
-                break
+            elif line.startswith("NVD_PRESET_STORE="):
+                preset_store_value = line.split("=", 1)[1].strip()
 
     # Path to static completions file
-    completions_file = get_config_dir() / f"completions.{detected_shell}"
+    completions_file = Path(config_dir_value) / f"completions.{detected_shell}"
+    preset_store_export = (
+        f'\n# Shared preset store\nexport NVD_PRESET_STORE="{preset_store_value}"\n'
+        if preset_store_value
+        else ""
+    )
 
     # Output shell code to stdout (this is what gets eval'd)
     # Using print() directly to avoid Rich formatting
@@ -950,7 +1049,7 @@ export PATH="$HOME/.local/bin:$PATH"
 
 # NVD configuration directory
 export NVD_CONFIG_DIR="{config_dir_value}"
-
+{preset_store_export}
 # Shell completions ({detected_shell})
 # Sourced from static file for fast shell startup
 if [[ -f "{completions_file}" ]]; then

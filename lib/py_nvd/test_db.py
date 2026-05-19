@@ -24,12 +24,38 @@ def test_config_dir_env_sets_config_root(
 ) -> None:
     monkeypatch.setenv("NVD_CONFIG_DIR", str(tmp_path))
     monkeypatch.delenv("NVD_CONFIG", raising=False)
+    monkeypatch.delenv("NVD_PRESET_STORE", raising=False)
 
     assert get_config_dir() == tmp_path
     assert get_config_path() == tmp_path / "user.config"
     assert get_setup_conf_path() == tmp_path / "setup.conf"
     assert get_preset_db_path() == tmp_path / "presets.sqlite"
     assert get_taxdump_dir() == tmp_path / "taxdump"
+
+
+def test_preset_store_env_wins_over_config_dir(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config_root = tmp_path / "config"
+    shared_store = tmp_path / "shared" / "presets.sqlite"
+    monkeypatch.setenv("NVD_CONFIG_DIR", str(config_root))
+    monkeypatch.setenv("NVD_PRESET_STORE", str(shared_store))
+
+    assert get_preset_db_path() == shared_store
+    assert get_config_path() == config_root / "user.config"
+    assert get_setup_conf_path() == config_root / "setup.conf"
+    assert get_taxdump_dir() == config_root / "taxdump"
+
+
+def test_explicit_preset_store_path_wins(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("NVD_PRESET_STORE", str(tmp_path / "env.sqlite"))
+    explicit = tmp_path / "explicit.sqlite"
+
+    assert get_preset_db_path(explicit) == explicit
 
 
 def test_explicit_config_path_wins(

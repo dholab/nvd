@@ -18,6 +18,7 @@ DEFAULT_NVD_HOME = LEGACY_NVD_HOME
 # Environment variables for overriding default paths.
 ENV_VAR_CONFIG = "NVD_CONFIG"
 ENV_VAR_CONFIG_DIR = "NVD_CONFIG_DIR"
+ENV_VAR_PRESET_STORE = "NVD_PRESET_STORE"
 ENV_VAR_TAXONOMY = "NVD_TAXONOMY_DB"
 
 # Default paths.
@@ -93,8 +94,18 @@ def get_setup_conf_path() -> Path:
     return get_config_dir() / "setup.conf"
 
 
-def get_preset_db_path() -> Path:
-    """Return the temporary SQLite preset registry path."""
+def get_preset_db_path(explicit_path: Path | str | None = None) -> Path:
+    """Return the SQLite preset store path.
+
+    Priority:
+        1. Explicit path argument
+        2. NVD_PRESET_STORE environment variable (for shared mutable stores)
+        3. {NVD_CONFIG_DIR}/presets.sqlite, defaulting to ~/.config/nvd/presets.sqlite
+    """
+    if explicit_path is not None:
+        return Path(explicit_path)
+    if ENV_VAR_PRESET_STORE in os.environ:
+        return Path(os.environ[ENV_VAR_PRESET_STORE])
     return get_config_dir() / "presets.sqlite"
 
 

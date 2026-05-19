@@ -19,7 +19,15 @@ runner = CliRunner()
 
 
 def test_retained_top_level_commands_show_help() -> None:
-    for command in ["run", "params", "preset", "config", "taxonomy", "version", "setup"]:
+    for command in [
+        "run",
+        "params",
+        "preset",
+        "config",
+        "taxonomy",
+        "version",
+        "setup",
+    ]:
         result = runner.invoke(app, [command, "--help"])
         assert result.exit_code == 0, result.output
 
@@ -34,13 +42,22 @@ def test_preset_lifecycle_uses_config_dir(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("NVD_CONFIG_DIR", str(tmp_path))
+    monkeypatch.delenv("NVD_PRESET_STORE", raising=False)
 
     params_path = tmp_path / "params.json"
     params_path.write_text(json.dumps({"samplesheet": "samples.csv", "dedup": True}))
 
     imported = runner.invoke(
         app,
-        ["preset", "import", str(params_path), "--name", "smoke", "--description", "test"],
+        [
+            "preset",
+            "import",
+            str(params_path),
+            "--name",
+            "smoke",
+            "--description",
+            "test",
+        ],
     )
     assert imported.exit_code == 0, imported.output
     assert (tmp_path / "presets.sqlite").exists()
@@ -64,6 +81,40 @@ def test_preset_lifecycle_uses_config_dir(
 
     deleted = runner.invoke(app, ["preset", "delete", "smoke", "--force"])
     assert deleted.exit_code == 0, deleted.output
+
+
+def test_preset_lifecycle_uses_explicit_preset_store(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config_dir = tmp_path / "config"
+    shared_store = tmp_path / "shared" / "presets.sqlite"
+    monkeypatch.setenv("NVD_CONFIG_DIR", str(config_dir))
+    monkeypatch.setenv("NVD_PRESET_STORE", str(shared_store))
+
+    params_path = tmp_path / "params.json"
+    params_path.write_text(json.dumps({"samplesheet": "samples.csv", "dedup": True}))
+
+    imported = runner.invoke(
+        app,
+        [
+            "preset",
+            "import",
+            str(params_path),
+            "--name",
+            "shared",
+            "--description",
+            "test",
+        ],
+    )
+    assert imported.exit_code == 0, imported.output
+    assert shared_store.exists()
+    assert not (config_dir / "presets.sqlite").exists()
+    assert not (tmp_path / "state.sqlite").exists()
+
+    listed = runner.invoke(app, ["preset", "list"])
+    assert listed.exit_code == 0, listed.output
+    assert "shared" in listed.output
 
 
 def test_taxonomy_status_uses_explicit_taxonomy_dir(tmp_path: Path) -> None:
