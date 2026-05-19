@@ -17,9 +17,8 @@ DEFAULT_CONFIG_DIR = Path.home() / ".config" / "nvd"
 LEGACY_NVD_HOME = Path.home() / ".nvd"
 DEFAULT_NVD_HOME = LEGACY_NVD_HOME
 
-# The old cache directory name is retained only as a compatibility fallback for
-# callers still passing state_dir or NVD_STATE_DIR while the public state DB is
-# removed.
+# The old cache directory name is retained for dead state-database internals
+# until that subsystem is deleted.
 DEFAULT_NVD_CACHE = Path.home() / ".cache" / "nvd"
 
 # Environment variables for overriding default paths.
@@ -105,7 +104,6 @@ def get_state_dir(explicit_path: Path | str | None = None) -> Path:
 
 
 def get_taxdump_dir(
-    state_dir: Path | str | None = None,
     taxonomy_dir: Path | str | None = None,
 ) -> Path:
     """
@@ -114,15 +112,12 @@ def get_taxdump_dir(
     Priority:
         1. Explicit taxonomy_dir argument (from CLI or Nextflow param)
         2. NVD_TAXONOMY_DB environment variable (for shared cluster installs)
-        3. {state_dir}/taxdump when an explicit/legacy state_dir is provided
-        4. {NVD_CONFIG_DIR}/taxdump, defaulting to ~/.config/nvd/taxdump
+        3. {NVD_CONFIG_DIR}/taxdump, defaulting to ~/.config/nvd/taxdump
     """
     if taxonomy_dir is not None:
         return Path(taxonomy_dir)
     if ENV_VAR_TAXONOMY in os.environ:
         return Path(os.environ[ENV_VAR_TAXONOMY])
-    if state_dir is not None or ENV_VAR in os.environ:
-        return get_state_dir(state_dir) / "taxdump"
     return get_config_dir() / "taxdump"
 
 
@@ -136,6 +131,6 @@ def get_preset_db_path() -> Path:
     return get_config_dir() / "presets.sqlite"
 
 
-def get_taxonomy_db_path(state_dir: Path | str | None = None) -> Path:
+def get_taxonomy_db_path() -> Path:
     """Get the taxonomy SQLite database path inside the taxdump directory."""
-    return get_taxdump_dir(state_dir) / "taxonomy.sqlite"
+    return get_taxdump_dir() / "taxonomy.sqlite"

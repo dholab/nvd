@@ -33,11 +33,10 @@ def _format_size(size_bytes: int) -> str:
 
 def _taxonomy_status(
     *,
-    state_dir: Path | None,
     taxonomy_dir: Path | None,
 ) -> dict[str, object]:
     """Return taxonomy cache status without creating or downloading files."""
-    taxdump_dir = get_taxdump_dir(state_dir=state_dir, taxonomy_dir=taxonomy_dir)
+    taxdump_dir = get_taxdump_dir(taxonomy_dir=taxonomy_dir)
     taxonomy_db = taxdump_dir / "taxonomy.sqlite"
 
     dmp_files: dict[str, int] = {}
@@ -99,13 +98,6 @@ def _print_taxonomy_status(status: dict[str, object]) -> None:
 
 @taxonomy_app.command("status")
 def taxonomy_status(
-    state_dir: Annotated[
-        Path | None,
-        typer.Option(
-            "--state-dir",
-            help="State/local-data directory used for taxonomy fallback",
-        ),
-    ] = None,
     taxonomy_dir: Annotated[
         Path | None,
         typer.Option(
@@ -119,7 +111,7 @@ def taxonomy_status(
     ] = False,
 ) -> None:
     """Show taxonomy cache status."""
-    status = _taxonomy_status(state_dir=state_dir, taxonomy_dir=taxonomy_dir)
+    status = _taxonomy_status(taxonomy_dir=taxonomy_dir)
     if json_output:
         console.print_json(json.dumps(status))
         return
@@ -128,13 +120,6 @@ def taxonomy_status(
 
 @taxonomy_app.command("ensure")
 def taxonomy_ensure(
-    state_dir: Annotated[
-        Path | None,
-        typer.Option(
-            "--state-dir",
-            help="State/local-data directory used for taxonomy fallback",
-        ),
-    ] = None,
     taxonomy_dir: Annotated[
         Path | None,
         typer.Option(
@@ -149,10 +134,9 @@ def taxonomy_ensure(
 ) -> None:
     """Download or rebuild the taxonomy cache if needed."""
     taxdump_dir = taxonomy_runtime.ensure_taxonomy_available(
-        state_dir=state_dir,
         taxonomy_dir=taxonomy_dir,
     )
-    status = _taxonomy_status(state_dir=state_dir, taxonomy_dir=taxdump_dir)
+    status = _taxonomy_status(taxonomy_dir=taxdump_dir)
     if json_output:
         console.print_json(json.dumps(status))
         return

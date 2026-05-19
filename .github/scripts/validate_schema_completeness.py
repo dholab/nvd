@@ -80,7 +80,6 @@ PYDANTIC_NO_CLI_NEEDED = {
     "human_virus_families",
     # Typically set via params-file or preset
     "nvd_files",
-    "state_dir",
     # Exposed via negated CLI flag --no-slack
     "slack_enabled",
     # Host index/depletion tuning (set via params-file or preset)

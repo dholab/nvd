@@ -7,7 +7,7 @@
 # ]
 # ///
 
-"""Send a stateless Slack notification for NVD run completion."""
+"""Send a state-free Slack notification for NVD run completion."""
 
 from __future__ import annotations
 

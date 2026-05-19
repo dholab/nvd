@@ -7,11 +7,11 @@ process COMPUTE_RUN_CONTEXT {
     cache false
 
     input:
-    tuple path(samplesheet), val(state_dir)
+    path samplesheet
 
     output:
     val true, emit: ready
-    tuple stdout, val(state_dir), emit: run_context
+    stdout emit: run_context
 
     script:
     """
@@ -30,19 +30,16 @@ process ENSURE_TAXONOMY {
     cache false
 
     input:
-    val state_dir
     val taxonomy_dir
 
     output:
-    val taxonomy_dir, emit: taxonomy_dir
+    stdout emit: taxonomy_dir
 
     script:
-    def state_dir_arg = state_dir ? "--state-dir '${state_dir}'" : ""
     def taxonomy_dir_arg = taxonomy_dir ? "--taxonomy-dir '${taxonomy_dir}'" : ""
     """
     ensure_taxonomy.py \
         --verbose \
-        ${state_dir_arg} \
         ${taxonomy_dir_arg}
     """
 }
@@ -56,17 +53,15 @@ process ANNOTATE_LEAST_COMMON_ANCESTORS {
 
     input:
     tuple val(sample_id), path(all_blast_hits)
-    val state_dir
     val taxonomy_dir
 
     output:
     tuple val(sample_id), path("${sample_id}_blast.merged_with_lca.tsv")
 
     script:
-    def state_dir_arg = state_dir ? "--state-dir '${state_dir}'" : ""
     def taxonomy_dir_arg = taxonomy_dir ? "--taxonomy-dir '${taxonomy_dir}'" : ""
     """
-    annotate_blast_lca.py -i ${all_blast_hits} -o ${sample_id}_blast.merged_with_lca.tsv ${state_dir_arg} ${taxonomy_dir_arg}
+    annotate_blast_lca.py -i ${all_blast_hits} -o ${sample_id}_blast.merged_with_lca.tsv ${taxonomy_dir_arg}
     """
 }
 
@@ -134,7 +129,7 @@ process CONCATENATE_EXPERIMENT_BLAST {
 }
 
 /*
- * Send a minimal stateless Slack notification for run completion.
+ * Send a minimal Slack notification for run completion without workflow state.
  */
 process NOTIFY_SLACK {
 
@@ -148,7 +143,7 @@ process NOTIFY_SLACK {
 
     input:
     val ready
-    tuple val(sample_set_id), val(state_dir)
+    val sample_set_id
     val labkey_url
 
     output:

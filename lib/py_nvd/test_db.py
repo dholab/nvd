@@ -10,7 +10,6 @@ from py_nvd.paths import (
     get_config_path,
     get_preset_db_path,
     get_setup_conf_path,
-    get_state_dir,
     get_taxdump_dir,
 )
 
@@ -71,14 +70,16 @@ def test_nvd_config_file_env_wins(
     assert get_config_path() == config_file
 
 
-def test_legacy_state_dir_alias_still_resolves_local_data(
+def test_state_dir_env_does_not_affect_taxonomy_cache(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    legacy_state = tmp_path / "legacy"
-    monkeypatch.setenv("NVD_STATE_DIR", str(legacy_state))
-    assert get_state_dir() == legacy_state
-    assert get_taxdump_dir() == legacy_state / "taxdump"
+    config_root = tmp_path / "config"
+    old_state = tmp_path / "old-state"
+    monkeypatch.setenv("NVD_CONFIG_DIR", str(config_root))
+    monkeypatch.setenv("NVD_STATE_DIR", str(old_state))
+
+    assert get_taxdump_dir() == config_root / "taxdump"
 
 
 def test_taxonomy_env_wins_over_config_dir(

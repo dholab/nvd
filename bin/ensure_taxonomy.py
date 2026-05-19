@@ -48,12 +48,6 @@ def parse_args() -> argparse.Namespace:
         description="Ensure the NCBI taxonomy cache is ready.",
     )
     parser.add_argument(
-        "--state-dir",
-        type=Path,
-        default=None,
-        help="State/local-data directory used for taxonomy fallback",
-    )
-    parser.add_argument(
         "--taxonomy-dir",
         type=Path,
         default=None,
@@ -79,7 +73,6 @@ def main() -> None:
     configure_logging(verbose=args.verbose)
 
     taxdump_dir = get_taxdump_dir(
-        state_dir=args.state_dir,
         taxonomy_dir=args.taxonomy_dir,
     )
     sqlite_path = taxdump_dir / "taxonomy.sqlite"
@@ -87,16 +80,17 @@ def main() -> None:
     logger.info("Ensuring taxonomy database is available...")
     if sqlite_path.exists():
         logger.info(f"Taxonomy database found: {taxdump_dir}")
+        print(taxdump_dir, end="")  # noqa: T201 - stdout is the Nextflow value channel
         return
 
     logger.info("Taxonomy database not found, downloading from NCBI...")
     logger.info("This may take a few minutes on first run.")
     try:
         ensure_taxonomy_available(
-            state_dir=args.state_dir,
             taxonomy_dir=args.taxonomy_dir,
         )
         logger.info(f"Taxonomy database ready: {taxdump_dir}")
+        print(taxdump_dir, end="")  # noqa: T201 - stdout is the Nextflow value channel
     except _TAXONOMY_PREFLIGHT_ERRORS as error:
         if args.sync:
             logger.error(f"Taxonomy preflight failed and --sync was specified: {error}")
@@ -114,6 +108,7 @@ def main() -> None:
             "Workers will attempt to download taxonomy when needed. "
             "This may cause delays and potential version inconsistencies.",
         )
+        print(taxdump_dir, end="")  # noqa: T201 - stdout is the Nextflow value channel
 
 
 if __name__ == "__main__":

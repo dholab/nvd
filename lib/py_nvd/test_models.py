@@ -312,32 +312,34 @@ class TestNvdParamsMerge:
         with pytest.raises(ValidationError):
             NvdParams.merge({"cutoff_percent": -0.1})
 
-    def test_merge_stateless_mode_precedence(self) -> None:
-        """CLI stateless/taxonomy_dir override preset values."""
+    def test_removed_state_params_are_rejected(self) -> None:
+        """Removed v3 state params fail validation instead of being ignored."""
+        with pytest.raises(ValidationError):
+            NvdParams.merge({"state_dir": "/old/state"})
+
+        with pytest.raises(ValidationError):
+            NvdParams.merge({"stateless": True})
+
+    def test_merge_taxonomy_dir_precedence(self) -> None:
+        """CLI taxonomy_dir overrides preset values."""
         preset = {
-            "stateless": False,
             "taxonomy_dir": "/preset/taxonomy",
         }
         cli = {
-            "stateless": True,
             "taxonomy_dir": "/cli/taxonomy",
         }
         p = NvdParams.merge(preset, cli)
-        assert p.stateless is True  # CLI wins
         assert p.taxonomy_dir == Path("/cli/taxonomy")  # CLI wins
 
-    def test_merge_stateless_cli_none_preserves_preset(self) -> None:
-        """CLI None values don't override preset stateless settings."""
+    def test_merge_taxonomy_dir_cli_none_preserves_preset(self) -> None:
+        """CLI None values don't override preset taxonomy settings."""
         preset = {
-            "stateless": True,
             "taxonomy_dir": "/preset/taxonomy",
         }
         cli = {
-            "stateless": None,  # User didn't specify
             "taxonomy_dir": None,  # User didn't specify
         }
         p = NvdParams.merge(preset, cli)
-        assert p.stateless is True  # Preset preserved
         assert p.taxonomy_dir == Path("/preset/taxonomy")  # Preset preserved
 
 
@@ -399,30 +401,15 @@ class TestNvdParamsToNextflowArgs:
         families_idx = cmd.index("--human_virus_families")
         assert cmd[families_idx + 1] == "Adenoviridae,Coronaviridae"
 
-    def test_stateless_mode_params(self) -> None:
-        """Stateless mode params are correctly propagated."""
-        p = NvdParams(stateless=True, taxonomy_dir=Path("/shared/taxonomy"))
+    def test_taxonomy_dir_param(self) -> None:
+        """taxonomy_dir is correctly propagated."""
+        p = NvdParams(taxonomy_dir=Path("/shared/taxonomy"))
         cmd = p.to_nextflow_args(Path("/pipeline"))
-
-        # stateless should be "true"
-        assert "--stateless" in cmd
-        stateless_idx = cmd.index("--stateless")
-        assert cmd[stateless_idx + 1] == "true"
 
         # taxonomy_dir should be the path string
         assert "--taxonomy_dir" in cmd
         taxonomy_idx = cmd.index("--taxonomy_dir")
         assert cmd[taxonomy_idx + 1] == "/shared/taxonomy"
-
-    def test_stateless_false_still_included(self) -> None:
-        """stateless=False is included (explicit false, not omitted)."""
-        p = NvdParams(stateless=False)
-        cmd = p.to_nextflow_args(Path("/pipeline"))
-
-        # stateless should be "false" (not omitted)
-        assert "--stateless" in cmd
-        stateless_idx = cmd.index("--stateless")
-        assert cmd[stateless_idx + 1] == "false"
 
     def test_taxonomy_dir_none_excluded(self) -> None:
         """taxonomy_dir=None is excluded from command."""

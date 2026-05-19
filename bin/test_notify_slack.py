@@ -1,4 +1,4 @@
-"""Tests for the stateless Slack notification helper."""
+"""Tests for the state-free Slack notification helper."""
 
 from __future__ import annotations
 

@@ -431,16 +431,10 @@ def parse_args() -> argparse.Namespace:
         help=f"Minimum support fraction for dominant taxid assignment (default: {DEFAULT_MIN_SUPPORT})",
     )
     parser.add_argument(
-        "--state-dir",
-        type=str,
-        default=None,
-        help="State directory containing taxonomy cache (default: NVD_STATE_DIR or ~/.nvd/)",
-    )
-    parser.add_argument(
         "--taxonomy-dir",
         type=str,
         default=None,
-        help="Explicit taxonomy directory (takes precedence over --state-dir)",
+        help="Explicit taxonomy directory",
     )
     parser.add_argument(
         "--sync",
@@ -490,7 +484,6 @@ def main() -> None:
         return
 
     with taxonomy.open(
-        state_dir=args.state_dir,
         taxonomy_dir=args.taxonomy_dir,
         sync=args.sync,
     ) as tax:

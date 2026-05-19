@@ -103,22 +103,10 @@ def run(
         help="Nextflow work directory",
         rich_help_panel=PANEL_CORE,
     ),
-    state_dir: Path | None = typer.Option(
-        None,
-        "--state-dir",
-        help="Legacy local-data directory override (prefer NVD_CONFIG_DIR or --taxonomy-dir)",
-        rich_help_panel=PANEL_CORE,
-    ),
-    stateless: bool | None = typer.Option(
-        None,
-        "--stateless/--no-stateless",
-        help="Deprecated compatibility flag; v3 no longer uses run-state tracking",
-        rich_help_panel=PANEL_CORE,
-    ),
     taxonomy_dir: Path | None = typer.Option(
         None,
         "--taxonomy-dir",
-        help="Taxonomy database directory (required when --stateless)",
+        help="Explicit taxonomy database directory",
         rich_help_panel=PANEL_CORE,
     ),
     preset: str | None = typer.Option(
@@ -510,8 +498,6 @@ def run(
         "results": results,
         "cleanup": cleanup,
         "work_dir": work_dir,
-        "state_dir": state_dir,
-        "stateless": stateless,
         "taxonomy_dir": taxonomy_dir,
         # Database paths
         "blast_db": blast_db,

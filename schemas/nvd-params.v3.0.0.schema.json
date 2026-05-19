@@ -302,11 +302,6 @@
       "minimum": 1,
       "description": "Number of top BLAST hits to retain"
     },
-    "state_dir": {
-      "type": "string",
-      "format": "path",
-      "description": "State directory for run tracking, upload deduplication, and taxonomy cache. Defaults to NVD_STATE_DIR env var or ~/.cache/nvd"
-    },
     "refman_registry": {
       "type": "string",
       "format": "path",
@@ -327,15 +322,10 @@
       "pattern": "^C[A-Z0-9]+$",
       "description": "Slack channel ID for notifications (e.g., 'C0123456789')"
     },
-    "stateless": {
-      "type": "boolean",
-      "default": false,
-      "description": "Run without state management (disables run tracking, sample locking, LabKey, and Slack). When enabled, state_dir is ignored and taxonomy_dir must be set."
-    },
     "taxonomy_dir": {
       "type": ["string", "null"],
       "format": "path",
-      "description": "Path to taxonomy database directory containing NCBI taxdump files. Defaults to {state_dir}/taxdump when state_dir is set. Required when stateless=true."
+      "description": "Explicit taxonomy database directory containing NCBI taxdump files. When unset, Python taxonomy helpers resolve the cache location."
     }
   },
   "additionalProperties": false

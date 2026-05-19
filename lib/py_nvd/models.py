@@ -799,6 +799,8 @@ class NvdParams(BaseModel):
     here as they are not pipeline parameters—they control Nextflow itself.
     """
 
+    model_config = ConfigDict(extra="forbid")
+
     # =========================================================================
     # Core Options
     # =========================================================================
@@ -1094,17 +1096,9 @@ class NvdParams(BaseModel):
         json_schema_extra={"category": "Notifications"},
     )
 
-    # =========================================================================
-    # Stateless Mode
-    # =========================================================================
-    stateless: bool = Field(
-        default=False,
-        description="Run without state management (disables run tracking, LabKey, Slack)",
-        json_schema_extra={"category": "Core"},
-    )
     taxonomy_dir: Path | None = Field(
         None,
-        description="Taxonomy database directory (required when --stateless)",
+        description="Explicit taxonomy database directory",
         json_schema_extra={"category": "Core"},
     )
 
@@ -1131,12 +1125,6 @@ class NvdParams(BaseModel):
         description="Container image",
         json_schema_extra={"category": "Internal"},
     )
-    state_dir: Path | None = Field(
-        None,
-        description="State directory for run tracking",
-        json_schema_extra={"category": "Internal"},
-    )
-
     # =========================================================================
     # Validators
     # =========================================================================

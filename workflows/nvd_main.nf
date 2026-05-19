@@ -59,17 +59,13 @@ workflow NVD_MAIN {
     // Reference channels
     ch_blast_db_files = Channel.fromPath(params.blast_db)
 
-    // Resolve directories for stateful vs stateless mode.
+    // Resolve explicit taxonomy path; Python owns fallback taxonomy-cache rules.
     dirs = NvdDirs.resolve(params, log)
 
-    // Compute stateless run context upfront.
-    ch_run_state_input = Channel.fromPath(params.samplesheet)
-        .combine(Channel.value(dirs.state_dir))
-
-    COMPUTE_RUN_CONTEXT(ch_run_state_input)
+    // Compute run context upfront without writing workflow state.
+    COMPUTE_RUN_CONTEXT(Channel.fromPath(params.samplesheet))
 
     ENSURE_TAXONOMY(
-        Channel.value(dirs.state_dir),
         Channel.value(dirs.taxonomy_dir)
     )
 
@@ -201,7 +197,6 @@ workflow NVD_MAIN {
     PREPROCESS_CONTIGS(ch_preprocessed)
 
     ch_run_context = COMPUTE_RUN_CONTEXT.out.run_context.first()
-    ch_state_dir = ch_run_context.map { _sample_set_id, state_dir -> state_dir }
     ch_taxonomy_dir = ENSURE_TAXONOMY.out.taxonomy_dir.first()
     EXTRACT_HUMAN_VIRUSES(
         PREPROCESS_CONTIGS.out.contigs,
@@ -212,7 +207,6 @@ workflow NVD_MAIN {
     CLASSIFY_WITH_MEGABLAST(
         EXTRACT_HUMAN_VIRUSES.out.contigs,
         ch_blast_db_files,
-        ch_state_dir,
         ch_taxonomy_dir
     )
 
@@ -220,7 +214,6 @@ workflow NVD_MAIN {
         CLASSIFY_WITH_MEGABLAST.out.filtered_megablast,
         CLASSIFY_WITH_MEGABLAST.out.megablast_contigs,
         ch_blast_db_files,
-        ch_state_dir,
         ch_taxonomy_dir
     )
 

@@ -182,7 +182,7 @@ def test_taxonomy(
     monkeypatch.setattr(
         taxonomy,
         "_ensure_taxdump",
-        lambda _=None, __=None: minimal_taxdump,
+        lambda **_kwargs: minimal_taxdump,
     )
 
     with taxonomy.open() as tax:
@@ -420,7 +420,7 @@ class TestMergedTaxidResolution:
         monkeypatch.setattr(
             taxonomy,
             "_ensure_taxdump",
-            lambda _=None, __=None: taxdump_with_merge_chain,
+            lambda **_kwargs: taxdump_with_merge_chain,
         )
 
         with taxonomy.open() as tax:
@@ -439,7 +439,7 @@ class TestMergedTaxidResolution:
         monkeypatch.setattr(
             taxonomy,
             "_ensure_taxdump",
-            lambda _=None, __=None: taxdump_with_merge_chain,
+            lambda **_kwargs: taxdump_with_merge_chain,
         )
 
         with taxonomy.open() as tax:
@@ -457,7 +457,7 @@ class TestMergedTaxidResolution:
         monkeypatch.setattr(
             taxonomy,
             "_ensure_taxdump",
-            lambda _=None, __=None: taxdump_with_cyclic_merge,
+            lambda **_kwargs: taxdump_with_cyclic_merge,
         )
 
         with taxonomy.open() as tax:
@@ -531,7 +531,7 @@ class TestEnsureTaxdump:
         monkeypatch.setattr(
             taxonomy,
             "get_taxdump_dir",
-            lambda _=None, __=None: minimal_taxdump,
+            lambda **_kwargs: minimal_taxdump,
         )
 
         # Call _ensure_taxdump
@@ -570,7 +570,7 @@ class TestEnsureTaxdump:
         monkeypatch.setattr(
             taxonomy,
             "get_taxdump_dir",
-            lambda _=None, __=None: minimal_taxdump,
+            lambda **_kwargs: minimal_taxdump,
         )
 
         # Call _ensure_taxdump
@@ -597,7 +597,7 @@ class TestContextManagers:
         monkeypatch.setattr(
             taxonomy,
             "_ensure_taxdump",
-            lambda _=None, __=None: minimal_taxdump,
+            lambda **_kwargs: minimal_taxdump,
         )
 
         with taxonomy.open() as tax:
@@ -613,7 +613,7 @@ class TestContextManagers:
         monkeypatch.setattr(
             taxonomy,
             "_ensure_taxdump",
-            lambda _=None, __=None: minimal_taxdump,
+            lambda **_kwargs: minimal_taxdump,
         )
 
         with taxonomy.open() as tax:
@@ -639,7 +639,7 @@ class TestContextManagers:
         monkeypatch.setattr(
             taxonomy,
             "_ensure_taxdump",
-            lambda _=None, __=None: minimal_taxdump,
+            lambda **_kwargs: minimal_taxdump,
         )
 
         with taxonomy.open() as tax:
@@ -663,7 +663,7 @@ class TestContextManagers:
         monkeypatch.setattr(
             taxonomy,
             "_ensure_taxdump",
-            lambda _=None, __=None: minimal_taxdump,
+            lambda **_kwargs: minimal_taxdump,
         )
 
         with taxonomy.open() as tax:
@@ -687,7 +687,7 @@ class TestConcurrentAccess:
         monkeypatch.setattr(
             taxonomy,
             "_ensure_taxdump",
-            lambda _=None, __=None: minimal_taxdump,
+            lambda **_kwargs: minimal_taxdump,
         )
 
         results = []
@@ -745,42 +745,35 @@ class TestNCBIIntegration:
         4. Verifies known taxids resolve correctly
         """
         # Use a fresh temp directory to force download
-        state_dir = tmp_path / "ncbi_test"
-        state_dir.mkdir()
-        os.environ["NVD_STATE_DIR"] = str(state_dir)
+        taxdump_dir = tmp_path / "ncbi_test" / "taxdump"
 
-        try:
-            with taxonomy.open() as tax:
-                # Verify Homo sapiens exists and has correct data
-                human = tax.get_taxon(9606)
-                assert human is not None, "Homo sapiens (9606) not found"
-                assert human.scientific_name == "Homo sapiens"
-                assert human.rank == "species"
+        with taxonomy.open(taxonomy_dir=taxdump_dir) as tax:
+            # Verify Homo sapiens exists and has correct data
+            human = tax.get_taxon(9606)
+            assert human is not None, "Homo sapiens (9606) not found"
+            assert human.scientific_name == "Homo sapiens"
+            assert human.rank == "species"
 
-                # Verify Pan troglodytes (Chimpanzee)
-                chimp = tax.get_taxon(9598)
-                assert chimp is not None, "Pan troglodytes (9598) not found"
-                assert chimp.scientific_name == "Pan troglodytes"
+            # Verify Pan troglodytes (Chimpanzee)
+            chimp = tax.get_taxon(9598)
+            assert chimp is not None, "Pan troglodytes (9598) not found"
+            assert chimp.scientific_name == "Pan troglodytes"
 
-                # Verify lineage works
-                lineage = tax.get_lineage(9606)
-                assert len(lineage) > 5, "Lineage should have many ancestors"
+            # Verify lineage works
+            lineage = tax.get_lineage(9606)
+            assert len(lineage) > 5, "Lineage should have many ancestors"
 
-                # Verify some expected ancestors are present
-                lineage_names = [t.scientific_name for t in lineage]
-                assert "Homo sapiens" in lineage_names
-                assert "Hominidae" in lineage_names or "Primates" in lineage_names
+            # Verify some expected ancestors are present
+            lineage_names = [t.scientific_name for t in lineage]
+            assert "Homo sapiens" in lineage_names
+            assert "Hominidae" in lineage_names or "Primates" in lineage_names
 
-                # Verify LCA works
-                lca = tax.find_lca([9606, 9598])  # Human and Chimp
-                assert lca is not None, "LCA calculation failed"
-                # LCA should be Homininae (207598) or a parent thereof
-                lca_taxon = tax.get_taxon(lca)
-                assert lca_taxon is not None
-
-        finally:
-            if "NVD_STATE_DIR" in os.environ:
-                del os.environ["NVD_STATE_DIR"]
+            # Verify LCA works
+            lca = tax.find_lca([9606, 9598])  # Human and Chimp
+            assert lca is not None, "LCA calculation failed"
+            # LCA should be Homininae (207598) or a parent thereof
+            lca_taxon = tax.get_taxon(lca)
+            assert lca_taxon is not None
 
     @pytest.mark.slow
     def test_taxonomy_sqlite_is_cached(self, tmp_path: Path) -> None:
@@ -789,31 +782,24 @@ class TestNCBIIntegration:
 
         Second open() should be fast because it uses cached database.
         """
-        state_dir = tmp_path / "cache_test"
-        state_dir.mkdir()
-        os.environ["NVD_STATE_DIR"] = str(state_dir)
+        taxdump_dir = tmp_path / "cache_test" / "taxdump"
 
-        try:
-            # First open - downloads and builds (slow)
-            start1 = time.time()
-            with taxonomy.open() as tax:
-                _ = tax.get_taxon(9606)
-            elapsed1 = time.time() - start1
+        # First open - downloads and builds (slow)
+        start1 = time.time()
+        with taxonomy.open(taxonomy_dir=taxdump_dir) as tax:
+            _ = tax.get_taxon(9606)
+        elapsed1 = time.time() - start1
 
-            # Second open - should use cache (fast)
-            start2 = time.time()
-            with taxonomy.open() as tax:
-                _ = tax.get_taxon(9606)
-            elapsed2 = time.time() - start2
+        # Second open - should use cache (fast)
+        start2 = time.time()
+        with taxonomy.open(taxonomy_dir=taxdump_dir) as tax:
+            _ = tax.get_taxon(9606)
+        elapsed2 = time.time() - start2
 
-            # Second should be much faster (at least 10x)
-            assert elapsed2 < elapsed1 / 10, (
-                f"Cache not working: first={elapsed1:.2f}s, second={elapsed2:.2f}s"
-            )
-
-        finally:
-            if "NVD_STATE_DIR" in os.environ:
-                del os.environ["NVD_STATE_DIR"]
+        # Second should be much faster (at least 10x)
+        assert elapsed2 < elapsed1 / 10, (
+            f"Cache not working: first={elapsed1:.2f}s, second={elapsed2:.2f}s"
+        )
 
 
 class TestOfflineMode:
@@ -825,7 +811,7 @@ class TestOfflineMode:
         taxonomy._build_sqlite_from_dmp(minimal_taxdump)
 
         # Should work in offline mode
-        with taxonomy.open(state_dir=minimal_taxdump.parent, offline=True) as tax:
+        with taxonomy.open(taxonomy_dir=minimal_taxdump, offline=True) as tax:
             taxon = tax.get_taxon(9606)
             assert taxon is not None
             assert taxon.scientific_name == "Homo sapiens"
@@ -850,7 +836,7 @@ class TestOfflineMode:
         # Should raise TaxonomyOfflineError - we don't attempt to build in offline mode
         with (
             pytest.raises(taxonomy.TaxonomyOfflineError) as exc_info,
-            taxonomy.open(state_dir=minimal_taxdump.parent, offline=True),
+            taxonomy.open(taxonomy_dir=minimal_taxdump, offline=True),
         ):
             pass
 
@@ -865,7 +851,7 @@ class TestOfflineMode:
 
         with (
             pytest.raises(taxonomy.TaxonomyOfflineError) as exc_info,
-            taxonomy.open(state_dir=empty_dir, offline=True),
+            taxonomy.open(taxonomy_dir=empty_dir / "taxdump", offline=True),
         ):
             pass
 
@@ -885,7 +871,7 @@ class TestOfflineMode:
         monkeypatch.setenv("NVD_TAXONOMY_OFFLINE", "1")
 
         # Should use offline mode (won't try to download)
-        with taxonomy.open(state_dir=minimal_taxdump.parent) as tax:
+        with taxonomy.open(taxonomy_dir=minimal_taxdump) as tax:
             taxon = tax.get_taxon(9606)
             assert taxon is not None
 
@@ -898,7 +884,7 @@ class TestOfflineMode:
         taxonomy._build_sqlite_from_dmp(minimal_taxdump)
         monkeypatch.setenv("NVD_TAXONOMY_OFFLINE", "true")
 
-        with taxonomy.open(state_dir=minimal_taxdump.parent) as tax:
+        with taxonomy.open(taxonomy_dir=minimal_taxdump) as tax:
             taxon = tax.get_taxon(9606)
             assert taxon is not None
 
@@ -915,7 +901,7 @@ class TestOfflineMode:
 
         # offline=False should override env var
         # (This won't try to download because data isn't stale)
-        with taxonomy.open(state_dir=minimal_taxdump.parent, offline=False) as tax:
+        with taxonomy.open(taxonomy_dir=minimal_taxdump, offline=False) as tax:
             taxon = tax.get_taxon(9606)
             assert taxon is not None
 
@@ -954,31 +940,22 @@ class TestTaxonomyDbEnvVar:
             assert taxon is not None
             assert taxon.scientific_name == "Homo sapiens"
 
-    def test_env_var_with_shared_readonly_taxonomy(
+    def test_env_var_uses_shared_readonly_taxonomy(
         self,
         minimal_taxdump: Path,
-        tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Simulates cluster setup: shared taxonomy, separate state dir."""
+        """Simulates cluster setup with shared taxonomy selected explicitly."""
         # Build taxonomy in "shared" location
         taxonomy._build_sqlite_from_dmp(minimal_taxdump)
 
         # Point to shared taxonomy
         monkeypatch.setenv("NVD_TAXONOMY_DB", str(minimal_taxdump))
 
-        # Use separate state dir (simulating user's home on cluster)
-        user_state = tmp_path / "user_state"
-        user_state.mkdir()
-        monkeypatch.setenv("NVD_STATE_DIR", str(user_state))
-
-        # Should use shared taxonomy, not look in user_state
+        # Should use shared taxonomy.
         with taxonomy.open(offline=True) as tax:
             taxon = tax.get_taxon(9606)
             assert taxon is not None
-
-        # Verify taxonomy was NOT copied to user state
-        assert not (user_state / "taxdump" / "taxonomy.sqlite").exists()
 
 
 class TestSyncMode:
@@ -991,7 +968,7 @@ class TestSyncMode:
 
         with (
             pytest.raises(taxonomy.TaxonomyUnavailableError) as exc_info,
-            taxonomy.open(state_dir=empty_dir, sync=True),
+            taxonomy.open(taxonomy_dir=empty_dir / "taxdump", sync=True),
         ):
             pass
 
@@ -1010,7 +987,7 @@ class TestSyncMode:
 
         with (
             pytest.raises(taxonomy.TaxonomyUnavailableError) as exc_info,
-            taxonomy.open(state_dir=minimal_taxdump.parent, sync=True),
+            taxonomy.open(taxonomy_dir=minimal_taxdump, sync=True),
         ):
             pass
 
@@ -1024,7 +1001,7 @@ class TestSyncMode:
 
         with (
             pytest.raises(taxonomy.TaxonomyUnavailableError) as exc_info,
-            taxonomy.open(state_dir=minimal_taxdump.parent, sync=True),
+            taxonomy.open(taxonomy_dir=minimal_taxdump, sync=True),
         ):
             pass
 
@@ -1041,12 +1018,12 @@ class TestSyncMode:
         monkeypatch.setattr(
             taxonomy,
             "get_taxdump_dir",
-            lambda _=None, __=None: minimal_taxdump,
+            lambda **_kwargs: minimal_taxdump,
         )
         monkeypatch.setattr(
             taxonomy,
             "_ensure_taxdump",
-            lambda _=None, __=None: minimal_taxdump,
+            lambda **_kwargs: minimal_taxdump,
         )
 
         # Should not raise
@@ -1072,10 +1049,7 @@ class TestSyncMode:
             warnings_received.append(msg)
 
         # Patch _ensure_taxdump to build SQLite (simulating successful download)
-        def mock_ensure(
-            _state_dir: Path | None = None,
-            _taxonomy_dir: Path | None = None,
-        ) -> Path:
+        def mock_ensure(**_kwargs: object) -> Path:
             taxonomy._build_sqlite_from_dmp(minimal_taxdump)
             return minimal_taxdump
 
@@ -1083,7 +1057,7 @@ class TestSyncMode:
         monkeypatch.setattr(
             taxonomy,
             "get_taxdump_dir",
-            lambda _=None, __=None: minimal_taxdump,
+            lambda **_kwargs: minimal_taxdump,
         )
 
         with taxonomy.open(sync=False, warn_callback=capture_warning) as tax:
@@ -1111,10 +1085,7 @@ class TestSyncMode:
             warnings_received.append(msg)
 
         # Patch to simulate successful download after warning
-        def mock_ensure(
-            _state_dir: Path | None = None,
-            _taxonomy_dir: Path | None = None,
-        ) -> Path:
+        def mock_ensure(**_kwargs: object) -> Path:
             taxonomy._build_sqlite_from_dmp(minimal_taxdump)
             return minimal_taxdump
 
@@ -1122,7 +1093,7 @@ class TestSyncMode:
         monkeypatch.setattr(
             taxonomy,
             "get_taxdump_dir",
-            lambda _=None, __=None: minimal_taxdump,
+            lambda **_kwargs: minimal_taxdump,
         )
 
         with taxonomy.open(sync=False, warn_callback=capture_warning) as _tax:
@@ -1284,8 +1255,7 @@ class TestFormatTaxonomyWarning:
 class TestTaxonomyDirParameter:
     """Tests for taxonomy_dir parameter in taxonomy.open().
 
-    The taxonomy_dir parameter enables stateless mode where taxonomy
-    is decoupled from the state directory.
+    The taxonomy_dir parameter selects an explicit taxonomy cache location.
     """
 
     def test_open_with_explicit_taxonomy_dir(self, minimal_taxdump: Path) -> None:
@@ -1293,31 +1263,8 @@ class TestTaxonomyDirParameter:
         # Build SQLite in the minimal_taxdump directory
         taxonomy._build_sqlite_from_dmp(minimal_taxdump)
 
-        # Open with explicit taxonomy_dir (no state_dir needed)
+        # Open with explicit taxonomy_dir.
         with taxonomy.open(taxonomy_dir=minimal_taxdump, offline=True) as tax:
-            taxon = tax.get_taxon(9606)
-            assert taxon is not None
-            assert taxon.scientific_name == "Homo sapiens"
-
-    def test_taxonomy_dir_takes_precedence_over_state_dir(
-        self,
-        minimal_taxdump: Path,
-        tmp_path: Path,
-    ) -> None:
-        """taxonomy_dir takes precedence over state_dir-derived path."""
-        # Build SQLite in the minimal_taxdump directory
-        taxonomy._build_sqlite_from_dmp(minimal_taxdump)
-
-        # Create a different state_dir that does NOT have taxonomy
-        other_state = tmp_path / "other_state"
-        other_state.mkdir()
-
-        # Open with both state_dir and taxonomy_dir - taxonomy_dir should win
-        with taxonomy.open(
-            state_dir=other_state,
-            taxonomy_dir=minimal_taxdump,
-            offline=True,
-        ) as tax:
             taxon = tax.get_taxon(9606)
             assert taxon is not None
             assert taxon.scientific_name == "Homo sapiens"
@@ -1331,23 +1278,17 @@ class TestTaxonomyDirParameter:
             taxon = tax.get_taxon(9606)
             assert taxon is not None
 
-    def test_taxonomy_dir_enables_stateless_mode(
+    def test_taxonomy_dir_works_without_env_vars(
         self,
         minimal_taxdump: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """taxonomy_dir allows operation without any state_dir.
-
-        This is the key use case for stateless mode: taxonomy is provided
-        explicitly, so no state directory is needed.
-        """
+        """taxonomy_dir works without relying on environment variables."""
         taxonomy._build_sqlite_from_dmp(minimal_taxdump)
 
-        # Ensure no state-related env vars are set
-        monkeypatch.delenv("NVD_STATE_DIR", raising=False)
         monkeypatch.delenv("NVD_TAXONOMY_DB", raising=False)
 
-        # Open with only taxonomy_dir - no state_dir at all
+        # Open with only taxonomy_dir.
         with taxonomy.open(taxonomy_dir=minimal_taxdump, offline=True) as tax:
             taxon = tax.get_taxon(9606)
             assert taxon is not None
@@ -1486,7 +1427,7 @@ class TestPreUseValidation:
         monkeypatch.setattr(
             taxonomy,
             "_ensure_taxdump",
-            lambda _=None, __=None: taxdump_dir,
+            lambda **_kwargs: taxdump_dir,
         )
 
         with (
@@ -1519,7 +1460,7 @@ class TestPreUseValidation:
         monkeypatch.setattr(
             taxonomy,
             "_ensure_taxdump",
-            lambda _=None, __=None: taxdump_dir,
+            lambda **_kwargs: taxdump_dir,
         )
 
         with (

@@ -12,10 +12,10 @@ Features:
     - Lineage caching for performance during batch operations
     - taxopy integration for LCA (Least Common Ancestor) calculations
 
-State directory resolution follows the same hierarchy as db.py:
-    1. Explicit path argument
-    2. NVD_STATE_DIR environment variable
-    3. Default: ~/.nvd/
+Taxonomy cache resolution is intentionally small:
+    1. Explicit taxonomy_dir argument
+    2. NVD_TAXONOMY_DB environment variable
+    3. NVD_CONFIG_DIR/taxdump, defaulting to ~/.config/nvd/taxdump
 """
 
 from __future__ import annotations
@@ -267,20 +267,18 @@ def _build_sqlite_from_dmp(taxdump_dir: Path) -> Path:  # noqa: C901, PLR0912, P
 
 
 def _ensure_taxdump(
-    state_dir: Path | str | None = None,
     taxonomy_dir: Path | str | None = None,
 ) -> Path:
     """
     Ensure taxdump is downloaded, extracted, and SQLite is built.
 
     Args:
-        state_dir: Optional state directory for fallback resolution.
-        taxonomy_dir: Optional explicit taxonomy directory (takes precedence).
+        taxonomy_dir: Optional explicit taxonomy directory.
 
     Returns:
         Path to taxdump directory.
     """
-    taxdump_dir = get_taxdump_dir(state_dir, taxonomy_dir)
+    taxdump_dir = get_taxdump_dir(taxonomy_dir=taxonomy_dir)
     sqlite_path = taxdump_dir / "taxonomy.sqlite"
 
     if _is_taxdump_stale(taxdump_dir):
@@ -294,7 +292,6 @@ def _ensure_taxdump(
 
 
 def ensure_taxonomy_available(
-    state_dir: Path | str | None = None,
     taxonomy_dir: Path | str | None = None,
 ) -> Path:
     """
@@ -309,15 +306,12 @@ def ensure_taxonomy_available(
     download simultaneously.
 
     Args:
-        state_dir: Optional state directory override. If None, uses
-                   NVD_STATE_DIR env var or ~/.nvd/
-        taxonomy_dir: Optional explicit taxonomy directory (takes precedence
-                      over state_dir-derived path).
+        taxonomy_dir: Optional explicit taxonomy directory.
 
     Returns:
         Path to the taxdump directory containing taxonomy.sqlite
     """
-    return _ensure_taxdump(state_dir, taxonomy_dir)
+    return _ensure_taxdump(taxonomy_dir=taxonomy_dir)
 
 
 class TaxonomyDB:
@@ -726,7 +720,6 @@ Resolution:
 
 @contextmanager
 def open(  # noqa: A001, C901, PLR0912, PLR0915
-    state_dir: Path | str | None = None,
     offline: bool | None = None,  # noqa: FBT001
     *,
     taxonomy_dir: Path | str | None = None,
@@ -741,14 +734,10 @@ def open(  # noqa: A001, C901, PLR0912, PLR0915
     Provides access to taxopy for LCA calculations.
 
     Args:
-        state_dir: Optional explicit state directory. If None, resolves
-                   via NVD_STATE_DIR env var, then ~/.nvd/
         offline: If True, never attempt to download taxonomy data.
                  If None (default), checks NVD_TAXONOMY_OFFLINE env var.
                  Set to True for air-gapped environments with pre-cached data.
-        taxonomy_dir: Optional explicit taxonomy directory. Takes precedence
-                      over state_dir-derived path. Enables stateless mode
-                      where taxonomy is decoupled from state management.
+        taxonomy_dir: Optional explicit taxonomy directory.
         sync: If True, require pre-cached taxonomy and fail if unavailable.
               If False (default), attempt lazy download with a warning if
               pre-cached taxonomy is missing or stale.
@@ -782,9 +771,8 @@ def open(  # noqa: A001, C901, PLR0912, PLR0915
             # Fails if taxonomy not pre-cached
             taxon = tax.get_taxon(9606)
 
-        # Explicit taxonomy directory (stateless mode)
+        # Explicit taxonomy directory
         with taxonomy.open(taxonomy_dir="/shared/taxonomy") as tax:
-            # Uses specified directory, ignores state_dir
             taxon = tax.get_taxon(9606)
     """
 
@@ -798,7 +786,7 @@ def open(  # noqa: A001, C901, PLR0912, PLR0915
     if offline is None:
         offline = os.environ.get("NVD_TAXONOMY_OFFLINE", "").lower() in ("1", "true")
 
-    taxdump_dir = get_taxdump_dir(state_dir, taxonomy_dir)
+    taxdump_dir = get_taxdump_dir(taxonomy_dir=taxonomy_dir)
     sqlite_path = taxdump_dir / "taxonomy.sqlite"
 
     if offline:
@@ -848,7 +836,7 @@ def open(  # noqa: A001, C901, PLR0912, PLR0915
 
         # Attempt to ensure taxonomy is available (download if needed)
         try:
-            taxdump_dir = _ensure_taxdump(state_dir, taxonomy_dir)
+            taxdump_dir = _ensure_taxdump(taxonomy_dir=taxonomy_dir)
             sqlite_path = taxdump_dir / "taxonomy.sqlite"
         except Exception as e:
             if sync:

@@ -17,7 +17,6 @@ workflow CLASSIFY_WITH_BLASTN {
     ch_filtered_megablast
     ch_megablast_contigs
     ch_blast_db_files
-    ch_state_dir      // value channel: state directory path (may be null in stateless mode)
     ch_taxonomy_dir   // value channel: taxonomy directory path for taxonomy lookups
 
     main:
@@ -29,7 +28,6 @@ workflow CLASSIFY_WITH_BLASTN {
 
     ANNOTATE_BLASTN_RESULTS(
         SELECT_TOP_BLAST_HITS.out,
-        ch_state_dir,
         ch_taxonomy_dir
     )
 
@@ -42,7 +40,7 @@ workflow CLASSIFY_WITH_BLASTN {
 
     MERGE_FILTERED_BLAST_RESULTS(ch_merged_input)
 
-    ANNOTATE_LEAST_COMMON_ANCESTORS(MERGE_FILTERED_BLAST_RESULTS.out, ch_state_dir, ch_taxonomy_dir)
+    ANNOTATE_LEAST_COMMON_ANCESTORS(MERGE_FILTERED_BLAST_RESULTS.out, ch_taxonomy_dir)
 
     emit:
     merged_results = ANNOTATE_LEAST_COMMON_ANCESTORS.out

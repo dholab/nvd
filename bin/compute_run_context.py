@@ -6,7 +6,7 @@
 # ]
 # ///
 
-"""Emit the stateless NVD run context for a samplesheet."""
+"""Emit the state-free NVD run context for a samplesheet."""
 
 from __future__ import annotations
 
@@ -46,7 +46,7 @@ def read_sample_ids(samplesheet: Path) -> list[str]:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Compute stateless NVD run context")
+    parser = argparse.ArgumentParser(description="Compute state-free NVD run context")
     parser.add_argument("--samplesheet", type=Path, required=True)
     parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args()
