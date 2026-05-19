@@ -87,6 +87,7 @@ app.add_typer(secrets_app, name="secrets")
 # Setup commands
 app.add_typer(setup_app, name="setup")
 
+
 def _normalize_nextflow_args() -> None:
     """Rewrite Nextflow-style single-dash long options before Typer parses them.
 
