@@ -1,10 +1,9 @@
-"""Path and resource-warning tests retained during the v3 state removal."""
+"""Path resolution tests retained after the v3 state removal."""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from py_nvd.db import StateUnavailableError, format_state_warning
 from py_nvd.paths import (
     get_config_dir,
     get_config_path,
@@ -17,25 +16,6 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     import pytest
-
-
-def test_state_unavailable_error_keeps_db_path_alias(tmp_path: Path) -> None:
-    db_path = tmp_path / "legacy-state.sqlite"
-    error = StateUnavailableError(db_path, "operation", "reason")
-    assert error.db_path == db_path
-    assert error.resource_path == db_path
-
-
-def test_format_state_warning_includes_context(tmp_path: Path) -> None:
-    warning = format_state_warning(
-        operation="Legacy operation",
-        context="testing",
-        error=PermissionError("denied"),
-        db_path=tmp_path / "legacy-state.sqlite",
-        consequences=["legacy coordination unavailable"],
-    )
-    assert "Legacy operation" in warning
-    assert "legacy coordination unavailable" in warning
 
 
 def test_config_dir_env_sets_config_root(

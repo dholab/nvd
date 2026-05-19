@@ -11,25 +11,17 @@ from pathlib import Path
 # config root.
 DEFAULT_CONFIG_DIR = Path.home() / ".config" / "nvd"
 
-# Legacy locations retained for read/compatibility fallbacks during the v3
-# transition. New writes should use DEFAULT_CONFIG_DIR unless explicitly
-# overridden.
+# Legacy install location retained only as a read fallback for user.config.
 LEGACY_NVD_HOME = Path.home() / ".nvd"
 DEFAULT_NVD_HOME = LEGACY_NVD_HOME
-
-# The old cache directory name is retained for dead state-database internals
-# until that subsystem is deleted.
-DEFAULT_NVD_CACHE = Path.home() / ".cache" / "nvd"
 
 # Environment variables for overriding default paths.
 ENV_VAR_CONFIG = "NVD_CONFIG"
 ENV_VAR_CONFIG_DIR = "NVD_CONFIG_DIR"
-ENV_VAR = "NVD_STATE_DIR"  # Legacy compatibility alias, not canonical v3 config.
 ENV_VAR_TAXONOMY = "NVD_TAXONOMY_DB"
 
 # Default paths.
 DEFAULT_CONFIG_PATH = DEFAULT_CONFIG_DIR / "user.config"
-DEFAULT_STATE_DIR = DEFAULT_NVD_CACHE
 
 
 def get_config_dir(explicit_path: Path | str | None = None) -> Path:
@@ -76,31 +68,6 @@ def get_config_path(explicit_path: Path | str | None = None) -> Path:
     if not config_path.exists() and legacy_path.exists():
         return legacy_path
     return config_path
-
-
-def get_state_dir(explicit_path: Path | str | None = None) -> Path:
-    """
-    Resolve the legacy NVD state/local-data directory using hierarchical fallback.
-
-    Priority:
-        1. Explicit path argument (from CLI or Nextflow param)
-        2. NVD_STATE_DIR environment variable
-        3. NVD_CONFIG_DIR environment variable
-        4. Default: ~/.config/nvd/
-
-    The directory is created if it does not exist.
-    """
-    if explicit_path is not None:
-        state_dir = Path(explicit_path)
-    elif ENV_VAR in os.environ:
-        state_dir = Path(os.environ[ENV_VAR])
-    elif ENV_VAR_CONFIG_DIR in os.environ:
-        state_dir = Path(os.environ[ENV_VAR_CONFIG_DIR])
-    else:
-        state_dir = get_config_dir()
-
-    state_dir.mkdir(parents=True, exist_ok=True)
-    return state_dir
 
 
 def get_taxdump_dir(

@@ -1,15 +1,15 @@
-"""NVD state management and CLI library."""
+"""NVD CLI and pipeline helper library."""
 
 __version__ = "3.0.0"
 
-# Re-export key modules for convenient access
-from py_nvd import db, models, params, state, taxonomy
+# Re-export key modules for convenient access.
+from py_nvd import models, params, paths, presets, taxonomy
 
 __all__ = [
     "__version__",
-    "db",
     "models",
     "params",
-    "state",
+    "paths",
+    "presets",
     "taxonomy",
 ]

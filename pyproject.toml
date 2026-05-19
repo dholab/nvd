@@ -10,8 +10,6 @@ requires-python = ">= 3.11, < 3.14"
 version = "3.0.0"
 dependencies = [
   "biopython>=1.85",
-  "blake3>=1.0.8",
-  "duckdb>=1.2.2",
   "jsonschema>=4.23.0",
   "labkey>=3.4.0",
   "loguru>=0.7.3",

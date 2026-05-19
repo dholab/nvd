@@ -29,13 +29,13 @@ import urllib.error
 import urllib.request
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import taxopy
 import taxopy.utilities
 from taxopy.exceptions import TaxidError
 
-from py_nvd.db import ResourceUnavailableError
 from py_nvd.models import Taxon
 from py_nvd.paths import get_taxdump_dir
 
@@ -44,7 +44,6 @@ _open = builtins.open
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Generator
-    from pathlib import Path
 
 # NCBI taxdump URL and configuration
 TAXDUMP_URL = "https://ftp.ncbi.nlm.nih.gov/pub/taxonomy/taxdump.tar.gz"
@@ -575,6 +574,31 @@ class TaxonomyBuildError(Exception):
 
 class TaxonomyOfflineError(Exception):
     """Raised when taxonomy database is unavailable in offline mode."""
+
+
+class ResourceUnavailableError(Exception):
+    """Base class for errors raised when a required resource is unavailable."""
+
+    resource_type = "Resource"
+    recovery_hint = "remove the --sync flag"
+
+    def __init__(
+        self,
+        resource_path: Path | str,
+        operation: str,
+        reason: str,
+        original_error: Exception | None = None,
+    ) -> None:
+        self.resource_path = Path(resource_path)
+        self.operation = operation
+        self.reason = reason
+        self.original_error = original_error
+        super().__init__(
+            f"{self.resource_type} unavailable during '{operation}': {reason}\n"
+            f"Path: {resource_path}\n"
+            f"The --sync flag requires this resource to be available.\n"
+            f"To continue without it, {self.recovery_hint}.",
+        )
 
 
 class TaxonomyUnavailableError(ResourceUnavailableError):

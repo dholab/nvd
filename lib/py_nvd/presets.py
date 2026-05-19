@@ -4,12 +4,17 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol
 
-from py_nvd.db import utc_now_iso
 from py_nvd.models import Preset
 from py_nvd.paths import get_preset_db_path
+
+
+def utc_now_iso() -> str:
+    """Return the current UTC time as an ISO8601 string with a Z suffix."""
+    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
 
 class PresetStore(Protocol):
@@ -57,13 +62,18 @@ class SQLitePresetStore:
 
     def get(self, name: str) -> Preset | None:
         with self._connect() as conn:
-            row = conn.execute("SELECT * FROM presets WHERE name = ?", (name,)).fetchone()
-        return Preset.from_row(row) if row is not None else None
+            row = conn.execute(
+                "SELECT * FROM presets WHERE name = ?",
+                (name,),
+            ).fetchone()
+        return Preset(**dict(row)) if row is not None else None
 
     def list(self) -> list[Preset]:
         with self._connect() as conn:
-            rows = conn.execute("SELECT * FROM presets ORDER BY created_at DESC").fetchall()
-        return [Preset.from_row(row) for row in rows]
+            rows = conn.execute(
+                "SELECT * FROM presets ORDER BY created_at DESC",
+            ).fetchall()
+        return [Preset(**dict(row)) for row in rows]
 
     def upsert(
         self,

@@ -7,7 +7,6 @@ instance used across all CLI commands.
 
 from __future__ import annotations
 
-import json
 import math
 import os
 import re
@@ -17,10 +16,8 @@ import sys
 from pathlib import Path
 from typing import NoReturn
 
-import typer
 from rich.console import Console
 
-from py_nvd.db import get_state_db_path
 from py_nvd.paths import get_config_path, get_setup_conf_path
 
 # Re-export for backward compatibility (prefer get_config_path() for new code)
@@ -225,34 +222,6 @@ def format_duration(seconds: float) -> str:
     hours = int(seconds // SECONDS_PER_HOUR)
     minutes = int((seconds % SECONDS_PER_HOUR) // SECONDS_PER_MINUTE)
     return f"{hours}h {minutes}m"
-
-
-def ensure_db_exists(json_output: bool = False) -> Path:  # noqa: FBT001, FBT002
-    """
-    Ensure the state database exists, exiting with a helpful error if not.
-
-    This is for CLI commands that require an existing database (as opposed
-    to commands like `state init` that create it).
-
-    Args:
-        json_output: If True, output error as JSON instead of Rich formatted text.
-
-    Returns:
-        Path to the database file.
-
-    Raises:
-        typer.Exit: If the database does not exist.
-    """
-    db_path = get_state_db_path()
-    if not db_path.exists():
-        if json_output:
-            console.print_json(
-                json.dumps({"error": "Database not found", "path": str(db_path)}),
-            )
-            raise typer.Exit(1)
-        error(f"Database not found: {db_path}\nRun 'nvd state init' to create it.")
-        raise typer.Exit(1)  # unreachable, but satisfies type checker
-    return db_path
 
 
 def find_config_file(custom_path: Path | None = None) -> Path | None:

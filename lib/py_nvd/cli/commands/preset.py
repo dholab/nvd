@@ -32,7 +32,6 @@ from py_nvd.cli.utils import (
     info,
     success,
 )
-from py_nvd.db import utc_now_iso
 from py_nvd.models import (
     PARAM_CATEGORIES,
     NvdParams,
@@ -40,7 +39,7 @@ from py_nvd.models import (
     get_field_category,
     trace_merge,
 )
-from py_nvd.presets import PresetStore, get_preset_store
+from py_nvd.presets import PresetStore, get_preset_store, utc_now_iso
 
 # Display/truncation thresholds
 _MAX_VALUE_DISPLAY_LENGTH = 40
