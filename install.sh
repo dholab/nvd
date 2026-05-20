@@ -90,24 +90,68 @@ print_info() {
 # Prompt Utilities
 # =============================================================================
 
-read_prompt() {
-	local variable_name="$1"
-	local response
+PROMPT_TTY_READY=false
+PROMPT_INPUT=""
 
-	if [[ -r /dev/tty ]]; then
-		IFS= read -r response </dev/tty
-	else
-		IFS= read -r response
+init_prompt_tty() {
+	if [[ "$PROMPT_TTY_READY" == "true" ]]; then
+		return 0
 	fi
 
-	printf -v "$variable_name" '%s' "$response"
+	if { exec 9</dev/tty; } 2>/dev/null; then
+		PROMPT_TTY_READY=true
+		PROMPT_INPUT="tty"
+		if [[ "${NVD_INSTALLER_DEBUG:-}" == "1" ]]; then
+			echo "  [debug] prompt input: /dev/tty fd=9" >&2
+		fi
+		return 0
+	fi
+
+	if [[ -t 0 ]]; then
+		PROMPT_TTY_READY=true
+		PROMPT_INPUT="stdin"
+		if [[ "${NVD_INSTALLER_DEBUG:-}" == "1" ]]; then
+			echo "  [debug] prompt input: stdin fd=0" >&2
+		fi
+		return 0
+	fi
+
+	print_error "No interactive terminal available for prompts."
+	echo "      If using curl | bash, run from a real terminal," >&2
+	echo "      or download install.sh and run it interactively." >&2
+	return 1
+}
+
+read_prompt() {
+	local variable_name="$1"
+	local prompt_response
+
+	init_prompt_tty || return 1
+
+	if [[ "$PROMPT_INPUT" == "stdin" ]]; then
+		IFS= read -r prompt_response || {
+			print_error "Failed to read prompt response from stdin"
+			return 1
+		}
+	else
+		IFS= read -r prompt_response <&9 || {
+			print_error "Failed to read prompt response from /dev/tty"
+			return 1
+		}
+	fi
+
+	if [[ "${NVD_INSTALLER_DEBUG:-}" == "1" ]]; then
+		printf '  [debug] read_prompt: bytes=%s value=%q\n' "${#prompt_response}" "$prompt_response" >&2
+	fi
+
+	printf -v "$variable_name" '%s' "$prompt_response"
 }
 
 prompt_yes_no() {
 	local prompt="$1"
 	local default="${2:-y}"
 
-	if [[ "$DRY_RUN" == "true" ]] || [[ "$NON_INTERACTIVE" == "true" ]]; then
+	if [[ "$NON_INTERACTIVE" == "true" ]]; then
 		[[ "$default" == "y" ]]
 		return
 	fi
@@ -122,13 +166,23 @@ prompt_yes_no() {
 	echo -en "  ${prompt} ${yn_hint}: "
 	local response
 	if ! read_prompt response; then
-		response=""
+		exit 1
 	fi
 	response="${response:-$default}"
 
 	case "$response" in
-	[Yy]*) return 0 ;;
-	*) return 1 ;;
+	y | Y | yes | Yes | YES)
+		if [[ "${NVD_INSTALLER_DEBUG:-}" == "1" ]]; then
+			echo "  [debug] prompt_yes_no: yes" >&2
+		fi
+		return 0
+		;;
+	*)
+		if [[ "${NVD_INSTALLER_DEBUG:-}" == "1" ]]; then
+			echo "  [debug] prompt_yes_no: no" >&2
+		fi
+		return 1
+		;;
 	esac
 }
 
@@ -150,7 +204,7 @@ prompt_choice() {
 
 	echo >&2
 
-	if [[ "$DRY_RUN" == "true" ]] || [[ "$NON_INTERACTIVE" == "true" ]]; then
+	if [[ "$NON_INTERACTIVE" == "true" ]]; then
 		echo "  Choice [1-${#options[@]}]: 1 (auto-selected)" >&2
 		echo 1
 		return
@@ -160,7 +214,7 @@ prompt_choice() {
 		echo -en "  Choice [1-${#options[@]}]: " >&2
 		local choice
 		if ! read_prompt choice; then
-			choice="1"
+			exit 1
 		fi
 
 		if [[ "$choice" =~ ^[0-9]+$ ]] && [[ "$choice" -ge 1 ]] && [[ "$choice" -le "${#options[@]}" ]]; then
@@ -175,7 +229,7 @@ prompt_path() {
 	local prompt="$1"
 	local default="$2"
 
-	if [[ "$DRY_RUN" == "true" ]] || [[ "$NON_INTERACTIVE" == "true" ]]; then
+	if [[ "$NON_INTERACTIVE" == "true" ]]; then
 		echo "$default"
 		return
 	fi
@@ -183,7 +237,7 @@ prompt_path() {
 	echo -en "  ${prompt} [${default}]: " >&2
 	local response
 	if ! read_prompt response; then
-		response=""
+		exit 1
 	fi
 	response="${response:-$default}"
 
@@ -195,10 +249,12 @@ prompt_path() {
 }
 
 run_interactive_command() {
-	if [[ -r /dev/tty ]]; then
-		"$@" </dev/tty
-	else
+	init_prompt_tty || return 1
+
+	if [[ "$PROMPT_INPUT" == "stdin" ]]; then
 		"$@"
+	else
+		"$@" <&9
 	fi
 }
 
@@ -614,6 +670,11 @@ check_disk_space() {
 		return 1
 	}
 
+	if [[ "$DRY_RUN" == "true" ]]; then
+		print_info "[DRY RUN] Would check for approximately ${required_gb}GB free at ${path}"
+		return 0
+	fi
+
 	# Find existing parent directory for disk space check
 	local check_path="$path"
 	while [[ ! -d "$check_path" ]] && [[ "$check_path" != "/" ]]; do
@@ -774,16 +835,18 @@ download_file() {
 		return 1
 	}
 
+	if [[ "$DRY_RUN" == "true" ]]; then
+		print_info "[DRY RUN] Would download ${name}"
+		echo "      Source: ${url}"
+		echo "      Target: ${output}"
+		print_info "[DRY RUN] Would verify checksum if present in manifest"
+		return 0
+	fi
+
 	print_info "Downloading ${name}..."
 	echo "      Source: ${url}"
 	echo "      Target: ${output}"
 	echo
-
-	if [[ "$DRY_RUN" == "true" ]]; then
-		print_info "[DRY RUN] Would download ${name}"
-		print_info "[DRY RUN] Would verify checksum if present in manifest"
-		return 0
-	fi
 
 	mkdir -p "$(dirname "$output")" || {
 		print_error "Failed to create output directory"
@@ -900,8 +963,12 @@ database_wizard() {
 		}
 		extract_archive "$blast_archive" "$blast_path" "BLAST database" || return 1
 		if prompt_yes_no "Remove BLAST archive to save disk space?" "y"; then
-			rm -f "$blast_archive"
-			print_success "BLAST archive removed"
+			if [[ "$DRY_RUN" == "true" ]]; then
+				print_info "[DRY RUN] Would remove ${blast_archive}"
+			else
+				rm -f "$blast_archive"
+				print_success "BLAST archive removed"
+			fi
 		fi
 		echo
 	fi
