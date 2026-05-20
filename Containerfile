@@ -11,7 +11,6 @@ LABEL maintainer="nrminor@wisc.edu"
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=America/New_York
 ENV HOME=/opt
-ENV ~=/opt
 
 # run a few apt installs
 RUN apt-get update && \
@@ -38,8 +37,8 @@ ENV PATH=$PATH:$HOME/.pixi/bin
 
 # 4) install everything else with pixi
 RUN cd $HOME && \
-    script -q -c "pixi install --frozen" && \
-    script -q -c "pixi clean cache --assume-yes"
+    pixi install --frozen && \
+    pixi clean cache --assume-yes
 
 # 5) Add pixi environment to PATH (works in Docker, Podman, AND Apptainer)
 ENV PATH=$PATH:/opt/.pixi/envs/default/bin
