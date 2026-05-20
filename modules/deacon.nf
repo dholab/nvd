@@ -125,7 +125,7 @@ process DEACON_BUILD_VIRUS_INDEX_FROM_FASTA {
      * Use this when providing virus_reference_fasta instead of a
      * pre-built index (virus_index) or URL (virus_index_url).
      * Uses virus_kmer_size/virus_window_size for maximum sensitivity
-     * (k=31, w=1 by default) to match the behavior of STAT-derived indexes.
+     * (k=31, w=1 by default).
      *
      * This runs ONCE per pipeline invocation (not per-sample).
      */

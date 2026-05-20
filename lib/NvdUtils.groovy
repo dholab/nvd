@@ -29,7 +29,7 @@ class NvdUtils {
     // -------------------------------------------------------------------------
 
     /**
-     * Validates LabKey parameters required for the STAT+BLAST workflow.
+     * Validates LabKey parameters required for NVD BLAST reporting.
      * Checks common params plus BLAST-specific params.
      *
      * @param params The Nextflow params object
@@ -40,7 +40,7 @@ class NvdUtils {
             return
         }
         def requiredParams = LABKEY_COMMON_PARAMS + LABKEY_BLAST_PARAMS
-        validateLabkeyParams(params, requiredParams, 'STAT+BLAST')
+        validateLabkeyParams(params, requiredParams, 'NVD BLAST reporting')
     }
 
     // -------------------------------------------------------------------------

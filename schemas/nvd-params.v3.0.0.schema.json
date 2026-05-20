@@ -315,7 +315,7 @@
     "slack_enabled": {
       "type": "boolean",
       "default": false,
-      "description": "Enable Slack notifications for run completion (stat_blast workflow only)"
+      "description": "Enable Slack notifications for run completion"
     },
     "slack_channel": {
       "type": "string",
