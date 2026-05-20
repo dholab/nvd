@@ -71,6 +71,10 @@
       "type": "string",
       "description": "BLAST database version identifier"
     },
+    "virus_index_version": {
+      "type": "string",
+      "description": "Virus enrichment index version"
+    },
     "nvd_files": {
       "type": "string",
       "format": "path",

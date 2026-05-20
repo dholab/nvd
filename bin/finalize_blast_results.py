@@ -58,7 +58,7 @@ def main():
         help="BLAST database version string",
     )
     parser.add_argument(
-        "--stat-kmer-db",
+        "--virus-index-version",
         required=True,
         help="STAT k-mer database version used for virus enrichment index",
     )
@@ -75,7 +75,7 @@ def main():
         "mapped_reads",
         "total_reads",
         "blast_db_version",
-        "stat_kmer_db",
+        "virus_index_version",
         "nextflow_run_id",
     ]
 
@@ -91,7 +91,7 @@ def main():
             row["mapped_reads"] = contig_counts.get(row.get("qseqid", ""), "0")
             row["total_reads"] = args.total_reads
             row["blast_db_version"] = args.blast_db_version
-            row["stat_kmer_db"] = args.stat_kmer_db
+            row["virus_index_version"] = args.virus_index_version
             row["nextflow_run_id"] = args.run_id
             writer.writerow(row)
 

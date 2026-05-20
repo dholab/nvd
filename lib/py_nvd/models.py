@@ -113,9 +113,9 @@ class NvdParams(BaseModel):
         description="BLAST database version",
         json_schema_extra={"category": "Databases"},
     )
-    stat_kmer_db: str | None = Field(
+    virus_index_version: str | None = Field(
         None,
-        description="STAT k-mer database version used for virus enrichment index",
+        description="Virus enrichment index version",
         json_schema_extra={"category": "Databases"},
     )
 
