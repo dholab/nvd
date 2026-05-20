@@ -2,7 +2,7 @@
  * LabKey validation, formatting, WebDAV upload, and row-upload processes.
  */
 
-process VALIDATE_LABKEY_BLAST_HITS_LIST {
+process LABKEY_VALIDATE_BLAST_HITS_LIST {
     label 'low'
     secret 'LABKEY_API_KEY'
 
@@ -24,7 +24,7 @@ process VALIDATE_LABKEY_BLAST_HITS_LIST {
     """
 }
 
-process VALIDATE_LABKEY_BLAST_FASTA_LIST {
+process LABKEY_VALIDATE_BLAST_FASTA_LIST {
     label 'low'
     secret 'LABKEY_API_KEY'
 
@@ -46,7 +46,7 @@ process VALIDATE_LABKEY_BLAST_FASTA_LIST {
     """
 }
 
-process VALIDATE_LABKEY_EXPERIMENT_FRESH {
+process LABKEY_VALIDATE_EXPERIMENT_FRESH {
     cache false
     secret 'LABKEY_API_KEY'
     tag "exp_${params.experiment_id}"
@@ -70,7 +70,7 @@ process VALIDATE_LABKEY_EXPERIMENT_FRESH {
     """
 }
 
-process REGISTER_LABKEY_EXPERIMENT {
+process LABKEY_REGISTER_EXPERIMENT {
     cache false
     secret 'LABKEY_API_KEY'
     tag "exp_${params.experiment_id}"
@@ -94,7 +94,7 @@ process REGISTER_LABKEY_EXPERIMENT {
     """
 }
 
-process WEBDAV_UPLOAD_BLAST {
+process LABKEY_WEBDAV_UPLOAD_BLAST {
     tag "${sample_id}"
     label 'low'
     secret 'LABKEY_API_KEY'
@@ -123,7 +123,7 @@ process WEBDAV_UPLOAD_BLAST {
     """
 }
 
-process WEBDAV_UPLOAD_CONCATENATED {
+process LABKEY_WEBDAV_UPLOAD_CONCATENATED {
     label 'low'
     secret 'LABKEY_API_KEY'
 
@@ -145,7 +145,7 @@ process WEBDAV_UPLOAD_CONCATENATED {
     """
 }
 
-process PREPARE_BLAST_LABKEY {
+process LABKEY_PREPARE_BLAST {
     tag "$meta"
     label 'low'
 
@@ -172,7 +172,7 @@ process PREPARE_BLAST_LABKEY {
     """
 }
 
-process CONCAT_ALL_SAMPLE_BLAST_RESULTS {
+process LABKEY_CONCAT_ALL_SAMPLE_BLAST_RESULTS {
     label 'low'
 
     input:
@@ -194,7 +194,7 @@ process CONCAT_ALL_SAMPLE_BLAST_RESULTS {
     """
 }
 
-process PREPARE_FASTA_LABKEY {
+process LABKEY_PREPARE_FASTA {
     tag "$meta"
     label 'low'
 

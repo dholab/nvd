@@ -1,6 +1,6 @@
 include { ADD_READ_COUNTS_TO_BLAST; CONCATENATE_EXPERIMENT_BLAST } from "../modules/utils"
 include { NOTIFY_SLACK } from "../modules/utils"
-include { LABKEY_BLAST_REPORTING } from "./labkey_blast_reporting"
+include { LIMS_INTEGRATION } from "./lims_integration"
 
 workflow REPORTING {
     take:
@@ -44,7 +44,7 @@ workflow REPORTING {
         ch_split_blast_results.for_summary.map { _sample_id, tsv -> tsv }.collect()
     )
 
-    LABKEY_BLAST_REPORTING(
+    LIMS_INTEGRATION(
         ch_split_blast_results.for_labkey_upload,
         ch_contig_sequences,
         ch_split_read_counts.for_labkey,
@@ -59,7 +59,7 @@ workflow REPORTING {
     )
 
     ch_slack_trigger = params.slack_enabled && params.slack_channel && params.labkey
-        ? LABKEY_BLAST_REPORTING.out.registered
+        ? LIMS_INTEGRATION.out.registered
         : channel.empty()
 
     NOTIFY_SLACK(
@@ -71,7 +71,7 @@ workflow REPORTING {
     emit:
     blast_results = ch_split_blast_results.for_emit
     experiment_blast = CONCATENATE_EXPERIMENT_BLAST.out.concatenated_tsv
-    labkey_log = LABKEY_BLAST_REPORTING.out.upload_log
-    final_labkey_log = LABKEY_BLAST_REPORTING.out.final_labkey_log
-    labkey_registered = LABKEY_BLAST_REPORTING.out.registered
+    labkey_log = LIMS_INTEGRATION.out.upload_log
+    final_labkey_log = LIMS_INTEGRATION.out.final_labkey_log
+    labkey_registered = LIMS_INTEGRATION.out.registered
 }
