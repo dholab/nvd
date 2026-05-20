@@ -194,7 +194,7 @@ The development environment includes:
 
 - Core: biopython, pandas, polars, pysam
 - Analysis: lxml, more-itertools, pyyaml
-- Integration: labkey, snakemake
+- Integration: labkey
 - CLI: typer, loguru
 
 **Development Tools:**

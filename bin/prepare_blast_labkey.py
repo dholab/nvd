@@ -401,7 +401,7 @@ def main():
         required=True,
         help="Experiment ID",
     )
-    parser.add_argument("--run-id", type=str, required=True, help="Snakemake run ID")
+    parser.add_argument("--run-id", type=str, required=True, help="Workflow run ID")
     parser.add_argument(
         "--total-reads",
         type=int,
