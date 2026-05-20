@@ -1,5 +1,5 @@
 {
-  description = "Reproducible dev shell for the `NVD2` bioinformatic processing pipeline";
+  description = "Reproducible dev shell for the `NVD` bioinformatic processing pipeline";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
@@ -23,7 +23,7 @@
       in
       {
         devShells.default = pkgs.mkShell {
-          name = "NVD2";
+          name = "NVD";
 
           buildInputs = [
             pkgs.stdenv

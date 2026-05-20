@@ -61,7 +61,7 @@ jobs:
           else
             echo "## Initial Release" > release_notes.md
             echo "" >> release_notes.md
-            echo "This is the first release of NVD2." >> release_notes.md
+            echo "This is the first release of NVD." >> release_notes.md
             echo "" >> release_notes.md
           fi
           

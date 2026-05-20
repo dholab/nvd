@@ -25,9 +25,9 @@ def version() -> None:
     pipeline_root = str(PIPELINE_ROOT) if PIPELINE_ROOT is not None else "not found"
     console.print(
         Panel.fit(
-            f"[bold cyan]NVD2 CLI[/bold cyan]\n"
+            f"[bold cyan]NVD CLI[/bold cyan]\n"
             f"Version: {__version__}\n\n"
-            f"A user-friendly wrapper for the NVD2 Nextflow pipeline.\n"
+            f"A user-friendly wrapper for the NVD Nextflow pipeline.\n"
             f"Pipeline: {pipeline_root}",
             title="Version Info",
             border_style="cyan",

@@ -44,7 +44,7 @@ jobs:
           file: ./Containerfile
           push: false
           load: true
-          tags: nvd2:test
+          tags: nvd:test
           cache-from: |
             type=gha,scope=${{ github.ref_name }}
             type=gha,scope=main
@@ -53,22 +53,22 @@ jobs:
       
       - name: Verify image built
         run: |
-          docker images nvd2:test
-          echo "Built image: nvd2:test"
+          docker images nvd:test
+          echo "Built image: nvd:test"
       
       - name: Test container starts
         run: |
-          docker run --rm nvd2:test \
+          docker run --rm nvd:test \
             bash -c 'echo "Container started successfully"'
       
       - name: Test PATH includes Pixi tools
         run: |
-          docker run --rm nvd2:test \
+          docker run --rm nvd:test \
             bash -c 'echo $PATH | grep /opt/.pixi/envs/default/bin || exit 1'
       
       - name: Test bioinformatics tools available
         run: |
-          docker run --rm nvd2:test \
+          docker run --rm nvd:test \
             bash -c '
               which samtools && samtools --version &&
               which blastn && blastn -version &&
@@ -79,7 +79,7 @@ jobs:
       
       - name: Test Python environment
         run: |
-          docker run --rm nvd2:test \
+          docker run --rm nvd:test \
             bash -c '
               python --version &&
               python -c "import Bio; print(\"Bio OK\")" &&
@@ -89,7 +89,7 @@ jobs:
       
       - name: Test py_nvd package imports
         run: |
-          docker run --rm nvd2:test \
+          docker run --rm nvd:test \
             bash -c '
               echo "Testing py_nvd imports..." &&
               python -c "from py_nvd import __version__; print(f\"py_nvd version: {__version__}\")" &&
@@ -99,7 +99,7 @@ jobs:
       
       - name: Test nvd CLI
         run: |
-          docker run --rm nvd2:test \
+          docker run --rm nvd:test \
             bash -c '
               echo "Testing nvd CLI..." &&
               nvd --help &&
@@ -109,7 +109,7 @@ jobs:
       
       - name: Test environment variables
         run: |
-          docker run --rm nvd2:test \
+          docker run --rm nvd:test \
             bash -c '
               [ "$NXF_CACHE_DIR" = "/scratch" ] || exit 1
               [ "$NXF_HOME" = "/scratch" ] || exit 1

@@ -51,7 +51,7 @@ def parse_args() -> argparse.Namespace:
         "--taxonomy-dir",
         type=Path,
         default=None,
-        help="Explicit taxonomy directory; overrides state directory fallback",
+        help="Explicit taxonomy directory; overrides NVD_TAXONOMY_DB and config-dir fallback",
     )
     parser.add_argument(
         "--sync",

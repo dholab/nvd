@@ -158,7 +158,7 @@ MAX_PREVIEW_ITEMS = 5  # Max items to show before "... and N more"
 # Help panel names for organizing --help output
 PANEL_CORE = "Core Options"
 PANEL_PREPROCESSING = "Read Preprocessing"
-PANEL_DATABASES = "Database Paths"
+PANEL_DATABASES = "Reference Paths"
 PANEL_ANALYSIS = "Analysis Parameters"
 PANEL_LABKEY = "LabKey Integration"
 PANEL_NOTIFICATIONS = "Notifications"

@@ -2,14 +2,15 @@
 Run command for the NVD CLI.
 
 Commands:
-    nvd run  - Run the NVD2 pipeline
+    nvd run  - Run the NVD pipeline
 """
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
-from pathlib import Path  # noqa: TC003
+from pathlib import Path
 from typing import Any
 
 import typer
@@ -37,6 +38,7 @@ from py_nvd.cli.utils import (
 )
 from py_nvd.models import NvdParams
 from py_nvd.params import load_params_file
+from py_nvd.paths import ENV_VAR_TAXONOMY
 from py_nvd.presets import get_preset_store
 
 
@@ -127,7 +129,7 @@ def run(
         rich_help_panel=PANEL_CORE,
     ),
     # -------------------------------------------------------------------------
-    # Database Paths
+    # Reference Paths
     # -------------------------------------------------------------------------
     blast_db: Path | None = typer.Option(
         None,
@@ -407,12 +409,12 @@ def run(
     ),
 ) -> None:
     """
-    Run the NVD2 pipeline.
+    Run the NVD pipeline.
 
     This command wraps 'nextflow run' with a simpler interface, running the
-    pipeline from the local installation. Database paths and settings are
+    pipeline from the local installation. Reference paths and settings are
     loaded from NVD_CONFIG_DIR/user.config unless overridden with command-line
-    options or NVD_CONFIG env var.
+    options or the NVD_CONFIG file override.
 
     The command is saved to .nfresume for easy resumption with 'nvd resume'.
 
@@ -491,6 +493,10 @@ def run(
 
     # All pipeline params from CLI (None values are filtered by merge)
     # NOTE: profile, config, resume are Nextflow-native, not pipeline params
+    resolved_taxonomy_dir = taxonomy_dir
+    if resolved_taxonomy_dir is None and ENV_VAR_TAXONOMY in os.environ:
+        resolved_taxonomy_dir = Path(os.environ[ENV_VAR_TAXONOMY])
+
     cli_args: dict[str, Any] = {
         # Core
         "samplesheet": samplesheet,
@@ -498,8 +504,8 @@ def run(
         "results": results,
         "cleanup": cleanup,
         "work_dir": work_dir,
-        "taxonomy_dir": taxonomy_dir,
-        # Database paths
+        "taxonomy_dir": resolved_taxonomy_dir,
+        # Reference paths
         "blast_db": blast_db,
         "blast_db_prefix": blast_db_prefix,
         "virus_index": virus_index,
@@ -509,7 +515,7 @@ def run(
         "virus_window_size": virus_window_size,
         "virus_abs_threshold": virus_abs_threshold,
         "virus_rel_threshold": virus_rel_threshold,
-        # Database versions
+        # Reference versions
         "blast_db_version": blast_db_version,
         # Analysis
         "cutoff_percent": cutoff_percent,

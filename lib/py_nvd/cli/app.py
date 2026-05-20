@@ -1,7 +1,7 @@
 """
-NVD2 Command Line Interface
+NVD Command Line Interface
 
-A user-friendly wrapper around the Nextflow-based NVD2 pipeline for
+A user-friendly wrapper around the Nextflow-based NVD pipeline for
 metagenomic virus detection and taxonomic classification.
 
 Usage:
@@ -34,7 +34,7 @@ from py_nvd.cli.utils import console
 
 app = typer.Typer(
     name="nvd",
-    help="NVD2 - Metagenomic virus detection pipeline",
+    help="NVD - Metagenomic virus detection pipeline",
     add_completion=True,
     no_args_is_help=True,
     rich_markup_mode="rich",

@@ -47,6 +47,7 @@ INSTALL_HOME = Path.home() / ".nvd"
 CHTC_SHARED_DIR = Path("/staging/groups/oconnor_group/nvd")
 CHTC_DEFAULT_CONFIG_DIR = INSTALL_HOME
 CHTC_DEFAULT_PRESET_STORE = CHTC_SHARED_DIR / "presets.sqlite"
+CHTC_DEFAULT_TAXONOMY_DIR = CHTC_SHARED_DIR / "taxdump"
 
 
 def _is_oconnor_chtc() -> bool:
@@ -216,9 +217,13 @@ SETUP_CONF_TEMPLATE = """\
 
 NVD_REPO={nvd_repo}
 NVD_CONFIG_DIR={config_dir}
+{taxonomy_dir_line}
 {preset_store_line}
 {default_profile_line}
 """
+
+_TAXONOMY_DIR_LINE_SET = "NVD_TAXONOMY_DB={taxonomy_dir}"
+_TAXONOMY_DIR_LINE_COMMENT = "# NVD_TAXONOMY_DB=/shared/path/taxdump"
 
 _PRESET_STORE_LINE_SET = "NVD_PRESET_STORE={preset_store}"
 _PRESET_STORE_LINE_COMMENT = "# NVD_PRESET_STORE=/shared/path/presets.sqlite"
@@ -300,6 +305,7 @@ def _generate_setup_conf(
     config_dir: Path,
     default_profile: str | None = None,
     preset_store: Path | None = None,
+    taxonomy_dir: Path | None = None,
 ) -> str:
     """Generate the setup.conf content."""
     if default_profile:
@@ -310,12 +316,17 @@ def _generate_setup_conf(
         preset_store_line = _PRESET_STORE_LINE_SET.format(preset_store=preset_store)
     else:
         preset_store_line = _PRESET_STORE_LINE_COMMENT
+    if taxonomy_dir is not None:
+        taxonomy_dir_line = _TAXONOMY_DIR_LINE_SET.format(taxonomy_dir=taxonomy_dir)
+    else:
+        taxonomy_dir_line = _TAXONOMY_DIR_LINE_COMMENT
 
     return SETUP_CONF_TEMPLATE.format(
         version=__version__,
         date=datetime.now(UTC).strftime("%Y-%m-%d"),
         nvd_repo=nvd_repo,
         config_dir=config_dir,
+        taxonomy_dir_line=taxonomy_dir_line,
         preset_store_line=preset_store_line,
         default_profile_line=profile_line,
     )
@@ -350,6 +361,7 @@ def _write_setup_conf(
     config_dir: Path,
     default_profile: str | None = None,
     preset_store: Path | None = None,
+    taxonomy_dir: Path | None = None,
 ) -> Path:
     """
     Write the setup.conf file to ~/.nvd/.
@@ -365,6 +377,7 @@ def _write_setup_conf(
         config_dir,
         default_profile,
         preset_store,
+        taxonomy_dir,
     )
     conf_path.write_text(conf_content)
 
@@ -821,6 +834,7 @@ def setup(
     # Determine default profile (CHTC uses chtc_htc profile from user.config)
     default_profile = "chtc_htc" if is_chtc else None
     preset_store = CHTC_DEFAULT_PRESET_STORE if is_chtc else None
+    taxonomy_dir = CHTC_DEFAULT_TAXONOMY_DIR if is_chtc else None
 
     # Write setup.conf
     conf_path = _write_setup_conf(
@@ -828,6 +842,7 @@ def setup(
         effective_config_dir,
         default_profile,
         preset_store,
+        taxonomy_dir,
     )
     success(f"Setup config written to {conf_path}")
     if default_profile:
@@ -1021,12 +1036,15 @@ def shell_hook(
     if not setup_conf_path.exists():
         setup_conf_path = INSTALL_HOME / "setup.conf"
     config_dir_value = str(get_config_dir())
+    taxonomy_dir_value: str | None = None
     preset_store_value: str | None = None
 
     if setup_conf_path.exists():
         for line in setup_conf_path.read_text().splitlines():
             if line.startswith("NVD_CONFIG_DIR="):
                 config_dir_value = line.split("=", 1)[1].strip()
+            elif line.startswith("NVD_TAXONOMY_DB="):
+                taxonomy_dir_value = line.split("=", 1)[1].strip()
             elif line.startswith("NVD_PRESET_STORE="):
                 preset_store_value = line.split("=", 1)[1].strip()
 
@@ -1035,6 +1053,11 @@ def shell_hook(
     preset_store_export = (
         f'\n# Shared preset store\nexport NVD_PRESET_STORE="{preset_store_value}"\n'
         if preset_store_value
+        else ""
+    )
+    taxonomy_dir_export = (
+        f'\n# Taxonomy cache visible to worker nodes\nexport NVD_TAXONOMY_DB="{taxonomy_dir_value}"\n'
+        if taxonomy_dir_value
         else ""
     )
 
@@ -1049,6 +1072,7 @@ export PATH="$HOME/.local/bin:$PATH"
 
 # NVD configuration directory
 export NVD_CONFIG_DIR="{config_dir_value}"
+{taxonomy_dir_export}
 {preset_store_export}
 # Shell completions ({detected_shell})
 # Sourced from static file for fast shell startup

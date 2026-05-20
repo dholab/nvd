@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from typer.testing import CliRunner
@@ -10,8 +11,6 @@ from typer.testing import CliRunner
 from py_nvd.cli.app import app
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     import pytest
 
 
@@ -126,3 +125,22 @@ def test_taxonomy_status_uses_explicit_taxonomy_dir(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.output
     payload = json.loads(result.output)
     assert payload["taxdump_dir"] == str(taxonomy_dir)
+
+
+def test_run_uses_taxonomy_env_as_pipeline_param(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    samplesheet = tmp_path / "samples.csv"
+    taxonomy_dir = Path("/shared/taxdump")
+    samplesheet.write_text("sample_id,srr,platform,fastq1,fastq2\n", encoding="utf-8")
+    monkeypatch.setenv("NVD_TAXONOMY_DB", str(taxonomy_dir))
+
+    result = runner.invoke(
+        app,
+        ["run", "--samplesheet", str(samplesheet), "--dry-run"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "--taxonomy_dir" in result.output
+    assert str(taxonomy_dir) in result.output

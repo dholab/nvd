@@ -12,6 +12,7 @@ from py_nvd import __version__
 from py_nvd.cli.commands.setup import (
     CHTC_DEFAULT_CONFIG_DIR,
     CHTC_DEFAULT_PRESET_STORE,
+    CHTC_DEFAULT_TAXONOMY_DIR,
     _detect_shell,
     _generate_setup_conf,
     _generate_wrapper_script,
@@ -68,6 +69,19 @@ def test_generate_setup_conf_writes_chtc_preset_store() -> None:
     assert "NVD_STATE_DIR" not in conf
 
 
+def test_generate_setup_conf_writes_chtc_taxonomy_dir() -> None:
+    conf = _generate_setup_conf(
+        Path.home() / ".nvd" / "latest",
+        CHTC_DEFAULT_CONFIG_DIR,
+        default_profile="chtc_htc",
+        taxonomy_dir=CHTC_DEFAULT_TAXONOMY_DIR,
+    )
+
+    assert "NVD_TAXONOMY_DB=/staging/groups/oconnor_group/nvd/taxdump" in conf
+    assert "NVD_DEFAULT_PROFILE=chtc_htc" in conf
+    assert "NVD_STATE_DIR" not in conf
+
+
 def test_shell_hook_exports_preset_store_from_setup_conf(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -90,6 +104,31 @@ def test_shell_hook_exports_preset_store_from_setup_conf(
     assert result.exit_code == 0, result.output
     assert f'export NVD_CONFIG_DIR="{config_dir}"' in result.output
     assert f'export NVD_PRESET_STORE="{preset_store}"' in result.output
+    assert f"{config_dir / 'completions.bash'}" in result.output
+
+
+def test_shell_hook_exports_taxonomy_dir_from_setup_conf(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config_dir = tmp_path / "config"
+    taxonomy_dir = tmp_path / "shared" / "taxdump"
+    config_dir.mkdir()
+    (config_dir / "setup.conf").write_text(
+        _generate_setup_conf(
+            Path("/opt/nvd"),
+            config_dir,
+            default_profile="chtc_htc",
+            taxonomy_dir=taxonomy_dir,
+        ),
+    )
+    monkeypatch.setenv("NVD_CONFIG_DIR", str(config_dir))
+
+    result = runner.invoke(setup_app, ["shell-hook", "--shell", "bash"])
+
+    assert result.exit_code == 0, result.output
+    assert f'export NVD_CONFIG_DIR="{config_dir}"' in result.output
+    assert f'export NVD_TAXONOMY_DB="{taxonomy_dir}"' in result.output
     assert f"{config_dir / 'completions.bash'}" in result.output
 
 
