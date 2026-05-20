@@ -14,12 +14,10 @@ include {
 
 workflow LIMS_INTEGRATION {
     take:
-    blast_results        // queue channel: [ sample_id, csv ] - one per sample with retained BLAST hits
+    blast_results        // queue channel: [ sample_id, tsv ] — enriched with mapped_reads, total_reads, blast_db_version, snakemake_run_id
     contig_sequences     // queue channel: [ sample_id, fasta ] - one per sample
-    read_counts          // queue channel: [ sample_id, total_reads ] - one per sample
-    experiment_id        // value channel: experiment ID
-    run_id               // value channel: workflow run ID
-    contig_read_counts   // queue channel: [ sample_id, mapped_counts.tsv ] - one per sample
+    experiment_id        // value channel: experiment ID (the one LabKey-specific field)
+    run_id               // value channel: workflow run ID (needed for FASTA prep and uploads)
     run_ready            // value channel: gate ensuring upstream preflight passed
 
     main:
@@ -28,12 +26,6 @@ workflow LIMS_INTEGRATION {
         : channel.empty()
     ch_labkey_contigs = params.labkey
         ? contig_sequences
-        : channel.empty()
-    ch_labkey_read_counts = params.labkey
-        ? read_counts
-        : channel.empty()
-    ch_labkey_contig_read_counts = params.labkey
-        ? contig_read_counts
         : channel.empty()
 
     ch_labkey_has_hits = ch_labkey_blast_results
@@ -56,24 +48,24 @@ workflow LIMS_INTEGRATION {
         .map { _ready_and_list_validation, _fresh -> true }
         .first()
 
+    // Join BLAST results with contig FASTA for per-sample processing.
+    // The BLAST TSV already contains mapped_reads, total_reads, blast_db_version,
+    // and snakemake_run_id from upstream ADD_READ_COUNTS_TO_BLAST.
     ch_all_sample_data = ch_labkey_blast_results
         .join(ch_labkey_contigs, by: 0)
-        .join(ch_labkey_read_counts, by: 0)
-        .join(ch_labkey_contig_read_counts, by: 0)
 
     ch_split = ch_all_sample_data
-        .multiMap { sample_id, blast_csv, fasta, total_reads, mapped_counts ->
+        .multiMap { sample_id, blast_tsv, fasta ->
             def blast_output = "${sample_id}_blast_labkey.csv"
             def fasta_output = "${sample_id}_fasta_labkey.csv"
-            blast_labkey: [sample_id, blast_csv, total_reads, mapped_counts, blast_output]
-            webdav_upload: [sample_id, blast_csv, fasta]
+            blast_labkey: [sample_id, blast_tsv, blast_output]
+            webdav_upload: [sample_id, blast_tsv, fasta]
             fasta_labkey: [sample_id, fasta, fasta_output]
         }
 
     LABKEY_PREPARE_BLAST(
         ch_split.blast_labkey,
         experiment_id,
-        run_id,
         ch_validation_gate,
     )
 
@@ -108,14 +100,13 @@ workflow LIMS_INTEGRATION {
     LABKEY_UPLOAD_BLAST(
         LABKEY_PREPARE_BLAST.out.csv,
         experiment_id,
-        run_id,
     )
 
     LABKEY_UPLOAD_FASTA(
         LABKEY_PREPARE_FASTA.out.csv,
         experiment_id,
-        run_id,
     )
+
 
     ch_upload_complete = LABKEY_WEBDAV_UPLOAD_BLAST.out.done
         .mix(LABKEY_WEBDAV_UPLOAD_CONCATENATED.out.done)
