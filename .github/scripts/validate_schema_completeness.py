@@ -76,6 +76,7 @@ PYDANTIC_NO_CLI_NEEDED = {
     # Version tracking (set in config, not CLI)
     "gottcha2_db_version",
     "blast_db_version",
+    "virus_index_version",
     # Complex types (set via params-file)
     "human_virus_families",
     # Typically set via params-file or preset

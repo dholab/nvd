@@ -28,7 +28,9 @@ INSTALLER = ROOT / "install.sh"
 
 
 class PtySession:
-    def __init__(self, command: str, env: dict[str, str], timeout: float = 20.0) -> None:
+    def __init__(
+        self, command: str, env: dict[str, str], timeout: float = 20.0
+    ) -> None:
         self.command = command
         self.env = env
         self.timeout = timeout
@@ -58,7 +60,9 @@ class PtySession:
                     os.kill(self.pid, 15)
                     os.waitpid(self.pid, 0)
                 elif status != 0 and exc_type is None:
-                    raise AssertionError(f"command exited non-zero: {status}\n{self.text}")
+                    raise AssertionError(
+                        f"command exited non-zero: {status}\n{self.text}"
+                    )
             except ChildProcessError:
                 pass
 
@@ -273,7 +277,9 @@ def test_dry_run_database_wizard_walks_planned_downloads() -> None:
         assert "Downloading BLAST database archive" not in output
         assert "[DRY RUN] Would remove" not in output
         assert not (tmp / ".nvd" / "references" / "blast_db_v3_0.tar.gz").exists()
-        assert not (tmp / ".nvd" / "references" / "human_infecting_viruses.k31w1.idx").exists()
+        assert not (
+            tmp / ".nvd" / "references" / "human_infecting_viruses.k31w1.idx"
+        ).exists()
     finally:
         shutil.rmtree(tmp)
 
