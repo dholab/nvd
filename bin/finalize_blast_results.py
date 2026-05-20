@@ -58,6 +58,11 @@ def main():
         help="BLAST database version string",
     )
     parser.add_argument(
+        "--stat-kmer-db",
+        required=True,
+        help="STAT k-mer database version used for virus enrichment index",
+    )
+    parser.add_argument(
         "--run-id",
         required=True,
         help="Workflow run identifier",
@@ -70,7 +75,8 @@ def main():
         "mapped_reads",
         "total_reads",
         "blast_db_version",
-        "snakemake_run_id",
+        "stat_kmer_db",
+        "nextflow_run_id",
     ]
 
     with open(args.blast_tsv) as infile, open(args.output, "w", newline="") as outfile:
@@ -85,7 +91,8 @@ def main():
             row["mapped_reads"] = contig_counts.get(row.get("qseqid", ""), "0")
             row["total_reads"] = args.total_reads
             row["blast_db_version"] = args.blast_db_version
-            row["snakemake_run_id"] = args.run_id
+            row["stat_kmer_db"] = args.stat_kmer_db
+            row["nextflow_run_id"] = args.run_id
             writer.writerow(row)
 
 

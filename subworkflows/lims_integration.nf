@@ -14,7 +14,7 @@ include {
 
 workflow LIMS_INTEGRATION {
     take:
-    blast_results        // queue channel: [ sample_id, tsv ] — enriched with mapped_reads, total_reads, blast_db_version, snakemake_run_id
+    blast_results        // queue channel: [ sample_id, tsv ] — enriched with mapped_reads, total_reads, blast_db_version, nextflow_run_id
     contig_sequences     // queue channel: [ sample_id, fasta ] - one per sample
     experiment_id        // value channel: experiment ID (the one LabKey-specific field)
     run_id               // value channel: workflow run ID (needed for FASTA prep and uploads)
@@ -50,7 +50,7 @@ workflow LIMS_INTEGRATION {
 
     // Join BLAST results with contig FASTA for per-sample processing.
     // The BLAST TSV already contains mapped_reads, total_reads, blast_db_version,
-    // and snakemake_run_id from upstream ADD_READ_COUNTS_TO_BLAST.
+    // and nextflow_run_id from upstream ADD_READ_COUNTS_TO_BLAST.
     ch_all_sample_data = ch_labkey_blast_results
         .join(ch_labkey_contigs, by: 0)
 

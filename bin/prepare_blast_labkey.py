@@ -3,7 +3,7 @@
 Prepare BLAST data for LabKey upload.
 
 The input TSV is already enriched with mapped_reads, total_reads,
-blast_db_version, and snakemake_run_id by ADD_READ_COUNTS_TO_BLAST.
+blast_db_version, stat_kmer_db, and nextflow_run_id by ADD_READ_COUNTS_TO_BLAST.
 This script adds the experiment_id column, renames columns to match
 the LabKey schema, and converts TSV → CSV.
 """

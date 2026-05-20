@@ -18,7 +18,7 @@ workflow REPORTING {
     }
 
     // Enrich BLAST results with all pipeline metadata (mapped_reads, total_reads,
-    // blast_db_version, snakemake_run_id) so the published TSV is complete
+    // blast_db_version, nextflow_run_id) so the published TSV is complete
     // regardless of whether LabKey is enabled.
     ch_blast_finalize = ch_blast_results
         .join(ch_read_counts, by: 0)

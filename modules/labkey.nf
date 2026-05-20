@@ -149,7 +149,7 @@ process LABKEY_PREPARE_BLAST {
     /*
      * Reformat enriched BLAST TSV for LabKey upload.
      * The input TSV already contains mapped_reads, total_reads, blast_db_version,
-     * and snakemake_run_id from upstream ADD_READ_COUNTS_TO_BLAST.
+     * and nextflow_run_id from upstream ADD_READ_COUNTS_TO_BLAST.
      * This process only adds experiment_id and converts TSV → CSV.
      */
     tag "$meta"
@@ -224,14 +224,14 @@ process LABKEY_PREPARE_FASTA {
             'contig_id': record.id,
             'contig_sequence': str(record.seq),
             'notes': '',
-            'snakemake_run_id': '${run_id}'
+            'nextflow_run_id': '${run_id}'
         }
         fasta_data.append(labkey_row)
 
     if fasta_data:
         with open('${output_name}', 'w') as f:
             fieldnames = ['experiment', 'sample_id', 'contig_id',
-                         'contig_sequence', 'notes', 'snakemake_run_id']
+                         'contig_sequence', 'notes', 'nextflow_run_id']
             writer = csv.DictWriter(f, fieldnames=fieldnames)
             writer.writeheader()
             writer.writerows(fasta_data)

@@ -72,7 +72,8 @@ process ADD_READ_COUNTS_TO_BLAST {
      *   mapped_reads  — per-contig read count (joined by qseqid)
      *   total_reads   — sample-level total input reads
      *   blast_db_version — BLAST database version
-     *   snakemake_run_id — workflow run identifier
+     *   stat_kmer_db — STAT k-mer database version
+     *   nextflow_run_id — workflow run identifier
      *
      * This consolidates all metadata enrichment into one step so that
      * the published _blast.final.tsv is complete regardless of whether
@@ -97,6 +98,7 @@ process ADD_READ_COUNTS_TO_BLAST {
         --output ${sample_id}_blast.final.tsv \\
         --total-reads ${total_reads} \\
         --blast-db-version '${params.blast_db_version}' \\
+        --stat-kmer-db '${params.stat_kmer_db}' \\
         --run-id '${run_id}'
     """
 }
