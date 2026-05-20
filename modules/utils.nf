@@ -68,22 +68,36 @@ process ANNOTATE_LEAST_COMMON_ANCESTORS {
 
 process ADD_READ_COUNTS_TO_BLAST {
     /*
-     * Append total_reads column to merged BLAST results.
+     * Enrich merged BLAST results with pipeline metadata columns:
+     *   mapped_reads  — per-contig read count (joined by qseqid)
+     *   total_reads   — sample-level total input reads
+     *   blast_db_version — BLAST database version
+     *   snakemake_run_id — workflow run identifier
+     *
+     * This consolidates all metadata enrichment into one step so that
+     * the published _blast.final.tsv is complete regardless of whether
+     * LabKey is enabled. LIMS integration only needs to add experiment_id.
      */
 
     tag "${sample_id}"
     label "low"
 
     input:
-    tuple val(sample_id), path(blast_tsv), val(total_reads)
+    tuple val(sample_id), path(blast_tsv), val(total_reads), path(contig_counts)
+    val run_id
 
     output:
     tuple val(sample_id), path("${sample_id}_blast.final.tsv")
 
     script:
     """
-    awk -v reads="${total_reads}" 'BEGIN{OFS="\t"} NR==1{print \$0, "total_reads"} NR>1{print \$0, reads}' \
-        ${blast_tsv} > ${sample_id}_blast.final.tsv
+    finalize_blast_results.py \\
+        --blast-tsv ${blast_tsv} \\
+        --contig-counts ${contig_counts} \\
+        --output ${sample_id}_blast.final.tsv \\
+        --total-reads ${total_reads} \\
+        --blast-db-version '${params.blast_db_version}' \\
+        --run-id '${run_id}'
     """
 }
 
