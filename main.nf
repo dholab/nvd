@@ -15,11 +15,4 @@ workflow {
     .unique()
 
   nvd_main_results = NVD_MAIN(ch_input_samplesheet)
-
-  if (params.labkey) {
-    nvd_main_results.labkey_log.collectFile(
-      name: 'final_labkey_upload.log',
-      storeDir: params.results,
-    )
-  }
 }
