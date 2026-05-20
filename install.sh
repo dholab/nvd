@@ -90,6 +90,19 @@ print_info() {
 # Prompt Utilities
 # =============================================================================
 
+read_prompt() {
+	local variable_name="$1"
+	local response
+
+	if [[ -r /dev/tty ]]; then
+		IFS= read -r response </dev/tty
+	else
+		IFS= read -r response
+	fi
+
+	printf -v "$variable_name" '%s' "$response"
+}
+
 prompt_yes_no() {
 	local prompt="$1"
 	local default="${2:-y}"
@@ -108,7 +121,9 @@ prompt_yes_no() {
 
 	echo -en "  ${prompt} ${yn_hint}: "
 	local response
-	read -r response
+	if ! read_prompt response; then
+		response=""
+	fi
 	response="${response:-$default}"
 
 	case "$response" in
@@ -144,7 +159,9 @@ prompt_choice() {
 	while true; do
 		echo -en "  Choice [1-${#options[@]}]: " >&2
 		local choice
-		read -r choice
+		if ! read_prompt choice; then
+			choice="1"
+		fi
 
 		if [[ "$choice" =~ ^[0-9]+$ ]] && [[ "$choice" -ge 1 ]] && [[ "$choice" -le "${#options[@]}" ]]; then
 			echo "$choice"
@@ -165,7 +182,9 @@ prompt_path() {
 
 	echo -en "  ${prompt} [${default}]: " >&2
 	local response
-	read -r response
+	if ! read_prompt response; then
+		response=""
+	fi
 	response="${response:-$default}"
 
 	# Expand ~ and $HOME
@@ -173,6 +192,14 @@ prompt_path() {
 	response="${response/\$HOME/$HOME}"
 
 	echo "$response"
+}
+
+run_interactive_command() {
+	if [[ -r /dev/tty ]]; then
+		"$@" </dev/tty
+	else
+		"$@"
+	fi
 }
 
 # =============================================================================
@@ -996,7 +1023,7 @@ main() {
 	if [[ "$DRY_RUN" == "true" ]]; then
 		print_info "[DRY RUN] Would run: ${nvd_bin} setup"
 	elif "${nvd_bin}" setup --help &>/dev/null; then
-		"${nvd_bin}" setup
+		run_interactive_command "${nvd_bin}" setup
 	else
 		print_warning "nvd setup command not available in this version"
 		print_info "You may need to run 'nvd setup' manually after updating"
