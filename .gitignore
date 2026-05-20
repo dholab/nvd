@@ -2,6 +2,7 @@
 
 # project root files
 !.gitignore
+!.dockerignore
 !.pre-commit-config.yaml
 !Dockerfile
 !Containerfile

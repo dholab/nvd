@@ -14,7 +14,7 @@ ENV HOME=/opt
 
 # run a few apt installs
 RUN apt-get update && \
-    apt-get install -y curl util-linux && \
+    apt-get install -y --no-install-recommends curl ca-certificates util-linux && \
     rm -rf /var/lib/apt/lists/* && \
     mkdir /dependencies && \
     dpkg -l > /dependencies/apt-get.lock
@@ -35,10 +35,18 @@ RUN cd $HOME && PIXI_ARCH=x86_64 curl -fsSL https://pixi.sh/install.sh | bash
 # 3) make sure pixi and pixi installs are on the $PATH
 ENV PATH=$PATH:$HOME/.pixi/bin
 
-# 4) install everything else with pixi
+# 4) install everything else with pixi. The container runtime does not need
+# host-side build and container-management tooling from the full developer
+# environment, so skip those direct packages and their dependency subtrees.
 RUN cd $HOME && \
-    pixi install --frozen && \
-    pixi clean cache --assume-yes
+    pixi install --frozen \
+        --skip-with-deps apptainer \
+        --skip-with-deps rust-script \
+        --skip-with-deps rust \
+        --skip-with-deps compilers \
+        --skip-with-deps pkg-config && \
+    pixi clean cache --assume-yes && \
+    rm -rf $HOME/.cache $HOME/.pixi/cache
 
 # 5) Add pixi environment to PATH (works in Docker, Podman, AND Apptainer)
 ENV PATH=$PATH:/opt/.pixi/envs/default/bin
@@ -47,5 +55,5 @@ ENV PATH=$PATH:/opt/.pixi/envs/default/bin
 ENV NXF_CACHE_DIR=/scratch
 ENV NXF_HOME=/scratch
 
-# Fix snakemake permission issue
+# Provide a writable cache location for tools that ignore HOME in containers.
 RUN mkdir /.cache; chmod a+rwX /.cache
