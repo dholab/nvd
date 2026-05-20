@@ -55,7 +55,7 @@ workflow NVD_MAIN {
   COMPUTE_RUN_CONTEXT(channel.fromPath(params.samplesheet))
 
   ENSURE_TAXONOMY(
-    Channel.value(dirs.taxonomy_dir)
+    channel.value(dirs.taxonomy_dir)
   )
 
   if (params.labkey) {
@@ -66,9 +66,6 @@ workflow NVD_MAIN {
 
   PREPROCESS_READS(GATHER_READS.out)
 
-  // -------------------------------------------------------------------------
-  // Step 3: Assembly and classification
-  // -------------------------------------------------------------------------
   PREPROCESS_CONTIGS(PREPROCESS_READS.out.reads)
 
   ch_run_context = COMPUTE_RUN_CONTEXT.out.run_context.first()
@@ -130,7 +127,7 @@ workflow NVD_MAIN {
     ch_terminal = REGISTER_LK_EXPERIMENT.out
   }
   else {
-    labkey_log_ch = Channel.empty()
+    labkey_log_ch = channel.empty()
 
     ch_run_complete_gate = REPORTING.out.blast_results
       .collect()
@@ -140,7 +137,7 @@ workflow NVD_MAIN {
   }
 
   if (params.slack_enabled && params.slack_channel && params.labkey) {
-    ch_labkey_url = Channel.value(
+    ch_labkey_url = channel.value(
       "https://${params.labkey_server}/${params.labkey_project_name}/list-grid.view?name=${params.labkey_blast_meta_hits_list}"
     )
 

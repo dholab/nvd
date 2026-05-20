@@ -40,7 +40,6 @@ class NvdDirs {
         }
         def taxonomy_dir_str = taxonomy_dir_file.getAbsolutePath()
 
-        nfLog.info "Using explicit taxonomy directory: ${taxonomy_dir_str}"
         return new NvdDirs(taxonomy_dir_str)
     }
 }
