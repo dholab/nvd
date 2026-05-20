@@ -17,18 +17,14 @@ workflow REPORTING {
         NvdUtils.validateLabkeyBlast(params)
     }
 
-    // Add total read counts to the final merged BLAST results so they are
-    // always present in the published TSV, regardless of LabKey.
-    ch_split_read_counts = ch_read_counts
-        .multiMap { sample_id, total_reads ->
-            for_blast: tuple(sample_id, total_reads)
-            for_labkey: tuple(sample_id, total_reads)
-        }
+    // Enrich BLAST results with all pipeline metadata (mapped_reads, total_reads,
+    // blast_db_version, snakemake_run_id) so the published TSV is complete
+    // regardless of whether LabKey is enabled.
+    ch_blast_finalize = ch_blast_results
+        .join(ch_read_counts, by: 0)
+        .join(ch_contig_read_counts, by: 0)
 
-    ch_blast_with_counts = ch_blast_results
-        .join(ch_split_read_counts.for_blast, by: 0)
-
-    ADD_READ_COUNTS_TO_BLAST(ch_blast_with_counts)
+    ADD_READ_COUNTS_TO_BLAST(ch_blast_finalize, run_id)
 
     ch_split_blast_results = ADD_READ_COUNTS_TO_BLAST.out
         .multiMap { sample_id, blast_tsv ->
@@ -47,10 +43,8 @@ workflow REPORTING {
     LIMS_INTEGRATION(
         ch_split_blast_results.for_labkey_upload,
         ch_contig_sequences,
-        ch_split_read_counts.for_labkey,
         params.experiment_id,
         run_id,
-        ch_contig_read_counts,
         ch_run_ready,
     )
 
