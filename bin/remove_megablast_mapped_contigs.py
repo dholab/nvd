@@ -25,7 +25,11 @@ def setup_logger(log_file: str | None) -> logging.Logger:
     return logger
 
 
-def extract_unique_ids(input_file: str, output_file: str, logger: logging.Logger) -> None:
+def extract_unique_ids(
+    input_file: str,
+    output_file: str,
+    logger: logging.Logger,
+) -> None:
     unique_ids = set()
     logger.info(f"Reading megablast results from {input_file}")
     with open(input_file) as f:
