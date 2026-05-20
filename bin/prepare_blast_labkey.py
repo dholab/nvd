@@ -4,7 +4,8 @@ Prepare BLAST data for LabKey upload.
 
 The input TSV is already enriched with mapped_reads, total_reads,
 blast_db_version, and snakemake_run_id by ADD_READ_COUNTS_TO_BLAST.
-This script adds the experiment_id column and converts TSV → CSV.
+This script adds the experiment_id column, renames columns to match
+the LabKey schema, and converts TSV → CSV.
 """
 
 import argparse
@@ -18,6 +19,18 @@ logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+# Column renames from BLAST TSV names → LabKey schema names
+COLUMN_RENAMES = {
+    "task": "blast_task",
+    "sample": "sample_id",
+    "rank": "tax_rank",
+}
+
+
+def rename_columns(row: dict[str, str]) -> dict[str, str]:
+    """Rename TSV columns to match LabKey schema."""
+    return {COLUMN_RENAMES.get(key, key): value for key, value in row.items()}
 
 
 def main():
@@ -60,9 +73,9 @@ def main():
                     skipped_count += 1
                     continue
 
-                # Build the LabKey record: experiment_id + all existing columns
+                # Rename columns to match LabKey schema, then add experiment_id
                 record = {"experiment": args.experiment_id}
-                record.update(row)
+                record.update(rename_columns(row))
                 records.append(record)
 
         if records:
