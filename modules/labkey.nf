@@ -146,13 +146,18 @@ process LABKEY_WEBDAV_UPLOAD_CONCATENATED {
 }
 
 process LABKEY_PREPARE_BLAST {
+    /*
+     * Reformat enriched BLAST TSV for LabKey upload.
+     * The input TSV already contains mapped_reads, total_reads, blast_db_version,
+     * and snakemake_run_id from upstream ADD_READ_COUNTS_TO_BLAST.
+     * This process only adds experiment_id and converts TSV → CSV.
+     */
     tag "$meta"
     label 'low'
 
     input:
-    tuple val(meta), path(blast_csv), val(total_reads), path(contig_mapped_read_counts), val(output_name)
+    tuple val(meta), path(blast_tsv), val(output_name)
     val experiment_id
-    val run_id
     val validation_complete
 
     output:
@@ -161,14 +166,10 @@ process LABKEY_PREPARE_BLAST {
     script:
     """
     prepare_blast_labkey.py \
-        --blast-csv ${blast_csv} \
-        --contig-counts ${contig_mapped_read_counts} \
+        --blast-csv ${blast_tsv} \
         --output ${output_name} \
         --meta '${meta}' \
-        --experiment-id ${experiment_id} \
-        --run-id '${run_id}' \
-        --total-reads ${total_reads} \
-        --blast-db-version '${params.blast_db_version}'
+        --experiment-id ${experiment_id}
     """
 }
 
@@ -247,7 +248,6 @@ process LABKEY_UPLOAD_BLAST {
     input:
     tuple val(sample_id), path(csv_file)
     val experiment_id
-    val run_id
 
     output:
     path "blast_labkey_upload.log", emit: log
@@ -256,7 +256,6 @@ process LABKEY_UPLOAD_BLAST {
     """
     labkey_upload_blast_results.py \
         --experiment-id '${experiment_id}' \
-        --run-id '${run_id}' \
         --labkey-server '${params.labkey_server}' \
         --labkey-project-name '${params.labkey_project_name}' \
         --labkey-api-key \$LABKEY_API_KEY \
@@ -273,7 +272,6 @@ process LABKEY_UPLOAD_FASTA {
     input:
     tuple val(sample_id), path(csv_file)
     val experiment_id
-    val run_id
 
     output:
     path "fasta_labkey_upload.log", emit: log
@@ -282,7 +280,6 @@ process LABKEY_UPLOAD_FASTA {
     """
     labkey_upload_blast_fasta.py \
         --experiment-id '${experiment_id}' \
-        --run-id '${run_id}' \
         --labkey-server '${params.labkey_server}' \
         --labkey-project-name '${params.labkey_project_name}' \
         --labkey-api-key \$LABKEY_API_KEY \
