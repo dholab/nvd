@@ -18,7 +18,6 @@ import more_itertools
 def main():
     parser = argparse.ArgumentParser(description="Upload FASTA CSVs to LabKey.")
     parser.add_argument("--experiment-id", required=True)
-    parser.add_argument("--run-id", required=True)
     parser.add_argument("--labkey-server", required=True)
     parser.add_argument("--labkey-project-name", required=True)
     parser.add_argument("--labkey-api-key", required=True)
@@ -29,7 +28,6 @@ def main():
     log_entries = [
         f"LabKey FASTA Upload Log - {datetime.now()}",
         f"Experiment ID: {args.experiment_id}",
-        f"Run ID: {args.run_id}",
         f"Server: {args.labkey_server}",
         f"Project: {args.labkey_project_name}",
         f"Target Table: {args.table_name}",
