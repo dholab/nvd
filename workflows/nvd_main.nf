@@ -56,8 +56,8 @@ workflow NVD_MAIN {
 
   PREPROCESS_CONTIGS(PREPROCESS_READS.out.reads)
 
-  ch_run_context = COMPUTE_RUN_CONTEXT.out.run_context.first()
-  ch_taxonomy_dir = ENSURE_TAXONOMY.out.taxonomy_dir.first()
+  ch_run_context = COMPUTE_RUN_CONTEXT.out.run_context
+  ch_taxonomy_dir = ENSURE_TAXONOMY.out.taxonomy_dir
   EXTRACT_HUMAN_VIRUSES(
     PREPROCESS_CONTIGS.out.contigs,
     PREPROCESS_CONTIGS.out.viral_reads,
