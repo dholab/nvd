@@ -45,7 +45,7 @@ workflow LIMS_INTEGRATION {
     ch_validation_gate = run_ready
         .combine(ch_labkey_list_validation)
         .combine(LABKEY_VALIDATE_EXPERIMENT_FRESH.out.validated)
-        .map { _ready_and_list_validation, _fresh -> true }
+        .map { _ready, _list_valid, _fresh -> true }
         .first()
 
     // Join BLAST results with contig FASTA for per-sample processing.
