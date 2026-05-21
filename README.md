@@ -20,7 +20,7 @@ This pipeline in its 3rd major version, which brings with it a helpful CLI and p
 
 ## Get Started
 
-NVD set-up is a multi-phase process, including dependency setup, reference database setup, sample data setup, and run command construction. These phases can be handled manually, but we recommend users user our installer script to get started.
+NVD set-up is a multi-phase process, including dependency setup, reference database setup, sample data setup, and run command construction. These phases can be handled manually, but we recommend users use our installer script to get started.
 
 ### Dependency setup
 
@@ -109,6 +109,24 @@ wget https://dholk.primate.wisc.edu/_webdav/dho/projects/lungfish/InfinitePath/p
 ```
 
 The installer extracts the BLAST tarball for you. If you download manually, extract `blast_db_v3_0.tar.gz` before use and point `blast_db` at the extracted directory. The deacon index is already a single `.idx` file and does not need extraction.
+
+#### The virus enrichment index
+
+To reduce sequence search space before assembly and BLAST verification, NVD uses a compact deacon minimizer index representing human-infecting viruses. This index is derived from NCBI's STAT dense tree-of-life minimizer database, filtered to NVD's curated human-virus taxid list, and converted into deacon's `.idx` format. It is used as a fast screening step, not as the final taxonomic classifier.
+
+Most users should use the release index distributed with NVD:
+
+```text
+human_infecting_viruses.k31w1.idx
+```
+
+You can pass it through a params file as `virus_index`, or with the CLI:
+
+```bash
+nvd run --params-file run.yaml --virus-index /path/to/human_infecting_viruses.k31w1.idx
+```
+
+For the rationale, source STAT database, curated taxid list, conversion script, build parameters, and reproducibility notes, see the [Virus Enrichment Index Guide](./docs/virus_enrichment_index.md).
 
 ### NVD setup management
 
@@ -366,6 +384,8 @@ Offline mode requires the taxonomy directory to already contain the expected NCB
   instructions using `install.sh`
 - **[Direct Nextflow Examples](./docs/example_commands.md)** - Traditional
   Nextflow command examples
+- **[Virus Enrichment Index Guide](./docs/virus_enrichment_index.md)** - Notes on
+  the deacon human-infecting virus enrichment index
 - **[Contributor Guide](./docs/contributor_guide.md)** - Development guidelines
   and best practices
 

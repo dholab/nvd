@@ -33,6 +33,7 @@
 # bin
 !/bin
 !/bin/*.py
+!/bin/*.rs
 
 # lib (py_nvd package and Groovy utilities)
 !/lib
@@ -69,6 +70,7 @@
 !/docs/contributor_guide.md
 !/docs/example_commands.md
 !/docs/nvd_cli_guide.md
+!/docs/virus_enrichment_index.md
 
 # scripts
 !/scripts/*
