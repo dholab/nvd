@@ -82,6 +82,7 @@ workflow NVD_MAIN {
     PREPROCESS_READS.out.read_counts,
     EXTRACT_HUMAN_VIRUSES.out.contigs,
     EXTRACT_HUMAN_VIRUSES.out.contig_read_counts,
+    PREPROCESS_READS.out.virus_enrichment_stats,
     COMPUTE_RUN_CONTEXT.out.ready,
     ch_run_context,
     workflow.runName,

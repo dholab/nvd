@@ -9,6 +9,7 @@ authors = [
 requires-python = ">= 3.11, < 3.14"
 version = "3.0.0"
 dependencies = [
+  "altair>=6.1.0",
   "biopython>=1.85",
   "jsonschema>=4.23.0",
   "labkey>=3.4.0",
@@ -24,7 +25,7 @@ dependencies = [
   "slack-sdk>=3.39.0",
   "taxopy>=0.14.0",
   "typer>=0.15.2",
-
+  "vl-convert-python>=1.9.0.post1",
 ]
 
 [tool.pixi.workspace]

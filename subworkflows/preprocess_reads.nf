@@ -135,5 +135,6 @@ workflow PREPROCESS_READS {
     emit:
     reads = ch_preprocessed
     read_counts = ch_read_counts
+    virus_enrichment_stats = DEACON_FILTER_HUMAN_VIRUS_READS.out.stats
     virus_index = ch_virus_index
 }

@@ -1,4 +1,4 @@
-include { ADD_READ_COUNTS_TO_BLAST; CONCATENATE_EXPERIMENT_BLAST } from "../modules/utils"
+include { ADD_READ_COUNTS_TO_BLAST; CONCATENATE_EXPERIMENT_BLAST; VIRUS_ENRICHMENT_REPORT } from "../modules/utils"
 include { NOTIFY_SLACK } from "../modules/utils"
 include { LIMS_INTEGRATION } from "./lims_integration"
 
@@ -8,6 +8,7 @@ workflow REPORTING {
     ch_read_counts
     ch_contig_sequences
     ch_contig_read_counts
+    ch_virus_enrichment_stats
     ch_run_ready
     ch_run_context
     run_id
@@ -40,6 +41,10 @@ workflow REPORTING {
         ch_split_blast_results.for_summary.map { _sample_id, tsv -> tsv }.collect()
     )
 
+    VIRUS_ENRICHMENT_REPORT(
+        ch_virus_enrichment_stats.map { _sample_id, json -> json }.collect()
+    )
+
     LIMS_INTEGRATION(
         ch_split_blast_results.for_labkey_upload,
         ch_contig_sequences,
@@ -65,6 +70,7 @@ workflow REPORTING {
     emit:
     blast_results = ch_split_blast_results.for_emit
     experiment_blast = CONCATENATE_EXPERIMENT_BLAST.out.concatenated_tsv
+    virus_enrichment_report = VIRUS_ENRICHMENT_REPORT.out.summary_tsv
     labkey_log = LIMS_INTEGRATION.out.upload_log
     final_labkey_log = LIMS_INTEGRATION.out.final_labkey_log
     labkey_registered = LIMS_INTEGRATION.out.registered
