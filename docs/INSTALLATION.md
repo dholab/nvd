@@ -1,296 +1,236 @@
-# NVD2 Installation Guide
+# NVD Installation Guide
 
-## Quick Start
+This guide describes the supported v3 installation path. The recommended interface is the `nvd` CLI: use it to set up the local wrapper, author parameter files, validate configuration, and launch the pipeline. Direct `nextflow run` execution remains available for debugging and advanced fallback use, but it is not the primary user workflow.
 
-NVD2 includes an interactive setup script to help configure database paths:
+## Quick start
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/dhoconno/nvd/main/install.sh | bash
-```
-
-Or download and inspect first:
+Run the installer from a terminal:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/dhoconno/nvd/main/install.sh -o install.sh
-chmod +x install.sh
-./install.sh
+curl -fsSL https://raw.githubusercontent.com/dholab/nvd/main/install.sh | bash
 ```
 
-**Prerequisites** (must be installed separately):
-- Java 11 or newer
+To review the script first:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/dholab/nvd/main/install.sh -o install.sh
+less install.sh # to inspect the source
+bash install.sh
+```
+
+To pass installer flags while using the `curl | bash` form, use `bash -s --`:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/dholab/nvd/main/install.sh | bash -s -- --dry-run
+```
+
+## Prerequisites
+
+NVD expects these tools to already be available:
+
+- Java 11 or newer, required by Nextflow
 - Nextflow
-- Docker, Apptainer/Singularity, or Pixi
+- Pixi, used by the checked-out NVD CLI environment
+- one container/runtime option: Docker, Podman, Apptainer, or Singularity
+- Git and tar
 
-## Installation Modes
+On CHTC, Java, Nextflow, Pixi, and Apptainer are typically provided on the access point. On a workstation, Docker or Podman is usually the easiest runtime.
 
-### Interactive Mode (Default)
+## What the installer does
 
-Guides you through the complete setup process:
+The installer checks prerequisites, clones or updates the NVD repository under `~/.nvd`, installs the locked Pixi environment, and runs `nvd setup`.
 
-```bash
-./install.sh
-```
+On UW-Madison's Center for High-Throughput Computing, which hosts most NVD runs, setup also writes `~/.nvd/setup.conf`, configures the default profile, records the shared taxonomy location, records the shared preset store location, and can help place the release SIF under `~/.nvd`.
 
-**What it does:**
-- Checks that prerequisites are installed
-- Detects available execution environments (Docker, Apptainer)
-- Helps configure reference database paths
-- Optionally downloads databases (100s of GB)
-- Creates configuration file at `~/.nvd/user.config`
+The optional reference wizard can download the BLAST database archive and deacon vertebrate-virus index. If you choose a custom reference path, that path is printed for you to put in a params file, preset, CLI flags, or explicit Nextflow config. The installer does not persist BLAST/deacon reference paths in another hidden state file.
 
-**Time:** 5-10 minutes + database downloads (if selected)
+## Installer modes
 
-### Dry-Run Mode
+### Interactive mode
 
-Test the installer without making any changes:
+Interactive mode is the default:
 
 ```bash
-./install.sh --dry-run
+bash install.sh
 ```
 
-**Use cases:**
-- Preview what the installer will do
-- Test on a new system before committing
-- Verify the installation flow
+It asks before updating an existing checkout, runs `nvd setup`, and asks whether to enter the reference download wizard.
 
-### Non-Interactive Mode (CI/CD)
+### Dry-run mode
 
-Check prerequisites only, no prompts or modifications:
+Dry-run mode walks the installer and reference wizard prompts but avoids side effects such as cloning, pulling updates, downloading references, extracting archives, or removing downloaded archives.
 
 ```bash
-./install.sh --non-interactive
+bash install.sh --dry-run
 ```
 
-**Exit codes:**
-- `0` - All prerequisites met
-- `1` - Java missing or wrong version
-- `2` - Nextflow missing
-- `3` - No execution environment available
-
-### Verify Mode
-
-Check an existing installation:
+or, through the piped installer form:
 
 ```bash
-./install.sh --verify
+curl -fsSL https://raw.githubusercontent.com/dholab/nvd/main/install.sh | bash -s -- --dry-run
 ```
 
-**What it checks:**
-- Dependencies are installed and correct versions
-- Configuration file exists and is valid
-- Database paths are correct and files exist
-- Reports any issues found
+Use this to verify the setup path and see which reference actions would be taken without downloading large artifacts.
 
-### Uninstall Mode
+### Non-interactive mode
 
-Remove NVD2 from your system:
+Non-interactive mode checks prerequisites and exits. It is meant for CI and readiness checks, not for configuring a user environment.
 
 ```bash
-./install.sh --uninstall
+bash install.sh --non-interactive
 ```
 
-**What it removes:**
-- Configuration files (`~/.nvd/`)
-- Cached pipeline (`~/.nextflow/assets/dhoconno/nvd`)
-- Optionally: databases (asks for confirmation)
-- Shows commands for removing dependencies
+## CHTC setup
 
-## System Requirements
-
-### Required Dependencies
-
-1. **Java 11 or newer**
-   - OpenJDK or Oracle JDK
-   - Required by Nextflow
-
-2. **Nextflow**
-   - Latest version recommended
-   - Pipeline execution engine
-
-3. **Execution Environment** (choose one):
-   - **Docker** (recommended for workstations)
-   - **Podman** (rootless Docker alternative)
-   - **Apptainer/Singularity** (HPC environments)
-   - **Pixi** (local execution, GOTTCHA2 only)
-
-### Disk Space Requirements
-
-**For databases:**
-- STAT database: ~500GB
-- BLAST database: ~500GB
-- GOTTCHA2 database: ~500GB
-
-**Plus 20% safety buffer**
-
-You can configure databases on separate volumes or skip download entirely.
-
-## Manual Configuration
-
-If you prefer to configure NVD2 manually without using `install.sh`:
-
-### 1. Ensure Prerequisites are Installed
-
-You must have these installed:
-- **Java 11+**: OpenJDK or Oracle JDK (required by Nextflow)
-- **Nextflow**: https://www.nextflow.io/docs/latest/getstarted.html
-- **Container runtime** (choose one):
-  - Docker: https://docs.docker.com/get-docker/
-  - Apptainer/Singularity: https://apptainer.org/docs/admin/main/installation.html
-  - Pixi: https://pixi.sh (for local Conda-based execution)
-
-### 2. Configure Databases
-
-Create a configuration file at `~/.nvd/user.config`:
-
-```groovy
-params {
-    // STAT database
-    stat_index      = "/path/to/databases/stat_db_v2_5_0/tree_index.20260217.dbs"
-    stat_dbss       = "/path/to/databases/stat_db_v2_5_0/tree_filter.20260217.dbss"
-    stat_annotation = "/path/to/databases/stat_db_v2_5_0/tree_filter.20260217.dbss.annotation"
-    human_virus_taxlist = "/path/to/databases/stat_db_v2_5_0/human_viruses_taxlist.20260217.txt"
-    
-    // BLAST database
-    blast_db        = "/path/to/databases/blast_db"
-    blast_db_prefix = "core_nt"
-    
-    // GOTTCHA2 database
-    gottcha2_db     = "/path/to/databases/gottcha2_db/gottcha_db.species.fna"
-}
-```
-
-## Database Setup
-
-### Option 1: Download via Installer
-
-The installer can download and extract databases for you:
+On an O'Connor Lab CHTC access point, `nvd setup` detects the host and uses CHTC defaults. The generated `~/.nvd/setup.conf` should include values like:
 
 ```bash
-./install.sh
-# Choose "Help me set up database downloads" when prompted
+NVD_REPO=/home/you/.nvd/latest
+NVD_CONFIG_DIR=/home/you/.nvd
+NVD_TAXONOMY_DB=/staging/groups/oconnor_group/nvd/taxdump
+NVD_PRESET_STORE=/staging/groups/oconnor_group/nvd/presets.sqlite
+NVD_DEFAULT_PROFILE=chtc_htc
 ```
 
-### Option 2: Manual Download
+The taxonomy and preset-store paths are setup/runtime integration points. BLAST and deacon reference paths are still runtime parameters and should be supplied through params files, presets, or CLI flags.
 
-Databases are available from:
-```
-https://dholk.primate.wisc.edu/_webdav/dho/projects/lungfish/InfinitePath/public/@files/release-v2.5.0/
-```
-
-Files:
-- `stat_db_v2_5_0.tar.gz` (MD5: 68471367e635eddff411e4102b8566f3)
-- `blast_db_v2_5_0.tar.gz` (MD5: 7f64ecb805d396b5b8b83e4cc014390d)
-- `gottcha2.tar.gz` (MD5: d33fb5d1b2d22f7a174239f1dfc142cb)
-
-Extract to your desired location and update the configuration file.
-
-## Running NVD2
-
-After installation, you can run NVD2 using either the CLI wrapper or direct Nextflow execution.
-
-### Option 1: CLI Wrapper
-
-The `nvd` CLI wrapper provides a simplified interface:
+The shell hook installed by setup loads this configuration in new shells. After setup, either start a new shell or run:
 
 ```bash
-# Clone repository and install dependencies
-git clone https://github.com/dhoconno/nvd.git
-cd nvd
-uv sync                 # Python dependencies only
-# or
-pixi shell --frozen     # All Conda dependencies
-
-# Run with auto-configuration
-nvd run --samplesheet samples.csv --experiment-id exp001
-
-# Specify tools and profile
-nvd run -s samples.csv -e exp002 --tools gottcha -p docker
-
-# Get help
-nvd --help
+source ~/.bashrc
 ```
 
-**Note**: When not in an active shell, prepend commands with `pixi run` (for full toolchain) 
-or `uv run` (Python-only scripts).
+## Reference artifacts
 
-The CLI wrapper automatically:
-- Loads configuration from `~/.nvd/user.config`
-- Auto-detects your execution profile (Docker/Apptainer/local)
-- Validates inputs before running
+NVD v3 uses these main reference artifacts:
 
-See the **[CLI Wrapper Guide](./cli_wrapper_guide.md)** for comprehensive examples.
+- a BLAST database directory, usually from the v3 BLAST database archive
+- a BLAST database prefix, currently `core_nt` for the provided database
+- a deacon vertebrate-virus index, usually `human_infecting_viruses.k31w1.idx`
+- an NCBI taxonomy taxdump directory for taxonomy resolution and LCA annotation
 
-### Option 2: Direct Nextflow Execution
+The installer reference wizard can download the BLAST archive and deacon index from the v3 release endpoint and verify checksums when the manifest is available. If the checksum manifest or a specific checksum entry is unavailable, the installer warns and continues.
 
-You can also run NVD2 with direct Nextflow commands:
+After downloading references, put the printed paths in a params file, preset, or command-line flags. A params file is the recommended route:
+
+```yaml
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dholab/nvd/main/schemas/nvd-params.latest.schema.json
+samplesheet: /path/to/samplesheet.csv
+experiment_id: experiment-001
+results: /path/to/results
+blast_db: /path/to/references/blast_db
+blast_db_prefix: core_nt
+virus_index: /path/to/references/human_infecting_viruses.k31w1.idx
+taxonomy_dir: /path/to/taxdump
+```
+
+For CHTC users, `taxonomy_dir` can usually be omitted from the params file if `NVD_TAXONOMY_DB` was written by setup and the `nvd run` wrapper is used.
+
+## Parameter-file workflow
+
+Generate a schema-backed params file:
 
 ```bash
-nextflow run dhoconno/nvd \
-  -c ~/.nvd/user.config \
+nvd params init run.yaml
+```
+
+Open it in an editor with YAML or JSON language-server support. VS Code users should install a YAML extension so the schema comment enables autocomplete and inline validation.
+
+Validate before launching:
+
+```bash
+nvd params check run.yaml
+nvd params check run.yaml --no-check-paths   # useful when paths exist only on CHTC
+```
+
+Run with the params file:
+
+```bash
+nvd run --params-file run.yaml
+```
+
+Values are resolved in this order:
+
+```text
+CLI flags > params file > preset > pipeline defaults
+```
+
+## Running NVD
+
+The preferred launch path is the CLI:
+
+```bash
+nvd run \
+  --samplesheet samples.csv \
+  --experiment-id experiment-001 \
+  --blast-db /path/to/blast_db \
+  --blast-db-prefix core_nt \
+  --virus-index /path/to/human_infecting_viruses.k31w1.idx \
+  --profile docker
+```
+
+Or use a params file:
+
+```bash
+nvd run --params-file run.yaml --profile docker
+```
+
+On CHTC, setup may provide a default profile, so the profile flag can often be omitted:
+
+```bash
+nvd run --params-file run.yaml
+```
+
+Direct Nextflow execution is available when debugging the workflow layer directly:
+
+```bash
+nextflow run . \
   -profile docker \
   --samplesheet samples.csv \
-  --experiment_id exp001 \
-  --tools all
+  --experiment_id experiment-001 \
+  --blast_db /path/to/blast_db \
+  --blast_db_prefix core_nt \
+  --virus_index /path/to/human_infecting_viruses.k31w1.idx \
+  --taxonomy_dir /path/to/taxdump
 ```
 
-**Execution profiles:**
-- `-profile docker` - Use Docker containers (local workstations)
-- `-profile apptainer` - Use Apptainer/Singularity (HPC clusters)
-- `-profile local` - Local execution without containers
+Prefer `nvd run` for normal use because it applies the CLI params model, preset handling, config discovery, taxonomy environment handling, and friendlier validation before launching Nextflow.
 
-**Tool options:**
-- `--tools stat_blast` - STAT + BLAST workflow (human virus detection)
-- `--tools gottcha` - GOTTCHA2 workflow (general classification)
-- `--tools all` - Run both workflows
+## Updating an existing install
 
-See **[Direct Nextflow Examples](./example_commands.md)** for more traditional usage patterns.
+Re-run the installer. If `~/.nvd/latest` already exists, the installer asks before pulling updates. Declining that prompt must leave the checkout untouched.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/dholab/nvd/main/install.sh | bash
+```
+
+After updates, setup is run again so shell hooks and `setup.conf` stay current.
 
 ## Troubleshooting
 
-### Docker Not Running
+### Installer prompts do not appear interactive
 
-**Error:** "Docker is installed but not running"
+Run the installer from a real terminal. The `curl | bash` path uses the script pipe as standard input, so the installer reads prompts from the controlling terminal. If no terminal is available, it should fail closed instead of choosing defaults.
 
-**Solution:**
-- macOS: Open Docker Desktop and wait for it to start
-- Linux: `sudo systemctl start docker`
+For a no-side-effect check of the prompt flow, use dry-run:
 
-### Insufficient Disk Space
+```bash
+curl -fsSL https://raw.githubusercontent.com/dholab/nvd/main/install.sh | bash -s -- --dry-run
+```
 
-**Error:** "Insufficient disk space"
+### Docker is installed but not running
 
-**Solutions:**
-1. Choose a different location with more space
-2. Download fewer databases
-3. Skip database download and configure manually later
+Start Docker Desktop on macOS, or start the Docker daemon on Linux:
 
-### Java Version Too Old
+```bash
+sudo systemctl start docker
+```
 
-**Error:** "Java version too old"
+Alternatively use Apptainer, Singularity, Podman, or the CHTC profile where appropriate.
 
-**Solution:** Install Java 11 or newer. See https://adoptium.net/ or your system's package manager.
+### Java or Nextflow is missing
 
-### Network Issues During Download
-
-Downloads are resumable. If interrupted:
-1. Re-run the installer
-2. Choose the same database location
-3. Download will resume from where it left off
-
-### Permission Errors
-
-**Error:** "Cannot write to /path"
-
-**Solutions:**
-- Choose a different path you have write access to
-- Create the directory first: `mkdir -p /path && chmod 755 /path`
-- Use sudo (not recommended): `sudo ./install.sh`
-
-## HPC-Specific Notes
-
-### Module Systems
-
-If your HPC uses modules:
+Install Java 11 or newer and Nextflow, or load the appropriate modules on an HPC system:
 
 ```bash
 module load java/17
@@ -298,147 +238,42 @@ module load nextflow
 module load apptainer
 ```
 
-Run installer after loading modules:
-```bash
-./install.sh --non-interactive  # Check if ready
-```
-
-### Shared Installations
-
-For system-wide installation:
-1. Admin installs to shared location (e.g., `/opt/nvd2/`)
-2. Users create personal config pointing to shared databases
-3. Each user runs: `./install.sh` and configures paths
-
-### Scratch vs Permanent Storage
-
-**Databases:**
-- Install to permanent storage (not /scratch)
-- Databases are 1+ TB total
-
-**Working directory:**
-- Can use scratch space for pipeline execution
-- Set with `-work-dir` flag when running Nextflow
-
-## Advanced Options
-
-### Custom Installation Path
+Then check readiness:
 
 ```bash
-# Pipeline source
-./install.sh
-# Choose option 4: "Clone to custom directory"
-
-# Databases
-# Specify custom paths when prompted
+bash install.sh --non-interactive
 ```
 
-### Offline Installation
+### Params validate locally but paths fail on CHTC
 
-1. Download installer and databases on internet-connected machine
-2. Transfer to offline system
-3. Run: `./install.sh`
-4. Choose "I already have the databases"
-5. Point to transferred database locations
-
-### Multiple Versions
-
-Install multiple pipeline versions:
+Use `--no-check-paths` when validating params on a machine that cannot see the cluster filesystem:
 
 ```bash
-# Version 1
-nextflow pull dhoconno/nvd -r v1.0.0
-
-# Version 2  
-nextflow pull dhoconno/nvd -r v2.0.0
-
-# Run specific version
-nextflow run dhoconno/nvd -r v1.0.0 ...
+nvd params check run.yaml --no-check-paths
 ```
 
-## Getting Help
+The cluster run still needs paths that are visible to worker jobs.
 
-**CLI Wrapper Guide:** [cli_wrapper_guide.md](./cli_wrapper_guide.md) - Modern CLI interface
+## Security and permissions
 
-**Documentation:** https://github.com/dhoconno/nvd
+The installer does not need root. It writes under `~/.nvd`, shell startup files when you approve shell-hook installation, and reference locations you choose. It should ask before mutating an existing checkout and should fail rather than silently defaulting when an interactive answer cannot be read.
 
-**Issues:** https://github.com/dhoconno/nvd/issues
+Reference downloads are verified when a checksum manifest and matching entry are available. If verification cannot be performed because the manifest or entry is missing, the installer warns and continues.
 
-**Validation Commands:**
-```bash
-./install.sh --verify        # Verify installation
-nvd validate all             # Validate complete setup with CLI
-nvd --help                   # CLI help
-```
+## Getting help
 
-## Platform-Specific Notes
-
-### macOS
-
-- Apple Silicon (M1/M2/M3): Fully supported
-- Intel: Fully supported
-- Docker Desktop required (no native Docker daemon on macOS)
-
-### Linux
-
-- Ubuntu 22.04+: Fully tested
-- Debian 11+: Compatible
-- RHEL/CentOS 8+: Compatible
-- Arch: Compatible (install java-openjdk)
-
-### Windows
-
-- WSL2 required
-- Follow Linux instructions within WSL2
-- Docker Desktop for Windows with WSL2 backend
-
-## Security Considerations
-
-### curl | bash Pattern
-
-The quick start uses `curl | bash`. To review first:
+Useful commands:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/dhoconno/nvd/main/install.sh -o install.sh
-less install.sh  # Review the script
-bash install.sh
+nvd --help
+nvd setup --help
+nvd params --help
+nvd params check run.yaml --no-check-paths
+nvd taxonomy status --taxonomy-dir /path/to/taxdump
 ```
 
-### Permissions
-
-The installer:
-- Never requires root/sudo
-- Only writes to `~/.nvd/` and user-specified database locations
-- Does not modify system files
-- Does not install dependencies automatically (shows instructions only)
-
-### Database Integrity
-
-All database downloads are verified with MD5 checksums.
-
-## FAQ
-
-**Q: How long does installation take?**  
-A: 5-10 minutes for setup. Database downloads: 2-6 hours depending on connection.
-
-**Q: Can I install without downloading databases?**  
-A: Yes! Choose "Skip" when prompted. Configure database paths manually later.
-
-**Q: Do I need Docker?**  
-A: Docker is recommended but not required. You can use Podman, Apptainer, or Pixi.
-
-**Q: Can I install databases on a different drive?**  
-A: Yes! Specify any path when configuring database locations.
-
-**Q: How do I update NVD2?**  
-A: `nextflow pull dhoconno/nvd` updates the pipeline. Databases are versioned separately.
-
-**Q: How do I uninstall?**  
-A: Run `./install.sh --uninstall` and follow the prompts.
-
-**Q: What if installation fails?**  
-A: Run `./install.sh --verify` to see what's missing. Check the error log at `~/.nvd/install-error.log`.
+Project documentation and issues are available at <https://github.com/dholab/nvd>. For day-to-day usage after installation, see the [NVD CLI Guide](./nvd_cli_guide.md).
 
 ## License
 
-NVD2 installer is licensed under GPLv3. See LICENSE file for details.
+NVD is licensed under GPLv3. See the repository `LICENSE` file for details.

@@ -1,7 +1,7 @@
 process RUN_SPADES {
 
     tag "${sample_id}"
-    label "ludicrous"
+    label "high"
 
     errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
 	maxRetries 2

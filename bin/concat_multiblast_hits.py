@@ -15,18 +15,14 @@ import polars.selectors as cs
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Concatenate two potentially large BLAST results tables, one from MEGABLAST and one from BLASTN",
+        description="Concatenate one or more potentially large BLAST results tables.",
     )
 
     parser.add_argument(
-        "--megablast-hits",
+        "--blast-hits",
+        action="append",
         required=True,
-        help="Path to the MEGABLAST results text file.",
-    )
-    parser.add_argument(
-        "--blastn-hits",
-        required=True,
-        help="Path to the BLASTN results text file.",
+        help="Path to a filtered BLAST results text file. Repeat for multiple files.",
     )
     parser.add_argument(
         "--output-file",
@@ -64,34 +60,20 @@ def process_blast_file(filepath: str | Path) -> pl.LazyFrame:
 
 
 def concat_blast_tables(
-    megablast_hits: str | Path,
-    blastn_hits: str | Path,
+    blast_hits: list[str | Path],
 ) -> pl.LazyFrame | None:
     """Concatenate BLAST tables, handling empty files gracefully."""
-    mb_has_data = has_data(megablast_hits)
-    bn_has_data = has_data(blastn_hits)
-
-    if mb_has_data and bn_has_data:
-        # Both have data - concat them
-        return pl.concat(
-            [
-                process_blast_file(megablast_hits),
-                process_blast_file(blastn_hits),
-            ],
-        ).sort(["sample", "qseqid", "task"])
-    if mb_has_data:
-        # Only megablast has data
-        return process_blast_file(megablast_hits).sort(["sample", "qseqid", "task"])
-    if bn_has_data:
-        # Only blastn has data
-        return process_blast_file(blastn_hits).sort(["sample", "qseqid", "task"])
-    # Neither has data
-    return None
+    frames = [process_blast_file(path) for path in blast_hits if has_data(path)]
+    if not frames:
+        return None
+    if len(frames) == 1:
+        return frames[0].sort(["sample", "qseqid", "task"])
+    return pl.concat(frames).sort(["sample", "qseqid", "task"])
 
 
 def main() -> None:
     args = parse_args()
-    concat_lf = concat_blast_tables(args.megablast_hits, args.blastn_hits)
+    concat_lf = concat_blast_tables(args.blast_hits)
 
     if concat_lf is not None:
         concat_lf.sink_csv(args.output_file, separator="\t")

@@ -6,7 +6,6 @@ include {
     BLASTN_CLASSIFY ;
     ANNOTATE_BLASTN_RESULTS ;
     FILTER_NON_VIRUS_BLASTN_NODES ;
-    EXTRACT_UNCLASSIFIED_CONTIGS ;
     MERGE_FILTERED_BLAST_RESULTS ;
     SELECT_TOP_BLAST_HITS
 } from "../modules/blast"
@@ -17,19 +16,24 @@ workflow CLASSIFY_WITH_BLASTN {
     ch_filtered_megablast
     ch_megablast_contigs
     ch_blast_db_files
-    ch_state_dir      // value channel: state directory path (may be null in stateless mode)
     ch_taxonomy_dir   // value channel: taxonomy directory path for taxonomy lookups
 
     main:
+    // The pruned FASTA is an uncompressed pipeline output. Empty FASTA producers
+    // create zero-byte files, so this avoids scheduling BLASTN when MEGABLAST
+    // left no query sequences. Do not use this predicate for gzipped FASTA inputs.
+    ch_blastn_candidates = ch_megablast_contigs.filter { _sample_id, _classified, pruned_contigs ->
+        file(pruned_contigs).size() > 0
+    }
+
     BLASTN_CLASSIFY(
-        ch_megablast_contigs.combine(ch_blast_db_files)
+        ch_blastn_candidates.combine(ch_blast_db_files)
     )
 
     SELECT_TOP_BLAST_HITS(BLASTN_CLASSIFY.out)
 
     ANNOTATE_BLASTN_RESULTS(
         SELECT_TOP_BLAST_HITS.out,
-        ch_state_dir,
         ch_taxonomy_dir
     )
 
@@ -38,12 +42,25 @@ workflow CLASSIFY_WITH_BLASTN {
     )
 
     ch_merged_input = ch_filtered_megablast
-        .join(FILTER_NON_VIRUS_BLASTN_NODES.out, by: 0)
+        .mix(FILTER_NON_VIRUS_BLASTN_NODES.out)
+        .filter { _sample_id, hits -> hasDataRows(hits) }
+        .groupTuple(by: 0)
 
     MERGE_FILTERED_BLAST_RESULTS(ch_merged_input)
 
-    ANNOTATE_LEAST_COMMON_ANCESTORS(MERGE_FILTERED_BLAST_RESULTS.out, ch_state_dir, ch_taxonomy_dir)
+    ANNOTATE_LEAST_COMMON_ANCESTORS(MERGE_FILTERED_BLAST_RESULTS.out, ch_taxonomy_dir)
 
     emit:
     merged_results = ANNOTATE_LEAST_COMMON_ANCESTORS.out
+}
+
+
+def hasDataRows(hits) {
+    def hits_file = file(hits)
+    if (!hits_file.exists() || hits_file.size() == 0) {
+        return false
+    }
+    hits_file.withReader { reader ->
+        reader.readLine() != null && reader.readLine() != null
+    }
 }

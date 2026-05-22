@@ -31,7 +31,7 @@ process MAP_READS_TO_CONTIGS {
     def preset = platform == 'ont' || platform == 'sra'
         ? "map-ont"
         : "sr"
-    def should_dedup_pos = params.dedup_pos ?: params.dedup ?: params.preprocess
+    def should_dedup_pos = params.dedup || params.dedup_pos
     if (should_dedup_pos) {
         """
         minimap2 -ax ${preset} -t ${task.cpus} ${contigs} ${reads} \\

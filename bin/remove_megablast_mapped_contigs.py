@@ -1,26 +1,12 @@
 #!/usr/bin/env python3
 # /// script
 # requires-python = ">=3.11"
-# dependencies = [
-#     "snakemake",
-# ]
+# dependencies = []
 # ///
 
 import argparse
 import logging
 import subprocess
-from contextlib import redirect_stderr
-from types import SimpleNamespace
-from typing import Literal
-
-# snakemake setup
-MODE: Literal["snakemake", "commandline"]
-if "snakemake" in globals():
-    from snakemake.script import snakemake
-
-    MODE = "snakemake"
-else:
-    MODE = "commandline"
 
 
 def setup_logger(log_file: str | None) -> logging.Logger:
@@ -39,7 +25,11 @@ def setup_logger(log_file: str | None) -> logging.Logger:
     return logger
 
 
-def extract_unique_ids(input_file, output_file, logger):
+def extract_unique_ids(
+    input_file: str,
+    output_file: str,
+    logger: logging.Logger,
+) -> None:
     unique_ids = set()
     logger.info(f"Reading megablast results from {input_file}")
     with open(input_file) as f:
@@ -52,7 +42,12 @@ def extract_unique_ids(input_file, output_file, logger):
     logger.info(f"Wrote {len(unique_ids)} unique contig IDs")
 
 
-def run_filterbyname(input_fasta, output_fasta, names_file, logger):
+def run_filterbyname(
+    input_fasta: str,
+    output_fasta: str,
+    names_file: str,
+    logger: logging.Logger,
+) -> None:
     command = [
         "seqkit",
         "grep",
@@ -66,7 +61,7 @@ def run_filterbyname(input_fasta, output_fasta, names_file, logger):
     ]
     logger.info(f"Running command: {' '.join(command)}")
     try:
-        result = subprocess.run(command, check=True, text=True, capture_output=True)
+        result = subprocess.run(command, check=True, text=True, capture_output=True)  # noqa: S603
         logger.info(result.stdout)
         if result.stderr:
             logger.warning(result.stderr)
@@ -75,13 +70,7 @@ def run_filterbyname(input_fasta, output_fasta, names_file, logger):
         raise
 
 
-def parse_args() -> SimpleNamespace:
-    if MODE == "snakemake":
-        return SimpleNamespace(
-            input=snakemake.input,
-            output=snakemake.output,
-            log=snakemake.log,
-        )
+def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Remove contigs mapped by megablast")
     parser.add_argument(
         "--megablast_results",
@@ -103,44 +92,26 @@ def parse_args() -> SimpleNamespace:
         required=True,
         help="Path to output pruned FASTA",
     )
-    parser.add_argument("--log", default=None, required=False, help="Path to log file")
-    args = parser.parse_args()
-
-    return SimpleNamespace(
-        input=SimpleNamespace(
-            megablast_results=args.megablast_results,
-            contigs_fasta=args.contigs_fasta,
-        ),
-        output=SimpleNamespace(
-            classified_contigs=args.classified_contigs,
-            pruned_contigs=args.pruned_contigs,
-        ),
-        log=args.log,
-    )
+    return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
 
-    if args.log and len(args.log > 1):
-        with open(args.log[0], "w") as log_file, redirect_stderr(log_file):
-            logger = setup_logger(args.log[0])
-            logger.info("Starting remove_megablast_mapped_contigs script")
-    else:
-        logger = setup_logger(args.log)
-        logger.info("Starting remove_megablast_mapped_contigs script")
+    logger = setup_logger(None)
+    logger.info("Starting remove_megablast_mapped_contigs script")
 
     try:
         extract_unique_ids(
-            args.input.megablast_results,
-            args.output.classified_contigs,
+            args.megablast_results,
+            args.classified_contigs,
             logger,
         )
 
         run_filterbyname(
-            args.input.contigs_fasta,
-            args.output.pruned_contigs,
-            args.output.classified_contigs,
+            args.contigs_fasta,
+            args.pruned_contigs,
+            args.classified_contigs,
             logger,
         )
 

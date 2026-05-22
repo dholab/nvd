@@ -1,7 +1,7 @@
 """
-NVD2 Command Line Interface
+NVD Command Line Interface
 
-A user-friendly wrapper around the Nextflow-based NVD2 pipeline for
+A user-friendly wrapper around the Nextflow-based NVD pipeline for
 metagenomic virus detection and taxonomic classification.
 
 Usage:
@@ -15,13 +15,11 @@ Command implementations are in py_nvd.cli.commands.* modules.
 
 from __future__ import annotations
 
-import datetime
 import sys
 
 import typer
 
 from py_nvd.cli.commands.config import config_app
-from py_nvd.cli.commands.hits import hits_app
 from py_nvd.cli.commands.params import params_app
 from py_nvd.cli.commands.preset import preset_app
 from py_nvd.cli.commands.resume import resume
@@ -29,14 +27,14 @@ from py_nvd.cli.commands.run import run
 from py_nvd.cli.commands.samplesheet import samplesheet_app
 from py_nvd.cli.commands.secrets import secrets_app
 from py_nvd.cli.commands.setup import setup_app
-from py_nvd.cli.commands.state import state_app
+from py_nvd.cli.commands.taxonomy import taxonomy_app
 from py_nvd.cli.commands.validate import validate_app
 from py_nvd.cli.commands.version import version
 from py_nvd.cli.utils import console
 
 app = typer.Typer(
     name="nvd",
-    help="NVD2 - Metagenomic virus detection pipeline",
+    help="NVD - Metagenomic virus detection pipeline",
     add_completion=True,
     no_args_is_help=True,
     rich_markup_mode="rich",
@@ -75,11 +73,8 @@ app.add_typer(preset_app, name="preset")
 app.add_typer(config_app, name="config")
 app.add_typer(config_app, name="cfg", hidden=True)  # Alias
 
-# State commands
-app.add_typer(state_app, name="state")
-
-# Hits commands
-app.add_typer(hits_app, name="hits")
+# Taxonomy commands
+app.add_typer(taxonomy_app, name="taxonomy")
 
 # Samplesheet commands
 app.add_typer(samplesheet_app, name="samplesheet")
@@ -91,21 +86,6 @@ app.add_typer(secrets_app, name="secrets")
 
 # Setup commands
 app.add_typer(setup_app, name="setup")
-
-# Wrapped command (seasonal easter egg - Dec 15 to Jan 15)
-_WRAPPED_MONTH_DEC = 12  # December
-_WRAPPED_MONTH_JAN = 1  # January
-_WRAPPED_DAY_START = 15  # Season starts Dec 15, ends Jan 15
-_today = datetime.datetime.now(tz=datetime.UTC)
-_is_wrapped_season = (
-    _today.month == _WRAPPED_MONTH_DEC and _today.day >= _WRAPPED_DAY_START
-) or (_today.month == _WRAPPED_MONTH_JAN and _today.day <= _WRAPPED_DAY_START)
-
-if _is_wrapped_season:
-    # Local import intentional: avoid loading wrapped module outside of season
-    from py_nvd.cli.commands.wrapped import wrapped
-
-    app.command("wrapped")(wrapped)
 
 
 def _normalize_nextflow_args() -> None:

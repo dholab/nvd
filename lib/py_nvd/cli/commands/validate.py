@@ -4,7 +4,7 @@ Validation commands for the NVD CLI.
 Commands:
     nvd validate deps       - Validate dependencies (Java, Nextflow, Docker/Apptainer)
     nvd validate samplesheet - Validate samplesheet format and content
-    nvd validate databases  - Validate database paths from config file
+    nvd validate databases  - Validate reference paths from config file
     nvd validate all        - Run all validation checks
     nvd validate params     - Validate a params file (alias for 'nvd params check')
 """
@@ -221,17 +221,17 @@ def validate_databases(
         None,
         "--config",
         "-c",
-        help="Config file to validate (default: ~/.nvd/user.config or NVD_CONFIG)",
+        help="Config file to validate (default: NVD_CONFIG_DIR/user.config or NVD_CONFIG)",
     ),
 ) -> None:
-    """Validate database paths from config file."""
-    console.print("\n[bold]Validating Database Paths[/bold]\n")
+    """Validate reference paths from config file."""
+    console.print("\n[bold]Validating Reference Paths[/bold]\n")
 
     # Find config
     config_file = find_config_file(config)
     if config_file is None:
         warning(f"No config file found at {DEFAULT_CONFIG}")
-        info("Run install.sh to set up database configuration")
+        info("Run install.sh to set up reference configuration")
         sys.exit(1)
 
     assert config_file is not None  # Narrowing hint: guarded by sys.exit above
@@ -244,20 +244,15 @@ def validate_databases(
         warning("No parameters found in config file")
         sys.exit(1)
 
-    # Database parameters to check
-    db_params = {
-        "stat_index": "STAT index file",
-        "stat_dbss": "STAT dbss file",
-        "stat_annotation": "STAT annotation file",
-        "human_virus_taxlist": "Human virus taxlist",
+    # Reference parameters to check
+    reference_params = {
         "blast_db": "BLAST database directory",
-        "gottcha2_db": "GOTTCHA2 database file",
     }
 
     console.print()
     all_found = True
 
-    for param_name, description in db_params.items():
+    for param_name, description in reference_params.items():
         value = params.get(param_name)
 
         if not value or value == "null":
@@ -279,10 +274,10 @@ def validate_databases(
 
     console.print()
     if all_found:
-        success("All database paths are valid")
+        success("All reference paths are valid")
     else:
-        console.print("[yellow]⚠ Some database paths are missing or invalid[/yellow]")
-        info("Run install.sh to download and configure databases")
+        console.print("[yellow]⚠ Some reference paths are missing or invalid[/yellow]")
+        info("Run install.sh to download and configure references")
         sys.exit(1)
 
 
@@ -316,13 +311,13 @@ def validate_all(
         if e.code != 0:
             failed.append("Dependencies")
 
-    # 2. Databases
+    # 2. References
     console.print("\n" + "=" * 70)
     try:
         validate_databases(config)
     except SystemExit as e:
         if e.code != 0:
-            failed.append("Databases")
+            failed.append("References")
 
     # 3. Samplesheet (if provided)
     if samplesheet:

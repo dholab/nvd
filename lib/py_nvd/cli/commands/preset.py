@@ -25,14 +25,13 @@ from pydantic import ValidationError
 from rich.panel import Panel
 from rich.table import Table
 
-from py_nvd import params, state
+from py_nvd import params
 from py_nvd.cli.utils import (
     console,
     error,
     info,
     success,
 )
-from py_nvd.db import utc_now_iso
 from py_nvd.models import (
     PARAM_CATEGORIES,
     NvdParams,
@@ -40,6 +39,7 @@ from py_nvd.models import (
     get_field_category,
     trace_merge,
 )
+from py_nvd.presets import PresetStore, get_preset_store, utc_now_iso
 
 # Display/truncation thresholds
 _MAX_VALUE_DISPLAY_LENGTH = 40
@@ -54,6 +54,10 @@ preset_app = typer.Typer(
 )
 
 
+def _store() -> PresetStore:
+    return get_preset_store()
+
+
 @preset_app.command("list")
 @preset_app.command("ls", hidden=True)  # Alias
 def preset_list() -> None:
@@ -62,7 +66,7 @@ def preset_list() -> None:
 
     Shows preset names, descriptions, parameter counts, and creation dates.
     """
-    presets = state.list_presets()
+    presets = _store().list()
 
     if not presets:
         info("No presets registered yet.")
@@ -100,7 +104,7 @@ def preset_show(
 
     Displays all parameters and their values.
     """
-    preset = state.get_preset(name)
+    preset = _store().get(name)
 
     if not preset:
         error(f"Preset not found: {name}")
@@ -159,38 +163,78 @@ def preset_register(
     ),
     dedup: bool | None = typer.Option(
         None,
-        "--dedup/--no-dedup",
+        "--dedup",
         help="Deduplicate reads (umbrella: enables both --dedup-seq and --dedup-pos)",
     ),
     dedup_seq: bool | None = typer.Option(
         None,
-        "--dedup-seq/--no-dedup-seq",
-        help="Sequence-based deduplication with clumpify",
+        "--dedup-seq",
+        help="Enable sequence-based deduplication with clumpify",
     ),
     dedup_pos: bool | None = typer.Option(
         None,
-        "--dedup-pos/--no-dedup-pos",
-        help="Positional deduplication with samtools markdup",
+        "--dedup-pos",
+        help="Enable positional deduplication with samtools markdup",
     ),
     trim_adapters: bool | None = typer.Option(
         None,
         "--trim-adapters/--no-trim-adapters",
         help="Trim adapters",
     ),
-    scrub_host_reads: bool | None = typer.Option(
+    host_index: Path | None = typer.Option(
         None,
-        "--scrub-host-reads/--no-scrub-host-reads",
-        help="Scrub host reads",
+        "--host-index",
+        help="Path to prebuilt host/contaminant index (.idx file)",
+    ),
+    host_index_url: str | None = typer.Option(
+        None,
+        "--host-index-url",
+        help="URL to download a prebuilt host/contaminant index",
+    ),
+    host_contaminants_fasta: Path | None = typer.Option(
+        None,
+        "--host-contaminants-fasta",
+        help="Custom contaminant FASTA for host depletion",
+    ),
+    virus_index: Path | None = typer.Option(
+        None,
+        "--virus-index",
+        help="Path to prebuilt vertebrate-infecting virus deacon index (.idx file)",
+    ),
+    virus_index_url: str | None = typer.Option(
+        None,
+        "--virus-index-url",
+        help="URL to download a prebuilt vertebrate-infecting virus deacon index",
+    ),
+    virus_reference_fasta: Path | None = typer.Option(
+        None,
+        "--virus-reference-fasta",
+        help="Custom vertebrate-infecting virus FASTA for enrichment",
+    ),
+    virus_kmer_size: int | None = typer.Option(
+        None,
+        "--virus-kmer-size",
+        help="K-mer size for building a custom virus enrichment index",
+    ),
+    virus_window_size: int | None = typer.Option(
+        None,
+        "--virus-window-size",
+        help="Minimizer window size for building a custom virus enrichment index",
+    ),
+    virus_abs_threshold: int | None = typer.Option(
+        None,
+        "--virus-abs-threshold",
+        help="Minimum absolute minimizer hits for virus read enrichment",
+    ),
+    virus_rel_threshold: float | None = typer.Option(
+        None,
+        "--virus-rel-threshold",
+        help="Minimum relative minimizer proportion for virus read enrichment",
     ),
     filter_reads: bool | None = typer.Option(
         None,
         "--filter-reads/--no-filter-reads",
         help="Filter reads",
-    ),
-    min_gottcha_reads: int | None = typer.Option(
-        None,
-        "--min-gottcha-reads",
-        help="Minimum GOTTCHA2 reads",
     ),
     max_blast_targets: int | None = typer.Option(
         None,
@@ -221,7 +265,7 @@ def preset_register(
         # Update existing preset
         nvd preset register production --from-file updated.yaml
     """
-    preset_params: dict[str, str | int | float | bool | None] = {}
+    preset_params: dict[str, str | int | float | bool | Path | None] = {}
 
     # Load from file if specified
     if from_file:
@@ -238,9 +282,17 @@ def preset_register(
         "dedup_seq": dedup_seq,
         "dedup_pos": dedup_pos,
         "trim_adapters": trim_adapters,
-        "scrub_host_reads": scrub_host_reads,
+        "host_index": host_index,
+        "host_index_url": host_index_url,
+        "host_contaminants_fasta": host_contaminants_fasta,
+        "virus_index": virus_index,
+        "virus_index_url": virus_index_url,
+        "virus_reference_fasta": virus_reference_fasta,
+        "virus_kmer_size": virus_kmer_size,
+        "virus_window_size": virus_window_size,
+        "virus_abs_threshold": virus_abs_threshold,
+        "virus_rel_threshold": virus_rel_threshold,
         "filter_reads": filter_reads,
-        "min_gottcha_reads": min_gottcha_reads,
         "max_blast_targets": max_blast_targets,
         "blast_retention_count": blast_retention_count,
     }
@@ -262,9 +314,9 @@ def preset_register(
         raise typer.Exit(1) from None
 
     # Check if updating existing
-    existing = state.get_preset(name)
+    existing = _store().get(name)
 
-    preset = state.register_preset(name, preset_params, description)
+    preset = _store().upsert(name, preset_params, description)
 
     if existing:
         success(f"Updated preset '{preset.name}' ({len(preset.params)} parameters)")
@@ -315,10 +367,10 @@ def preset_merge(
     # Load all presets with labels for trace_merge
     labeled_sources: list[tuple[str, dict]] = []
     for preset_name in presets:
-        preset_obj = state.get_preset(preset_name)
+        preset_obj = _store().get(preset_name)
         if not preset_obj:
             error(f"Preset not found: {preset_name}")
-            available = state.list_presets()
+            available = _store().list()
             if available:
                 console.print("\n[cyan]Available presets:[/cyan]")
                 for p in available:
@@ -339,7 +391,7 @@ def preset_merge(
         raise typer.Exit(1) from None
 
     # Check if name already exists
-    existing = state.get_preset(name)
+    existing = _store().get(name)
     if existing:
         console.print(f"[yellow]Preset '{name}' already exists.[/yellow]")
         if not typer.confirm("Overwrite?"):
@@ -357,7 +409,7 @@ def preset_merge(
     }
 
     # Register the new preset
-    new_preset = state.register_preset(name, merged_params, description)
+    new_preset = _store().upsert(name, merged_params, description)
 
     # Display merge summary
     _display_preset_merge_summary(presets, traced, new_preset.name, explicitly_set)
@@ -471,7 +523,7 @@ def preset_export(
         nvd preset export production -o production.yaml
         nvd preset export production -o production.json --format json
     """
-    preset = state.get_preset(name)
+    preset = _store().get(name)
     if not preset:
         error(f"Preset not found: {name}")
 
@@ -490,7 +542,7 @@ def preset_export(
             f"# NVD Pipeline Preset: {preset.name}",
             f"# Exported: {utc_now_iso()}",
             "#",
-            f"# Usage: nextflow run dhoconno/nvd -params-file {output.name}",
+            f"# Usage: nextflow run dholab/nvd -params-file {output.name}",
         ]
         if preset.description:
             lines.append(f"# {preset.description}")
@@ -561,9 +613,9 @@ def preset_import(
         raise typer.Exit(1) from None
 
     # Check if updating existing
-    existing = state.get_preset(name)
+    existing = _store().get(name)
 
-    preset = state.register_preset(name, preset_params, description)
+    preset = _store().upsert(name, preset_params, description)
 
     if existing:
         success(
@@ -595,7 +647,7 @@ def preset_delete(
         nvd preset rm old-preset --force
     """
     # Check if exists
-    preset = state.get_preset(name)
+    preset = _store().get(name)
     if not preset:
         error(f"Preset not found: {name}")
 
@@ -607,7 +659,7 @@ def preset_delete(
         if not typer.confirm("Continue?"):
             raise typer.Abort
 
-    deleted = state.delete_preset(name)
+    deleted = _store().delete(name)
     if deleted:
         success(f"Deleted preset '{name}'")
     else:
@@ -631,12 +683,12 @@ def preset_diff(
         nvd preset diff defaults my-settings
     """
     # Load both presets
-    p1 = state.get_preset(preset1)
+    p1 = _store().get(preset1)
     if not p1:
         error(f"Preset not found: {preset1}")
         raise typer.Exit(1)
 
-    p2 = state.get_preset(preset2)
+    p2 = _store().get(preset2)
     if not p2:
         error(f"Preset not found: {preset2}")
         raise typer.Exit(1)

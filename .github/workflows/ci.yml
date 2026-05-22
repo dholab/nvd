@@ -2,35 +2,37 @@ name: CI
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [main, develop]
     paths:
-      - 'nextflow.config'
-      - 'conf/**'
-      - 'bin/**'
-      - 'lib/**'
-      - 'schemas/**'
-      - '.github/scripts/**'
-      - 'pyproject.toml'
-      - 'assets/example_samplesheet.csv'
-      - 'modules/**/*.nf'
-      - 'subworkflows/**/*.nf'
-      - 'workflows/**/*.nf'
-      - '.github/workflows/ci.yml'
+      - "nextflow.config"
+      - "conf/**"
+      - "bin/**"
+      - "lib/**"
+      - "schemas/**"
+      - ".github/scripts/**"
+      - "install.sh"
+      - "pyproject.toml"
+      - "assets/example_samplesheet.csv"
+      - "modules/**/*.nf"
+      - "subworkflows/**/*.nf"
+      - "workflows/**/*.nf"
+      - ".github/workflows/ci.yml"
   pull_request:
-    branches: [ main, develop ]
+    branches: [main, develop]
     paths:
-      - 'nextflow.config'
-      - 'conf/**'
-      - 'bin/**'
-      - 'lib/**'
-      - 'schemas/**'
-      - '.github/scripts/**'
-      - 'pyproject.toml'
-      - 'assets/example_samplesheet.csv'
-      - 'modules/**/*.nf'
-      - 'subworkflows/**/*.nf'
-      - 'workflows/**/*.nf'
-      - '.github/workflows/ci.yml'
+      - "nextflow.config"
+      - "conf/**"
+      - "bin/**"
+      - "lib/**"
+      - "schemas/**"
+      - ".github/scripts/**"
+      - "install.sh"
+      - "pyproject.toml"
+      - "assets/example_samplesheet.csv"
+      - "modules/**/*.nf"
+      - "subworkflows/**/*.nf"
+      - "workflows/**/*.nf"
+      - ".github/workflows/ci.yml"
 
 permissions:
   contents: read
@@ -40,41 +42,57 @@ jobs:
   validate-schema-completeness:
     name: Validate Schema Completeness
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
+
       - name: Install uv
         uses: astral-sh/setup-uv@v2
-      
+
       - name: Set up Python
         run: uv python install 3.10
-      
+
       - name: Validate schema covers all params
         run: |
           uv run python .github/scripts/validate_schema_completeness.py
 
-  lint:
-    name: Lint Check
+  validate-installer-interactive:
+    name: Validate Interactive Installer Prompts
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Validate installer prompts
+        run: python .github/scripts/test_installer_interactive.py
+
+  lint:
+    name: Lint Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
       - name: Install uv
         uses: astral-sh/setup-uv@v2
-      
+
       - name: Set up Python
         run: uv python install 3.10
-      
+
       - name: Install dependencies
         run: uv sync
-      
+
       - name: Run ruff check
         run: uv run ruff check lib/
-      
+
       - name: Run ruff format check
         run: uv run ruff format --check lib/
 
@@ -84,23 +102,23 @@ jobs:
     strategy:
       matrix:
         profile: [standard, docker, apptainer, chtc_hpc, local]
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
+
       - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
-          java-version: '17'
-      
+          distribution: "temurin"
+          java-version: "17"
+
       - name: Install Nextflow
         run: |
           curl -s https://get.nextflow.io | bash
           sudo mv nextflow /usr/local/bin/
           nextflow -version
-      
+
       - name: Validate config syntax - ${{ matrix.profile }}
         run: |
           echo "::group::Validating ${{ matrix.profile }} profile"
@@ -110,36 +128,38 @@ jobs:
             exit 1
           fi
           echo "::endgroup::"
-          
+
           echo "✅ Config syntax valid for ${{ matrix.profile }} profile"
-      
-      - name: Verify required parameters exist
+
+      - name: Verify expected top-level parameters exist
         run: |
-          # Check that critical parameters are defined
-          for param in samplesheet experiment_id tools results; do
+          # Check that stable top-level parameters are defined in the rendered config.
+          # The v3 pipeline has a single main workflow, so there is no public
+          # `tools` selector parameter to validate here.
+          for param in samplesheet experiment_id results; do
             if ! grep -q "^\s*${param}\s*=" config_output.txt; then
-              echo "::error::Required parameter '${param}' not found in config"
+              echo "::error::Expected parameter '${param}' not found in config"
               exit 1
             fi
           done
-          echo "✅ All required parameters present"
+          echo "✅ All expected top-level parameters present"
 
   validate-config-includes:
     name: Validate Config File Includes
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
+
       - name: Check included config files exist
         run: |
           echo "Checking config file includes..."
-          
+
           # Extract UNCONDITIONAL includeConfig statements (not indented = not in blocks)
           # Match lines that start with includeConfig (no leading whitespace except maybe comments)
           includes=$(grep -oP '^includeConfig\s+"\K[^"]+' nextflow.config || true)
-          
+
           if [ -z "$includes" ]; then
             echo "ℹ️  No unconditional includeConfig statements found"
           else
@@ -162,7 +182,7 @@ jobs:
             
             echo "✅ All required config files exist"
           fi
-          
+
           # Check for conditional includes (indented = inside blocks, informational only)
           conditional_includes=$(grep -oP '^\s+includeConfig\s+"\K[^"]+' nextflow.config || true)
           if [ -n "$conditional_includes" ]; then
@@ -181,22 +201,22 @@ jobs:
   validate-results-config:
     name: Validate Results Config Consistency
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
+
       - name: Check results.config parameter references
         run: |
           echo "Validating results.config parameter references..."
-          
+
           # Extract param references like ${params.foo} or params.foo from right-hand side (usage)
           param_refs=$(grep -oP 'params\.\K\w+(?=\s*[+/])' conf/results.config | sort -u)
-          
+
           echo "Found parameter references (used but need to be defined elsewhere):"
           echo "$param_refs"
           echo
-          
+
           # Check each referenced parameter is defined somewhere
           missing_params=()
           for param in $param_refs; do
@@ -207,33 +227,33 @@ jobs:
               echo "::error::Parameter 'params.${param}' referenced in results.config but not defined anywhere"
             fi
           done
-          
+
           if [ ${#missing_params[@]} -gt 0 ]; then
             echo "::error::Found ${#missing_params[@]} undefined parameters in results.config"
             exit 1
           fi
-          
+
           echo "✅ All parameters referenced in results.config are defined"
-      
+
       - name: Verify process names in results.config (STRICT)
         run: |
           echo "Extracting process names from results.config..."
-          
+
           # Extract withName: process names
           config_processes=$(grep -oP "withName:\s*['\"]?\K[\w_]+" conf/results.config | sort -u)
-          
+
           echo "Process names in results.config:"
           echo "$config_processes"
           echo
-          
+
           # Extract process definitions from .nf files
           workflow_processes=$(grep -hE "^process\s+\w+" modules/*.nf subworkflows/*.nf workflows/*.nf 2>/dev/null | \
                                awk '{print $2}' | sort -u)
-          
+
           echo "Process names in workflow files:"
           echo "$workflow_processes"
           echo
-          
+
           # STRICT CHECK: All processes in config must exist in workflows
           missing=()
           for proc in $config_processes; do
@@ -242,23 +262,23 @@ jobs:
               echo "::error::Process '$proc' configured in results.config but not found in workflow files"
             fi
           done
-          
+
           if [ ${#missing[@]} -gt 0 ]; then
             echo "::error::Found ${#missing[@]} process(es) in results.config with no matching workflow definition"
             echo "Processes must be defined in modules/, subworkflows/, or workflows/ files"
             exit 1
           fi
-          
+
           echo "✅ All configured processes have matching workflow definitions"
 
   validate-version-consistency:
     name: Validate Version Consistency
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
+
       - name: Extract versions from files
         id: versions
         run: |
@@ -266,28 +286,28 @@ jobs:
           PYPROJECT_VERSION=$(grep '^version = ' pyproject.toml | sed 's/version = "\(.*\)"/\1/')
           echo "pyproject_version=$PYPROJECT_VERSION" >> $GITHUB_OUTPUT
           echo "pyproject.toml version: $PYPROJECT_VERSION"
-          
+
           # Extract version from lib/py_nvd/__init__.py
           CLI_VERSION=$(grep '^__version__ = ' lib/py_nvd/__init__.py | sed 's/__version__ = "\(.*\)"/\1/')
           echo "cli_version=$CLI_VERSION" >> $GITHUB_OUTPUT
           echo "lib/py_nvd/__init__.py version: $CLI_VERSION"
-          
+
           # Extract monoimage version from nextflow.config
           MONOIMAGE=$(grep 'monoimage.*=' nextflow.config | grep -oP 'nrminor/nvd:\K[^"]+')
           echo "monoimage_version=$MONOIMAGE" >> $GITHUB_OUTPUT
           echo "nextflow.config monoimage: $MONOIMAGE"
-      
+
       - name: Compare versions (STRICT)
         run: |
           PYPROJECT_VERSION="${{ steps.versions.outputs.pyproject_version }}"
           CLI_VERSION="${{ steps.versions.outputs.cli_version }}"
-          
+
           if [ "$PYPROJECT_VERSION" != "$CLI_VERSION" ]; then
             echo "::error::Version mismatch between pyproject.toml ($PYPROJECT_VERSION) and lib/py_nvd/__init__.py ($CLI_VERSION)"
             echo "These versions must be kept in sync. Update both files when bumping version."
             exit 1
           fi
-          
+
           echo "✅ Version consistency check passed"
           echo "   - pyproject.toml: $PYPROJECT_VERSION"
           echo "   - lib/py_nvd/__init__.py: $CLI_VERSION"
@@ -298,20 +318,20 @@ jobs:
   validate-samplesheet-example:
     name: Validate Example Samplesheet
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
+
       - name: Install uv
         uses: astral-sh/setup-uv@v2
-      
+
       - name: Set up Python
         run: uv python install 3.10
-      
+
       - name: Install dependencies
         run: uv sync
-      
+
       - name: Validate example samplesheet
         run: |
           if [ -f "assets/example_samplesheet.csv" ]; then

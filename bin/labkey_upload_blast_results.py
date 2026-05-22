@@ -175,17 +175,6 @@ def main():
         description="Upload BLAST CSVs to LabKey using Polars.",
     )
     parser.add_argument("--experiment-id", required=True)
-    parser.add_argument("--run-id", required=True)
-    parser.add_argument(
-        "--sample-set-id",
-        required=False,
-        help="Sample set ID for upload tracking",
-    )
-    parser.add_argument(
-        "--state-dir",
-        required=False,
-        help="State directory for upload tracking database",
-    )
     parser.add_argument("--labkey-server", required=True)
     parser.add_argument("--labkey-project-name", required=True)
     parser.add_argument("--labkey-api-key", required=True)
@@ -207,7 +196,6 @@ def main():
     log_entries = [
         f"LabKey BLAST Upload Log (Polars Version) - {datetime.now()}",
         f"Experiment ID: {args.experiment_id}",
-        f"Run ID: {args.run_id}",
         f"Server: {args.labkey_server}",
         f"Project: {args.labkey_project_name}",
         f"Target Table: {args.table_name}",
@@ -273,37 +261,6 @@ def main():
             # Validate and clean the DataFrame
             df = validate_dataframe(df, csv_file, log_entries)
 
-            # Filter out samples that were already uploaded (cross-run deduplication)
-            # Justification for local import: script must work standalone without py_nvd
-            samples_to_skip: set = set()
-            if args.sample_set_id and "sample_id" in df.columns:
-                try:
-                    import py_nvd.state as nvd_state
-
-                    unique_samples = df["sample_id"].unique().to_list()
-                    for sample_id in unique_samples:
-                        if nvd_state.was_sample_ever_uploaded(
-                            str(sample_id),
-                            upload_type="blast",
-                            upload_target="labkey",
-                            state_dir=args.state_dir,
-                        ):
-                            samples_to_skip.add(sample_id)
-                            log_entries.append(
-                                f"  SKIP: Sample '{sample_id}' was already uploaded in a previous run",
-                            )
-                    if samples_to_skip:
-                        df = df.filter(
-                            ~pl.col("sample_id").is_in(list(samples_to_skip)),
-                        )
-                        log_entries.append(
-                            f"  Filtered out {len(samples_to_skip)} already-uploaded samples",
-                        )
-                except ImportError:
-                    log_entries.append(
-                        "  WARNING: py_nvd not available, skipping cross-run check",
-                    )
-
             record_count = len(df)
             total_records_processed += record_count
 
@@ -365,56 +322,6 @@ def main():
 
                     total_records_uploaded += success_count
 
-                    # Record successful uploads in state database (per-sample)
-                    # Justification for local import: script must work standalone without py_nvd
-                    if (
-                        args.sample_set_id
-                        and success_count > 0
-                        and "sample_id" in df.columns
-                    ):
-                        try:
-                            import py_nvd.state as nvd_state
-
-                            uploaded_samples = df["sample_id"].unique().to_list()
-                            for sample_id in uploaded_samples:
-                                sample_records = df.filter(
-                                    pl.col("sample_id") == sample_id,
-                                ).to_dicts()
-                                content_hash = nvd_state.hash_upload_content(
-                                    sample_records,
-                                )
-                                nvd_state.record_upload(
-                                    sample_id=str(sample_id),
-                                    sample_set_id=args.sample_set_id,
-                                    upload_type="blast",
-                                    upload_target="labkey",
-                                    content_hash=content_hash,
-                                    target_metadata={
-                                        "experiment_id": args.experiment_id,
-                                        "table_name": args.table_name,
-                                        "records_uploaded": len(sample_records),
-                                        "source_file": csv_file,
-                                    },
-                                    state_dir=args.state_dir,
-                                )
-                                # Release sample lock after successful upload
-                                if args.run_id:
-                                    nvd_state.release_sample_lock(
-                                        sample_id=str(sample_id),
-                                        run_id=args.run_id,
-                                        state_dir=args.state_dir,
-                                    )
-                            log_entries.append(
-                                f"  Recorded uploads for {len(uploaded_samples)} samples in state database",
-                            )
-                        except ImportError:
-                            log_entries.append(
-                                "  WARNING: py_nvd not available, uploads not recorded",
-                            )
-                        except Exception as e:
-                            log_entries.append(
-                                f"  WARNING: Failed to record uploads: {e!s}",
-                            )
                 else:
                     # Simulation mode - just count batches
                     num_batches = (

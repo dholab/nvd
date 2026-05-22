@@ -10,19 +10,28 @@ workflow CLASSIFY_WITH_MEGABLAST {
     take:
     ch_virus_contigs
     ch_blast_db_files
-    ch_state_dir      // value channel: state directory path (may be null in stateless mode)
     ch_taxonomy_dir   // value channel: taxonomy directory path for taxonomy lookups
 
     main:
+    // These FASTA files are uncompressed pipeline outputs. Upstream empty FASTA
+    // producers create zero-byte files, so a byte-size check is a cheap scheduling
+    // guard. Do not use this predicate for gzipped FASTA inputs.
+    ch_megablast_candidates = ch_virus_contigs.filter { _sample_id, contigs ->
+          file(contigs).size() > 0
+      }
+      .multiMap { sample_id, contigs ->
+          for_search: tuple(sample_id, contigs)
+          for_prune:  tuple(sample_id, contigs)
+      }
+
     MEGABLAST(
-        ch_virus_contigs.combine(ch_blast_db_files)
+        ch_megablast_candidates.for_search.combine(ch_blast_db_files)
     )
 
     SELECT_TOP_BLAST_HITS(MEGABLAST.out)
 
     ANNOTATE_MEGABLAST_RESULTS(
         SELECT_TOP_BLAST_HITS.out,
-        ch_state_dir,
         ch_taxonomy_dir
     )
 
@@ -32,7 +41,7 @@ workflow CLASSIFY_WITH_MEGABLAST {
     )
 
     REMOVE_MEGABLAST_MAPPED_CONTIGS(
-        MEGABLAST.out.join(ch_virus_contigs, by: 0)
+        MEGABLAST.out.join(ch_megablast_candidates.for_prune, by: 0)
     )
 
     emit:

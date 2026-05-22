@@ -11,11 +11,10 @@ LABEL maintainer="nrminor@wisc.edu"
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=America/New_York
 ENV HOME=/opt
-ENV ~=/opt
 
 # run a few apt installs
 RUN apt-get update && \
-    apt-get install -y curl wget git gcc g++ cmake util-linux && \
+    apt-get install -y --no-install-recommends curl ca-certificates util-linux && \
     rm -rf /var/lib/apt/lists/* && \
     mkdir /dependencies && \
     dpkg -l > /dependencies/apt-get.lock
@@ -36,11 +35,18 @@ RUN cd $HOME && PIXI_ARCH=x86_64 curl -fsSL https://pixi.sh/install.sh | bash
 # 3) make sure pixi and pixi installs are on the $PATH
 ENV PATH=$PATH:$HOME/.pixi/bin
 
-# 4) install everything else with pixi
+# 4) install everything else with pixi. The container runtime does not need
+# host-side build and container-management tooling from the full developer
+# environment, so skip those direct packages and their dependency subtrees.
 RUN cd $HOME && \
-    script -q -c "pixi install --frozen" && \
-    script -q -c "pixi clean cache --assume-yes" && \
-    script -q -c "pixi add cxx-compiler cmake make"
+    pixi install --frozen \
+        --skip-with-deps apptainer \
+        --skip-with-deps rust-script \
+        --skip-with-deps rust \
+        --skip-with-deps compilers \
+        --skip-with-deps pkg-config && \
+    pixi clean cache --assume-yes && \
+    rm -rf $HOME/.cache $HOME/.pixi/cache
 
 # 5) Add pixi environment to PATH (works in Docker, Podman, AND Apptainer)
 ENV PATH=$PATH:/opt/.pixi/envs/default/bin
@@ -49,41 +55,5 @@ ENV PATH=$PATH:/opt/.pixi/envs/default/bin
 ENV NXF_CACHE_DIR=/scratch
 ENV NXF_HOME=/scratch
 
-# ----------------------------------------------------------------------------------- #
-
-# Copy necessary ncbi files
-COPY conf/user-settings.mkfg /.ncbi/user-settings.mkfg
-
-# Install NCBI tools and configure environment
-RUN mkdir -p /.ncbi && \
-    chmod 777 /.ncbi/user-settings.mkfg && \
-    mkdir /build && cd /build && \
-    git config --global http.sslVerify false && \
-    git clone -b 3.2.0 https://github.com/ncbi/ngs-tools.git && \
-    git clone -b 3.2.1 https://github.com/ncbi/ncbi-vdb.git && \
-    git clone -b 3.2.1 https://github.com/ncbi/sra-tools.git && \
-    sed -i 's/cmake_minimum_required[[:space:]]*([[:space:]]*VERSION[[:space:]]*2\.8\.12[[:space:]]*)/cmake_minimum_required(VERSION 3.5)/' /build/ngs-tools/CMakeLists.txt && \
-    echo "Verifying CMake version change:" && \
-    grep "cmake_minimum_required" /build/ngs-tools/CMakeLists.txt
-
-# Build ncbi-vdb, sra-tools and ngs-tools
-RUN cd /build/ncbi-vdb && \
-    ./configure --relative-build-out-dir && \
-    make -j$(nproc) && \
-    cd /build/sra-tools && \
-    ./configure --relative-build-out-dir && \
-    make -j$(nproc) && \
-    cd /build/ngs-tools && \
-    ./configure --relative-build-out-dir && \
-    make -j$(nproc) && \
-    # Copy built binaries and clean up in the same layer
-    find /build/OUTDIR -type f -executable -exec cp {} /usr/local/bin/ \; && \
-    cd / && rm -rf /build
-    
-# remove now unnecessary compilers and clean the PyPI and conda caches
-RUN cd $HOME && pixi remove rust cxx-compiler cmake make && pixi clean cache --yes
-
-# Fix snakemake permission issue
+# Provide a writable cache location for tools that ignore HOME in containers.
 RUN mkdir /.cache; chmod a+rwX /.cache
-
-

@@ -2,6 +2,7 @@
 
 # project root files
 !.gitignore
+!.dockerignore
 !.pre-commit-config.yaml
 !Dockerfile
 !Containerfile
@@ -32,6 +33,7 @@
 # bin
 !/bin
 !/bin/*.py
+!/bin/*.rs
 
 # lib (py_nvd package and Groovy utilities)
 !/lib
@@ -59,13 +61,16 @@
 # assets
 !/assets
 !/assets/example_samplesheet.csv
+!/assets/test_samplesheet.csv
+!/assets/human_viruses_taxlist.txt.zst
 
 # docs
 !/docs
 !/docs/INSTALLATION.md
 !/docs/contributor_guide.md
 !/docs/example_commands.md
-!/docs/cli_wrapper_guide.md
+!/docs/nvd_cli_guide.md
+!/docs/virus_enrichment_index.md
 
 # scripts
 !/scripts/*
@@ -90,3 +95,7 @@
 !/.vscode/extensions.json
 !/.vscode/settings.json
 
+# testing data
+!/tests
+!/tests/data
+!/tests/data/*

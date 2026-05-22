@@ -62,7 +62,7 @@ process DEDUP_WITH_CLUMPIFY {
     /* Deduplicate reads using clumpify */
 
 	tag "${sample_id}"
-	label "ludicrous"
+	label "high"
 
 	errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
 	maxRetries 2
@@ -95,7 +95,7 @@ process TRIM_ADAPTERS {
 	/* Trim Illumina adapters using bbduk */
 
 	tag "${sample_id}"
-	label "ludicrous"
+	label "high"
 
 	errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
 	maxRetries 2
@@ -129,7 +129,7 @@ process FILTER_READS {
 	/* Filter reads by quality and length (pair-aware for interleaved reads) */
 
 	tag "${sample_id}"
-	label "ludicrous"
+	label "high"
 
 	errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
 	maxRetries 2
@@ -253,64 +253,3 @@ process FILTER_SHORT_CONTIGS {
     minconsecutivebases=${params.min_consecutive_bases} 
 	"""
 }
-
-process CLUMP_READS {
-
-    /* */
-
-	tag "${sample_id}"
-	label "ludicrous"
-
-	errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
-	maxRetries 2
-
-	cpus 4
-
-	input:
-	tuple val(sample_id), val(platform), val(read_structure), path(reads)
-
-	output:
-    tuple val(sample_id), val(platform), val(read_structure), path("${sample_id}.clumped.fastq.gz")
-
-    when:
-	params.tools && (params.tools.contains("clump") || params.tools.contains("all"))
-
-	script:
-	"""
-	clumpify.sh \
-	in=${reads} out=${sample_id}.clumped.fastq.gz \
-	reorder \
-	threads=${task.cpus} -eoom
-	"""
-
-}
-
-process SANITIZE_EXTRACTED_FASTA {
-
-    /* Reformat GOTTCHA2 extracted FASTA for downstream consumption.
-     * Taxonomic-level deduplication (strain > species) is handled by
-     * each consumer: register_gottcha2_hits.py and labkey_upload_gottcha2_fasta.py. */
-
-	tag "${sample_id}"
-	label "medium"
-
-	errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
-	maxRetries 2
-
-	cpus 4
-
-	input:
-	tuple val(sample_id), path(extracted_reads), path(full_tsv)
-
-	output:
-    tuple val(sample_id), path("${sample_id}.no_ambig.fasta"), path(full_tsv)
-
-	script:
-	"""
-	reformat.sh \
-	in=${extracted_reads} out=${sample_id}.no_ambig.fasta \
-	nullifybrokenquality=t \
-	threads=${task.cpus} -eoom
-	"""
-}
-

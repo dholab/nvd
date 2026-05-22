@@ -9,12 +9,12 @@
 #   4. Optionally downloads reference databases
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/dhoconno/nvd/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/dholab/nvd/main/install.sh | bash
 #   OR
 #   ./install.sh [OPTIONS]
 #
 # License: GPLv3
-# Project: https://github.com/dhoconno/nvd
+# Project: https://github.com/dholab/nvd
 #
 
 set -euo pipefail
@@ -23,7 +23,7 @@ set -euo pipefail
 # MAJOR: Breaking changes to CLI flags, directory structure, or exit codes
 # MINOR: New features, new flags, new modes
 # PATCH: Bug fixes, cross-platform improvements, better error messages
-readonly VERSION="2.0.0"
+readonly VERSION="3.0.0"
 
 # Cleanup handler for interrupts - removes temporary files
 cleanup() {
@@ -90,11 +90,68 @@ print_info() {
 # Prompt Utilities
 # =============================================================================
 
+PROMPT_TTY_READY=false
+PROMPT_INPUT=""
+
+init_prompt_tty() {
+	if [[ "$PROMPT_TTY_READY" == "true" ]]; then
+		return 0
+	fi
+
+	if { exec 9</dev/tty; } 2>/dev/null; then
+		PROMPT_TTY_READY=true
+		PROMPT_INPUT="tty"
+		if [[ "${NVD_INSTALLER_DEBUG:-}" == "1" ]]; then
+			echo "  [debug] prompt input: /dev/tty fd=9" >&2
+		fi
+		return 0
+	fi
+
+	if [[ -t 0 ]]; then
+		PROMPT_TTY_READY=true
+		PROMPT_INPUT="stdin"
+		if [[ "${NVD_INSTALLER_DEBUG:-}" == "1" ]]; then
+			echo "  [debug] prompt input: stdin fd=0" >&2
+		fi
+		return 0
+	fi
+
+	print_error "No interactive terminal available for prompts."
+	echo "      If using curl | bash, run from a real terminal," >&2
+	echo "      or download install.sh and run it interactively." >&2
+	return 1
+}
+
+read_prompt() {
+	local variable_name="$1"
+	local prompt_response
+
+	init_prompt_tty || return 1
+
+	if [[ "$PROMPT_INPUT" == "stdin" ]]; then
+		IFS= read -r prompt_response || {
+			print_error "Failed to read prompt response from stdin"
+			return 1
+		}
+	else
+		IFS= read -r prompt_response <&9 || {
+			print_error "Failed to read prompt response from /dev/tty"
+			return 1
+		}
+	fi
+
+	if [[ "${NVD_INSTALLER_DEBUG:-}" == "1" ]]; then
+		printf '  [debug] read_prompt: bytes=%s value=%q\n' "${#prompt_response}" "$prompt_response" >&2
+	fi
+
+	printf -v "$variable_name" '%s' "$prompt_response"
+}
+
 prompt_yes_no() {
 	local prompt="$1"
 	local default="${2:-y}"
 
-	if [[ "$DRY_RUN" == "true" ]] || [[ "$NON_INTERACTIVE" == "true" ]]; then
+	if [[ "$NON_INTERACTIVE" == "true" ]]; then
 		[[ "$default" == "y" ]]
 		return
 	fi
@@ -108,12 +165,24 @@ prompt_yes_no() {
 
 	echo -en "  ${prompt} ${yn_hint}: "
 	local response
-	read -r response
+	if ! read_prompt response; then
+		exit 1
+	fi
 	response="${response:-$default}"
 
 	case "$response" in
-	[Yy]*) return 0 ;;
-	*) return 1 ;;
+	y | Y | yes | Yes | YES)
+		if [[ "${NVD_INSTALLER_DEBUG:-}" == "1" ]]; then
+			echo "  [debug] prompt_yes_no: yes" >&2
+		fi
+		return 0
+		;;
+	*)
+		if [[ "${NVD_INSTALLER_DEBUG:-}" == "1" ]]; then
+			echo "  [debug] prompt_yes_no: no" >&2
+		fi
+		return 1
+		;;
 	esac
 }
 
@@ -135,7 +204,7 @@ prompt_choice() {
 
 	echo >&2
 
-	if [[ "$DRY_RUN" == "true" ]] || [[ "$NON_INTERACTIVE" == "true" ]]; then
+	if [[ "$NON_INTERACTIVE" == "true" ]]; then
 		echo "  Choice [1-${#options[@]}]: 1 (auto-selected)" >&2
 		echo 1
 		return
@@ -144,7 +213,9 @@ prompt_choice() {
 	while true; do
 		echo -en "  Choice [1-${#options[@]}]: " >&2
 		local choice
-		read -r choice
+		if ! read_prompt choice; then
+			exit 1
+		fi
 
 		if [[ "$choice" =~ ^[0-9]+$ ]] && [[ "$choice" -ge 1 ]] && [[ "$choice" -le "${#options[@]}" ]]; then
 			echo "$choice"
@@ -158,14 +229,16 @@ prompt_path() {
 	local prompt="$1"
 	local default="$2"
 
-	if [[ "$DRY_RUN" == "true" ]] || [[ "$NON_INTERACTIVE" == "true" ]]; then
+	if [[ "$NON_INTERACTIVE" == "true" ]]; then
 		echo "$default"
 		return
 	fi
 
 	echo -en "  ${prompt} [${default}]: " >&2
 	local response
-	read -r response
+	if ! read_prompt response; then
+		exit 1
+	fi
 	response="${response:-$default}"
 
 	# Expand ~ and $HOME
@@ -173,6 +246,16 @@ prompt_path() {
 	response="${response/\$HOME/$HOME}"
 
 	echo "$response"
+}
+
+run_interactive_command() {
+	init_prompt_tty || return 1
+
+	if [[ "$PROMPT_INPUT" == "stdin" ]]; then
+		"$@"
+	else
+		"$@" <&9
+	fi
 }
 
 # =============================================================================
@@ -385,7 +468,7 @@ run_preflight_checks() {
 # Versioned Repo Setup
 # =============================================================================
 
-NVD_REPO_URL="https://github.com/dhoconno/nvd.git"
+NVD_REPO_URL="https://github.com/dholab/nvd.git"
 NVD_DIR="${HOME}/.nvd"
 LATEST_LINK="${NVD_DIR}/latest"
 
@@ -560,17 +643,19 @@ setup_repo() {
 # Database Wizard
 # =============================================================================
 
-# Database URLs and checksums (update these for new releases)
-STAT_DB_URL="https://dholk.primate.wisc.edu/_webdav/dho/projects/lungfish/InfinitePath/public/%40files/release-v2.5.0/stat_db_v2_5_0.tar.gz"
-BLAST_DB_URL="https://dholk.primate.wisc.edu/_webdav/dho/projects/lungfish/InfinitePath/public/%40files/release-v2.5.0/blast_db_v2_5_0.tar.gz"
-GOTTCHA2_DB_URL="https://dholk.primate.wisc.edu/_webdav/dho/projects/lungfish/InfinitePath/public/%40files/release-v2.5.0/gottcha2.tar.gz"
+# Reference URLs for NVD v3.0.0.
+RELEASE_BASE_URL="https://dholk.primate.wisc.edu/_webdav/dho/projects/lungfish/InfinitePath/public/%40files/release-v3.0.0/v3.0.0"
+CHECKSUMS_URL="${RELEASE_BASE_URL}/checksums_v3_0.txt"
+BLAST_DB_URL="${RELEASE_BASE_URL}/blast_db_v3_0.tar.gz"
+VIRUS_INDEX_URL="${RELEASE_BASE_URL}/human_infecting_viruses.k31w1.idx"
 
-STAT_DB_MD5="68471367e635eddff411e4102b8566f3"
-BLAST_DB_MD5="7f64ecb805d396b5b8b83e4cc014390d"
-GOTTCHA2_DB_MD5="d33fb5d1b2d22f7a174239f1dfc142cb"
+BLAST_DB_ARCHIVE="blast_db_v3_0.tar.gz"
+VIRUS_INDEX_FILE="human_infecting_viruses.k31w1.idx"
+BLAST_DB_PREFIX="core_nt"
 
-# Approximate size per database in GB (for disk space checks)
-DB_SIZE_GB=500
+# Approximate sizes in GB for disk space checks.
+BLAST_DB_SIZE_GB=500
+VIRUS_INDEX_SIZE_GB=1
 
 check_disk_space() {
 	local path="$1"
@@ -584,6 +669,11 @@ check_disk_space() {
 		print_error "INTERNAL: required_gb is empty"
 		return 1
 	}
+
+	if [[ "$DRY_RUN" == "true" ]]; then
+		print_info "[DRY RUN] Would check for approximately ${required_gb}GB free at ${path}"
+		return 0
+	fi
 
 	# Find existing parent directory for disk space check
 	local check_path="$path"
@@ -615,57 +705,162 @@ check_disk_space() {
 	return 0
 }
 
-download_database() {
+download_checksums_manifest() {
+	local dest="$1"
+
+	if [[ "$DRY_RUN" == "true" ]]; then
+		print_info "[DRY RUN] Would download checksum manifest: ${CHECKSUMS_URL}"
+		return 0
+	fi
+
+	mkdir -p "$(dirname "$dest")" || {
+		print_warning "Could not create checksum manifest directory"
+		return 1
+	}
+
+	if command -v wget &>/dev/null; then
+		wget --quiet -O "$dest" "$CHECKSUMS_URL" || {
+			print_warning "Could not download checksum manifest; continuing without checksum verification"
+			return 1
+		}
+	elif command -v curl &>/dev/null; then
+		curl -fsSL -o "$dest" "$CHECKSUMS_URL" || {
+			print_warning "Could not download checksum manifest; continuing without checksum verification"
+			return 1
+		}
+	else
+		print_warning "Neither wget nor curl found for checksum manifest; continuing without checksum verification"
+		return 1
+	fi
+
+	return 0
+}
+
+checksum_for_file() {
+	local manifest="$1"
+	local filename="$2"
+
+	[[ -f "$manifest" ]] || return 1
+
+	while read -r checksum path _; do
+		[[ -n "${checksum:-}" ]] || continue
+		[[ "${checksum:0:1}" == "#" ]] && continue
+		path="${path#\*}"
+		path="${path#./}"
+		if [[ "$path" == "$filename" ]] || [[ "$(basename "$path")" == "$filename" ]]; then
+			echo "$checksum"
+			return 0
+		fi
+	done <"$manifest"
+
+	return 1
+}
+
+verify_download_checksum() {
+	local file="$1"
+	local manifest="$2"
+	local filename
+	filename=$(basename "$file")
+
+	if [[ "$DRY_RUN" == "true" ]]; then
+		print_info "[DRY RUN] Would verify checksum for ${filename}"
+		return 0
+	fi
+
+	local expected
+	if ! expected=$(checksum_for_file "$manifest" "$filename"); then
+		print_warning "No checksum entry found for ${filename}; continuing without checksum verification"
+		return 0
+	fi
+
+	local actual algorithm
+	case "${#expected}" in
+	32)
+		algorithm="MD5"
+		if command -v md5sum &>/dev/null; then
+			actual=$(md5sum "$file" | awk '{print $1}')
+		elif command -v md5 &>/dev/null; then
+			actual=$(md5 -q "$file")
+		else
+			print_warning "No MD5 tool found; continuing without checksum verification for ${filename}"
+			return 0
+		fi
+		;;
+	64)
+		algorithm="SHA256"
+		if command -v sha256sum &>/dev/null; then
+			actual=$(sha256sum "$file" | awk '{print $1}')
+		elif command -v shasum &>/dev/null; then
+			actual=$(shasum -a 256 "$file" | awk '{print $1}')
+		else
+			print_warning "No SHA256 tool found; continuing without checksum verification for ${filename}"
+			return 0
+		fi
+		;;
+	*)
+		print_warning "Unsupported checksum length for ${filename}; continuing without checksum verification"
+		return 0
+		;;
+	esac
+
+	if [[ "$actual" != "$expected" ]]; then
+		print_error "Checksum mismatch for ${filename}!"
+		echo "      Algorithm: ${algorithm}"
+		echo "      Expected:  ${expected}"
+		echo "      Got:       ${actual}"
+		return 1
+	fi
+
+	print_success "Checksum verified for ${filename} (${algorithm})"
+	return 0
+}
+
+download_file() {
 	local url="$1"
-	local dest="$2"
+	local output="$2"
 	local name="$3"
-	local expected_md5="$4"
+	local checksums_manifest="$4"
 
 	# Assertions
 	[[ -n "$url" ]] || {
 		print_error "INTERNAL: url is empty"
 		return 1
 	}
-	[[ -n "$dest" ]] || {
-		print_error "INTERNAL: dest is empty"
+	[[ -n "$output" ]] || {
+		print_error "INTERNAL: output is empty"
 		return 1
 	}
 	[[ -n "$name" ]] || {
 		print_error "INTERNAL: name is empty"
 		return 1
 	}
-	[[ -n "$expected_md5" ]] || {
-		print_error "INTERNAL: expected_md5 is empty"
-		return 1
-	}
-
-	local archive="${dest}.tar.gz"
-
-	print_info "Downloading ${name} database..."
-	echo "      Source: ${url}"
-	echo "      Target: ${archive}"
-	echo
 
 	if [[ "$DRY_RUN" == "true" ]]; then
-		print_info "[DRY RUN] Would download ${name} database"
-		print_info "[DRY RUN] Would verify MD5 checksum"
-		print_info "[DRY RUN] Would extract to ${dest}"
+		print_info "[DRY RUN] Would download ${name}"
+		echo "      Source: ${url}"
+		echo "      Target: ${output}"
+		print_info "[DRY RUN] Would verify checksum if present in manifest"
 		return 0
 	fi
 
-	mkdir -p "$(dirname "$archive")" || {
-		print_error "Failed to create directory for archive"
+	print_info "Downloading ${name}..."
+	echo "      Source: ${url}"
+	echo "      Target: ${output}"
+	echo
+
+	mkdir -p "$(dirname "$output")" || {
+		print_error "Failed to create output directory"
 		return 1
 	}
 
 	# Download with resume support
 	if command -v wget &>/dev/null; then
-		wget --continue --progress=bar:force -O "$archive" "$url" || {
+		wget --continue --progress=bar:force -O "$output" "$url" || {
 			print_error "Download failed"
 			return 1
 		}
 	elif command -v curl &>/dev/null; then
-		curl -fSL -C - -o "$archive" "$url" || {
+		curl -fSL -C - -o "$output" "$url" || {
 			print_error "Download failed"
 			return 1
 		}
@@ -674,28 +869,21 @@ download_database() {
 		return 1
 	fi
 
-	# Verify MD5 checksum
-	print_info "Verifying checksum..."
-	local actual_md5
-	if command -v md5sum &>/dev/null; then
-		actual_md5=$(md5sum "$archive" | awk '{print $1}')
-	elif command -v md5 &>/dev/null; then
-		actual_md5=$(md5 -q "$archive")
-	else
-		print_warning "No MD5 tool found, skipping verification"
-		actual_md5="$expected_md5"
+	verify_download_checksum "$output" "$checksums_manifest" || return 1
+	return 0
+}
+
+extract_archive() {
+	local archive="$1"
+	local dest="$2"
+	local name="$3"
+
+	if [[ "$DRY_RUN" == "true" ]]; then
+		print_info "[DRY RUN] Would extract ${name} to ${dest}"
+		return 0
 	fi
 
-	if [[ "$actual_md5" != "$expected_md5" ]]; then
-		print_error "Checksum mismatch!"
-		echo "      Expected: ${expected_md5}"
-		echo "      Got:      ${actual_md5}"
-		return 1
-	fi
-	print_success "Checksum verified"
-
-	# Extract
-	print_info "Extracting to ${dest}..."
+	print_info "Extracting ${name} to ${dest}..."
 	mkdir -p "$dest" || {
 		print_error "Failed to create extraction directory"
 		return 1
@@ -705,28 +893,20 @@ download_database() {
 		return 1
 	}
 	print_success "Extracted successfully"
-
-	# Offer to remove archive to save space
-	if prompt_yes_no "Remove archive to save disk space?" "y"; then
-		rm -f "$archive"
-		print_success "Archive removed"
-	fi
-
 	return 0
 }
 
 database_wizard() {
 	print_header "Database Setup"
 
-	echo "  NVD uses large reference databases for analysis."
-	echo "  Each database is approximately ${DB_SIZE_GB}GB."
+	echo "  NVD v3 uses a BLAST database and a deacon vertebrate-virus index."
 	echo
 
 	local choice
-	choice=$(prompt_choice "Which databases do you need?" \
-		"STAT+BLAST (human virus detection)" \
-		"GOTTCHA2 (general taxonomic classification)" \
-		"Both (recommended for full functionality)" \
+	choice=$(prompt_choice "Which references do you need?" \
+		"BLAST database" \
+		"Deacon vertebrate-virus index" \
+		"Both (recommended)" \
 		"Skip database download")
 
 	if [[ "$choice" == "4" ]]; then
@@ -734,93 +914,87 @@ database_wizard() {
 		echo
 		echo "  You can download databases later by running this installer again"
 		echo "  or by downloading manually from:"
-		echo "    https://github.com/dhoconno/nvd#databases"
+		echo "    https://github.com/dholab/nvd#databases"
 		echo
 		return 0
 	fi
 
-	# Get database path
-	local default_db_path="${HOME}/.nvd/databases"
+	# Get reference path
+	local default_reference_path="${HOME}/.nvd/references"
 	echo
-	local db_path
-	db_path=$(prompt_path "Where should databases be stored?" "$default_db_path")
+	local reference_path
+	reference_path=$(prompt_path "Where should references be stored?" "$default_reference_path")
 	echo
 
-	local stat_path="" blast_path="" gottcha_path=""
+	local blast_path="" blast_archive="" virus_index_path=""
 	local required_space=0
 
-	# Determine which databases to download
+	# Determine which references to download
 	if [[ "$choice" == "1" ]] || [[ "$choice" == "3" ]]; then
-		stat_path="${db_path}/stat_db"
-		blast_path="${db_path}/blast_db"
-		required_space=$((required_space + DB_SIZE_GB * 2))
+		blast_path="${reference_path}/blast_db"
+		blast_archive="${reference_path}/${BLAST_DB_ARCHIVE}"
+		required_space=$((required_space + BLAST_DB_SIZE_GB))
 	fi
 
 	if [[ "$choice" == "2" ]] || [[ "$choice" == "3" ]]; then
-		gottcha_path="${db_path}/gottcha2_db"
-		required_space=$((required_space + DB_SIZE_GB))
+		virus_index_path="${reference_path}/${VIRUS_INDEX_FILE}"
+		required_space=$((required_space + VIRUS_INDEX_SIZE_GB))
 	fi
 
 	# Check disk space
-	if ! check_disk_space "$db_path" "$required_space"; then
+	if ! check_disk_space "$reference_path" "$required_space"; then
 		echo
 		if ! prompt_yes_no "Continue anyway?" "n"; then
-			print_info "Database download cancelled"
+			print_info "Reference download cancelled"
 			return 1
 		fi
 	fi
 
 	echo
+	local checksums_manifest="${reference_path}/checksums_v3_0.txt"
+	download_checksums_manifest "$checksums_manifest" || true
+	echo
 
-	# Download databases
-	if [[ -n "$stat_path" ]]; then
-		download_database "$STAT_DB_URL" "$stat_path" "STAT" "$STAT_DB_MD5" || {
-			print_error "STAT database download failed"
-			return 1
-		}
-		echo
-	fi
-
+	# Download references
 	if [[ -n "$blast_path" ]]; then
-		download_database "$BLAST_DB_URL" "$blast_path" "BLAST" "$BLAST_DB_MD5" || {
+		download_file "$BLAST_DB_URL" "$blast_archive" "BLAST database archive" "$checksums_manifest" || {
 			print_error "BLAST database download failed"
 			return 1
 		}
+		extract_archive "$blast_archive" "$blast_path" "BLAST database" || return 1
+		if prompt_yes_no "Remove BLAST archive to save disk space?" "y"; then
+			if [[ "$DRY_RUN" == "true" ]]; then
+				print_info "[DRY RUN] Would remove ${blast_archive}"
+			else
+				rm -f "$blast_archive"
+				print_success "BLAST archive removed"
+			fi
+		fi
 		echo
 	fi
 
-	if [[ -n "$gottcha_path" ]]; then
-		download_database "$GOTTCHA2_DB_URL" "$gottcha_path" "GOTTCHA2" "$GOTTCHA2_DB_MD5" || {
-			print_error "GOTTCHA2 database download failed"
+	if [[ -n "$virus_index_path" ]]; then
+		download_file "$VIRUS_INDEX_URL" "$virus_index_path" "deacon vertebrate-virus index" "$checksums_manifest" || {
+			print_error "Deacon virus index download failed"
 			return 1
 		}
 		echo
 	fi
 
 	# Print summary of paths for user to add to config
-	print_header "Database Paths"
+	print_header "Reference Paths"
 	echo
-	echo "  Add these paths to your Nextflow config (~/.nvd/user.config):"
+	echo "  Add these paths to your NVD config (~/.nvd/user.config):"
 	echo
-	if [[ -n "$stat_path" ]]; then
+	if [[ -n "$blast_path" ]] || [[ -n "$virus_index_path" ]]; then
 		echo "    params {"
-		echo "        stat_index          = \"${stat_path}/tree_index.20260217.dbs\""
-		echo "        stat_dbss           = \"${stat_path}/tree_filter.20260217.dbss\""
-		echo "        stat_annotation     = \"${stat_path}/tree_filter.20260217.dbss.annotation\""
-		echo "        human_virus_taxlist = \"${stat_path}/human_viruses_taxlist.20260217.txt\""
-		echo "    }"
-		echo
-	fi
-	if [[ -n "$blast_path" ]]; then
-		echo "    params {"
-		echo "        blast_db        = \"${blast_path}\""
-		echo "        blast_db_prefix = \"core_nt\""
-		echo "    }"
-		echo
-	fi
-	if [[ -n "$gottcha_path" ]]; then
-		echo "    params {"
-		echo "        gottcha2_db = \"${gottcha_path}/gottcha_db.species.fna\""
+		if [[ -n "$blast_path" ]]; then
+			echo "        blast_db        = \"${blast_path}\""
+			echo "        blast_db_prefix = \"${BLAST_DB_PREFIX}\""
+		fi
+		if [[ -n "$virus_index_path" ]]; then
+			echo "        virus_index     = \"${virus_index_path}\""
+		fi
 		echo "    }"
 		echo
 	fi
@@ -851,7 +1025,7 @@ Examples:
     ./install.sh --dry-run          # See what would happen
     ./install.sh --non-interactive  # CI/CD dependency check
 
-For more information: https://github.com/dhoconno/nvd
+For more information: https://github.com/dholab/nvd
 EOF
 }
 
@@ -916,7 +1090,7 @@ main() {
 	if [[ "$DRY_RUN" == "true" ]]; then
 		print_info "[DRY RUN] Would run: ${nvd_bin} setup"
 	elif "${nvd_bin}" setup --help &>/dev/null; then
-		"${nvd_bin}" setup
+		run_interactive_command "${nvd_bin}" setup
 	else
 		print_warning "nvd setup command not available in this version"
 		print_info "You may need to run 'nvd setup' manually after updating"
@@ -934,7 +1108,7 @@ main() {
 	echo "  Next steps:"
 	echo "    1. Start a new shell (or run: source ~/.bashrc)"
 	echo "    2. Run: nvd --help"
-	echo "    3. See documentation: https://github.com/dhoconno/nvd"
+	echo "    3. See documentation: https://github.com/dholab/nvd"
 	echo
 }
 

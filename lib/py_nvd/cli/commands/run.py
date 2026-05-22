@@ -2,19 +2,19 @@
 Run command for the NVD CLI.
 
 Commands:
-    nvd run  - Run the NVD2 pipeline
+    nvd run  - Run the NVD pipeline
 """
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
-from pathlib import Path  # noqa: TC003
+from pathlib import Path
 from typing import Any
 
 import typer
 
-from py_nvd import state
 from py_nvd.cli.utils import (
     DEFAULT_CONFIG,
     PANEL_ANALYSIS,
@@ -23,8 +23,6 @@ from py_nvd.cli.utils import (
     PANEL_LABKEY,
     PANEL_NOTIFICATIONS,
     PANEL_PREPROCESSING,
-    PANEL_SRA,
-    PIPELINE_ROOT,
     RESUME_FILE,
     auto_detect_profile,
     check_command_exists,
@@ -33,13 +31,15 @@ from py_nvd.cli.utils import (
     find_config_file,
     format_command_for_display,
     get_default_profile,
+    get_pipeline_root,
     info,
     success,
     warning,
 )
 from py_nvd.models import NvdParams
 from py_nvd.params import load_params_file
-from py_nvd.state import resolve_database_versions
+from py_nvd.paths import ENV_VAR_TAXONOMY
+from py_nvd.presets import get_preset_store
 
 
 def run(
@@ -64,16 +64,6 @@ def run(
         help="Unique experiment identifier (required for LabKey uploads)",
         rich_help_panel=PANEL_CORE,
     ),
-    # NOTE: Default is None, not "all" - this lets us detect if user provided it
-    # vs using preset value. Default "all" is applied after preset merge.
-    tools: str | None = typer.Option(
-        None,
-        "--tools",
-        "-t",
-        help="Workflow(s) to run: all, stat_blast, gottcha, blast, clumpify. "
-        "Combine with commas, e.g. 'stat_blast,clumpify' (default: all)",
-        rich_help_panel=PANEL_CORE,
-    ),
     results: Path | None = typer.Option(
         None,
         "--results",
@@ -92,7 +82,7 @@ def run(
         None,
         "--config",
         "-c",
-        help="Custom config file (default: ~/.nvd/user.config or NVD_CONFIG)",
+        help="Custom config file (default: NVD_CONFIG_DIR/user.config or NVD_CONFIG)",
         exists=True,
         rich_help_panel=PANEL_CORE,
     ),
@@ -115,22 +105,10 @@ def run(
         help="Nextflow work directory",
         rich_help_panel=PANEL_CORE,
     ),
-    state_dir: Path | None = typer.Option(
-        None,
-        "--state-dir",
-        help="State directory for run tracking (default: ~/.nvd/ or NVD_STATE_DIR)",
-        rich_help_panel=PANEL_CORE,
-    ),
-    stateless: bool | None = typer.Option(
-        None,
-        "--stateless/--no-stateless",
-        help="Run without state management (disables run tracking, LabKey, Slack)",
-        rich_help_panel=PANEL_CORE,
-    ),
     taxonomy_dir: Path | None = typer.Option(
         None,
         "--taxonomy-dir",
-        help="Taxonomy database directory (required when --stateless)",
+        help="Explicit taxonomy database directory",
         rich_help_panel=PANEL_CORE,
     ),
     preset: str | None = typer.Option(
@@ -151,14 +129,8 @@ def run(
         rich_help_panel=PANEL_CORE,
     ),
     # -------------------------------------------------------------------------
-    # Database Paths
+    # Reference Paths
     # -------------------------------------------------------------------------
-    gottcha2_db: Path | None = typer.Option(
-        None,
-        "--gottcha2-db",
-        help="Override GOTTCHA2 database path",
-        rich_help_panel=PANEL_DATABASES,
-    ),
     blast_db: Path | None = typer.Option(
         None,
         "--blast-db",
@@ -171,49 +143,55 @@ def run(
         help="Override BLAST database prefix",
         rich_help_panel=PANEL_DATABASES,
     ),
-    stat_index: Path | None = typer.Option(
+    virus_index: Path | None = typer.Option(
         None,
-        "--stat-index",
-        help="Override STAT index file",
+        "--virus-index",
+        help="Path to prebuilt vertebrate-infecting virus deacon index (.idx file)",
         rich_help_panel=PANEL_DATABASES,
     ),
-    stat_dbss: Path | None = typer.Option(
+    virus_index_url: str | None = typer.Option(
         None,
-        "--stat-dbss",
-        help="Override STAT dbss file",
+        "--virus-index-url",
+        help="URL to download a prebuilt vertebrate-infecting virus deacon index",
         rich_help_panel=PANEL_DATABASES,
     ),
-    stat_annotation: Path | None = typer.Option(
+    virus_reference_fasta: Path | None = typer.Option(
         None,
-        "--stat-annotation",
-        help="Override STAT annotation file",
+        "--virus-reference-fasta",
+        help="Custom vertebrate-infecting virus FASTA for building an enrichment index",
         rich_help_panel=PANEL_DATABASES,
     ),
-    human_virus_taxlist: Path | None = typer.Option(
+    virus_kmer_size: int | None = typer.Option(
         None,
-        "--human-virus-taxlist",
-        help="Override human virus taxlist file",
+        "--virus-kmer-size",
+        help="K-mer size for building a custom virus enrichment index (default: 31)",
+        rich_help_panel=PANEL_DATABASES,
+    ),
+    virus_window_size: int | None = typer.Option(
+        None,
+        "--virus-window-size",
+        help="Minimizer window size for building a custom virus enrichment index (default: 1)",
+        rich_help_panel=PANEL_DATABASES,
+    ),
+    virus_abs_threshold: int | None = typer.Option(
+        None,
+        "--virus-abs-threshold",
+        help="Minimum absolute minimizer hits for virus read enrichment (default: 1)",
+        rich_help_panel=PANEL_DATABASES,
+    ),
+    virus_rel_threshold: float | None = typer.Option(
+        None,
+        "--virus-rel-threshold",
+        help="Minimum relative minimizer proportion for virus read enrichment (default: 0.0)",
         rich_help_panel=PANEL_DATABASES,
     ),
     # -------------------------------------------------------------------------
     # Database Versions
     # -------------------------------------------------------------------------
-    gottcha2_db_version: str | None = typer.Option(
-        None,
-        "--gottcha2-db-version",
-        help="GOTTCHA2 database version (auto-resolved from registry if path registered)",
-        rich_help_panel=PANEL_DATABASES,
-    ),
     blast_db_version: str | None = typer.Option(
         None,
         "--blast-db-version",
         help="BLAST database version (auto-resolved from registry if path registered)",
-        rich_help_panel=PANEL_DATABASES,
-    ),
-    stat_db_version: str | None = typer.Option(
-        None,
-        "--stat-db-version",
-        help="STAT database version (auto-resolved from registry if path registered)",
         rich_help_panel=PANEL_DATABASES,
     ),
     # -------------------------------------------------------------------------
@@ -235,12 +213,6 @@ def run(
         None,
         "--entropy",
         help="Entropy threshold (default: 0.9)",
-        rich_help_panel=PANEL_ANALYSIS,
-    ),
-    min_gottcha_reads: int | None = typer.Option(
-        None,
-        "--min-gottcha-reads",
-        help="Minimum reads for GOTTCHA2 (default: 250)",
         rich_help_panel=PANEL_ANALYSIS,
     ),
     max_blast_targets: int | None = typer.Option(
@@ -285,31 +257,25 @@ def run(
     preprocess: bool | None = typer.Option(
         None,
         "--preprocess/--no-preprocess",
-        help="Enable all preprocessing steps (dedup, trim, scrub, filter)",
-        rich_help_panel=PANEL_PREPROCESSING,
-    ),
-    merge_pairs: bool | None = typer.Option(
-        None,
-        "--merge-pairs/--no-merge-pairs",
-        help="Merge paired read mates based on overlaps",
+        help="Enable default preprocessing steps",
         rich_help_panel=PANEL_PREPROCESSING,
     ),
     dedup: bool | None = typer.Option(
         None,
-        "--dedup/--no-dedup",
+        "--dedup",
         help="Deduplicate reads (umbrella: enables both --dedup-seq and --dedup-pos)",
         rich_help_panel=PANEL_PREPROCESSING,
     ),
     dedup_seq: bool | None = typer.Option(
         None,
-        "--dedup-seq/--no-dedup-seq",
-        help="Sequence-based deduplication with clumpify (default: follows --dedup)",
+        "--dedup-seq",
+        help="Enable sequence-based deduplication with clumpify",
         rich_help_panel=PANEL_PREPROCESSING,
     ),
     dedup_pos: bool | None = typer.Option(
         None,
-        "--dedup-pos/--no-dedup-pos",
-        help="Positional deduplication with samtools markdup (default: follows --dedup)",
+        "--dedup-pos",
+        help="Enable positional deduplication with samtools markdup",
         rich_help_panel=PANEL_PREPROCESSING,
     ),
     trim_adapters: bool | None = typer.Option(
@@ -318,28 +284,22 @@ def run(
         help="Trim Illumina adapters (default: follows --preprocess)",
         rich_help_panel=PANEL_PREPROCESSING,
     ),
-    scrub_host_reads: bool | None = typer.Option(
+    host_index: Path | None = typer.Option(
         None,
-        "--scrub-host-reads/--no-scrub-host-reads",
-        help="Remove host reads with STAT (requires --sra-human-db; default: follows --preprocess)",
+        "--host-index",
+        help="Path to prebuilt host/contaminant index (.idx file)",
         rich_help_panel=PANEL_PREPROCESSING,
     ),
-    deacon_index: Path | None = typer.Option(
+    host_index_url: str | None = typer.Option(
         None,
-        "--deacon-index",
-        help="Path to prebuilt deacon index (.idx file)",
+        "--host-index-url",
+        help="URL to download a prebuilt host/contaminant index",
         rich_help_panel=PANEL_PREPROCESSING,
     ),
-    deacon_index_url: str | None = typer.Option(
+    host_contaminants_fasta: Path | None = typer.Option(
         None,
-        "--deacon-index-url",
-        help="URL to download prebuilt deacon index (default: panhuman-1)",
-        rich_help_panel=PANEL_PREPROCESSING,
-    ),
-    deacon_contaminants_fasta: Path | None = typer.Option(
-        None,
-        "--deacon-contaminants-fasta",
-        help="Custom contaminant FASTA to union with base index",
+        "--host-contaminants-fasta",
+        help="Custom contaminant FASTA to build and union with other host indexes",
         rich_help_panel=PANEL_PREPROCESSING,
     ),
     filter_reads: bool | None = typer.Option(
@@ -373,22 +333,6 @@ def run(
         rich_help_panel=PANEL_PREPROCESSING,
     ),
     # -------------------------------------------------------------------------
-    # SRA Submission
-    # -------------------------------------------------------------------------
-    sra_human_db: Path | None = typer.Option(
-        None,
-        "--sra-human-db",
-        help="Path to human reads database for SRA submission scrubbing",
-        rich_help_panel=PANEL_SRA,
-    ),
-    # DEPRECATED: Use --sra-human-db instead
-    human_read_scrub: Path | None = typer.Option(
-        None,
-        "--human-read-scrub",
-        help="[DEPRECATED] Use --sra-human-db instead",
-        hidden=True,
-    ),
-    # -------------------------------------------------------------------------
     # LabKey Integration
     # -------------------------------------------------------------------------
     labkey: bool | None = typer.Option(
@@ -419,24 +363,6 @@ def run(
         None,
         "--labkey-schema",
         help="LabKey database schema name (e.g., 'lists')",
-        rich_help_panel=PANEL_LABKEY,
-    ),
-    labkey_gottcha_fasta_list: str | None = typer.Option(
-        None,
-        "--labkey-gottcha-fasta-list",
-        help="LabKey list name for GOTTCHA2 FASTA results",
-        rich_help_panel=PANEL_LABKEY,
-    ),
-    labkey_gottcha_full_list: str | None = typer.Option(
-        None,
-        "--labkey-gottcha-full-list",
-        help="LabKey list name for full GOTTCHA2 results",
-        rich_help_panel=PANEL_LABKEY,
-    ),
-    labkey_gottcha_blast_verified_full_list: str | None = typer.Option(
-        None,
-        "--labkey-gottcha-blast-verified-full-list",
-        help="LabKey list name for BLAST-verified GOTTCHA2 results",
         rich_help_panel=PANEL_LABKEY,
     ),
     labkey_blast_meta_hits_list: str | None = typer.Option(
@@ -483,17 +409,17 @@ def run(
     ),
 ) -> None:
     """
-    Run the NVD2 pipeline.
+    Run the NVD pipeline.
 
     This command wraps 'nextflow run' with a simpler interface, running the
-    pipeline from the local installation. Database paths and settings are
-    loaded from ~/.nvd/user.config unless overridden with command-line
-    options or NVD_CONFIG env var.
+    pipeline from the local installation. Reference paths and settings are
+    loaded from NVD_CONFIG_DIR/user.config unless overridden with command-line
+    options or the NVD_CONFIG file override.
 
     The command is saved to .nfresume for easy resumption with 'nvd resume'.
 
     Parameter precedence (highest to lowest):
-        1. CLI arguments (--tools, --blast-db, etc.)
+        1. CLI arguments (--blast-db, --dedup, etc.)
         2. Params file (--params-file params.yaml)
         3. Preset values (--preset production)
         4. Pipeline defaults (nextflow.config)
@@ -512,9 +438,6 @@ def run(
         # Specify profile and results directory
         nvd run -s samples.csv -e exp002 -p docker -r ./my_results
 
-        # Run only GOTTCHA2 workflow
-        nvd run -s samples.csv -e exp003 -t gottcha
-
         # Resume a failed run (two ways)
         nvd run -s samples.csv -e exp003 --resume
         nvd resume  # Uses saved command from .nfresume
@@ -529,7 +452,7 @@ def run(
         nvd run --params-file run-config.yaml
 
         # Combine params file with CLI overrides
-        nvd run -f run-config.yaml --tools blast --cutoff-percent 0.01
+        nvd run -f run-config.yaml --dedup --cutoff-percent 0.01
 
         # Pass other Nextflow options via '--' separator
         nvd run -s samples.csv -- -with-tower -with-trace
@@ -540,9 +463,10 @@ def run(
     # =========================================================================
     preset_params: dict[str, Any] = {}
     if preset:
-        preset_obj = state.get_preset(preset)
+        preset_store = get_preset_store()
+        preset_obj = preset_store.get(preset)
         if not preset_obj:
-            available = state.list_presets()
+            available = preset_store.list()
             console.print(f"[red]✗ Preset not found: {preset}[/red]")
             if available:
                 console.print("\n[cyan]Available presets:[/cyan]")
@@ -567,44 +491,36 @@ def run(
     # Nextflow-native options (profile, config, resume) are handled separately.
     # =========================================================================
 
-    # Handle deprecation warning for human_read_scrub -> sra_human_db
-    effective_sra_human_db = sra_human_db
-    if human_read_scrub is not None and sra_human_db is None:
-        warning(
-            "DEPRECATION: --human-read-scrub is deprecated. Please use --sra-human-db instead.",
-        )
-        effective_sra_human_db = human_read_scrub
-
     # All pipeline params from CLI (None values are filtered by merge)
     # NOTE: profile, config, resume are Nextflow-native, not pipeline params
+    resolved_taxonomy_dir = taxonomy_dir
+    if resolved_taxonomy_dir is None and ENV_VAR_TAXONOMY in os.environ:
+        resolved_taxonomy_dir = Path(os.environ[ENV_VAR_TAXONOMY])
+
     cli_args: dict[str, Any] = {
         # Core
         "samplesheet": samplesheet,
         "experiment_id": experiment_id,
-        "tools": tools,
         "results": results,
         "cleanup": cleanup,
         "work_dir": work_dir,
-        "state_dir": state_dir,
-        "stateless": stateless,
-        "taxonomy_dir": taxonomy_dir,
-        # Database paths
-        "gottcha2_db": gottcha2_db,
+        "taxonomy_dir": resolved_taxonomy_dir,
+        # Reference paths
         "blast_db": blast_db,
         "blast_db_prefix": blast_db_prefix,
-        "stat_index": stat_index,
-        "stat_dbss": stat_dbss,
-        "stat_annotation": stat_annotation,
-        "human_virus_taxlist": human_virus_taxlist,
-        # Database versions
-        "gottcha2_db_version": gottcha2_db_version,
+        "virus_index": virus_index,
+        "virus_index_url": virus_index_url,
+        "virus_reference_fasta": virus_reference_fasta,
+        "virus_kmer_size": virus_kmer_size,
+        "virus_window_size": virus_window_size,
+        "virus_abs_threshold": virus_abs_threshold,
+        "virus_rel_threshold": virus_rel_threshold,
+        # Reference versions
         "blast_db_version": blast_db_version,
-        "stat_db_version": stat_db_version,
         # Analysis
         "cutoff_percent": cutoff_percent,
         "tax_stringency": tax_stringency,
         "entropy": entropy,
-        "min_gottcha_reads": min_gottcha_reads,
         "max_blast_targets": max_blast_targets,
         "blast_retention_count": blast_retention_count,
         "min_consecutive_bases": min_consecutive_bases,
@@ -613,31 +529,24 @@ def run(
         "max_concurrent_downloads": max_concurrent_downloads,
         # Preprocessing
         "preprocess": preprocess,
-        "merge_pairs": merge_pairs,
         "dedup": dedup,
         "dedup_seq": dedup_seq,
         "dedup_pos": dedup_pos,
         "trim_adapters": trim_adapters,
-        "scrub_host_reads": scrub_host_reads,
-        "deacon_index": deacon_index,
-        "deacon_index_url": deacon_index_url,
-        "deacon_contaminants_fasta": deacon_contaminants_fasta,
+        "host_index": host_index,
+        "host_index_url": host_index_url,
+        "host_contaminants_fasta": host_contaminants_fasta,
         "filter_reads": filter_reads,
         "min_read_quality_illumina": min_read_quality_illumina,
         "min_read_quality_nanopore": min_read_quality_nanopore,
         "min_read_length": min_read_length,
         "max_read_length": max_read_length,
-        # SRA (with deprecation handling)
-        "sra_human_db": effective_sra_human_db,
         # LabKey
         "labkey": labkey,
         "labkey_server": labkey_server,
         "labkey_project_name": labkey_project_name,
         "labkey_webdav": labkey_webdav,
         "labkey_schema": labkey_schema,
-        "labkey_gottcha_fasta_list": labkey_gottcha_fasta_list,
-        "labkey_gottcha_full_list": labkey_gottcha_full_list,
-        "labkey_gottcha_blast_verified_full_list": labkey_gottcha_blast_verified_full_list,
         "labkey_blast_meta_hits_list": labkey_blast_meta_hits_list,
         "labkey_blast_fasta_list": labkey_blast_fasta_list,
         "labkey_exp_id_guard_list": labkey_exp_id_guard_list,
@@ -668,50 +577,13 @@ def run(
         error(f"Samplesheet not found: {params.samplesheet}")
         raise typer.Exit(1)
 
-    # Tools validation is handled by NvdParams, just show info
-    if params.tools and params.tools != "all":
-        info(f"Using tools: {params.tools}")
-
-    # =========================================================================
-    # STEP 3b: Resolve database versions from registry
-    # =========================================================================
-    resolution = resolve_database_versions(
-        blast_db=params.blast_db,
-        blast_db_version=params.blast_db_version,
-        gottcha2_db=params.gottcha2_db,
-        gottcha2_db_version=params.gottcha2_db_version,
-        stat_index=params.stat_index,
-        stat_db_version=params.stat_db_version,
-        state_dir=state_dir,
-    )
-
-    # Display warnings (unregistered paths, version mismatches)
-    for warn in resolution.warnings:
-        warning(warn)
-
-    # Display info for auto-registrations
-    for db_type, version, path in resolution.auto_registered:
-        info(f"Registered {db_type} database: {version} at {path}")
-
-    # Apply resolved versions to params
-    resolved_updates: dict[str, Any] = {}
-    if resolution.blast_db_version is not None:
-        resolved_updates["blast_db_version"] = resolution.blast_db_version
-    if resolution.gottcha2_db_version is not None:
-        resolved_updates["gottcha2_db_version"] = resolution.gottcha2_db_version
-    if resolution.stat_db_version is not None:
-        resolved_updates["stat_db_version"] = resolution.stat_db_version
-
-    if resolved_updates:
-        params = NvdParams.merge(params, resolved_updates)
-
     # =========================================================================
     # STEP 4: Handle Nextflow-native options (not pipeline params)
     # =========================================================================
 
     # Determine execution profile:
     # 1. Command-line --profile takes precedence
-    # 2. NVD_DEFAULT_PROFILE from ~/.nvd/setup.conf
+    # 2. NVD_DEFAULT_PROFILE from NVD_CONFIG_DIR/setup.conf
     # 3. Auto-detect based on available container runtime
     effective_profile = profile
     if effective_profile is None:
@@ -744,7 +616,7 @@ def run(
     # =========================================================================
 
     # Build command with pipeline params
-    cmd = params.to_nextflow_args(PIPELINE_ROOT)
+    cmd = params.to_nextflow_args(get_pipeline_root())
 
     # Add Nextflow-native options (not pipeline params)
     if effective_profile:
