@@ -1,6 +1,6 @@
 [project]
 name = "nvd"
-description = "Novel Virus Detection metagenomics pipeline"
+description = "'Nother Virus Detection pipeline"
 authors = [
   { name = "David O'Connor", email = "dhoconno@wisc.edu" },
   { name = "Nicholas Minor", email = "nrminor@wisc.edu" },
@@ -111,8 +111,8 @@ ignore = ["D", "S101", "E501", "PTH", "TD003", "G004", "TRY300"]
 "lib/py_nvd/cli/commands/*.py" = [
   "FBT001",
   "FBT002",
-  "FBT003",  # Typer uses booleans as positional args
-  "B008",    # typer.Option()/typer.Argument() in defaults
+  "FBT003", # Typer uses booleans as positional args
+  "B008", # typer.Option()/typer.Argument() in defaults
   "C901",
   "PLR0911",
   "PLR0912", # CLI commands are inherently complex

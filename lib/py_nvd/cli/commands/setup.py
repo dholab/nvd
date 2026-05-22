@@ -520,8 +520,8 @@ def _prompt_config_dir(default: Path, non_interactive: bool) -> Path:
 
 RELEASE_BASE_URL = "https://dholk.primate.wisc.edu/_webdav/dho/projects/lungfish/InfinitePath/public/%40files/release-v3.0.0/v3.0.0"
 CHECKSUMS_URL = f"{RELEASE_BASE_URL}/checksums_v3_0.txt"
-CONTAINER_IMAGE_URL = f"{RELEASE_BASE_URL}/nvd-v3.0.0-rc.sif"
-CONTAINER_IMAGE_NAME = "nvd-v3.0.0-rc.sif"
+CONTAINER_IMAGE_URL = f"{RELEASE_BASE_URL}/nvd-v3.0.0.sif"
+CONTAINER_IMAGE_NAME = "nvd-v3.0.0.sif"
 _CHECKSUM_LINE_MIN_PARTS = 2
 _MD5_HEX_LENGTH = 32
 _SHA256_HEX_LENGTH = 64

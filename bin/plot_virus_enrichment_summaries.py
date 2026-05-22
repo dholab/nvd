@@ -16,7 +16,12 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Create human-virus enrichment summary tables and visualizations.",
     )
-    parser.add_argument("--summaries", nargs="+", required=True, help="Deacon summary JSON files from virus read enrichment")
+    parser.add_argument(
+        "--summaries",
+        nargs="+",
+        required=True,
+        help="Deacon summary JSON files from virus read enrichment",
+    )
     parser.add_argument("--outdir", required=True, help="Output directory")
     return parser.parse_args()
 
@@ -61,7 +66,8 @@ def load_virus_enrichment_summaries(paths: Sequence[Path]) -> pl.DataFrame:
         raise ValueError(message)
 
     return pl.DataFrame([read_summary(path) for path in sorted(paths)]).sort(
-        "bp_enriched_proportion", descending=True,
+        "bp_enriched_proportion",
+        descending=True,
     )
 
 
@@ -69,7 +75,9 @@ def add_percent_columns(frame: pl.DataFrame) -> pl.DataFrame:
     return frame.with_columns(
         (pl.col("seqs_enriched_proportion") * 100).alias("seqs_enriched_percent"),
         (pl.col("bp_enriched_proportion") * 100).alias("bp_enriched_percent"),
-        (pl.col("seqs_not_enriched_proportion") * 100).alias("seqs_not_enriched_percent"),
+        (pl.col("seqs_not_enriched_proportion") * 100).alias(
+            "seqs_not_enriched_percent"
+        ),
         (pl.col("bp_not_enriched_proportion") * 100).alias("bp_not_enriched_percent"),
     )
 
@@ -84,17 +92,33 @@ def ranked_enriched_bases_chart(frame: pl.DataFrame) -> alt.Chart:
         alt.Chart(frame)
         .mark_bar()
         .encode(
-            x=alt.X("bp_enriched_percent:Q", title="Human-virus-enriched bases retained (%)"),
+            x=alt.X(
+                "bp_enriched_percent:Q", title="Human-virus-enriched bases retained (%)"
+            ),
             y=alt.Y("sample_id:N", sort="-x", title="Sample"),
             tooltip=[
                 alt.Tooltip("sample_id:N", title="Sample"),
-                alt.Tooltip("bp_enriched_percent:Q", title="Bases retained by enrichment (%)", format=".3f"),
-                alt.Tooltip("seqs_enriched_percent:Q", title="Reads retained by enrichment (%)", format=".3f"),
-                alt.Tooltip("seqs_enriched:Q", title="Virus-enriched reads", format=","),
-                alt.Tooltip("seqs_not_enriched:Q", title="Reads not retained", format=","),
+                alt.Tooltip(
+                    "bp_enriched_percent:Q",
+                    title="Bases retained by enrichment (%)",
+                    format=".3f",
+                ),
+                alt.Tooltip(
+                    "seqs_enriched_percent:Q",
+                    title="Reads retained by enrichment (%)",
+                    format=".3f",
+                ),
+                alt.Tooltip(
+                    "seqs_enriched:Q", title="Virus-enriched reads", format=","
+                ),
+                alt.Tooltip(
+                    "seqs_not_enriched:Q", title="Reads not retained", format=","
+                ),
                 alt.Tooltip("seqs_in:Q", title="Input reads", format=","),
                 alt.Tooltip("bp_enriched:Q", title="Virus-enriched bases", format=","),
-                alt.Tooltip("bp_not_enriched:Q", title="Bases not retained", format=","),
+                alt.Tooltip(
+                    "bp_not_enriched:Q", title="Bases not retained", format=","
+                ),
                 alt.Tooltip("bp_in:Q", title="Input bases", format=","),
             ],
         )
@@ -156,11 +180,17 @@ def retained_vs_filtered_chart(frame: pl.DataFrame) -> alt.Chart:
                 alt.Tooltip("sample_id:N", title="Sample"),
                 alt.Tooltip("fraction_label:N", title="Classification"),
                 alt.Tooltip("percent:Q", title="Bases (%)", format=".3f"),
-                alt.Tooltip("seqs_enriched:Q", title="Virus-enriched reads", format=","),
-                alt.Tooltip("seqs_not_enriched:Q", title="Reads not retained", format=","),
+                alt.Tooltip(
+                    "seqs_enriched:Q", title="Virus-enriched reads", format=","
+                ),
+                alt.Tooltip(
+                    "seqs_not_enriched:Q", title="Reads not retained", format=","
+                ),
                 alt.Tooltip("seqs_in:Q", title="Input reads", format=","),
                 alt.Tooltip("bp_enriched:Q", title="Virus-enriched bases", format=","),
-                alt.Tooltip("bp_not_enriched:Q", title="Bases not retained", format=","),
+                alt.Tooltip(
+                    "bp_not_enriched:Q", title="Bases not retained", format=","
+                ),
                 alt.Tooltip("bp_in:Q", title="Input bases", format=","),
             ],
         )
@@ -177,17 +207,37 @@ def reads_vs_bases_scatter_chart(frame: pl.DataFrame) -> alt.Chart:
         alt.Chart(frame)
         .mark_circle(size=80)
         .encode(
-            x=alt.X("seqs_enriched_percent:Q", title="Reads retained by human-virus enrichment (%)"),
-            y=alt.Y("bp_enriched_percent:Q", title="Bases retained by human-virus enrichment (%)"),
+            x=alt.X(
+                "seqs_enriched_percent:Q",
+                title="Reads retained by human-virus enrichment (%)",
+            ),
+            y=alt.Y(
+                "bp_enriched_percent:Q",
+                title="Bases retained by human-virus enrichment (%)",
+            ),
             tooltip=[
                 alt.Tooltip("sample_id:N", title="Sample"),
-                alt.Tooltip("seqs_enriched_percent:Q", title="Reads retained by enrichment (%)", format=".3f"),
-                alt.Tooltip("bp_enriched_percent:Q", title="Bases retained by enrichment (%)", format=".3f"),
-                alt.Tooltip("seqs_enriched:Q", title="Virus-enriched reads", format=","),
-                alt.Tooltip("seqs_not_enriched:Q", title="Reads not retained", format=","),
+                alt.Tooltip(
+                    "seqs_enriched_percent:Q",
+                    title="Reads retained by enrichment (%)",
+                    format=".3f",
+                ),
+                alt.Tooltip(
+                    "bp_enriched_percent:Q",
+                    title="Bases retained by enrichment (%)",
+                    format=".3f",
+                ),
+                alt.Tooltip(
+                    "seqs_enriched:Q", title="Virus-enriched reads", format=","
+                ),
+                alt.Tooltip(
+                    "seqs_not_enriched:Q", title="Reads not retained", format=","
+                ),
                 alt.Tooltip("seqs_in:Q", title="Input reads", format=","),
                 alt.Tooltip("bp_enriched:Q", title="Virus-enriched bases", format=","),
-                alt.Tooltip("bp_not_enriched:Q", title="Bases not retained", format=","),
+                alt.Tooltip(
+                    "bp_not_enriched:Q", title="Bases not retained", format=","
+                ),
                 alt.Tooltip("bp_in:Q", title="Input bases", format=","),
             ],
         )
@@ -211,9 +261,15 @@ def save_chart(chart: alt.Chart, stem: Path) -> None:
 
 
 def write_visualizations(frame: pl.DataFrame, outdir: Path) -> None:
-    save_chart(ranked_enriched_bases_chart(frame), outdir / "virus_enriched_bases_ranked")
-    save_chart(retained_vs_filtered_chart(frame), outdir / "virus_retained_vs_filtered_stacked")
-    save_chart(reads_vs_bases_scatter_chart(frame), outdir / "virus_reads_vs_bases_scatter")
+    save_chart(
+        ranked_enriched_bases_chart(frame), outdir / "virus_enriched_bases_ranked"
+    )
+    save_chart(
+        retained_vs_filtered_chart(frame), outdir / "virus_retained_vs_filtered_stacked"
+    )
+    save_chart(
+        reads_vs_bases_scatter_chart(frame), outdir / "virus_reads_vs_bases_scatter"
+    )
 
 
 def main() -> None:

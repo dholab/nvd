@@ -22,7 +22,7 @@ import yaml
 SCHEMA_FILENAME = "nvd-params.latest.schema.json"
 
 # GitHub raw URL for schema (fallback and for generated templates)
-SCHEMA_URL = "https://raw.githubusercontent.com/dhoconno/nvd/main/schemas/nvd-params.v3.0.0.schema.json"
+SCHEMA_URL = "https://raw.githubusercontent.com/dholab/nvd/main/schemas/nvd-params.v3.0.0.schema.json"
 
 
 def _find_schema_path() -> Path:
@@ -304,7 +304,7 @@ def _generate_yaml_template(path: Path, schema: dict, schema_url: str) -> None:
         "# Edit this file in your IDE for autocomplete and validation.",
         "#",
         "# Use with:",
-        f"#   nextflow run dhoconno/nvd -params-file {path.name}",
+        f"#   nextflow run dholab/nvd -params-file {path.name}",
         "#",
         "# Or register as a preset:",
         f"#   nvd preset register my-preset --from-file {path.name}",

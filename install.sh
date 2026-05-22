@@ -9,12 +9,12 @@
 #   4. Optionally downloads reference databases
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/dhoconno/nvd/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/dholab/nvd/main/install.sh | bash
 #   OR
 #   ./install.sh [OPTIONS]
 #
 # License: GPLv3
-# Project: https://github.com/dhoconno/nvd
+# Project: https://github.com/dholab/nvd
 #
 
 set -euo pipefail
@@ -468,7 +468,7 @@ run_preflight_checks() {
 # Versioned Repo Setup
 # =============================================================================
 
-NVD_REPO_URL="https://github.com/dhoconno/nvd.git"
+NVD_REPO_URL="https://github.com/dholab/nvd.git"
 NVD_DIR="${HOME}/.nvd"
 LATEST_LINK="${NVD_DIR}/latest"
 
@@ -914,7 +914,7 @@ database_wizard() {
 		echo
 		echo "  You can download databases later by running this installer again"
 		echo "  or by downloading manually from:"
-		echo "    https://github.com/dhoconno/nvd#databases"
+		echo "    https://github.com/dholab/nvd#databases"
 		echo
 		return 0
 	fi
@@ -1025,7 +1025,7 @@ Examples:
     ./install.sh --dry-run          # See what would happen
     ./install.sh --non-interactive  # CI/CD dependency check
 
-For more information: https://github.com/dhoconno/nvd
+For more information: https://github.com/dholab/nvd
 EOF
 }
 
@@ -1108,7 +1108,7 @@ main() {
 	echo "  Next steps:"
 	echo "    1. Start a new shell (or run: source ~/.bashrc)"
 	echo "    2. Run: nvd --help"
-	echo "    3. See documentation: https://github.com/dhoconno/nvd"
+	echo "    3. See documentation: https://github.com/dholab/nvd"
 	echo
 }
 

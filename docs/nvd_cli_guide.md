@@ -1,6 +1,6 @@
 # NVD CLI Guide
 
-The `nvd` command is the recommended interface for NVD v3. It wraps the Nextflow pipeline with parameter validation, params-file authoring, presets, samplesheet helpers, setup integration, taxonomy preparation, and friendlier run/resume behavior. Direct `nextflow run` remains available for debugging, but most users should start with the CLI.
+The `nvd` command is the recommended interface for NVD v3. It wraps the Nextflow pipeline with parameter validation, params-file authoring, presets, samplesheet helpers, setup integration, taxonomy preparation, and friendlier run/resume behavior. Direct `nextflow run` remains available, but users will find that experience comes with more friction.
 
 ## Mental model
 
@@ -25,10 +25,11 @@ The CLI is not meant to hide the pipeline from you. It is meant to keep importan
 ## Typical workflow
 
 ```bash
-nvd setup
+nvd setup # run on install; does not need to be run for each nvd run
+
 nvd samplesheet generate --from-dir ./fastqs --platform illumina --output samplesheet.csv
-nvd params init run.yaml
-nvd params check run.yaml --no-check-paths
+nvd params init run.yaml # then edit run.yaml in an editor with YAML language support
+nvd params check run.yaml
 nvd run --params-file run.yaml
 ```
 
@@ -50,7 +51,7 @@ Generate JSON instead:
 nvd params init run.json
 ```
 
-The YAML template starts with a `yaml-language-server` schema comment, and the JSON template includes `$schema`. Install YAML or JSON language-server support in your editor, especially VS Code, so you get autocomplete, inline validation, and typo detection while editing params.
+The YAML template starts with a `yaml-language-server` schema comment, and the JSON template includes `$schema`. Install YAML or JSON language-server support in your editor, e.g. VS Code, so you get autocomplete, inline validation, and typo detection while editing params. We cannot recommend this part of the `nvd` setup enough!
 
 Validate before launching:
 
@@ -58,7 +59,7 @@ Validate before launching:
 nvd params check run.yaml
 ```
 
-If you are validating on a laptop but the paths only exist on CHTC, skip local path checks:
+If you are validating on a laptop but the paths only exist on a cluster, skip local path checks:
 
 ```bash
 nvd params check run.yaml --no-check-paths
@@ -72,9 +73,9 @@ nvd params merge base.yaml run-overrides.yaml --output merged.yaml
 
 ## Presets
 
-Presets are named collections of params. They are a core quality-of-life feature for shared research workflows: one person can register a known-good combination of reference paths and analysis defaults, and other runs can reuse it without pasting large config blocks.
+Presets are named collections of params. They are a core quality-of-life feature for shared research workflows: one person can register a known-to-be-good combination of reference paths and analysis defaults, and other runs/users can reuse it without pasting large config blocks. Critically, unlike editing nextflow params files, presets are always validated; if you try to register an invalid `nvd` preset, it will be rejected.
 
-On CHTC, `nvd setup` records a shared preset store in `NVD_PRESET_STORE`, currently intended for O'Connor Lab shared presets. Outside CHTC, presets default to a local SQLite file under your NVD config directory unless you set `NVD_PRESET_STORE` yourself.
+On CHTC, `nvd setup` records a shared preset store in `NVD_PRESET_STORE`, currently intended for O'Connor Lab shared presets. Outside CHTC, presets default to a local SQLite file under your NVD config directory unless you set `NVD_PRESET_STORE` yourself (we recommend you do!).
 
 Register a preset from a schema-backed params file:
 
@@ -86,7 +87,7 @@ List and inspect presets:
 
 ```bash
 nvd preset list
-nvd preset show chtc-defaults
+nvd preset show chtc-defaults # pretty-prints the preset's validated params
 ```
 
 Use a preset when checking a params file:

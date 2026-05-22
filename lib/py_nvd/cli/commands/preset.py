@@ -542,7 +542,7 @@ def preset_export(
             f"# NVD Pipeline Preset: {preset.name}",
             f"# Exported: {utc_now_iso()}",
             "#",
-            f"# Usage: nextflow run dhoconno/nvd -params-file {output.name}",
+            f"# Usage: nextflow run dholab/nvd -params-file {output.name}",
         ]
         if preset.description:
             lines.append(f"# {preset.description}")

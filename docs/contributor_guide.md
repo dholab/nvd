@@ -8,7 +8,7 @@ For full-stack development, use Pixi. It installs the Python package, Nextflow, 
 
 ```bash
 curl -fsSL https://pixi.sh/install.sh | bash
-git clone https://github.com/dhoconno/nvd.git
+git clone https://github.com/dholab/nvd.git
 cd nvd
 pixi install --frozen
 pixi shell
@@ -18,7 +18,7 @@ For Python-only work, `uv` is faster and usually enough for CLI, params, preset,
 
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
-git clone https://github.com/dhoconno/nvd.git
+git clone https://github.com/dholab/nvd.git
 cd nvd
 uv sync
 ```
@@ -28,7 +28,7 @@ The Nix/direnv setup remains available for contributors who want a more portable
 ```bash
 curl -L https://nixos.org/nix/install | sh
 curl -sfL https://direnv.net/install.sh | bash
-git clone https://github.com/dhoconno/nvd.git
+git clone https://github.com/dholab/nvd.git
 cd nvd
 direnv allow
 ```

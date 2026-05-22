@@ -77,7 +77,7 @@ jobs:
           echo "" >> release_notes.md
           echo "### Using this release with Nextflow:" >> release_notes.md
           echo "\`\`\`bash" >> release_notes.md
-          echo "nextflow run dhoconno/nvd -r ${{ steps.version.outputs.tag }} \\" >> release_notes.md
+          echo "nextflow run dholab/nvd -r ${{ steps.version.outputs.tag }} \\" >> release_notes.md
           echo "    --tools all \\" >> release_notes.md
           echo "    --samplesheet your_samples.csv \\" >> release_notes.md
           echo "    --experiment_id your_experiment_id \\" >> release_notes.md
@@ -86,7 +86,7 @@ jobs:
           echo "" >> release_notes.md
           echo "### Development setup:" >> release_notes.md
           echo "\`\`\`bash" >> release_notes.md
-          echo "git clone --branch ${{ steps.version.outputs.tag }} https://github.com/dhoconno/nvd.git" >> release_notes.md
+          echo "git clone --branch ${{ steps.version.outputs.tag }} https://github.com/dholab/nvd.git" >> release_notes.md
           echo "cd nvd" >> release_notes.md
           echo "pixi install --frozen" >> release_notes.md
           echo "pixi shell" >> release_notes.md
@@ -95,9 +95,9 @@ jobs:
           
           # Add documentation links
           echo "## Documentation" >> release_notes.md
-          echo "- [Example Commands](https://github.com/dhoconno/nvd/blob/${{ steps.version.outputs.tag }}/docs/example_commands.md)" >> release_notes.md
-          echo "- [Contributor Guide](https://github.com/dhoconno/nvd/blob/${{ steps.version.outputs.tag }}/docs/contributor_guide.md)" >> release_notes.md
-          echo "- [Main README](https://github.com/dhoconno/nvd/blob/${{ steps.version.outputs.tag }}/README.md)" >> release_notes.md
+          echo "- [Example Commands](https://github.com/dholab/nvd/blob/${{ steps.version.outputs.tag }}/docs/example_commands.md)" >> release_notes.md
+          echo "- [Contributor Guide](https://github.com/dholab/nvd/blob/${{ steps.version.outputs.tag }}/docs/contributor_guide.md)" >> release_notes.md
+          echo "- [Main README](https://github.com/dholab/nvd/blob/${{ steps.version.outputs.tag }}/README.md)" >> release_notes.md
 
       - name: Read pyproject.toml version
         id: pyproject_version

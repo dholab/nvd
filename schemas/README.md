@@ -16,7 +16,7 @@ This directory contains JSON Schema definitions for the NVD pipeline.
 Add a schema reference comment at the top of your params file:
 
 ```yaml
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dhoconno/nvd/main/schemas/nvd-params.latest.schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dholab/nvd/main/schemas/nvd-params.latest.schema.json
 
 samplesheet: samples.csv
 experiment_id: 1001
@@ -30,7 +30,7 @@ Include the `$schema` property in your JSON params file:
 
 ```json
 {
-  "$schema": "https://raw.githubusercontent.com/dhoconno/nvd/main/schemas/nvd-params.latest.schema.json",
+  "$schema": "https://raw.githubusercontent.com/dholab/nvd/main/schemas/nvd-params.latest.schema.json",
   "samplesheet": "samples.csv",
   "experiment_id": 1001,
   "dedup": true,
@@ -52,7 +52,7 @@ With the schema reference, your IDE provides:
 Pass your params file to Nextflow with the `-params-file` option:
 
 ```bash
-nextflow run dhoconno/nvd -params-file my-params.yaml -profile docker
+nextflow run dholab/nvd -params-file my-params.yaml -profile docker
 ```
 
 Or use the NVD CLI wrapper:
@@ -69,7 +69,7 @@ points to the current version for users who want to track updates automatically.
 For reproducibility, you can reference a specific version:
 
 ```yaml
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dhoconno/nvd/main/schemas/nvd-params.v3.0.0.schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dholab/nvd/main/schemas/nvd-params.v3.0.0.schema.json
 ```
 
 ## Validation

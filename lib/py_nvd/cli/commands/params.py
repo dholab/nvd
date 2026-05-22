@@ -100,7 +100,7 @@ def params_init(
         params.generate_template(output, output_format=output_format)
         success(f"Created {output}")
         info("Edit this file in your IDE for autocomplete and validation")
-        info(f"Use with: nextflow run dhoconno/nvd -params-file {output}")
+        info(f"Use with: nextflow run dholab/nvd -params-file {output}")
     except (OSError, ValueError) as e:
         error(f"Failed to generate template: {e}")
 

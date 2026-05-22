@@ -20,13 +20,13 @@ This pipeline in its 3rd major version, which brings with it a helpful CLI and p
 
 ## Get Started
 
-NVD set-up is a multi-phase process, including dependency setup, reference database setup, sample data setup, and run command construction. These phases can be handled manually, but we recommend users use our installer script to get started.
+NVD set-up has a few phases, including dependency setup, reference database setup, sample data setup, and run command construction. These phases can be handled manually, but we recommend users use our installer script to get started.
 
 ### Dependency setup
 
-#### Option 1: Interactive Setup Script
+#### Option 1: Interactive Installer Script
 
-NVD includes an interactive setup script to help configure database paths and establish user settings:
+NVD includes an interactive install script to help configure database paths and establish user settings:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/dholab/nvd/main/install.sh | bash
@@ -79,7 +79,7 @@ Note also that new versions of our container image are automatically built and p
 
 ### Reference database setup
 
-NVD is predominantly designed to be run offline, which means users must download the required reference files ahead of time. Since version 3.0, the list of required files is significantly decreased; users just need our Deacon index of human infecting viruses, which is less than half a gigabyte, and the BLAST core_nt database, which is about 230 gigabytes. We provide both via our LabKey server as follows.
+NVD is predominantly designed to be run offline, which means users must download the required reference files ahead of time. Since version 3.0, the list of required files is significantly decreased; users just need our [Deacon](https://github.com/bede/deacon) index of human infecting viruses, which is less than half a gigabyte, and the BLAST core_nt database, which is about 230 gigabytes. We provide both via our LabKey server as follows.
 
 > [!IMPORTANT]\
 > Prefer the installer for reference setup. The installer can download, verify, arrange, and place the reference artifacts for you, including extracting the BLAST database archive and checking that your system has enough available space for it. Manual download is still supported, but it is easier to get paths, checksums, or extraction layout wrong by hand.
@@ -105,20 +105,14 @@ wget https://dholk.primate.wisc.edu/_webdav/dho/projects/lungfish/InfinitePath/p
 Also at that endpoint, if desired, is a pre-built Apptainer image file for use on HPC cluster or other linux environments:
 
 ```bash
-wget https://dholk.primate.wisc.edu/_webdav/dho/projects/lungfish/InfinitePath/public/%40files/release-v3.0.0/v3.0.0/nvd-v3.0.0-rc.sif
+wget https://dholk.primate.wisc.edu/_webdav/dho/projects/lungfish/InfinitePath/public/%40files/release-v3.0.0/v3.0.0/nvd-v3.0.0.sif
 ```
 
 The installer extracts the BLAST tarball for you. If you download manually, extract `blast_db_v3_0.tar.gz` before use and point `blast_db` at the extracted directory. The deacon index is already a single `.idx` file and does not need extraction.
 
 #### The virus enrichment index
 
-To reduce sequence search space before assembly and BLAST verification, NVD uses a compact deacon minimizer index representing human-infecting viruses. This index is derived from NCBI's STAT dense tree-of-life minimizer database, filtered to NVD's curated human-virus taxid list, and converted into deacon's `.idx` format. It is used as a fast screening step, not as the final taxonomic classifier.
-
-Most users should use the release index distributed with NVD:
-
-```text
-human_infecting_viruses.k31w1.idx
-```
+To reduce sequence search space before assembly and BLAST verification, NVD uses a the aforementioned minimizer index representing human-infecting viruses. This index is derived from NCBI's STAT dense tree-of-life minimizer database, filtered to NVD's curated human-virus taxid list, and converted into deacon's `.idx` format. It is used as a fast screening step, not as the final taxonomic classifier.
 
 You can pass it through a params file as `virus_index`, or with the CLI:
 
@@ -136,9 +130,7 @@ After the initial installer has cloned NVD and installed the Pixi environment, y
 nvd setup
 ```
 
-This is useful after moving between machines, changing shells, refreshing CHTC configuration, replacing the wrapper script, or deciding later that you want the CHTC SIF downloaded into the standard location. `nvd setup` is deliberately transparent: it does not re-download reference databases or silently rewrite your run parameters, but it does manage the small pieces of local integration that make the CLI pleasant to use.
-
-Concretely, `nvd setup` handles the following:
+`nvd setup` handles the following:
 
 - detects whether you are on an O'Connor Lab [CHTC](https://chtc.cs.wisc.edu/) access point or a generic system
 - detects your shell and can install the `nvd setup shell-hook` line into your shell startup file
@@ -212,7 +204,7 @@ You can also validate any existing samplesheet explicitly:
 nvd samplesheet validate samplesheet.csv
 ```
 
-Like other NVD subcommands, the samplesheet commands also have shorter aliases for interactive use:
+Like other NVD subcommands, the samplesheet commands also have shorter aliases for command line wizards:
 
 ```bash
 nvd samplesheet gen -d ./fastqs -p illumina -o samplesheet.csv
@@ -263,7 +255,7 @@ You can preview the generated Nextflow command without starting the pipeline:
 nvd run --params-file run.yaml --profile docker --dry-run
 ```
 
-For small one-off runs, flags are still fine:
+If you'd rather spell out your params in the command line, that's supported too:
 
 ```bash
 nvd run \

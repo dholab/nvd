@@ -7,21 +7,21 @@ This guide describes the supported v3 installation path. The recommended interfa
 Run the installer from a terminal:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/dhoconno/nvd/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/dholab/nvd/main/install.sh | bash
 ```
 
 To review the script first:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/dhoconno/nvd/main/install.sh -o install.sh
-less install.sh
+curl -fsSL https://raw.githubusercontent.com/dholab/nvd/main/install.sh -o install.sh
+less install.sh # to inspect the source
 bash install.sh
 ```
 
 To pass installer flags while using the `curl | bash` form, use `bash -s --`:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/dhoconno/nvd/main/install.sh | bash -s -- --dry-run
+curl -fsSL https://raw.githubusercontent.com/dholab/nvd/main/install.sh | bash -s -- --dry-run
 ```
 
 ## Prerequisites
@@ -38,9 +38,9 @@ On CHTC, Java, Nextflow, Pixi, and Apptainer are typically provided on the acces
 
 ## What the installer does
 
-The installer is intentionally a bootstrapper, not a hidden state manager. It checks prerequisites, clones or updates the NVD repository under `~/.nvd`, installs the locked Pixi environment, and runs `nvd setup`.
+The installer checks prerequisites, clones or updates the NVD repository under `~/.nvd`, installs the locked Pixi environment, and runs `nvd setup`.
 
-On CHTC, setup also writes `~/.nvd/setup.conf`, configures the default profile, records the shared taxonomy location, records the shared preset store location, and can help place the release SIF under `~/.nvd`.
+On UW-Madison's Center for High-Throughput Computing, which hosts most NVD runs, setup also writes `~/.nvd/setup.conf`, configures the default profile, records the shared taxonomy location, records the shared preset store location, and can help place the release SIF under `~/.nvd`.
 
 The optional reference wizard can download the BLAST database archive and deacon vertebrate-virus index. If you choose a custom reference path, that path is printed for you to put in a params file, preset, CLI flags, or explicit Nextflow config. The installer does not persist BLAST/deacon reference paths in another hidden state file.
 
@@ -67,7 +67,7 @@ bash install.sh --dry-run
 or, through the piped installer form:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/dhoconno/nvd/main/install.sh | bash -s -- --dry-run
+curl -fsSL https://raw.githubusercontent.com/dholab/nvd/main/install.sh | bash -s -- --dry-run
 ```
 
 Use this to verify the setup path and see which reference actions would be taken without downloading large artifacts.
@@ -114,7 +114,7 @@ The installer reference wizard can download the BLAST archive and deacon index f
 After downloading references, put the printed paths in a params file, preset, or command-line flags. A params file is the recommended route:
 
 ```yaml
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dhoconno/nvd/main/schemas/nvd-params.latest.schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dholab/nvd/main/schemas/nvd-params.latest.schema.json
 samplesheet: /path/to/samplesheet.csv
 experiment_id: experiment-001
 results: /path/to/results
@@ -201,7 +201,7 @@ Prefer `nvd run` for normal use because it applies the CLI params model, preset 
 Re-run the installer. If `~/.nvd/latest` already exists, the installer asks before pulling updates. Declining that prompt must leave the checkout untouched.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/dhoconno/nvd/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/dholab/nvd/main/install.sh | bash
 ```
 
 After updates, setup is run again so shell hooks and `setup.conf` stay current.
@@ -215,7 +215,7 @@ Run the installer from a real terminal. The `curl | bash` path uses the script p
 For a no-side-effect check of the prompt flow, use dry-run:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/dhoconno/nvd/main/install.sh | bash -s -- --dry-run
+curl -fsSL https://raw.githubusercontent.com/dholab/nvd/main/install.sh | bash -s -- --dry-run
 ```
 
 ### Docker is installed but not running
@@ -227,10 +227,6 @@ sudo systemctl start docker
 ```
 
 Alternatively use Apptainer, Singularity, Podman, or the CHTC profile where appropriate.
-
-### Insufficient disk space
-
-Choose a reference path on a filesystem with enough space, download fewer artifacts, or skip the reference wizard and configure paths later. The BLAST database archive is large; do not place reference databases on short-lived scratch storage.
 
 ### Java or Nextflow is missing
 
@@ -276,7 +272,7 @@ nvd params check run.yaml --no-check-paths
 nvd taxonomy status --taxonomy-dir /path/to/taxdump
 ```
 
-Project documentation and issues are available at <https://github.com/dhoconno/nvd>. For day-to-day usage after installation, see the [NVD CLI Guide](./nvd_cli_guide.md).
+Project documentation and issues are available at <https://github.com/dholab/nvd>. For day-to-day usage after installation, see the [NVD CLI Guide](./nvd_cli_guide.md).
 
 ## License
 
