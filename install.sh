@@ -23,7 +23,7 @@ set -euo pipefail
 # MAJOR: Breaking changes to CLI flags, directory structure, or exit codes
 # MINOR: New features, new flags, new modes
 # PATCH: Bug fixes, cross-platform improvements, better error messages
-readonly VERSION="3.0.0"
+readonly VERSION="3.0.1"
 
 # Cleanup handler for interrupts - removes temporary files
 cleanup() {
