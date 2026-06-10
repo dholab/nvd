@@ -23,18 +23,26 @@ environments:
       - conda: https://conda.anaconda.org/bioconda/linux-64/k8-1.2-he8db53b_6.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/linux-64/minimap2-2.30-h577a1d6_0.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/linux-64/ncbi-vdb-3.4.1-hd63eeec_0.conda
+      - conda: https://conda.anaconda.org/bioconda/linux-64/perl-alien-build-2.84-pl5321h7b50bb2_1.tar.bz2
+      - conda: https://conda.anaconda.org/bioconda/linux-64/perl-alien-libxml2-0.20-pl5321hd2ab53c_0.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/linux-64/perl-io-compress-2.216-pl5321h503566f_0.conda
       - conda: https://conda.anaconda.org/bioconda/linux-64/perl-json-xs-4.04-pl5321h9948957_0.conda
       - conda: https://conda.anaconda.org/bioconda/linux-64/perl-list-moreutils-xs-0.430-pl5321h7b50bb2_5.tar.bz2
+      - conda: https://conda.anaconda.org/bioconda/linux-64/perl-xml-libxml-2.0210-pl5321hd2ab53c_1.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/linux-64/samtools-1.23.1-ha83d96e_0.conda
       - conda: https://conda.anaconda.org/bioconda/linux-64/seqkit-2.13.0-he881be0_0.conda
       - conda: https://conda.anaconda.org/bioconda/linux-64/spades-4.2.0-h8d6e82b_2.conda
+      - conda: https://conda.anaconda.org/bioconda/linux-64/sra-tools-3.4.1-2_linux_64.conda
       - conda: https://conda.anaconda.org/bioconda/linux-64/vsearch-2.31.0-hd2be7a0_0.conda
       - conda: https://conda.anaconda.org/bioconda/noarch/nextflow-25.10.4-h2a3209d_0.conda
+      - conda: https://conda.anaconda.org/bioconda/noarch/perl-alien-build-plugin-download-gitlab-0.01-pl5321hdfd78af_0.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/noarch/perl-archive-tar-3.06-pl5321hdfd78af_0.conda
+      - conda: https://conda.anaconda.org/bioconda/noarch/perl-ffi-checklib-0.28-pl5321hdfd78af_0.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/noarch/perl-io-zlib-1.15-pl5321hdfd78af_1.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/noarch/perl-json-4.11-pl5321hdfd78af_0.conda
       - conda: https://conda.anaconda.org/bioconda/noarch/perl-list-moreutils-0.430-pl5321hdfd78af_0.tar.bz2
+      - conda: https://conda.anaconda.org/bioconda/noarch/perl-term-table-0.028-pl5321hdfd78af_0.conda
+      - conda: https://conda.anaconda.org/bioconda/noarch/perl-test2-suite-0.000163-pl5321hdfd78af_0.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/noarch/perl-types-serialiser-1.01-pl5321hdfd78af_0.tar.bz2
       - conda: https://conda.anaconda.org/conda-forge/linux-64/_openmp_mutex-4.5-20_gnu.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/alsa-lib-1.2.15.3-hb03c661_0.conda
@@ -116,8 +124,8 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/libwebp-base-1.6.0-hd42ef1d_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/libxcb-1.17.0-h8a09558_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/libxcrypt-4.4.36-hd590300_1.conda
-      - conda: https://conda.anaconda.org/conda-forge/linux-64/libxml2-16-2.15.1-ha9997c6_0.conda
-      - conda: https://conda.anaconda.org/conda-forge/linux-64/libxml2-2.15.1-h26afc86_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/linux-64/libxml2-16-2.14.6-ha9997c6_2.conda
+      - conda: https://conda.anaconda.org/conda-forge/linux-64/libxml2-2.14.6-h26afc86_2.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/libzlib-1.3.2-h25fd6f3_2.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/lz4-c-1.10.0-h5888daf_1.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/lzo-2.10-h280c20c_1002.conda
@@ -127,14 +135,20 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/openjdk-23.0.2-h53dfc1b_2.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/openmpi-4.1.6-hc5af2df_101.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/openssl-3.6.2-h35e630c_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/linux-64/ossuuid-1.6.2-h5888daf_1001.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/pcre2-10.47-haa7fec5_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/perl-5.32.1-7_hd590300_perl5.conda
+      - conda: https://conda.anaconda.org/conda-forge/linux-64/perl-capture-tiny-0.48-pl5321ha770c72_1.tar.bz2
       - conda: https://conda.anaconda.org/conda-forge/linux-64/perl-compress-raw-bzip2-2.214-pl5321hda65f42_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/perl-compress-raw-zlib-2.214-pl5321h4dac143_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/perl-encode-3.21-pl5321hb9d3cd8_1.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/perl-pathtools-3.75-pl5321hb9d3cd8_2.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/perl-scalar-list-utils-1.70-pl5321hb03c661_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/perl-storable-3.15-pl5321hb9d3cd8_2.conda
+      - conda: https://conda.anaconda.org/conda-forge/linux-64/perl-test-fatal-0.016-pl5321ha770c72_0.tar.bz2
+      - conda: https://conda.anaconda.org/conda-forge/linux-64/perl-test-warnings-0.031-pl5321ha770c72_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/linux-64/perl-try-tiny-0.31-pl5321ha770c72_0.tar.bz2
+      - conda: https://conda.anaconda.org/conda-forge/linux-64/perl-uri-5.34-pl5321ha770c72_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/pixman-0.46.4-h54a6638_1.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/pkg-config-0.29.2-h4bc722e_1009.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/pthread-stubs-0.4-hb9d3cd8_1002.conda
@@ -173,12 +187,26 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/kernel-headers_linux-64-4.18.0-he073ed8_9.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/libgcc-devel_linux-64-14.3.0-hf649bbc_119.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/libstdcxx-devel_linux-64-14.3.0-h9f08a49_119.conda
+      - conda: https://conda.anaconda.org/conda-forge/noarch/perl-business-isbn-3.007-pl5321hd8ed1ab_0.tar.bz2
+      - conda: https://conda.anaconda.org/conda-forge/noarch/perl-business-isbn-data-20210112.006-pl5321hd8ed1ab_0.tar.bz2
       - conda: https://conda.anaconda.org/conda-forge/noarch/perl-carp-1.50-pl5321hd8ed1ab_0.tar.bz2
       - conda: https://conda.anaconda.org/conda-forge/noarch/perl-common-sense-3.75-pl5321hd8ed1ab_0.tar.bz2
+      - conda: https://conda.anaconda.org/conda-forge/noarch/perl-constant-1.33-pl5321hd8ed1ab_0.tar.bz2
       - conda: https://conda.anaconda.org/conda-forge/noarch/perl-exporter-5.74-pl5321hd8ed1ab_0.tar.bz2
       - conda: https://conda.anaconda.org/conda-forge/noarch/perl-exporter-tiny-1.002002-pl5321hd8ed1ab_0.tar.bz2
       - conda: https://conda.anaconda.org/conda-forge/noarch/perl-extutils-makemaker-7.70-pl5321hd8ed1ab_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/noarch/perl-file-chdir-0.1011-pl5321hd8ed1ab_0.tar.bz2
+      - conda: https://conda.anaconda.org/conda-forge/noarch/perl-file-path-2.18-pl5321hd8ed1ab_0.tar.bz2
+      - conda: https://conda.anaconda.org/conda-forge/noarch/perl-file-temp-0.2304-pl5321hd8ed1ab_0.tar.bz2
+      - conda: https://conda.anaconda.org/conda-forge/noarch/perl-file-which-1.24-pl5321hd8ed1ab_0.tar.bz2
+      - conda: https://conda.anaconda.org/conda-forge/noarch/perl-importer-0.026-pl5321hd8ed1ab_0.tar.bz2
       - conda: https://conda.anaconda.org/conda-forge/noarch/perl-parent-0.243-pl5321hd8ed1ab_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/noarch/perl-path-tiny-0.150-pl5321hd8ed1ab_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/noarch/perl-scope-guard-0.21-pl5321hd8ed1ab_0.tar.bz2
+      - conda: https://conda.anaconda.org/conda-forge/noarch/perl-sub-info-0.002-pl5321hd8ed1ab_0.tar.bz2
+      - conda: https://conda.anaconda.org/conda-forge/noarch/perl-xml-namespacesupport-1.12-pl5321hd8ed1ab_0.tar.bz2
+      - conda: https://conda.anaconda.org/conda-forge/noarch/perl-xml-sax-1.02-pl5321hd8ed1ab_0.tar.bz2
+      - conda: https://conda.anaconda.org/conda-forge/noarch/perl-xml-sax-base-1.09-pl5321hd8ed1ab_0.tar.bz2
       - conda: https://conda.anaconda.org/conda-forge/noarch/python_abi-3.13-8_cp313.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/rust-std-x86_64-unknown-linux-gnu-1.94.0-h2c6d0dc_1.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/sysroot_linux-64-2.28-h4ee821c_9.conda
@@ -238,19 +266,27 @@ environments:
       - conda: https://conda.anaconda.org/bioconda/linux-aarch64/k8-1.2-h1e84f2d_6.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/linux-aarch64/minimap2-2.30-h0cbc5ad_0.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/linux-aarch64/ncbi-vdb-3.4.1-h4ba1498_0.conda
+      - conda: https://conda.anaconda.org/bioconda/linux-aarch64/perl-alien-build-2.84-pl5321h661a7b0_1.tar.bz2
+      - conda: https://conda.anaconda.org/bioconda/linux-aarch64/perl-alien-libxml2-0.20-pl5321h1ae7f55_0.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/linux-aarch64/perl-io-compress-2.216-pl5321h80f0ee0_0.conda
       - conda: https://conda.anaconda.org/bioconda/linux-aarch64/perl-json-xs-4.04-pl5321h163da20_0.conda
       - conda: https://conda.anaconda.org/bioconda/linux-aarch64/perl-list-moreutils-xs-0.430-pl5321h661a7b0_5.tar.bz2
+      - conda: https://conda.anaconda.org/bioconda/linux-aarch64/perl-xml-libxml-2.0210-pl5321h1ae7f55_1.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/linux-aarch64/rpsbproc-0.5.1-h7645e38_0.conda
       - conda: https://conda.anaconda.org/bioconda/linux-aarch64/samtools-1.23.1-hc7977f4_0.conda
       - conda: https://conda.anaconda.org/bioconda/linux-aarch64/seqkit-2.13.0-h8865c2f_0.conda
       - conda: https://conda.anaconda.org/bioconda/linux-aarch64/spades-4.2.0-h3e01217_2.conda
+      - conda: https://conda.anaconda.org/bioconda/linux-aarch64/sra-tools-3.4.1-habe25ba_1.conda
       - conda: https://conda.anaconda.org/bioconda/linux-aarch64/vsearch-2.31.0-hd0c913a_0.conda
       - conda: https://conda.anaconda.org/bioconda/noarch/nextflow-25.10.4-h2a3209d_0.conda
+      - conda: https://conda.anaconda.org/bioconda/noarch/perl-alien-build-plugin-download-gitlab-0.01-pl5321hdfd78af_0.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/noarch/perl-archive-tar-3.06-pl5321hdfd78af_0.conda
+      - conda: https://conda.anaconda.org/bioconda/noarch/perl-ffi-checklib-0.28-pl5321hdfd78af_0.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/noarch/perl-io-zlib-1.15-pl5321hdfd78af_1.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/noarch/perl-json-4.11-pl5321hdfd78af_0.conda
       - conda: https://conda.anaconda.org/bioconda/noarch/perl-list-moreutils-0.430-pl5321hdfd78af_0.tar.bz2
+      - conda: https://conda.anaconda.org/bioconda/noarch/perl-term-table-0.028-pl5321hdfd78af_0.conda
+      - conda: https://conda.anaconda.org/bioconda/noarch/perl-test2-suite-0.000163-pl5321hdfd78af_0.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/noarch/perl-types-serialiser-1.01-pl5321hdfd78af_0.tar.bz2
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/_openmp_mutex-4.5-20_gnu.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/alsa-lib-1.2.15.3-he30d5cf_0.conda
@@ -331,8 +367,8 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/libwebp-base-1.6.0-ha2e29f5_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/libxcb-1.17.0-h262b8f6_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/libxcrypt-4.4.36-h31becfc_1.conda
-      - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/libxml2-16-2.15.1-h8591a01_0.conda
-      - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/libxml2-2.15.1-h788dabe_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/libxml2-16-2.14.6-h8591a01_2.conda
+      - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/libxml2-2.14.6-h788dabe_2.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/libzlib-1.3.2-hdc9db2a_2.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/lz4-c-1.10.0-h5ad3122_1.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/lzo-2.10-h80f16a2_1002.conda
@@ -342,14 +378,20 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/openjdk-23.0.2-h0f44c73_2.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/openmpi-4.1.6-h1f4154d_101.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/openssl-3.6.2-h546c87b_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/ossuuid-1.6.2-h5ad3122_1001.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/pcre2-10.47-hf841c20_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/perl-5.32.1-7_h31becfc_perl5.conda
+      - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/perl-capture-tiny-0.48-pl5321h8af1aa0_1.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/perl-compress-raw-bzip2-2.214-pl5321h4777abc_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/perl-compress-raw-zlib-2.214-pl5321hf8147d9_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/perl-encode-3.21-pl5321h86ecc28_1.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/perl-pathtools-3.75-pl5321h86ecc28_2.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/perl-scalar-list-utils-1.70-pl5321he30d5cf_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/perl-storable-3.15-pl5321h86ecc28_2.conda
+      - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/perl-test-fatal-0.016-pl5321h8af1aa0_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/perl-test-warnings-0.031-pl5321h8af1aa0_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/perl-try-tiny-0.32-pl5321h8af1aa0_1.conda
+      - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/perl-uri-5.34-pl5321h8af1aa0_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/pixman-0.46.4-h7ac5ae9_1.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/pkg-config-0.29.2-hce167ba_1009.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/pthread-stubs-0.4-h86ecc28_1002.conda
@@ -387,12 +429,26 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/kernel-headers_linux-aarch64-4.18.0-h05a177a_9.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/libgcc-devel_linux-aarch64-14.3.0-h25ba3ff_119.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/libstdcxx-devel_linux-aarch64-14.3.0-h57c8d61_119.conda
+      - conda: https://conda.anaconda.org/conda-forge/noarch/perl-business-isbn-3.007-pl5321hd8ed1ab_0.tar.bz2
+      - conda: https://conda.anaconda.org/conda-forge/noarch/perl-business-isbn-data-20210112.006-pl5321hd8ed1ab_0.tar.bz2
       - conda: https://conda.anaconda.org/conda-forge/noarch/perl-carp-1.50-pl5321hd8ed1ab_0.tar.bz2
       - conda: https://conda.anaconda.org/conda-forge/noarch/perl-common-sense-3.75-pl5321hd8ed1ab_0.tar.bz2
+      - conda: https://conda.anaconda.org/conda-forge/noarch/perl-constant-1.33-pl5321hd8ed1ab_0.tar.bz2
       - conda: https://conda.anaconda.org/conda-forge/noarch/perl-exporter-5.74-pl5321hd8ed1ab_0.tar.bz2
       - conda: https://conda.anaconda.org/conda-forge/noarch/perl-exporter-tiny-1.002002-pl5321hd8ed1ab_0.tar.bz2
       - conda: https://conda.anaconda.org/conda-forge/noarch/perl-extutils-makemaker-7.70-pl5321hd8ed1ab_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/noarch/perl-file-chdir-0.1011-pl5321hd8ed1ab_0.tar.bz2
+      - conda: https://conda.anaconda.org/conda-forge/noarch/perl-file-path-2.18-pl5321hd8ed1ab_0.tar.bz2
+      - conda: https://conda.anaconda.org/conda-forge/noarch/perl-file-temp-0.2304-pl5321hd8ed1ab_0.tar.bz2
+      - conda: https://conda.anaconda.org/conda-forge/noarch/perl-file-which-1.24-pl5321hd8ed1ab_0.tar.bz2
+      - conda: https://conda.anaconda.org/conda-forge/noarch/perl-importer-0.026-pl5321hd8ed1ab_0.tar.bz2
       - conda: https://conda.anaconda.org/conda-forge/noarch/perl-parent-0.243-pl5321hd8ed1ab_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/noarch/perl-path-tiny-0.150-pl5321hd8ed1ab_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/noarch/perl-scope-guard-0.21-pl5321hd8ed1ab_0.tar.bz2
+      - conda: https://conda.anaconda.org/conda-forge/noarch/perl-sub-info-0.002-pl5321hd8ed1ab_0.tar.bz2
+      - conda: https://conda.anaconda.org/conda-forge/noarch/perl-xml-namespacesupport-1.12-pl5321hd8ed1ab_0.tar.bz2
+      - conda: https://conda.anaconda.org/conda-forge/noarch/perl-xml-sax-1.02-pl5321hd8ed1ab_0.tar.bz2
+      - conda: https://conda.anaconda.org/conda-forge/noarch/perl-xml-sax-base-1.09-pl5321hd8ed1ab_0.tar.bz2
       - conda: https://conda.anaconda.org/conda-forge/noarch/python_abi-3.13-8_cp313.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/rust-std-aarch64-unknown-linux-gnu-1.94.0-hbe8e118_1.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/sysroot_linux-aarch64-2.28-h585391f_9.conda
@@ -444,10 +500,14 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/fd/7b/122376b1fd3c62c1ed9dc80c931ace4844b3c55407b6fb2d199377c9736f/pydantic-2.13.4-py3-none-any.whl
       osx-64:
       - conda: https://conda.anaconda.org/bioconda/noarch/nextflow-25.10.4-h2a3209d_0.conda
+      - conda: https://conda.anaconda.org/bioconda/noarch/perl-alien-build-plugin-download-gitlab-0.01-pl5321hdfd78af_0.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/noarch/perl-archive-tar-3.06-pl5321hdfd78af_0.conda
+      - conda: https://conda.anaconda.org/bioconda/noarch/perl-ffi-checklib-0.28-pl5321hdfd78af_0.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/noarch/perl-io-zlib-1.15-pl5321hdfd78af_1.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/noarch/perl-json-4.11-pl5321hdfd78af_0.conda
       - conda: https://conda.anaconda.org/bioconda/noarch/perl-list-moreutils-0.430-pl5321hdfd78af_0.tar.bz2
+      - conda: https://conda.anaconda.org/bioconda/noarch/perl-term-table-0.028-pl5321hdfd78af_0.conda
+      - conda: https://conda.anaconda.org/bioconda/noarch/perl-test2-suite-0.000163-pl5321hdfd78af_0.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/noarch/perl-types-serialiser-1.01-pl5321hdfd78af_0.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/osx-64/bbmap-39.81-h831ead7_1.conda
       - conda: https://conda.anaconda.org/bioconda/osx-64/blast-2.17.0-h53185c9_0.conda
@@ -458,23 +518,41 @@ environments:
       - conda: https://conda.anaconda.org/bioconda/osx-64/k8-1.2-h2ec61ea_6.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/osx-64/minimap2-2.30-h7f84b70_0.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/osx-64/ncbi-vdb-3.4.1-haa61c75_0.conda
+      - conda: https://conda.anaconda.org/bioconda/osx-64/perl-alien-build-2.84-pl5321h18d8cf3_1.tar.bz2
+      - conda: https://conda.anaconda.org/bioconda/osx-64/perl-alien-libxml2-0.20-pl5321h3e28226_0.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/osx-64/perl-io-compress-2.216-pl5321h5eaf441_0.conda
       - conda: https://conda.anaconda.org/bioconda/osx-64/perl-json-xs-4.04-pl5321h5fa12a8_0.conda
       - conda: https://conda.anaconda.org/bioconda/osx-64/perl-list-moreutils-xs-0.430-pl5321h18d8cf3_5.tar.bz2
+      - conda: https://conda.anaconda.org/bioconda/osx-64/perl-xml-libxml-2.0210-pl5321h3e28226_1.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/osx-64/samtools-1.23.1-head6495_0.conda
       - conda: https://conda.anaconda.org/bioconda/osx-64/seqkit-2.13.0-h193322a_0.conda
       - conda: https://conda.anaconda.org/bioconda/osx-64/spades-4.2.0-hf6bce26_2.conda
+      - conda: https://conda.anaconda.org/bioconda/osx-64/sra-tools-3.4.1-2_osx_64.conda
       - conda: https://conda.anaconda.org/bioconda/osx-64/vsearch-2.31.0-h7aab66d_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/ca-certificates-2026.4.22-hbd8a1cb_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/compiler-rt_osx-64-19.1.7-h138dee1_1.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/libcxx-headers-19.1.7-h707e725_2.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/libgfortran-devel_osx-64-14.3.0-h660b60f_1.conda
+      - conda: https://conda.anaconda.org/conda-forge/noarch/perl-business-isbn-3.007-pl5321hd8ed1ab_0.tar.bz2
+      - conda: https://conda.anaconda.org/conda-forge/noarch/perl-business-isbn-data-20210112.006-pl5321hd8ed1ab_0.tar.bz2
       - conda: https://conda.anaconda.org/conda-forge/noarch/perl-carp-1.50-pl5321hd8ed1ab_0.tar.bz2
       - conda: https://conda.anaconda.org/conda-forge/noarch/perl-common-sense-3.75-pl5321hd8ed1ab_0.tar.bz2
+      - conda: https://conda.anaconda.org/conda-forge/noarch/perl-constant-1.33-pl5321hd8ed1ab_0.tar.bz2
       - conda: https://conda.anaconda.org/conda-forge/noarch/perl-exporter-5.74-pl5321hd8ed1ab_0.tar.bz2
       - conda: https://conda.anaconda.org/conda-forge/noarch/perl-exporter-tiny-1.002002-pl5321hd8ed1ab_0.tar.bz2
       - conda: https://conda.anaconda.org/conda-forge/noarch/perl-extutils-makemaker-7.70-pl5321hd8ed1ab_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/noarch/perl-file-chdir-0.1011-pl5321hd8ed1ab_0.tar.bz2
+      - conda: https://conda.anaconda.org/conda-forge/noarch/perl-file-path-2.18-pl5321hd8ed1ab_0.tar.bz2
+      - conda: https://conda.anaconda.org/conda-forge/noarch/perl-file-temp-0.2304-pl5321hd8ed1ab_0.tar.bz2
+      - conda: https://conda.anaconda.org/conda-forge/noarch/perl-file-which-1.24-pl5321hd8ed1ab_0.tar.bz2
+      - conda: https://conda.anaconda.org/conda-forge/noarch/perl-importer-0.026-pl5321hd8ed1ab_0.tar.bz2
       - conda: https://conda.anaconda.org/conda-forge/noarch/perl-parent-0.243-pl5321hd8ed1ab_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/noarch/perl-path-tiny-0.150-pl5321hd8ed1ab_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/noarch/perl-scope-guard-0.21-pl5321hd8ed1ab_0.tar.bz2
+      - conda: https://conda.anaconda.org/conda-forge/noarch/perl-sub-info-0.002-pl5321hd8ed1ab_0.tar.bz2
+      - conda: https://conda.anaconda.org/conda-forge/noarch/perl-xml-namespacesupport-1.12-pl5321hd8ed1ab_0.tar.bz2
+      - conda: https://conda.anaconda.org/conda-forge/noarch/perl-xml-sax-1.02-pl5321hd8ed1ab_0.tar.bz2
+      - conda: https://conda.anaconda.org/conda-forge/noarch/perl-xml-sax-base-1.09-pl5321hd8ed1ab_0.tar.bz2
       - conda: https://conda.anaconda.org/conda-forge/noarch/python_abi-3.13-8_cp313.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/rust-std-x86_64-apple-darwin-1.94.0-h38e4360_1.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/sdkroot_env_osx-64-26.0-h62b880e_7.conda
@@ -533,8 +611,8 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/osx-64/libsqlite-3.53.1-h8f8c405_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-64/libssh2-1.11.1-hed3591d_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-64/libunistring-0.9.10-h0d85af4_0.tar.bz2
-      - conda: https://conda.anaconda.org/conda-forge/osx-64/libxml2-16-2.15.3-h7a90416_0.conda
-      - conda: https://conda.anaconda.org/conda-forge/osx-64/libxml2-2.15.3-h953d39d_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/osx-64/libxml2-16-2.14.6-h7a90416_3.conda
+      - conda: https://conda.anaconda.org/conda-forge/osx-64/libxml2-2.14.6-hd552753_3.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-64/libzlib-1.3.2-hbb4bfdb_2.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-64/llvm-openmp-22.1.5-h0d3cbff_1.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-64/llvm-tools-19-19.1.7-h879f4bc_2.conda
@@ -548,12 +626,17 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/osx-64/openssl-3.6.2-hc881268_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-64/pcre2-10.47-h13923f0_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-64/perl-5.32.1-7_h10d778d_perl5.conda
+      - conda: https://conda.anaconda.org/conda-forge/osx-64/perl-capture-tiny-0.48-pl5321h694c41f_1.tar.bz2
       - conda: https://conda.anaconda.org/conda-forge/osx-64/perl-compress-raw-bzip2-2.214-pl5321h500dc9f_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-64/perl-compress-raw-zlib-2.214-pl5321h62fca4e_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-64/perl-encode-3.21-pl5321h6e16a3a_1.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-64/perl-pathtools-3.75-pl5321h6e16a3a_2.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-64/perl-scalar-list-utils-1.70-pl5321h1c43f85_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-64/perl-storable-3.15-pl5321h6e16a3a_2.conda
+      - conda: https://conda.anaconda.org/conda-forge/osx-64/perl-test-fatal-0.016-pl5321h694c41f_0.tar.bz2
+      - conda: https://conda.anaconda.org/conda-forge/osx-64/perl-test-warnings-0.031-pl5321h694c41f_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/osx-64/perl-try-tiny-0.31-pl5321h694c41f_0.tar.bz2
+      - conda: https://conda.anaconda.org/conda-forge/osx-64/perl-uri-5.34-pl5321h694c41f_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-64/pkg-config-0.29.2-hf7e621a_1009.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-64/python-3.13.13-h3d5d122_100_cp313.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-64/readline-8.3-h68b038d_0.conda
@@ -615,10 +698,14 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/fd/7b/122376b1fd3c62c1ed9dc80c931ace4844b3c55407b6fb2d199377c9736f/pydantic-2.13.4-py3-none-any.whl
       osx-arm64:
       - conda: https://conda.anaconda.org/bioconda/noarch/nextflow-25.10.4-h2a3209d_0.conda
+      - conda: https://conda.anaconda.org/bioconda/noarch/perl-alien-build-plugin-download-gitlab-0.01-pl5321hdfd78af_0.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/noarch/perl-archive-tar-3.06-pl5321hdfd78af_0.conda
+      - conda: https://conda.anaconda.org/bioconda/noarch/perl-ffi-checklib-0.28-pl5321hdfd78af_0.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/noarch/perl-io-zlib-1.15-pl5321hdfd78af_1.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/noarch/perl-json-4.11-pl5321hdfd78af_0.conda
       - conda: https://conda.anaconda.org/bioconda/noarch/perl-list-moreutils-0.430-pl5321hdfd78af_0.tar.bz2
+      - conda: https://conda.anaconda.org/bioconda/noarch/perl-term-table-0.028-pl5321hdfd78af_0.conda
+      - conda: https://conda.anaconda.org/bioconda/noarch/perl-test2-suite-0.000163-pl5321hdfd78af_0.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/noarch/perl-types-serialiser-1.01-pl5321hdfd78af_0.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/osx-arm64/bbmap-39.81-he046917_1.conda
       - conda: https://conda.anaconda.org/bioconda/osx-arm64/blast-2.16.0-hb260f6e_5.tar.bz2
@@ -629,24 +716,42 @@ environments:
       - conda: https://conda.anaconda.org/bioconda/osx-arm64/k8-1.2-hda5e58c_6.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/osx-arm64/minimap2-2.30-hba9b596_0.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/osx-arm64/ncbi-vdb-3.4.1-hfc726f9_0.conda
+      - conda: https://conda.anaconda.org/bioconda/osx-arm64/perl-alien-build-2.84-pl5321hbdacb55_1.tar.bz2
+      - conda: https://conda.anaconda.org/bioconda/osx-arm64/perl-alien-libxml2-0.20-pl5321h9b71f33_0.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/osx-arm64/perl-io-compress-2.216-pl5321haef7865_0.conda
       - conda: https://conda.anaconda.org/bioconda/osx-arm64/perl-json-xs-4.04-pl5321h4675bf2_0.conda
       - conda: https://conda.anaconda.org/bioconda/osx-arm64/perl-list-moreutils-xs-0.430-pl5321hbdacb55_5.tar.bz2
+      - conda: https://conda.anaconda.org/bioconda/osx-arm64/perl-xml-libxml-2.0210-pl5321h9b71f33_1.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/osx-arm64/rpsbproc-0.5.1-hf8bb5b5_0.conda
       - conda: https://conda.anaconda.org/bioconda/osx-arm64/samtools-1.23.1-hc612e98_0.conda
       - conda: https://conda.anaconda.org/bioconda/osx-arm64/seqkit-2.13.0-hd5f1084_0.conda
       - conda: https://conda.anaconda.org/bioconda/osx-arm64/spades-4.2.0-h4d841d5_2.conda
+      - conda: https://conda.anaconda.org/bioconda/osx-arm64/sra-tools-3.4.1-2_osx_arm64.conda
       - conda: https://conda.anaconda.org/bioconda/osx-arm64/vsearch-2.31.0-h0448ff9_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/ca-certificates-2026.4.22-hbd8a1cb_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/compiler-rt_osx-arm64-19.1.7-he32a8d3_1.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/libcxx-headers-19.1.7-h707e725_2.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/libgfortran-devel_osx-arm64-14.3.0-hc965647_1.conda
+      - conda: https://conda.anaconda.org/conda-forge/noarch/perl-business-isbn-3.007-pl5321hd8ed1ab_0.tar.bz2
+      - conda: https://conda.anaconda.org/conda-forge/noarch/perl-business-isbn-data-20210112.006-pl5321hd8ed1ab_0.tar.bz2
       - conda: https://conda.anaconda.org/conda-forge/noarch/perl-carp-1.50-pl5321hd8ed1ab_0.tar.bz2
       - conda: https://conda.anaconda.org/conda-forge/noarch/perl-common-sense-3.75-pl5321hd8ed1ab_0.tar.bz2
+      - conda: https://conda.anaconda.org/conda-forge/noarch/perl-constant-1.33-pl5321hd8ed1ab_0.tar.bz2
       - conda: https://conda.anaconda.org/conda-forge/noarch/perl-exporter-5.74-pl5321hd8ed1ab_0.tar.bz2
       - conda: https://conda.anaconda.org/conda-forge/noarch/perl-exporter-tiny-1.002002-pl5321hd8ed1ab_0.tar.bz2
       - conda: https://conda.anaconda.org/conda-forge/noarch/perl-extutils-makemaker-7.70-pl5321hd8ed1ab_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/noarch/perl-file-chdir-0.1011-pl5321hd8ed1ab_0.tar.bz2
+      - conda: https://conda.anaconda.org/conda-forge/noarch/perl-file-path-2.18-pl5321hd8ed1ab_0.tar.bz2
+      - conda: https://conda.anaconda.org/conda-forge/noarch/perl-file-temp-0.2304-pl5321hd8ed1ab_0.tar.bz2
+      - conda: https://conda.anaconda.org/conda-forge/noarch/perl-file-which-1.24-pl5321hd8ed1ab_0.tar.bz2
+      - conda: https://conda.anaconda.org/conda-forge/noarch/perl-importer-0.026-pl5321hd8ed1ab_0.tar.bz2
       - conda: https://conda.anaconda.org/conda-forge/noarch/perl-parent-0.243-pl5321hd8ed1ab_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/noarch/perl-path-tiny-0.150-pl5321hd8ed1ab_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/noarch/perl-scope-guard-0.21-pl5321hd8ed1ab_0.tar.bz2
+      - conda: https://conda.anaconda.org/conda-forge/noarch/perl-sub-info-0.002-pl5321hd8ed1ab_0.tar.bz2
+      - conda: https://conda.anaconda.org/conda-forge/noarch/perl-xml-namespacesupport-1.12-pl5321hd8ed1ab_0.tar.bz2
+      - conda: https://conda.anaconda.org/conda-forge/noarch/perl-xml-sax-1.02-pl5321hd8ed1ab_0.tar.bz2
+      - conda: https://conda.anaconda.org/conda-forge/noarch/perl-xml-sax-base-1.09-pl5321hd8ed1ab_0.tar.bz2
       - conda: https://conda.anaconda.org/conda-forge/noarch/python_abi-3.13-8_cp313.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/rust-std-aarch64-apple-darwin-1.94.0-hf6ec828_1.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/sdkroot_env_osx-arm64-26.0-ha3f98da_7.conda
@@ -705,8 +810,8 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/libsqlite-3.53.1-h1b79a29_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/libssh2-1.11.1-h1590b86_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/libunistring-0.9.10-h3422bc3_0.tar.bz2
-      - conda: https://conda.anaconda.org/conda-forge/osx-arm64/libxml2-16-2.15.3-h6967ea9_0.conda
-      - conda: https://conda.anaconda.org/conda-forge/osx-arm64/libxml2-2.15.3-heed7d32_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/osx-arm64/libxml2-16-2.14.6-h6967ea9_3.conda
+      - conda: https://conda.anaconda.org/conda-forge/osx-arm64/libxml2-2.14.6-h762f11a_3.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/libzlib-1.3.2-h8088a28_2.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/llvm-openmp-22.1.5-hc7d1edf_1.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/llvm-tools-19-19.1.7-h91fd4e7_2.conda
@@ -720,12 +825,17 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/openssl-3.6.2-hd24854e_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/pcre2-10.47-h30297fc_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/perl-5.32.1-7_h4614cfb_perl5.conda
+      - conda: https://conda.anaconda.org/conda-forge/osx-arm64/perl-capture-tiny-0.48-pl5321hce30654_1.tar.bz2
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/perl-compress-raw-bzip2-2.214-pl5321h2ddc596_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/perl-compress-raw-zlib-2.214-pl5321ha1c2b25_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/perl-encode-3.21-pl5321h5505292_1.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/perl-pathtools-3.75-pl5321hc71e825_2.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/perl-scalar-list-utils-1.70-pl5321h44e845a_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/perl-storable-3.15-pl5321hc71e825_2.conda
+      - conda: https://conda.anaconda.org/conda-forge/osx-arm64/perl-test-fatal-0.016-pl5321hce30654_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/osx-arm64/perl-test-warnings-0.031-pl5321hce30654_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/osx-arm64/perl-try-tiny-0.32-pl5321hce30654_1.conda
+      - conda: https://conda.anaconda.org/conda-forge/osx-arm64/perl-uri-5.34-pl5321hce30654_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/pkg-config-0.29.2-hde07d2e_1009.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/python-3.13.13-h20e6be0_100_cp313.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/readline-8.3-h46df422_0.conda
@@ -903,6 +1013,39 @@ packages:
   purls: []
   size: 9227191
   timestamp: 1774474370894
+- conda: https://conda.anaconda.org/bioconda/linux-64/perl-alien-build-2.84-pl5321h7b50bb2_1.tar.bz2
+  sha256: ef28ca71abf0b875953d1d68a1cf14a0d14de7df20b33d24d98d9aeaf0a8c47e
+  md5: 1966b7077b4cacfa9e2a2cb65723e9c1
+  depends:
+  - libgcc >=13
+  - perl >=5.32.1,<5.33.0a0 *_perl5
+  - perl-capture-tiny
+  - perl-ffi-checklib 0.28.*
+  - perl-file-chdir
+  - perl-file-which
+  - perl-path-tiny
+  - perl-test2-suite 0.000163.*
+  license: perl_5
+  purls: []
+  size: 200097
+  timestamp: 1745269972596
+- conda: https://conda.anaconda.org/bioconda/linux-64/perl-alien-libxml2-0.20-pl5321hd2ab53c_0.tar.bz2
+  sha256: ecaf1b39bd0c68e362154b7ffd8aa4de641eb821cabfcda85371e0e92f26de03
+  md5: 4d697cddae8093e2e37640a894b52696
+  depends:
+  - libgcc >=13
+  - libiconv >=1.18,<2.0a0
+  - liblzma >=5.8.1,<6.0a0
+  - libxml2 >=2.14.4,<2.15.0a0
+  - libzlib >=1.3.1,<2.0a0
+  - perl >=5.32.1,<5.33.0a0 *_perl5
+  - perl-alien-build >=2.84,<3.0a0
+  - perl-alien-build-plugin-download-gitlab >=0.1,<0.2.0a0
+  - perl-test2-suite 0.000163.*
+  license: Perl_5
+  purls: []
+  size: 14844
+  timestamp: 1750230576988
 - conda: https://conda.anaconda.org/bioconda/linux-64/perl-io-compress-2.216-pl5321h503566f_0.conda
   sha256: 5241c33cf55ba0cbfc0ccab96b4a31123761db00310eab4fedd7a95226c4fca7
   md5: 0784cb3c120f934a5fe61961c8238330
@@ -941,6 +1084,24 @@ packages:
   purls: []
   size: 51506
   timestamp: 1741776389435
+- conda: https://conda.anaconda.org/bioconda/linux-64/perl-xml-libxml-2.0210-pl5321hd2ab53c_1.tar.bz2
+  sha256: a5df2e96e06be90a3fce5de7b6b1fae3d38d481bdb4deef1bc1984ed069ecb79
+  md5: d130de1f7ab29fb034f4a3884f00bebf
+  depends:
+  - libgcc >=13
+  - libiconv >=1.18,<2.0a0
+  - liblzma >=5.8.1,<6.0a0
+  - libxml2 >=2.14.4,<2.15.0a0
+  - libzlib >=1.3.1,<2.0a0
+  - perl >=5.32.1,<5.33.0a0 *_perl5
+  - perl-alien-build >=2.84,<3.0a0
+  - perl-alien-libxml2 >=0.20,<0.21.0a0
+  - perl-xml-namespacesupport
+  - perl-xml-sax
+  license: Perl_5
+  purls: []
+  size: 271488
+  timestamp: 1750236463994
 - conda: https://conda.anaconda.org/bioconda/linux-64/samtools-1.23.1-ha83d96e_0.conda
   sha256: 2cb721907a2df7c54580298d655ae7587dbed593bd5536fa8ef4a22c9ae2a496
   md5: 89624fbd17c069abcbc8b19b96d497a0
@@ -976,6 +1137,21 @@ packages:
   license_family: GPL
   size: 19327462
   timestamp: 1758931918693
+- conda: https://conda.anaconda.org/bioconda/linux-64/sra-tools-3.4.1-2_linux_64.conda
+  build_number: 2
+  sha256: ce6cd07843cf4f04b55fbf4a61ca69592c7bf43948ec6ef67835007a5bcbb560
+  md5: 28ef629da2223b1564cfbfd84db5d2bd
+  depends:
+  - ca-certificates
+  - curl
+  - ossuuid
+  - perl
+  - perl-uri
+  - perl-xml-libxml
+  license: Public Domain
+  purls: []
+  size: 20309525
+  timestamp: 1776565444830
 - conda: https://conda.anaconda.org/bioconda/linux-64/vsearch-2.31.0-hd2be7a0_0.conda
   sha256: 2cb6740460d605597869ba3223b4ea337f19256d5fc9de6e14510f3f6171ac0b
   md5: 1688be9a6aa97ea509e853055f57b03d
@@ -1107,6 +1283,39 @@ packages:
   purls: []
   size: 8349546
   timestamp: 1774474237098
+- conda: https://conda.anaconda.org/bioconda/linux-aarch64/perl-alien-build-2.84-pl5321h661a7b0_1.tar.bz2
+  sha256: 9f716c4bfa68677640d4a83c15c330cd5a79c176bd3267ebace3ff3a847e463f
+  md5: 212a244d4e5b9ef68fd10d7f765799b8
+  depends:
+  - libgcc >=13
+  - perl >=5.32.1,<5.33.0a0 *_perl5
+  - perl-capture-tiny
+  - perl-ffi-checklib 0.28.*
+  - perl-file-chdir
+  - perl-file-which
+  - perl-path-tiny
+  - perl-test2-suite 0.000163.*
+  license: perl_5
+  purls: []
+  size: 200635
+  timestamp: 1745269890637
+- conda: https://conda.anaconda.org/bioconda/linux-aarch64/perl-alien-libxml2-0.20-pl5321h1ae7f55_0.tar.bz2
+  sha256: 9a5797f14bc66596ac44e067bda33f75edf42f7d290bd5ca16e37d6e02d55db2
+  md5: b512b121127b09087b3c56f897888084
+  depends:
+  - libgcc >=13
+  - libiconv >=1.18,<2.0a0
+  - liblzma >=5.8.1,<6.0a0
+  - libxml2 >=2.14.4,<2.15.0a0
+  - libzlib >=1.3.1,<2.0a0
+  - perl >=5.32.1,<5.33.0a0 *_perl5
+  - perl-alien-build >=2.84,<3.0a0
+  - perl-alien-build-plugin-download-gitlab >=0.1,<0.2.0a0
+  - perl-test2-suite 0.000163.*
+  license: Perl_5
+  purls: []
+  size: 14925
+  timestamp: 1750230445991
 - conda: https://conda.anaconda.org/bioconda/linux-aarch64/perl-io-compress-2.216-pl5321h80f0ee0_0.conda
   sha256: e3b08da45be6608d51e20eb95832a505d6334f457a2d17857a905b114b6465dc
   md5: 279724b023ac1c97903397f28de43f98
@@ -1144,6 +1353,24 @@ packages:
   purls: []
   size: 51048
   timestamp: 1741776294812
+- conda: https://conda.anaconda.org/bioconda/linux-aarch64/perl-xml-libxml-2.0210-pl5321h1ae7f55_1.tar.bz2
+  sha256: d269f35e319dfe371b7bae2ec86840c406f5529deb6e4ad6ac9229a751edd4a9
+  md5: ef0dbb9c3656f0c58218b71b36d4ea10
+  depends:
+  - libgcc >=13
+  - libiconv >=1.18,<2.0a0
+  - liblzma >=5.8.1,<6.0a0
+  - libxml2 >=2.14.4,<2.15.0a0
+  - libzlib >=1.3.1,<2.0a0
+  - perl >=5.32.1,<5.33.0a0 *_perl5
+  - perl-alien-build >=2.84,<3.0a0
+  - perl-alien-libxml2 >=0.20,<0.21.0a0
+  - perl-xml-namespacesupport
+  - perl-xml-sax
+  license: Perl_5
+  purls: []
+  size: 232583
+  timestamp: 1750236277201
 - conda: https://conda.anaconda.org/bioconda/linux-aarch64/rpsbproc-0.5.1-h7645e38_0.conda
   sha256: 277aa2f124627062c768367ce9b73c0d27c6f0481518ad0339276d4e48d69c45
   md5: 52d43ad51789a1b1b25c7684829bc85c
@@ -1193,6 +1420,26 @@ packages:
   purls: []
   size: 35259065
   timestamp: 1758931426837
+- conda: https://conda.anaconda.org/bioconda/linux-aarch64/sra-tools-3.4.1-habe25ba_1.conda
+  sha256: 9877a92c3377ccad9aae594375ded85bd1ee71f00615a3d8f396dec03a6f3a7c
+  md5: ebae6affb07872a1ccda7ff3c2998339
+  depends:
+  - ca-certificates
+  - curl
+  - libgcc
+  - libgcc-ng >=12
+  - libstdcxx
+  - libstdcxx-ng >=12
+  - ncbi-vdb >=3.4.1
+  - ncbi-vdb >=3.4.1,<4.0a0
+  - ossuuid
+  - perl
+  - perl-uri
+  - perl-xml-libxml
+  license: Public Domain
+  purls: []
+  size: 40336930
+  timestamp: 1775617953823
 - conda: https://conda.anaconda.org/bioconda/linux-aarch64/vsearch-2.31.0-hd0c913a_0.conda
   sha256: e70bab441117c0420a4d77802ccf9123bbec3a76070956295e47688967197b39
   md5: 549678a7db61a3883543250b65d7c1a2
@@ -1217,6 +1464,17 @@ packages:
   purls: []
   size: 34829682
   timestamp: 1770744718359
+- conda: https://conda.anaconda.org/bioconda/noarch/perl-alien-build-plugin-download-gitlab-0.01-pl5321hdfd78af_0.tar.bz2
+  sha256: a55973d713323db1e57dcbf27559a29a5f44dc8156f0098a284846e0ef861572
+  md5: cae99f69cce10818b9bc0bf0a8d68820
+  depends:
+  - perl >=5.32.1,<6.0a0 *_perl5
+  - perl-alien-build
+  - perl-uri
+  license: Perl_5
+  purls: []
+  size: 12130
+  timestamp: 1750226250269
 - conda: https://conda.anaconda.org/bioconda/noarch/perl-archive-tar-3.06-pl5321hdfd78af_0.conda
   sha256: 281cec7801d4ea5166bc6870dc3d8774ab87b88ce2723c84d7e3018adccd3f05
   md5: b0f7e3ec78f91ea473c5fd01ff9053a8
@@ -1229,6 +1487,15 @@ packages:
   purls: []
   size: 38386
   timestamp: 1778409144629
+- conda: https://conda.anaconda.org/bioconda/noarch/perl-ffi-checklib-0.28-pl5321hdfd78af_0.tar.bz2
+  sha256: 4ac8de71ec66b6f13785f134be7878507f0003844e279be6290b7dc72cc2aa88
+  md5: 05451eeb5e82ccf46831248c55c6218a
+  depends:
+  - perl >=5.32.1,<6.0a0 *_perl5
+  license: perl_5
+  purls: []
+  size: 16150
+  timestamp: 1648502850959
 - conda: https://conda.anaconda.org/bioconda/noarch/perl-io-zlib-1.15-pl5321hdfd78af_1.tar.bz2
   sha256: 771a44b338cac68a22893897450222b886e24bbb291b014897d561f2ba3b588f
   md5: db92645dabe9467115729e4479841b5d
@@ -1259,6 +1526,30 @@ packages:
   purls: []
   size: 32468
   timestamp: 1644871004171
+- conda: https://conda.anaconda.org/bioconda/noarch/perl-term-table-0.028-pl5321hdfd78af_0.conda
+  sha256: 93574d78a99a9ab8f93f3cd75380b8bbfde61452b8882ad96be816eccf0f904a
+  md5: fad11d933046bde4537cfd96ae385e69
+  depends:
+  - perl >=5.32.1,<6.0a0 *_perl5
+  - perl-carp
+  - perl-importer
+  license: perl_5
+  purls: []
+  size: 24666
+  timestamp: 1764199716068
+- conda: https://conda.anaconda.org/bioconda/noarch/perl-test2-suite-0.000163-pl5321hdfd78af_0.tar.bz2
+  sha256: 226cbad887607747b19816100d00b0e3dcca66b1e2b282efc1aad225eaacd27d
+  md5: 6a29ce25ffd66ecc495a62a77a4dc0c2
+  depends:
+  - perl >=5.32.1,<6.0a0 *_perl5
+  - perl-importer
+  - perl-scope-guard
+  - perl-sub-info
+  - perl-term-table
+  license: perl_5
+  purls: []
+  size: 212676
+  timestamp: 1717604907839
 - conda: https://conda.anaconda.org/bioconda/noarch/perl-types-serialiser-1.01-pl5321hdfd78af_0.tar.bz2
   sha256: 20f61217b16235d0161ad6fa0a234585afcc04ec5a6142c65b5867e26216dfe3
   md5: cfc65753e827bbef80c00eaa395f6ae7
@@ -1378,6 +1669,37 @@ packages:
   purls: []
   size: 4689904
   timestamp: 1774475475338
+- conda: https://conda.anaconda.org/bioconda/osx-64/perl-alien-build-2.84-pl5321h18d8cf3_1.tar.bz2
+  sha256: bce6999f1ccb580f2b5b72f23ba7a58809ec4786a70a840a8512fbc8b6a30e31
+  md5: 0dab5c3fd4a249dca4ad7d249a1e9e4f
+  depends:
+  - perl >=5.32.1,<5.33.0a0 *_perl5
+  - perl-capture-tiny
+  - perl-ffi-checklib 0.28.*
+  - perl-file-chdir
+  - perl-file-which
+  - perl-path-tiny
+  - perl-test2-suite 0.000163.*
+  license: perl_5
+  purls: []
+  size: 200737
+  timestamp: 1745270576745
+- conda: https://conda.anaconda.org/bioconda/osx-64/perl-alien-libxml2-0.20-pl5321h3e28226_0.tar.bz2
+  sha256: fea5b4a57c7e032891eabc62dcf25a572444e40c0083269254a2c1be99a1239d
+  md5: dbfbb92743ba4f1a1dc1135ff6c32845
+  depends:
+  - libiconv >=1.18,<2.0a0
+  - liblzma >=5.8.1,<6.0a0
+  - libxml2 >=2.14.4,<2.15.0a0
+  - libzlib >=1.3.1,<2.0a0
+  - perl >=5.32.1,<5.33.0a0 *_perl5
+  - perl-alien-build >=2.84,<3.0a0
+  - perl-alien-build-plugin-download-gitlab >=0.1,<0.2.0a0
+  - perl-test2-suite 0.000163.*
+  license: Perl_5
+  purls: []
+  size: 15081
+  timestamp: 1750231244377
 - conda: https://conda.anaconda.org/bioconda/osx-64/perl-io-compress-2.216-pl5321h5eaf441_0.conda
   sha256: a053f0721aa5718227e4dde2ea394d57f09cf0fd0454e522bc1865ff537483b9
   md5: 5475f28718f06211952ba02a4ae26245
@@ -1412,6 +1734,23 @@ packages:
   purls: []
   size: 44178
   timestamp: 1741776966235
+- conda: https://conda.anaconda.org/bioconda/osx-64/perl-xml-libxml-2.0210-pl5321h3e28226_1.tar.bz2
+  sha256: 10266dcc77a9034615d3885719a071b1edab48b9a821f262a61000d149f7409a
+  md5: 4ac22df07170db6acc7a90f0d838e663
+  depends:
+  - libiconv >=1.18,<2.0a0
+  - liblzma >=5.8.1,<6.0a0
+  - libxml2 >=2.14.4,<2.15.0a0
+  - libzlib >=1.3.1,<2.0a0
+  - perl >=5.32.1,<5.33.0a0 *_perl5
+  - perl-alien-build >=2.84,<3.0a0
+  - perl-alien-libxml2 >=0.20,<0.21.0a0
+  - perl-xml-namespacesupport
+  - perl-xml-sax
+  license: Perl_5
+  purls: []
+  size: 266275
+  timestamp: 1750237276710
 - conda: https://conda.anaconda.org/bioconda/osx-64/samtools-1.23.1-head6495_0.conda
   sha256: 8c3ff4c331f82049446521fd9f00d8a6010ba65f69c38250860ac320d4fdbe55
   md5: b4af8fd57180f7d7c20048f0c3359736
@@ -1447,6 +1786,20 @@ packages:
   purls: []
   size: 22850116
   timestamp: 1758933785330
+- conda: https://conda.anaconda.org/bioconda/osx-64/sra-tools-3.4.1-2_osx_64.conda
+  build_number: 2
+  sha256: d568c405a7aa95bea785cf44d850fc1d7bb9cf02891ef0467b3dee16e83cbe36
+  md5: af5c6fa33c2274406e5a28cc687244f8
+  depends:
+  - ca-certificates
+  - curl
+  - perl
+  - perl-uri
+  - perl-xml-libxml
+  license: Public Domain
+  purls: []
+  size: 14098648
+  timestamp: 1776566095969
 - conda: https://conda.anaconda.org/bioconda/osx-64/vsearch-2.31.0-h7aab66d_0.conda
   sha256: 47236db3b8c996a26b3fbf6bfade7c209e3c222a799e53e5c8bb414a755a754f
   md5: cada888bf20c710bf62e724b6f01dcd7
@@ -1570,6 +1923,37 @@ packages:
   purls: []
   size: 4729608
   timestamp: 1774474005378
+- conda: https://conda.anaconda.org/bioconda/osx-arm64/perl-alien-build-2.84-pl5321hbdacb55_1.tar.bz2
+  sha256: ca71aed14a0eaa37416b3a5830f8585dbe980797b6577c4ab725bb886713c7be
+  md5: de297c117af21e7f5430a3667b484376
+  depends:
+  - perl >=5.32.1,<5.33.0a0 *_perl5
+  - perl-capture-tiny
+  - perl-ffi-checklib 0.28.*
+  - perl-file-chdir
+  - perl-file-which
+  - perl-path-tiny
+  - perl-test2-suite 0.000163.*
+  license: perl_5
+  purls: []
+  size: 200256
+  timestamp: 1745269783657
+- conda: https://conda.anaconda.org/bioconda/osx-arm64/perl-alien-libxml2-0.20-pl5321h9b71f33_0.tar.bz2
+  sha256: 9cac7925237ee5001f3c5fa4da2ed96bf178edad0550152473f5419ea61fc1a0
+  md5: f60b76ae09d04a37671f5d59aa0d4c9d
+  depends:
+  - libiconv >=1.18,<2.0a0
+  - liblzma >=5.8.1,<6.0a0
+  - libxml2 >=2.14.4,<2.15.0a0
+  - libzlib >=1.3.1,<2.0a0
+  - perl >=5.32.1,<5.33.0a0 *_perl5
+  - perl-alien-build >=2.84,<3.0a0
+  - perl-alien-build-plugin-download-gitlab >=0.1,<0.2.0a0
+  - perl-test2-suite 0.000163.*
+  license: Perl_5
+  purls: []
+  size: 15106
+  timestamp: 1750230367000
 - conda: https://conda.anaconda.org/bioconda/osx-arm64/perl-io-compress-2.216-pl5321haef7865_0.conda
   sha256: 9e7fa17e5eca67ac395b97610deefd861ee6564c8e2f06ea1bfff782551c90f9
   md5: 0431eb5b4aeea11a058a3e639b7379d7
@@ -1604,6 +1988,23 @@ packages:
   purls: []
   size: 43423
   timestamp: 1741776343291
+- conda: https://conda.anaconda.org/bioconda/osx-arm64/perl-xml-libxml-2.0210-pl5321h9b71f33_1.tar.bz2
+  sha256: 48a20e1c10052803bed23883faeefef4a1222a212c583b000da8dafe550b7bc7
+  md5: 46db60efa6d4a6b477ea861c4ce8bef7
+  depends:
+  - libiconv >=1.18,<2.0a0
+  - liblzma >=5.8.1,<6.0a0
+  - libxml2 >=2.14.4,<2.15.0a0
+  - libzlib >=1.3.1,<2.0a0
+  - perl >=5.32.1,<5.33.0a0 *_perl5
+  - perl-alien-build >=2.84,<3.0a0
+  - perl-alien-libxml2 >=0.20,<0.21.0a0
+  - perl-xml-namespacesupport
+  - perl-xml-sax
+  license: Perl_5
+  purls: []
+  size: 249754
+  timestamp: 1750236218429
 - conda: https://conda.anaconda.org/bioconda/osx-arm64/rpsbproc-0.5.1-hf8bb5b5_0.conda
   sha256: c21fa5d3126918e83cc60acff94c2c57bd8f8c640bf44083012e3fa6fb3132a5
   md5: 48fe2982f2d5d721008d7d2c670b377b
@@ -1649,6 +2050,20 @@ packages:
   purls: []
   size: 21925186
   timestamp: 1758931207633
+- conda: https://conda.anaconda.org/bioconda/osx-arm64/sra-tools-3.4.1-2_osx_arm64.conda
+  build_number: 2
+  sha256: b145b8db40534786849887556f51ff9baaab82bbf1fbc00774791b7c4296552e
+  md5: 9b7b4f531d6825aa5f94783943536cfe
+  depends:
+  - ca-certificates
+  - curl
+  - perl
+  - perl-uri
+  - perl-xml-libxml
+  license: Public Domain
+  purls: []
+  size: 14903554
+  timestamp: 1776565990986
 - conda: https://conda.anaconda.org/bioconda/osx-arm64/vsearch-2.31.0-h0448ff9_0.conda
   sha256: 992bb9bf6858d0c53f502f11575fe45526862b47277c5d2bbd3de008136af7f0
   md5: 003a2cc62a2f4350d19d549a6db39e25
@@ -2672,9 +3087,9 @@ packages:
   purls: []
   size: 100393
   timestamp: 1702724383534
-- conda: https://conda.anaconda.org/conda-forge/linux-64/libxml2-16-2.15.1-ha9997c6_0.conda
-  sha256: 71436e72a286ef8b57d6f4287626ff91991eb03c7bdbe835280521791efd1434
-  md5: e7733bc6785ec009e47a224a71917e84
+- conda: https://conda.anaconda.org/conda-forge/linux-64/libxml2-16-2.14.6-ha9997c6_2.conda
+  sha256: f7d15f0142147d85a01cbf7f307f59dd81c856f3cf43ffb5d6726cc6682b56c5
+  md5: f24b4dc65824008924770bc669e695a8
   depends:
   - __glibc >=2.17,<3.0.a0
   - icu >=75.1,<76.0a0
@@ -2683,28 +3098,28 @@ packages:
   - liblzma >=5.8.1,<6.0a0
   - libzlib >=1.3.1,<2.0a0
   constrains:
-  - libxml2 2.15.1
+  - libxml2 2.14.6
   license: MIT
   license_family: MIT
   purls: []
-  size: 556302
-  timestamp: 1761015637262
-- conda: https://conda.anaconda.org/conda-forge/linux-64/libxml2-2.15.1-h26afc86_0.conda
-  sha256: ec0735ae56c3549149eebd7dc22c0bed91fd50c02eaa77ff418613ddda190aa8
-  md5: e512be7dc1f84966d50959e900ca121f
+  size: 565940
+  timestamp: 1757690230977
+- conda: https://conda.anaconda.org/conda-forge/linux-64/libxml2-2.14.6-h26afc86_2.conda
+  sha256: 7cc391af218536d5bf9606582d03b1a367b41984f47078259ce69fc0210939f9
+  md5: c6f73a6146222737a4a1bf500dfa8fd8
   depends:
   - __glibc >=2.17,<3.0.a0
   - icu >=75.1,<76.0a0
   - libgcc >=14
   - libiconv >=1.18,<2.0a0
   - liblzma >=5.8.1,<6.0a0
-  - libxml2-16 2.15.1 ha9997c6_0
+  - libxml2-16 2.14.6 ha9997c6_2
   - libzlib >=1.3.1,<2.0a0
   license: MIT
   license_family: MIT
   purls: []
-  size: 45283
-  timestamp: 1761015644057
+  size: 46791
+  timestamp: 1757690242122
 - conda: https://conda.anaconda.org/conda-forge/linux-64/libzlib-1.3.2-h25fd6f3_2.conda
   sha256: 55044c403570f0dc26e6364de4dc5368e5f3fc7ff103e867c487e2b5ab2bcda9
   md5: d87ff7921124eccd67248aa483c23fec
@@ -2830,6 +3245,18 @@ packages:
   purls: []
   size: 3167099
   timestamp: 1775587756857
+- conda: https://conda.anaconda.org/conda-forge/linux-64/ossuuid-1.6.2-h5888daf_1001.conda
+  sha256: fec82722c32caf0d4f1f8f4148786dc8898e903b32a2d9974b979f8b597cab12
+  md5: 6cc16cf6cd2fd0b22844735f52468a98
+  depends:
+  - __glibc >=2.17,<3.0.a0
+  - libgcc >=13
+  - libstdcxx >=13
+  license: GPL-2.0-or-later
+  license_family: GPL
+  purls: []
+  size: 54218
+  timestamp: 1736761658961
 - conda: https://conda.anaconda.org/conda-forge/linux-64/pcre2-10.47-haa7fec5_0.conda
   sha256: 5e6f7d161356fefd981948bea5139c5aa0436767751a6930cb1ca801ebb113ff
   md5: 7a3bff861a6583f1889021facefc08b1
@@ -2854,6 +3281,15 @@ packages:
   purls: []
   size: 13344463
   timestamp: 1703310653947
+- conda: https://conda.anaconda.org/conda-forge/linux-64/perl-capture-tiny-0.48-pl5321ha770c72_1.tar.bz2
+  sha256: 0c0e8e7a342edcdd8638bc2ecf1fca13917b67bcf40890bcff7a7bf4db2ff4d3
+  md5: 4859b3d284090166394875e68184dc9c
+  depends:
+  - perl >=5.32.1,<5.33.0a0 *_perl5
+  license: Artistic-2.0
+  purls: []
+  size: 16519
+  timestamp: 1643301265873
 - conda: https://conda.anaconda.org/conda-forge/linux-64/perl-compress-raw-bzip2-2.214-pl5321hda65f42_0.conda
   sha256: 2cbd3fcb7028415654057ab3142cee1e5cc4cf9bdd0e590f072e8ecd29cb6382
   md5: 1ec33b9f74a71c17cc5579e35027832a
@@ -2929,6 +3365,47 @@ packages:
   purls: []
   size: 71475
   timestamp: 1741353849888
+- conda: https://conda.anaconda.org/conda-forge/linux-64/perl-test-fatal-0.016-pl5321ha770c72_0.tar.bz2
+  sha256: d5420f90b3bca641cdad0c5674b356a060bf1587e82d3828f382a466bdaba6d1
+  md5: 5c397b1fd3095004f4ff149af1c0dd3c
+  depends:
+  - perl >=5.32.1,<5.33.0a0 *_perl5
+  - perl-try-tiny 0.31.*
+  license: GPL-1.0-or-later OR Artistic-1.0-Perl
+  purls: []
+  size: 19528
+  timestamp: 1666339958976
+- conda: https://conda.anaconda.org/conda-forge/linux-64/perl-test-warnings-0.031-pl5321ha770c72_0.conda
+  sha256: 2aaea17941fd456bfe44d15e3f3651d7f27be0cb31235d88e48b71ae857d7ef1
+  md5: db0eb51272ea7af7213afaaf7e9967c3
+  depends:
+  - perl >=5.32.1,<5.33.0a0 *_perl5
+  license: GPL-1.0-or-later OR Artistic-1.0-Perl
+  purls: []
+  size: 21724
+  timestamp: 1669240328383
+- conda: https://conda.anaconda.org/conda-forge/linux-64/perl-try-tiny-0.31-pl5321ha770c72_0.tar.bz2
+  sha256: 7e74c95eb085b095a258a22ee2f30192d79f23a58cbbcb8ca2b14f4fe0a8c406
+  md5: cc23b14ed56bf51d84832d98ebd156af
+  depends:
+  - perl >=5.32.1,<5.33.0a0 *_perl5
+  license: MIT
+  license_family: MIT
+  purls: []
+  size: 17704
+  timestamp: 1659695570098
+- conda: https://conda.anaconda.org/conda-forge/linux-64/perl-uri-5.34-pl5321ha770c72_0.conda
+  sha256: b8ee5b5b4a654ce41e9c676255f8af3e52b448ddc3473b72fe3eba387a9f3b46
+  md5: dc588517ea63f0d7a352c2b5783c1b58
+  depends:
+  - perl >=5.32.1,<5.33.0a0 *_perl5
+  - perl-business-isbn
+  - perl-test-fatal 0.016.*
+  - perl-test-warnings 0.031.*
+  license: GPL-1.0-or-later OR Artistic-1.0-Perl
+  purls: []
+  size: 78694
+  timestamp: 1758130476076
 - conda: https://conda.anaconda.org/conda-forge/linux-64/pixman-0.46.4-h54a6638_1.conda
   sha256: 43d37bc9ca3b257c5dd7bf76a8426addbdec381f6786ff441dc90b1a49143b6a
   md5: c01af13bdc553d1a8fbfff6e8db075f0
@@ -4252,9 +4729,9 @@ packages:
   purls: []
   size: 114269
   timestamp: 1702724369203
-- conda: https://conda.anaconda.org/conda-forge/linux-aarch64/libxml2-16-2.15.1-h8591a01_0.conda
-  sha256: 7a13450bce2eeba8f8fb691868b79bf0891377b707493a527bd930d64d9b98af
-  md5: e7177c6fbbf815da7b215b4cc3e70208
+- conda: https://conda.anaconda.org/conda-forge/linux-aarch64/libxml2-16-2.14.6-h8591a01_2.conda
+  sha256: 134f1cd3cf839106789e1e0247555b777a543d5733807601a16ca518eeefb84b
+  md5: 1c3a8f1fed4fe57651475585250b68b8
   depends:
   - icu >=75.1,<76.0a0
   - libgcc >=14
@@ -4262,27 +4739,27 @@ packages:
   - liblzma >=5.8.1,<6.0a0
   - libzlib >=1.3.1,<2.0a0
   constrains:
-  - libxml2 2.15.1
+  - libxml2 2.14.6
   license: MIT
   license_family: MIT
   purls: []
-  size: 597078
-  timestamp: 1761015734476
-- conda: https://conda.anaconda.org/conda-forge/linux-aarch64/libxml2-2.15.1-h788dabe_0.conda
-  sha256: db0a568e0853ee38b7a4db1cb4ee76e57fe7c32ccb1d5b75f6618a1041d3c6e4
-  md5: a0e7779b7625b88e37df9bd73f0638dc
+  size: 605626
+  timestamp: 1757690227685
+- conda: https://conda.anaconda.org/conda-forge/linux-aarch64/libxml2-2.14.6-h788dabe_2.conda
+  sha256: fbff632a1af5172b274ec5c7655975526ec4ff5f5213325f965e74062ef53783
+  md5: 7afb016a97c6cecda996a83fbd99b6b7
   depends:
   - icu >=75.1,<76.0a0
   - libgcc >=14
   - libiconv >=1.18,<2.0a0
   - liblzma >=5.8.1,<6.0a0
-  - libxml2-16 2.15.1 h8591a01_0
+  - libxml2-16 2.14.6 h8591a01_2
   - libzlib >=1.3.1,<2.0a0
   license: MIT
   license_family: MIT
   purls: []
-  size: 47192
-  timestamp: 1761015739999
+  size: 48632
+  timestamp: 1757690232873
 - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/libzlib-1.3.2-hdc9db2a_2.conda
   sha256: eb111e32e5a7313a5bf799c7fb2419051fa2fe7eff74769fac8d5a448b309f7f
   md5: 502006882cf5461adced436e410046d1
@@ -4401,6 +4878,17 @@ packages:
   purls: []
   size: 3706406
   timestamp: 1775589602258
+- conda: https://conda.anaconda.org/conda-forge/linux-aarch64/ossuuid-1.6.2-h5ad3122_1001.conda
+  sha256: 9caba14fa743658e08277d4d489e7143158e138aab3d08339257aef258612119
+  md5: f0d44b6dee66428b8d29f3e2f3cf903e
+  depends:
+  - libgcc >=13
+  - libstdcxx >=13
+  license: GPL-2.0-or-later
+  license_family: GPL
+  purls: []
+  size: 77731
+  timestamp: 1736763070959
 - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/pcre2-10.47-hf841c20_0.conda
   sha256: 04df2cee95feba440387f33f878e9f655521e69f4be33a0cd637f07d3d81f0f9
   md5: 1a30c42e32ca0ea216bd0bfe6f842f0b
@@ -4424,6 +4912,15 @@ packages:
   purls: []
   size: 13338804
   timestamp: 1703310557094
+- conda: https://conda.anaconda.org/conda-forge/linux-aarch64/perl-capture-tiny-0.48-pl5321h8af1aa0_1.conda
+  sha256: 016b389d3a1fddc5fa4d177d237dd424b0a843633a1cc8c5381fe3d99905b4c5
+  md5: 97c36a59444323ddecdcd897dc627044
+  depends:
+  - perl >=5.32.1,<5.33.0a0 *_perl5
+  license: Artistic-2.0
+  purls: []
+  size: 17966
+  timestamp: 1732610140458
 - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/perl-compress-raw-bzip2-2.214-pl5321h4777abc_0.conda
   sha256: 55c31397194bf13d45d4c4745656dc3d5f456234085a97c425f7769ea857310d
   md5: 95b5350d7705940debe7508d0439b755
@@ -4493,6 +4990,47 @@ packages:
   purls: []
   size: 70181
   timestamp: 1741355285769
+- conda: https://conda.anaconda.org/conda-forge/linux-aarch64/perl-test-fatal-0.016-pl5321h8af1aa0_0.conda
+  sha256: 8bcccaa2c7b06e8486a4e909810d98c06108454f761c40689162f3e550ea695f
+  md5: 296af94fa24396a73fe8a7206ebce8ce
+  depends:
+  - perl >=5.32.1,<5.33.0a0 *_perl5
+  - perl-try-tiny 0.32.*
+  license: GPL-1.0-or-later OR Artistic-1.0-Perl
+  purls: []
+  size: 20188
+  timestamp: 1733158123771
+- conda: https://conda.anaconda.org/conda-forge/linux-aarch64/perl-test-warnings-0.031-pl5321h8af1aa0_0.conda
+  sha256: 826384b588ecdedd7a746dc71b2836119025299f6058fb2d53c8392a0f29fd3d
+  md5: cd664772eefd038c59318df0756cf186
+  depends:
+  - perl >=5.32.1,<5.33.0a0 *_perl5
+  license: GPL-1.0-or-later OR Artistic-1.0-Perl
+  purls: []
+  size: 22613
+  timestamp: 1699920607631
+- conda: https://conda.anaconda.org/conda-forge/linux-aarch64/perl-try-tiny-0.32-pl5321h8af1aa0_1.conda
+  sha256: 44bad66f2e984570b2a970be40c9ac162c42cdfa723a42327c906ff3137b8d68
+  md5: d7f7e366d8fc664cc7a3435cd39d6524
+  depends:
+  - perl >=5.32.1,<5.33.0a0 *_perl5
+  license: MIT
+  license_family: MIT
+  purls: []
+  size: 19047
+  timestamp: 1740660866708
+- conda: https://conda.anaconda.org/conda-forge/linux-aarch64/perl-uri-5.34-pl5321h8af1aa0_0.conda
+  sha256: fa58dacb6765fd61f5197eb796e0be5e7818a7e6e9bf5facabb53c55e8842745
+  md5: 00abc0ff3bf3bb59e190fa907a8cfd99
+  depends:
+  - perl >=5.32.1,<5.33.0a0 *_perl5
+  - perl-business-isbn
+  - perl-test-fatal 0.016.*
+  - perl-test-warnings 0.031.*
+  license: GPL-1.0-or-later OR Artistic-1.0-Perl
+  purls: []
+  size: 78850
+  timestamp: 1758130433463
 - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/pixman-0.46.4-h7ac5ae9_1.conda
   sha256: e6b0846a998f2263629cfeac7bca73565c35af13251969f45d385db537a514e4
   md5: 1587081d537bd4ae77d1c0635d465ba5
@@ -5005,6 +5543,27 @@ packages:
   purls: []
   size: 17587589
   timestamp: 1778268454520
+- conda: https://conda.anaconda.org/conda-forge/noarch/perl-business-isbn-3.007-pl5321hd8ed1ab_0.tar.bz2
+  sha256: fa0b99650ac3bc098d4b34d23eea8f5101f7a5e8c04fc50fac6b8bff70161848
+  md5: a7a3d7614e1a73b8d9c20030651d6006
+  depends:
+  - perl >=5.32.1,<6.0a0 *_perl5
+  - perl-business-isbn-data >=20191107
+  license: Artistic-2.0
+  purls: []
+  size: 18309
+  timestamp: 1665411030544
+- conda: https://conda.anaconda.org/conda-forge/noarch/perl-business-isbn-data-20210112.006-pl5321hd8ed1ab_0.tar.bz2
+  sha256: 457f7bdea5c7154472a18ab10d7c40144d65793446d9cb40877dc9c37c6b3b59
+  md5: a70f08650ec3919ee5e599834f1349d3
+  depends:
+  - perl >=5.32.1,<6.0a0 *_perl5
+  - perl-carp
+  license: Artistic-2.0
+  license_family: OTHER
+  purls: []
+  size: 21540
+  timestamp: 1660390931370
 - conda: https://conda.anaconda.org/conda-forge/noarch/perl-carp-1.50-pl5321hd8ed1ab_0.tar.bz2
   sha256: 1981e31113e1e77a2cdc13db657c636f047cd3be2a64d9a0bffac03c5427c1bd
   md5: bdddc03e28019b902da71b722f2288d7
@@ -5027,6 +5586,16 @@ packages:
   purls: []
   size: 20291
   timestamp: 1660429950685
+- conda: https://conda.anaconda.org/conda-forge/noarch/perl-constant-1.33-pl5321hd8ed1ab_0.tar.bz2
+  sha256: cfd5ef9af8de221292f7059d1ff88ff10f1340fc4dbbd0dc81ce2275bf76651d
+  md5: 7f9fc9cfa08a3fe36ffcff820c65c3ac
+  depends:
+  - perl >=5.32.1,<6.0a0 *_perl5
+  license: GPL-1.0-or-later OR Artistic-1.0-Perl
+  license_family: OTHER
+  purls: []
+  size: 15711
+  timestamp: 1636645107290
 - conda: https://conda.anaconda.org/conda-forge/noarch/perl-exporter-5.74-pl5321hd8ed1ab_0.tar.bz2
   sha256: 42271d0b79043a10a89044acb5febea50046b745dd2fc37e02943bc3bc75bf8e
   md5: fd2eac4e35f8c970870a3961c1df3e29
@@ -5057,6 +5626,63 @@ packages:
   purls: []
   size: 157323
   timestamp: 1679847836884
+- conda: https://conda.anaconda.org/conda-forge/noarch/perl-file-chdir-0.1011-pl5321hd8ed1ab_0.tar.bz2
+  sha256: 736b5c79e0ea19efb8f97f628a508cf42a1d5b6bc5533df1bd454651e28950c2
+  md5: c057570093f9298e9c5e4391877f2301
+  depends:
+  - perl >=5.32.1,<6.0a0 *_perl5
+  - perl-pathtools
+  license: GPL-1.0-or-later OR Artistic-1.0-Perl
+  license_family: OTHER
+  purls: []
+  size: 16973
+  timestamp: 1660380425665
+- conda: https://conda.anaconda.org/conda-forge/noarch/perl-file-path-2.18-pl5321hd8ed1ab_0.tar.bz2
+  sha256: ac7a0e0c36ec199709c8523132ded35efb84941a1a476b271fd25362dfbf5339
+  md5: e13e456f61b8261ba074c0aa93086afe
+  depends:
+  - perl >=5.32.1,<6.0a0 *_perl5
+  - perl-exporter
+  license: GPL-1.0-or-later OR Artistic-1.0-Perl
+  license_family: OTHER
+  purls: []
+  size: 22382
+  timestamp: 1636696260633
+- conda: https://conda.anaconda.org/conda-forge/noarch/perl-file-temp-0.2304-pl5321hd8ed1ab_0.tar.bz2
+  sha256: 91f9fe152b38441386053876198d0c9437e7b4b5fa7da1e5db48b9e1b21fdae9
+  md5: 0a039c4fc36748942287ee10d0431515
+  depends:
+  - perl >=5.32.1,<6.0a0 *_perl5
+  - perl-carp
+  - perl-constant
+  - perl-exporter
+  - perl-file-path
+  - perl-parent
+  license: GPL-1.0-or-later OR Artistic-1.0-Perl
+  license_family: OTHER
+  purls: []
+  size: 31509
+  timestamp: 1636696164992
+- conda: https://conda.anaconda.org/conda-forge/noarch/perl-file-which-1.24-pl5321hd8ed1ab_0.tar.bz2
+  sha256: 901e9c4177b6bdb23600446fd64a105a437112e63bc23a6163f669bc5098c502
+  md5: 94e5b2c9d56ef7c4c70ddf51ac38ae3d
+  depends:
+  - perl >=5.32.1,<6.0a0 *_perl5
+  license: GPL-1.0-or-later OR Artistic-1.0-Perl
+  license_family: OTHER
+  purls: []
+  size: 17329
+  timestamp: 1636695979827
+- conda: https://conda.anaconda.org/conda-forge/noarch/perl-importer-0.026-pl5321hd8ed1ab_0.tar.bz2
+  sha256: f40d5302de8c81282b5216edd8c65aecc551ef725db3351c208bff9b077e66a2
+  md5: 66e17c342d13c39a12c1059f13f9b72c
+  depends:
+  - perl >=5.32.1,<6.0a0 *_perl5
+  license: GPL-1.0-or-later OR Artistic-1.0-Perl
+  license_family: OTHER
+  purls: []
+  size: 26921
+  timestamp: 1660471365476
 - conda: https://conda.anaconda.org/conda-forge/noarch/perl-parent-0.243-pl5321hd8ed1ab_0.conda
   sha256: ec57d9e56ba86d840d5a9e65c665365fb6a290851cd13e6719628f3295eabf34
   md5: 314caa3b72d65f8078d426c6721dcacc
@@ -5067,6 +5693,72 @@ packages:
   purls: []
   size: 13933
   timestamp: 1733429736293
+- conda: https://conda.anaconda.org/conda-forge/noarch/perl-path-tiny-0.150-pl5321hd8ed1ab_0.conda
+  sha256: e0712ba32e9b7899d195647e92ac3d6d389d7f8fa113576986770da0768ee456
+  md5: a1f72052da46e48c51dfa82f73013f81
+  depends:
+  - perl >=5.32.1,<6.0a0 *_perl5
+  license: Apache-2.0
+  license_family: APACHE
+  purls: []
+  size: 45674
+  timestamp: 1777275661245
+- conda: https://conda.anaconda.org/conda-forge/noarch/perl-scope-guard-0.21-pl5321hd8ed1ab_0.tar.bz2
+  sha256: f0cd98e792fe43fcef81af1848f0d985a87b953043f1f6551d2ffdf15daca62c
+  md5: daea4e61dfdf06fef9a51dce492508f4
+  depends:
+  - perl >=5.32.1,<6.0a0 *_perl5
+  license: GPL-1.0-or-later OR Artistic-1.0-Perl
+  license_family: OTHER
+  purls: []
+  size: 16123
+  timestamp: 1660472428828
+- conda: https://conda.anaconda.org/conda-forge/noarch/perl-sub-info-0.002-pl5321hd8ed1ab_0.tar.bz2
+  sha256: 0485649e2aaccdbe46b64d35e07d13f885d28f438f41bee54ecd7e9a9d94d472
+  md5: 5b48dcf7df9e4e01d45de2c1f494d830
+  depends:
+  - perl >=5.32.1,<6.0a0 *_perl5
+  - perl-carp
+  - perl-importer
+  license: GPL-1.0-or-later OR Artistic-1.0-Perl
+  license_family: OTHER
+  purls: []
+  size: 19020
+  timestamp: 1663840434982
+- conda: https://conda.anaconda.org/conda-forge/noarch/perl-xml-namespacesupport-1.12-pl5321hd8ed1ab_0.tar.bz2
+  sha256: bf384bea1057085fdf8daac6e67a96ca892f2fedf4ce0327f9bda5d3a9bce102
+  md5: f4ce684ba66b3228bfffb09892235930
+  depends:
+  - perl >=5.32.1,<6.0a0 *_perl5
+  - perl-constant
+  license: GPL-1.0-or-later OR Artistic-1.0-Perl
+  license_family: OTHER
+  purls: []
+  size: 22890
+  timestamp: 1664723687849
+- conda: https://conda.anaconda.org/conda-forge/noarch/perl-xml-sax-1.02-pl5321hd8ed1ab_0.tar.bz2
+  sha256: 324ca36bdfff272c8ac06befcd9d1e9e1b22c1c6449bb3801d7e8b9c92acc6b6
+  md5: 3e3fac6ffef3fcda271b5511aecacaa8
+  depends:
+  - perl >=5.32.1,<6.0a0 *_perl5
+  - perl-file-temp
+  - perl-xml-namespacesupport
+  - perl-xml-sax-base
+  license: GPL-1.0-or-later OR Artistic-1.0-Perl
+  license_family: OTHER
+  purls: []
+  size: 43526
+  timestamp: 1664728646828
+- conda: https://conda.anaconda.org/conda-forge/noarch/perl-xml-sax-base-1.09-pl5321hd8ed1ab_0.tar.bz2
+  sha256: e652410a4d02bde1a1d7e0021ee84006113785676267c1e33642ba3d2ea9c254
+  md5: a4d9b02cd61c478c9cb58064307a1414
+  depends:
+  - perl >=5.32.1,<6.0a0 *_perl5
+  license: GPL-1.0-or-later OR Artistic-1.0-Perl
+  license_family: OTHER
+  purls: []
+  size: 27575
+  timestamp: 1664556675309
 - conda: https://conda.anaconda.org/conda-forge/noarch/python_abi-3.13-8_cp313.conda
   build_number: 8
   sha256: 210bffe7b121e651419cb196a2a63687b087497595c9be9d20ebe97dd06060a7
@@ -5841,37 +6533,37 @@ packages:
   purls: []
   size: 1392865
   timestamp: 1626955817826
-- conda: https://conda.anaconda.org/conda-forge/osx-64/libxml2-16-2.15.3-h7a90416_0.conda
-  sha256: 437f003e299d77403db42d17e532d686236f357ac5c3d6bf466558c697902597
-  md5: c74ae93cd7876e3a9c4b5569d5e29e34
+- conda: https://conda.anaconda.org/conda-forge/osx-64/libxml2-16-2.14.6-h7a90416_3.conda
+  sha256: df6509f79398b676e31643299f23eb70cd3c88fc69c504158f01a7b87b7b8c26
+  md5: 456072bcf4551054b5900088f8fe3857
   depends:
   - __osx >=11.0
-  - icu >=78.3,<79.0a0
+  - icu >=78.2,<79.0a0
   - libiconv >=1.18,<2.0a0
-  - liblzma >=5.8.3,<6.0a0
-  - libzlib >=1.3.2,<2.0a0
+  - liblzma >=5.8.2,<6.0a0
+  - libzlib >=1.3.1,<2.0a0
   constrains:
-  - libxml2 2.15.3
+  - libxml2 2.14.6
   license: MIT
   license_family: MIT
   purls: []
-  size: 496338
-  timestamp: 1776377250079
-- conda: https://conda.anaconda.org/conda-forge/osx-64/libxml2-2.15.3-h953d39d_0.conda
-  sha256: 24248928e63b5de45012c8ad3fd6b350ae1fe2fc355613bb89ee5f0a35835bea
-  md5: 33f30d4878d1f047da82a669c33b307d
+  size: 498929
+  timestamp: 1772216124092
+- conda: https://conda.anaconda.org/conda-forge/osx-64/libxml2-2.14.6-hd552753_3.conda
+  sha256: 6acdba95a2ba1bd6937416492ee43c3292e293295da7749abbf44cc34190eb86
+  md5: 61a77daffb2bc1cae4ea64bd4c457cb4
   depends:
   - __osx >=11.0
-  - icu >=78.3,<79.0a0
+  - icu >=78.2,<79.0a0
   - libiconv >=1.18,<2.0a0
-  - liblzma >=5.8.3,<6.0a0
-  - libxml2-16 2.15.3 h7a90416_0
-  - libzlib >=1.3.2,<2.0a0
+  - liblzma >=5.8.2,<6.0a0
+  - libxml2-16 2.14.6 h7a90416_3
+  - libzlib >=1.3.1,<2.0a0
   license: MIT
   license_family: MIT
   purls: []
-  size: 40836
-  timestamp: 1776377277986
+  size: 41626
+  timestamp: 1772216153733
 - conda: https://conda.anaconda.org/conda-forge/osx-64/libzlib-1.3.2-hbb4bfdb_2.conda
   sha256: 4c6da089952b2d70150c74234679d6f7ac04f4a98f9432dec724968f912691e7
   md5: 30439ff30578e504ee5e0b390afc8c65
@@ -6027,6 +6719,15 @@ packages:
   purls: []
   size: 12334471
   timestamp: 1703311001432
+- conda: https://conda.anaconda.org/conda-forge/osx-64/perl-capture-tiny-0.48-pl5321h694c41f_1.tar.bz2
+  sha256: f6110871238b099c802715da71777ba97c8acbb7fed6fd489b4561af70dfcfb6
+  md5: 6c656405cbf99f5ee247b2d32fe1a89e
+  depends:
+  - perl >=5.32.1,<5.33.0a0 *_perl5
+  license: Artistic-2.0
+  purls: []
+  size: 16506
+  timestamp: 1643301591370
 - conda: https://conda.anaconda.org/conda-forge/osx-64/perl-compress-raw-bzip2-2.214-pl5321h500dc9f_0.conda
   sha256: bc7ea5f147849e9ff9f96efa47bbc64f12ec5e123ead7aa035f1b4a547c56dc7
   md5: 5e5ba05b49747543e70b0b5466a9d672
@@ -6096,6 +6797,47 @@ packages:
   purls: []
   size: 65428
   timestamp: 1741353959926
+- conda: https://conda.anaconda.org/conda-forge/osx-64/perl-test-fatal-0.016-pl5321h694c41f_0.tar.bz2
+  sha256: 89cc09ae42bd67e8d163e8ec2d55298542f6323d478c0c43da726a24b406bce0
+  md5: 65e2639d42eb53bf71a4880a055135f9
+  depends:
+  - perl >=5.32.1,<5.33.0a0 *_perl5
+  - perl-try-tiny 0.31.*
+  license: GPL-1.0-or-later OR Artistic-1.0-Perl
+  purls: []
+  size: 19575
+  timestamp: 1666340118160
+- conda: https://conda.anaconda.org/conda-forge/osx-64/perl-test-warnings-0.031-pl5321h694c41f_0.conda
+  sha256: 123d1a047cf16206060fc22d8d40b2564837717b79df0565e87e3b376d0a4de3
+  md5: 73dff05aff476826a95fcb5d581c8169
+  depends:
+  - perl >=5.32.1,<5.33.0a0 *_perl5
+  license: GPL-1.0-or-later OR Artistic-1.0-Perl
+  purls: []
+  size: 21757
+  timestamp: 1669240454460
+- conda: https://conda.anaconda.org/conda-forge/osx-64/perl-try-tiny-0.31-pl5321h694c41f_0.tar.bz2
+  sha256: 5126071f435b09b98a08332527ac5c0bba89fa0ea334bd223330e818643571d1
+  md5: a89954e73ec2843e0f63c2c56ac22215
+  depends:
+  - perl >=5.32.1,<5.33.0a0 *_perl5
+  license: MIT
+  license_family: MIT
+  purls: []
+  size: 17748
+  timestamp: 1659695910308
+- conda: https://conda.anaconda.org/conda-forge/osx-64/perl-uri-5.34-pl5321h694c41f_0.conda
+  sha256: 2777cee8365e3c4ce37a0ec0a58abcf47f5ec1883c720dac0c1645390b572a27
+  md5: e6005b46f3facea13113625e4cc64321
+  depends:
+  - perl >=5.32.1,<5.33.0a0 *_perl5
+  - perl-business-isbn
+  - perl-test-fatal 0.016.*
+  - perl-test-warnings 0.031.*
+  license: GPL-1.0-or-later OR Artistic-1.0-Perl
+  purls: []
+  size: 78782
+  timestamp: 1758130578371
 - conda: https://conda.anaconda.org/conda-forge/osx-64/pkg-config-0.29.2-hf7e621a_1009.conda
   sha256: 636122606556b651ad4d0ac60c7ab6b379e98f390359a1f0c05ad6ba6fb3837f
   md5: 0b1b9f9e420e4a0e40879b61f94ae646
@@ -6941,38 +7683,38 @@ packages:
   purls: []
   size: 1577561
   timestamp: 1626955172521
-- conda: https://conda.anaconda.org/conda-forge/osx-arm64/libxml2-16-2.15.3-h6967ea9_0.conda
-  sha256: 43895a7517c055b8893531290f9dc48bd751eb04be04f14bbce3b6c71b052be6
-  md5: 6c8292c2ee808aeef2406083beaa6da7
+- conda: https://conda.anaconda.org/conda-forge/osx-arm64/libxml2-16-2.14.6-h6967ea9_3.conda
+  sha256: 953780f5e44167bae7b1d8cbb4fdd2152bc57d3c57ce83032bab47f772058a8a
+  md5: f3f5a4e9eb14f61f7808609a8ad90bdb
   depends:
   - __osx >=11.0
   - libiconv >=1.18,<2.0a0
-  - liblzma >=5.8.3,<6.0a0
-  - libzlib >=1.3.2,<2.0a0
+  - liblzma >=5.8.1,<6.0a0
+  - libzlib >=1.3.1,<2.0a0
   constrains:
-  - libxml2 2.15.3
+  - icu <0.0a0
+  - libxml2 2.14.6
+  license: MIT
+  license_family: MIT
+  purls: []
+  size: 468581
+  timestamp: 1766419747622
+- conda: https://conda.anaconda.org/conda-forge/osx-arm64/libxml2-2.14.6-h762f11a_3.conda
+  sha256: a5e1177147f625886be4255b4b5ba23580904b7dfb2f99f51997339c0c97c8d6
+  md5: aaa7b70a7d91b29e088145e68e0e45ae
+  depends:
+  - __osx >=11.0
+  - libiconv >=1.18,<2.0a0
+  - liblzma >=5.8.1,<6.0a0
+  - libxml2-16 2.14.6 h6967ea9_3
+  - libzlib >=1.3.1,<2.0a0
+  constrains:
   - icu <0.0a0
   license: MIT
   license_family: MIT
   purls: []
-  size: 465820
-  timestamp: 1776377317454
-- conda: https://conda.anaconda.org/conda-forge/osx-arm64/libxml2-2.15.3-heed7d32_0.conda
-  sha256: 4d9c117b2dd222cf891710d5f6a570ebb275479979843a1477ac54ed50907b40
-  md5: 0c1fdc80534d8f25fd74722aba81f044
-  depends:
-  - __osx >=11.0
-  - libiconv >=1.18,<2.0a0
-  - liblzma >=5.8.3,<6.0a0
-  - libxml2-16 2.15.3 h6967ea9_0
-  - libzlib >=1.3.2,<2.0a0
-  constrains:
-  - icu <0.0a0
-  license: MIT
-  license_family: MIT
-  purls: []
-  size: 41663
-  timestamp: 1776377341241
+  size: 41857
+  timestamp: 1766419771141
 - conda: https://conda.anaconda.org/conda-forge/osx-arm64/libzlib-1.3.2-h8088a28_2.conda
   sha256: 361415a698514b19a852f5d1123c5da746d4642139904156ddfca7c922d23a05
   md5: bc5a5721b6439f2f62a84f2548136082
@@ -7129,6 +7871,15 @@ packages:
   purls: []
   size: 14439531
   timestamp: 1703311335652
+- conda: https://conda.anaconda.org/conda-forge/osx-arm64/perl-capture-tiny-0.48-pl5321hce30654_1.tar.bz2
+  sha256: 16bd59b9fd3dcd7f54c70844d6227c4811b317ac4530d48b48f4f8374277cb72
+  md5: aa3af199b5675fa543e985c7e5d2e625
+  depends:
+  - perl >=5.32.1,<5.33.0a0 *_perl5
+  license: Artistic-2.0
+  purls: []
+  size: 16478
+  timestamp: 1655720247857
 - conda: https://conda.anaconda.org/conda-forge/osx-arm64/perl-compress-raw-bzip2-2.214-pl5321h2ddc596_0.conda
   sha256: ef4c03b93bda20fbf1e14aaed8d2dfab47be84c87a2ebcad33304dcd91ff963e
   md5: 11449b58306c8d2334895cee4420b73b
@@ -7198,6 +7949,47 @@ packages:
   purls: []
   size: 63402
   timestamp: 1741353964208
+- conda: https://conda.anaconda.org/conda-forge/osx-arm64/perl-test-fatal-0.016-pl5321hce30654_0.conda
+  sha256: 672925c363abac9f641e084b8631a6d746cff3ba5136bcd513cb1182f539af16
+  md5: caa61b4b22be0e1c782845288eff165a
+  depends:
+  - perl >=5.32.1,<5.33.0a0 *_perl5
+  - perl-try-tiny 0.32.*
+  license: GPL-1.0-or-later OR Artistic-1.0-Perl
+  purls: []
+  size: 20911
+  timestamp: 1745577128370
+- conda: https://conda.anaconda.org/conda-forge/osx-arm64/perl-test-warnings-0.031-pl5321hce30654_0.conda
+  sha256: e51368b2e100a528428a905d4f01d7ec2f84a038671871dbabcb447d4c10983a
+  md5: 08cf1bedaff405144a9acab5b8c431f3
+  depends:
+  - perl >=5.32.1,<5.33.0a0 *_perl5
+  license: GPL-1.0-or-later OR Artistic-1.0-Perl
+  purls: []
+  size: 23112
+  timestamp: 1745394661883
+- conda: https://conda.anaconda.org/conda-forge/osx-arm64/perl-try-tiny-0.32-pl5321hce30654_1.conda
+  sha256: f9859dda0cc7aa6612ec844bfca8b26d23f4d097b8648cec2413892a8e17ec4b
+  md5: b0b25abf3a071f16647ccfd28a888148
+  depends:
+  - perl >=5.32.1,<5.33.0a0 *_perl5
+  license: MIT
+  license_family: MIT
+  purls: []
+  size: 19416
+  timestamp: 1745568413437
+- conda: https://conda.anaconda.org/conda-forge/osx-arm64/perl-uri-5.34-pl5321hce30654_0.conda
+  sha256: 4d8bdb5aa19d73976792b212cb2833bb4cd007f4f5b6702fe10a54b3fa99f1be
+  md5: d99fa4323f6e9b882b738657b74549b3
+  depends:
+  - perl >=5.32.1,<5.33.0a0 *_perl5
+  - perl-business-isbn
+  - perl-test-fatal 0.016.*
+  - perl-test-warnings 0.031.*
+  license: GPL-1.0-or-later OR Artistic-1.0-Perl
+  purls: []
+  size: 78951
+  timestamp: 1758130613656
 - conda: https://conda.anaconda.org/conda-forge/osx-arm64/pkg-config-0.29.2-hde07d2e_1009.conda
   sha256: d82f4655b2d67fe12eefe1a3eea4cd27d33fa41dbc5e9aeab5fd6d3d2c26f18a
   md5: b4f41e19a8c20184eec3aaf0f0953293
