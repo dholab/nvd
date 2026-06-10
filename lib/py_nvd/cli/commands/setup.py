@@ -450,6 +450,7 @@ def _install_shell_hook(rc_file: Path) -> bool:
     hook_line = f'eval "$({SHELL_HOOK_MARKER})"'
     hook_block = f"""
 # NVD shell integration
+export PATH="$HOME/.local/bin:$PATH"
 {hook_line}
 """
 
