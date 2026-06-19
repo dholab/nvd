@@ -76,6 +76,10 @@ rust-script = ">=0.36.0"
 [tool.pixi.pypi-dependencies]
 nvd = { path = ".", editable = true }
 
+[tool.pixi.tasks]
+e2e-test = "NVD_E2E_SHOW_PROGRESS=1 uv run pytest tests/test_nextflow_integration.py -m 'slow and network' -q -s"
+e2e-test-ci = "uv run pytest tests/test_nextflow_integration.py -m 'slow and network' -q"
+
 [dependency-groups]
 dev = [
   "basedpyright>=1.28.4",
@@ -123,7 +127,7 @@ ignore = ["D", "S101", "E501", "PTH", "TD003", "G004", "TRY300"]
 
 [tool.pytest.ini_options]
 pythonpath = ["bin", "lib"]
-testpaths = ["lib/py_nvd", "bin"]
+testpaths = ["lib/py_nvd", "bin", "tests"]
 markers = [
   "slow: marks tests as slow (deselect with '-m \"not slow\"')",
   "network: marks tests as requiring network access (deselect with '-m \"not network\"')",

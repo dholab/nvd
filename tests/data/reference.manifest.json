@@ -35,8 +35,8 @@
   "description": "Mini viral references and SRA samples for NVD integration tests.",
   "files": {
     "integration_sra_samplesheet.csv": {
-      "bytes": 176,
-      "sha256": "e79c7b0334d0f1bfa917c888be1a47fbc9f1d76be8378040212cb7cf08ea8dae"
+      "bytes": 224,
+      "sha256": "59bbfbf6ef2273bdbdb6e9bb48eda937af953ea82d7505f842d802204b276711"
     },
     "mini_virus_blast.ndb": {
       "bytes": 131072,
@@ -118,6 +118,18 @@
       "size_mb": 57,
       "srr": "ERR17356125",
       "taxid": 10244
+    },
+    {
+      "expected_organism": "Orf virus",
+      "expected_tasks": [
+        "megablast",
+        "blastn"
+      ],
+      "platform": "illumina",
+      "sample_id": "nigerian_orf_srr38321624",
+      "size_mb": 210,
+      "srr": "SRR38321624",
+      "taxid": 10258
     }
   ],
   "tool_versions": {

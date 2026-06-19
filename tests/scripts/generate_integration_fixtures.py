@@ -58,6 +58,15 @@ SRA_RUNS = (
         "taxid": 10244,
         "size_mb": 57,
     },
+    {
+        "sample_id": "nigerian_orf_srr38321624",
+        "srr": "SRR38321624",
+        "platform": "illumina",
+        "expected_organism": "Orf virus",
+        "taxid": 10258,
+        "size_mb": 210,
+        "expected_tasks": ["megablast", "blastn"],
+    },
 )
 
 
