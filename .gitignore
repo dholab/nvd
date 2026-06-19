@@ -99,3 +99,5 @@
 !/tests
 !/tests/data
 !/tests/data/*
+!/tests/scripts
+!/tests/scripts/*.py

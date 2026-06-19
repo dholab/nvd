@@ -1,0 +1,126 @@
+{
+  "commands": [
+    [
+      "makeblastdb",
+      "-in",
+      "tests/data/mini_virus_reference.fasta",
+      "-dbtype",
+      "nucl",
+      "-parse_seqids",
+      "-out",
+      "tests/data/mini_virus_blast"
+    ],
+    [
+      "blastdbcmd",
+      "-db",
+      "tests/data/mini_virus_blast",
+      "-entry",
+      "all"
+    ],
+    [
+      "deacon",
+      "index",
+      "build",
+      "-k",
+      "31",
+      "-w",
+      "1",
+      "-o",
+      "tests/data/mini_virus_deacon.k31w1.idx",
+      "tests/data/mini_virus_reference.fasta"
+    ]
+  ],
+  "description": "Mini viral references and SRA samples for NVD integration tests.",
+  "files": {
+    "integration_sra_samplesheet.csv": {
+      "bytes": 176,
+      "sha256": "e79c7b0334d0f1bfa917c888be1a47fbc9f1d76be8378040212cb7cf08ea8dae"
+    },
+    "mini_virus_blast.ndb": {
+      "bytes": 131072,
+      "sha256": "03ef6dda8b4388833ffc98454660ed45600c867f0b0c7e49c911ffbb3ffb4cf0"
+    },
+    "mini_virus_blast.nhr": {
+      "bytes": 267,
+      "sha256": "a4921c0f0a6bc6f43966ab31e3ff828aded212ec91249e122316a803943b6e26"
+    },
+    "mini_virus_blast.nin": {
+      "bytes": 216,
+      "sha256": "d9c96b373be771d8794ed1a5eff3ae79724deccbcd1b864a19c201ef9d8878a0"
+    },
+    "mini_virus_blast.njs": {
+      "bytes": 652,
+      "sha256": "007c679e53f4c4f955789d729fd6b86cf48838e812bf425c621c39d3fad4c035"
+    },
+    "mini_virus_blast.nog": {
+      "bytes": 44,
+      "sha256": "9737c109bd5ffe7d9ba15395316d061b5b564329611151a4a7c9376d7f4924f2"
+    },
+    "mini_virus_blast.nos": {
+      "bytes": 68,
+      "sha256": "cf19059e96683c7c91be9a9325ebdbb69f8d5e07b3564046f0c12a77ee525cb0"
+    },
+    "mini_virus_blast.not": {
+      "bytes": 44,
+      "sha256": "2fe74ed407f31bcf46d19d27aa6910733f0d9d3861980227f1e06cb61132a444"
+    },
+    "mini_virus_blast.nsq": {
+      "bytes": 133510,
+      "sha256": "716cbafde63d549f292105af221dac9ee1fc0d432e2e5f851c830939c8d02f7f"
+    },
+    "mini_virus_blast.ntf": {
+      "bytes": 65536,
+      "sha256": "a4846cf83c6cd188b3fc3f9fa4f1f1d3c33692a85065b54dc1e42095af3e7552"
+    },
+    "mini_virus_blast.nto": {
+      "bytes": 16,
+      "sha256": "6256a4b0be4127b6ff9fa076fe7595961bc296521bd01220f64c6f95768c1fdd"
+    },
+    "mini_virus_deacon.k31w1.idx": {
+      "bytes": 2857075,
+      "sha256": "b1c6bad8f01f9b89ea8b350070b04418710262526af51269993180c89f9117e8"
+    },
+    "mini_virus_reference.fasta": {
+      "bytes": 541795,
+      "sha256": "d57623a3af3a52372a8fa4f5eb450fa648d2804838825d1f8010001e7fbebe1f"
+    }
+  },
+  "maintainer_note": "Regenerate with tests/scripts/generate_integration_fixtures.py; NVD runtime code should consume these files, not build them.",
+  "reference_accessions": [
+    "NC_005336.1",
+    "NC_003310.1",
+    "NC_063383.1"
+  ],
+  "reference_fasta_url": "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=nuccore&id=NC_005336.1,NC_003310.1,NC_063383.1&rettype=fasta&retmode=text",
+  "sra_runs": [
+    {
+      "expected_organism": "Orf virus",
+      "platform": "illumina",
+      "sample_id": "orf_virus_ov_pt001_2024",
+      "size_mb": 33,
+      "srr": "ERR17363849",
+      "taxid": 10258
+    },
+    {
+      "expected_organism": "Orf virus",
+      "platform": "illumina",
+      "sample_id": "orf_virus_hs_pt001_2025",
+      "size_mb": 89,
+      "srr": "ERR17363848",
+      "taxid": 10258
+    },
+    {
+      "expected_organism": "Monkeypox virus",
+      "platform": "illumina",
+      "sample_id": "monkeypox_pt1020_2026",
+      "size_mb": 57,
+      "srr": "ERR17356125",
+      "taxid": 10244
+    }
+  ],
+  "tool_versions": {
+    "blastdbcmd": "blastdbcmd: 2.16.0+\n Package: blast 2.16.0, build Mar 28 2025 16:33:14",
+    "deacon": "deacon 0.15.0",
+    "makeblastdb": "makeblastdb: 2.16.0+\n Package: blast 2.16.0, build Mar 28 2025 16:33:14"
+  }
+}

@@ -1,0 +1,4 @@
+sample_id,srr,platform,fastq1,fastq2
+orf_virus_ov_pt001_2024,ERR17363849,illumina,,
+orf_virus_hs_pt001_2025,ERR17363848,illumina,,
+monkeypox_pt1020_2026,ERR17356125,illumina,,
