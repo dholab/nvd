@@ -6,9 +6,10 @@
   "description": "/Users/nickminor/Documents/bioinformatics/nvd/tests/data/mini_virus_reference.fasta",
   "number-of-letters": 534029,
   "number-of-sequences": 3,
-  "last-updated": "2026-06-19T10:35:00",
+  "last-updated": "2026-06-19T15:02:00",
   "number-of-volumes": 1,
-  "bytes-total": 330773,
+  "number-of-taxids": 2,
+  "bytes-total": 330780,
   "bytes-to-cache": 133726,
   "files": [
     "mini_virus_blast.ndb",

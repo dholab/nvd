@@ -7,6 +7,8 @@
       "-dbtype",
       "nucl",
       "-parse_seqids",
+      "-taxid_map",
+      "tests/data/mini_virus_blast_taxid_map.tsv",
       "-out",
       "tests/data/mini_virus_blast"
     ],
@@ -41,16 +43,16 @@
       "sha256": "03ef6dda8b4388833ffc98454660ed45600c867f0b0c7e49c911ffbb3ffb4cf0"
     },
     "mini_virus_blast.nhr": {
-      "bytes": 267,
-      "sha256": "a4921c0f0a6bc6f43966ab31e3ff828aded212ec91249e122316a803943b6e26"
+      "bytes": 270,
+      "sha256": "c4c3863275f450ef89f0498a2137241de2d9f5d59bf3a8e2347c7a5d672226ee"
     },
     "mini_virus_blast.nin": {
       "bytes": 216,
-      "sha256": "d9c96b373be771d8794ed1a5eff3ae79724deccbcd1b864a19c201ef9d8878a0"
+      "sha256": "04e0b99ef12841cacc3fd9b219f843ff9a4d75f1d8c81eb7b1ce35fb5dfe1f6e"
     },
     "mini_virus_blast.njs": {
-      "bytes": 652,
-      "sha256": "007c679e53f4c4f955789d729fd6b86cf48838e812bf425c621c39d3fad4c035"
+      "bytes": 677,
+      "sha256": "6d89f37fac78a85c9bf32bf128c6724f7197e98f47ac5180c2ea335bfbe86cbf"
     },
     "mini_virus_blast.nog": {
       "bytes": 44,
@@ -62,7 +64,7 @@
     },
     "mini_virus_blast.not": {
       "bytes": 44,
-      "sha256": "2fe74ed407f31bcf46d19d27aa6910733f0d9d3861980227f1e06cb61132a444"
+      "sha256": "d7dc4c23c38a2230b16c630795bebe65d102328ecd3a30ab73ab2dc6677fe134"
     },
     "mini_virus_blast.nsq": {
       "bytes": 133510,
@@ -70,11 +72,11 @@
     },
     "mini_virus_blast.ntf": {
       "bytes": 65536,
-      "sha256": "a4846cf83c6cd188b3fc3f9fa4f1f1d3c33692a85065b54dc1e42095af3e7552"
+      "sha256": "ac8ce1737f3cb66d87f196a885a5d4e9b6413006d242a2b447c7ad51299e826c"
     },
     "mini_virus_blast.nto": {
-      "bytes": 16,
-      "sha256": "6256a4b0be4127b6ff9fa076fe7595961bc296521bd01220f64c6f95768c1fdd"
+      "bytes": 20,
+      "sha256": "3c0f0cf17de769c231eeed1a9fef9f2298a877e3d9cd92bc03129afe714a864a"
     },
     "mini_virus_deacon.k31w1.idx": {
       "bytes": 2857075,

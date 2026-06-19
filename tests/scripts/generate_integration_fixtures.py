@@ -27,6 +27,12 @@ REFERENCE_ACCESSIONS = (
     "NC_063383.1",  # Monkeypox virus complete genome, clade 2
 )
 
+REFERENCE_TAXIDS = {
+    "NC_005336.1": 10258,
+    "NC_003310.1": 10244,
+    "NC_063383.1": 10244,
+}
+
 SRA_RUNS = (
     {
         "sample_id": "orf_virus_ov_pt001_2024",
@@ -59,6 +65,7 @@ SRA_RUNS = (
 class FixturePaths:
     data_dir: Path
     reference_fasta: Path
+    blast_taxid_map: Path
     samplesheet: Path
     manifest: Path
     deacon_index: Path
@@ -82,6 +89,7 @@ def fixture_paths(data_dir: Path) -> FixturePaths:
     return FixturePaths(
         data_dir=data_dir,
         reference_fasta=data_dir / "mini_virus_reference.fasta",
+        blast_taxid_map=data_dir / "mini_virus_blast_taxid_map.tsv",
         samplesheet=data_dir / "integration_sra_samplesheet.csv",
         manifest=data_dir / "reference.manifest.json",
         deacon_index=data_dir / "mini_virus_deacon.k31w1.idx",
@@ -130,6 +138,11 @@ def write_samplesheet(paths: FixturePaths) -> None:
         for run_info in SRA_RUNS
     )
     paths.samplesheet.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def write_blast_taxid_map(paths: FixturePaths) -> None:
+    lines = [f"{accession}\t{taxid}" for accession, taxid in REFERENCE_TAXIDS.items()]
+    paths.blast_taxid_map.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def remove_previous_outputs(paths: FixturePaths) -> None:
@@ -222,6 +235,7 @@ def main() -> None:
 
     reference_url = fetch_reference_fasta(paths)
     write_samplesheet(paths)
+    write_blast_taxid_map(paths)
 
     commands = [
         [
@@ -231,6 +245,8 @@ def main() -> None:
             "-dbtype",
             "nucl",
             "-parse_seqids",
+            "-taxid_map",
+            str(paths.blast_taxid_map),
             "-out",
             str(paths.blast_prefix),
         ],

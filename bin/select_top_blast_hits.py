@@ -202,7 +202,7 @@ def main() -> None:
         return
 
     top_k_lf = select_top_hits(args.input_file, args.blast_retention_count)
-    top_k_lf.sink_csv(args.output_file, separator="\t")
+    top_k_lf.collect().write_csv(args.output_file, separator="\t")
 
 
 if __name__ == "__main__":
