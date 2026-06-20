@@ -130,6 +130,15 @@ def make_e2e_run_dir() -> Path:
     return run_dir
 
 
+def integration_experimental_enabled() -> bool:
+    # The pipeline already has an `experimental` parameter; this environment
+    # variable only tells the test harness whether to pass that parameter and
+    # assert the extra outputs. A pytest option would make that relationship more
+    # explicit, but would add plumbing for little gain compared with the existing
+    # just recipes and CI entrypoints.
+    return os.environ.get("NVD_INTEGRATION_EXPERIMENTAL") == "1"
+
+
 def local_sample_row(sample: dict[str, Any], local_fastq_dir: Path) -> dict[str, str]:
     fastq1 = sample.get("fastq1")
     fastq2 = sample.get("fastq2")
@@ -193,7 +202,7 @@ def write_augmented_samplesheet(run_dir: Path) -> Path:
 def run_nextflow() -> tuple[subprocess.CompletedProcess[str], Path]:
     profile = os.environ.get("NVD_INTEGRATION_PROFILE", "test")
     show_progress = os.environ.get("NVD_E2E_SHOW_PROGRESS") == "1"
-    experimental = os.environ.get("NVD_INTEGRATION_EXPERIMENTAL") == "1"
+    experimental = integration_experimental_enabled()
     run_dir = make_e2e_run_dir()
     results_dir = run_dir / "results"
     work_dir = run_dir / "work"
@@ -263,6 +272,7 @@ def test_mini_sra_viral_pipeline_completes() -> None:
     """Tiny SRA runs should complete through enrichment, assembly, and BLAST."""
     manifest = load_manifest()
     verify_fixture_checksums(manifest)
+    experimental = integration_experimental_enabled()
 
     completed, run_dir = run_nextflow()
     assert completed.returncode == 0, (
