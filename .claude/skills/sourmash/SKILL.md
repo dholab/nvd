@@ -208,6 +208,43 @@ sourmash gather matching-hashes.sig db-matches.sig -o gather.csv
 
 Remember that containment wording is easy to invert: `search --containment Q DB` reports query-in-match containment. For metagenome profiling, `gather`/`prefetch` usually use the metagenome sketch as the query.
 
+## Sample similarity QC
+
+NVD also uses the query metagenome sketches for experimental sample-similarity QC. This is not taxonomic profiling and should live in its own subworkflow:
+
+```nextflow
+workflow SAMPLE_SIMILARITY_QC
+```
+
+Use sourmash names only for processes that directly invoke sourmash:
+
+```nextflow
+process SOURMASH_COLLECT_QUERY_SKETCHES
+process SOURMASH_COMPARE_QUERY_SKETCHES
+```
+
+Use domain names for Python reporting and plotting processes that consume sourmash outputs:
+
+```nextflow
+process COMPUTE_SAMPLE_SKETCH_DISTANCES
+process COMPUTE_SAMPLE_ORDINATION
+process REPORT_POSSIBLE_SAMPLE_MIXUPS
+process PLOT_SAMPLE_ORDINATION
+```
+
+The basic flow mirrors nt-terroir, but without assuming nt-terroir-specific location/date metadata:
+
+```text
+query sketches
+  -> sourmash sig cat
+  -> sourmash compare (abund and noabund)
+  -> pairwise distance TSVs
+  -> nearest-neighbor / possible-mix-up TSVs
+  -> PCoA coordinates and ordination plots
+```
+
+Be conservative about “possible mix-up” language. High sketch similarity between distinct samples is a candidate signal, not proof. Prefer reporting nearest neighbors and thresholded candidates over making hard pass/fail claims until the project has validated thresholds.
+
 ## Branchwater caveats
 
 Branchwater is the right default for NVD’s future high-throughput branch, but do not paper over these differences:

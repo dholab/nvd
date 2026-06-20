@@ -9894,6 +9894,7 @@ packages:
   - loguru>=0.7.3
   - lxml>=5.4.0
   - more-itertools>=10.7.0
+  - numpy>=2.0.0
   - pandas>=2.2.3
   - polars>=1.27.1
   - pydantic>=2.12.5

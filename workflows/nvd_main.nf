@@ -18,6 +18,7 @@ include { EXTRACT_HUMAN_VIRUSES   } from "../subworkflows/extract_human_virus_co
 include { CLASSIFY_WITH_MEGABLAST } from "../subworkflows/classify_with_megablast"
 include { CLASSIFY_WITH_BLASTN    } from "../subworkflows/classify_with_blastn"
 include { METAGENOME_PROFILING    } from "../subworkflows/metagenome_profiling"
+include { SAMPLE_SIMILARITY_QC    } from "../subworkflows/sample_similarity_qc"
 include { REPORTING               } from "../subworkflows/reporting"
 include { COMPUTE_RUN_CONTEXT ; ENSURE_TAXONOMY } from "../modules/utils"
 
@@ -58,7 +59,8 @@ workflow NVD_MAIN {
   PREPROCESS_READS(GATHER_READS.out.reads)
 
   if (params.experimental == true) {
-    METAGENOME_PROFILING(PREPROCESS_READS.out.reads)
+    metagenome_profiling = METAGENOME_PROFILING(PREPROCESS_READS.out.reads)
+    SAMPLE_SIMILARITY_QC(metagenome_profiling.query_sketches)
   }
 
   PREPROCESS_CONTIGS(PREPROCESS_READS.out.reads)
