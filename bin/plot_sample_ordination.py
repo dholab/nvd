@@ -8,6 +8,11 @@ import argparse
 import altair as alt
 import polars as pl
 
+METRIC_TITLES = {
+    "abund": "Ordination of abundance-weighted FracMinHash angular distances",
+    "noabund": "Ordination of FracMinHash Jaccard distances",
+}
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Plot sample sketch PCoA ordination")
@@ -48,7 +53,10 @@ def build_chart(
             tooltip=["sample_id:N", "axis_1:Q", "axis_2:Q"],
         )
         .properties(
-            title=f"Sample sketch ordination ({metric})",
+            title=METRIC_TITLES.get(
+                metric,
+                f"Ordination of sample sketch distances ({metric})",
+            ),
             width=720,
             height=520,
         )

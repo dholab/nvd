@@ -49,7 +49,7 @@ process REPORT_POSSIBLE_SAMPLE_MIXUPS {
     tuple val(metric), path(pairwise_tsv)
 
     output:
-    tuple val(metric), path("nearest_sample_neighbors.${metric}.tsv"), path("possible_sample_mixups.${metric}.tsv"), emit: reports
+    tuple val(metric), path("nearest_sample_neighbors.${metric}.tsv"), path("possible_sample_mixup_candidates.${metric}.tsv"), emit: reports
 
     script:
     """
@@ -57,7 +57,27 @@ process REPORT_POSSIBLE_SAMPLE_MIXUPS {
         --metric ${metric} \
         --pairwise ${pairwise_tsv} \
         --nearest-neighbors-output nearest_sample_neighbors.${metric}.tsv \
-        --possible-mixups-output possible_sample_mixups.${metric}.tsv
+        --candidate-output possible_sample_mixup_candidates.${metric}.tsv
+    """
+}
+
+process SUMMARIZE_SAMPLE_SIMILARITY_CANDIDATE_EVIDENCE {
+
+    tag "candidate_evidence"
+    label "low"
+
+    input:
+    path(candidate_reports)
+
+    output:
+    path("sample_similarity_candidate_evidence.tsv"), emit: evidence
+
+    script:
+    def candidate_list = candidate_reports.collect { report -> "\"${report}\"" }.join(" ")
+    """
+    sample_similarity_candidate_evidence.py \
+        --candidates ${candidate_list} \
+        --output sample_similarity_candidate_evidence.tsv
     """
 }
 

@@ -11,6 +11,17 @@ import polars as pl
 
 MIN_MATRIX_ROWS = 2
 
+METRIC_METHODS = {
+    "abund": (
+        "abundance-weighted FracMinHash angular similarity",
+        "1 - angular similarity",
+    ),
+    "noabund": (
+        "FracMinHash Jaccard similarity",
+        "1 - Jaccard similarity",
+    ),
+}
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -70,13 +81,21 @@ def load_matrix(path: Path) -> pl.DataFrame:
 
 
 def add_distance_columns(pairwise: pl.DataFrame, metric: str) -> pl.DataFrame:
+    similarity_method, distance_definition = METRIC_METHODS.get(
+        metric,
+        (f"sourmash compare {metric} similarity", "1 - similarity"),
+    )
     return pairwise.with_columns(
         pl.lit(metric).alias("metric"),
+        pl.lit(similarity_method).alias("similarity_method"),
+        pl.lit(distance_definition).alias("distance_definition"),
         (pl.lit(1.0) - pl.col("similarity")).alias("distance"),
         (pl.col("sample_a") == pl.col("sample_b")).alias("is_self_pair"),
     ).select(
         [
             "metric",
+            "similarity_method",
+            "distance_definition",
             "sample_a",
             "sample_b",
             "similarity",
