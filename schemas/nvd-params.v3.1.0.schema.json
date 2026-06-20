@@ -134,6 +134,54 @@
       "maximum": 1,
       "description": "Minimum relative proportion of minimizers for virus read enrichment (0.0-1.0)"
     },
+    "sourmash_ref_path": {
+      "type": ["string", "null"],
+      "default": null,
+      "format": "path",
+      "description": "Path to a prebuilt sourmash reference sketch database. When set, this takes precedence over sourmash_ref_url and sourmash_ref_fasta."
+    },
+    "sourmash_ref_url": {
+      "type": ["string", "null"],
+      "default": null,
+      "format": "uri",
+      "description": "URL to download a prebuilt sourmash reference sketch database when sourmash_ref_path is not set."
+    },
+    "sourmash_ref_fasta": {
+      "type": ["string", "null"],
+      "default": null,
+      "format": "path",
+      "description": "Local FASTA to sketch as an experimental sourmash reference database when sourmash_ref_path and sourmash_ref_url are not set."
+    },
+    "sourmash_lineages_path": {
+      "type": ["string", "null"],
+      "default": null,
+      "format": "path",
+      "description": "Path to a sourmash taxonomy lineages CSV matching the reference sketch database. When set, this takes precedence over sourmash_lineages_url."
+    },
+    "sourmash_lineages_url": {
+      "type": ["string", "null"],
+      "default": null,
+      "format": "uri",
+      "description": "URL to download a sourmash taxonomy lineages CSV when sourmash_lineages_path is not set."
+    },
+    "sourmash_ksize": {
+      "type": "integer",
+      "default": 31,
+      "minimum": 1,
+      "description": "K-mer size for experimental sourmash sketching"
+    },
+    "sourmash_scaled": {
+      "type": "integer",
+      "default": 50,
+      "minimum": 1,
+      "description": "Scaled value for experimental sourmash sketching"
+    },
+    "sourmash_threshold_bp": {
+      "type": "integer",
+      "default": 50,
+      "minimum": 0,
+      "description": "Minimum estimated base-pair overlap for experimental sourmash gather"
+    },
     "preprocess": {
       "type": "boolean",
       "default": false,

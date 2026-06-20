@@ -6,6 +6,7 @@ import json
 import re
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pydantic.dataclasses import dataclass
@@ -172,6 +173,46 @@ class NvdParams(BaseModel):
     virus_rel_threshold: float = Field(
         0.0,
         description="Minimum relative proportion of minimizers for virus read enrichment (0.0-1.0)",
+        json_schema_extra={"category": "Databases"},
+    )
+    sourmash_ref_path: Path | None = Field(
+        None,
+        description="Path to a prebuilt sourmash reference sketch database",
+        json_schema_extra={"category": "Databases"},
+    )
+    sourmash_ref_url: str | None = Field(
+        None,
+        description="URL to download a prebuilt sourmash reference sketch database",
+        json_schema_extra={"category": "Databases"},
+    )
+    sourmash_ref_fasta: Path | None = Field(
+        None,
+        description="Local FASTA to sketch as an experimental sourmash reference database",
+        json_schema_extra={"category": "Databases"},
+    )
+    sourmash_lineages_path: Path | None = Field(
+        None,
+        description="Path to a sourmash taxonomy lineages CSV matching the reference sketch database",
+        json_schema_extra={"category": "Databases"},
+    )
+    sourmash_lineages_url: str | None = Field(
+        None,
+        description="URL to download a sourmash taxonomy lineages CSV matching the reference sketch database",
+        json_schema_extra={"category": "Databases"},
+    )
+    sourmash_ksize: int = Field(
+        31,
+        description="K-mer size for experimental sourmash sketching",
+        json_schema_extra={"category": "Databases"},
+    )
+    sourmash_scaled: int = Field(
+        50,
+        description="Scaled value for experimental sourmash sketching",
+        json_schema_extra={"category": "Databases"},
+    )
+    sourmash_threshold_bp: int = Field(
+        50,
+        description="Minimum estimated base-pair overlap for experimental sourmash gather",
         json_schema_extra={"category": "Databases"},
     )
 
@@ -413,6 +454,8 @@ class NvdParams(BaseModel):
         "virus_kmer_size",
         "virus_window_size",
         "virus_abs_threshold",
+        "sourmash_ksize",
+        "sourmash_scaled",
     )
     @classmethod
     def validate_positive_int(cls, v: int) -> int:
@@ -431,12 +474,50 @@ class NvdParams(BaseModel):
             raise ValueError(msg)
         return v
 
+    @field_validator("sourmash_threshold_bp")
+    @classmethod
+    def validate_non_negative_sourmash_threshold(cls, v: int) -> int:
+        """Validate sourmash_threshold_bp is non-negative."""
+        if v < 0:
+            msg = f"Must be >= 0, got {v}"
+            raise ValueError(msg)
+        return v
+
     @field_validator("max_read_length")
     @classmethod
     def validate_max_read_length(cls, v: int | None) -> int | None:
         """Validate max_read_length is positive if set."""
         if v is not None and v < 1:
             msg = f"Must be >= 1, got {v}"
+            raise ValueError(msg)
+        return v
+
+    @field_validator(
+        "sourmash_ref_path",
+        "sourmash_ref_fasta",
+        "sourmash_lineages_path",
+        mode="before",
+    )
+    @classmethod
+    def validate_not_url_path(cls, v: object) -> object:
+        """Validate that local sourmash path params are not URLs."""
+        if v is None:
+            return v
+        parsed = urlparse(str(v))
+        if parsed.scheme in {"http", "https"}:
+            msg = "Use the corresponding *_url param for remote sourmash resources"
+            raise ValueError(msg)
+        return v
+
+    @field_validator("sourmash_ref_url", "sourmash_lineages_url")
+    @classmethod
+    def validate_url(cls, v: str | None) -> str | None:
+        """Validate that sourmash URL params are HTTP(S) URLs."""
+        if v is None:
+            return v
+        parsed = urlparse(v)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            msg = f"Expected an HTTP(S) URL, got {v}"
             raise ValueError(msg)
         return v
 
