@@ -58,9 +58,12 @@ workflow NVD_MAIN {
 
   PREPROCESS_READS(GATHER_READS.out.reads)
 
+  ch_sourmash_tax_reports = channel.empty()
+
   if (params.experimental == true) {
     metagenome_profiling = METAGENOME_PROFILING(PREPROCESS_READS.out.reads)
     SAMPLE_SIMILARITY_QC(metagenome_profiling.query_sketches)
+    ch_sourmash_tax_reports = metagenome_profiling.tax_reports
   }
 
   PREPROCESS_CONTIGS(PREPROCESS_READS.out.reads)
@@ -94,6 +97,7 @@ workflow NVD_MAIN {
     PREPROCESS_READS.out.virus_enrichment_stats,
     COMPUTE_RUN_CONTEXT.out.ready,
     ch_run_context,
+    ch_sourmash_tax_reports,
     workflow.runName,
   )
 

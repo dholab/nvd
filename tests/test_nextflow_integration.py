@@ -341,6 +341,7 @@ def test_mini_sra_viral_pipeline_completes() -> None:
         ref_dir = sourmash_root / "reference_profiling" / "reference"
         gather_dir = sourmash_root / "reference_profiling" / "gather"
         taxonomy_dir = sourmash_root / "reference_profiling" / "taxonomy"
+        taxburst_dir = sourmash_root / "reference_profiling" / "reports" / "taxburst"
 
         ref_sketches = sorted(ref_dir.glob("sourmash_reference.k31.scaled50.sig.zip"))
         assert ref_sketches, f"Missing sourmash reference sketch in {ref_dir}"
@@ -373,3 +374,9 @@ def test_mini_sra_viral_pipeline_completes() -> None:
                 row.get("rank") == "species" and expected_species in row.get("lineage", "")
                 for row in tax_rows
             ), f"No {expected_species} species-level sourmash tax row for {sample_id}"
+
+            taxburst_html = taxburst_dir / f"{sample_id}.sourmash.taxburst.html"
+            taxburst_json = taxburst_dir / f"{sample_id}.sourmash.taxburst.json"
+            for report in (taxburst_html, taxburst_json):
+                assert report.is_file(), f"Missing sourmash taxburst report: {report}"
+                assert report.stat().st_size > 0, f"Empty sourmash taxburst report: {report}"
