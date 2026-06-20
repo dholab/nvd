@@ -106,14 +106,14 @@ process DEACON_DEPLETE {
 
     script:
     """
-    deacon filter \\
-        --deplete \\
-        --threads ${task.cpus} \\
-        --abs-threshold ${params.host_abs_threshold} \\
-        --rel-threshold ${params.host_rel_threshold} \\
-        --summary ${sample_id}.deacon.json \\
-        --output ${sample_id}.depleted.fastq.gz \\
-        ${index} \\
+    deacon filter \
+        --deplete \
+        --threads ${task.cpus} \
+        --abs-threshold ${params.host_abs_threshold} \
+        --rel-threshold ${params.host_rel_threshold} \
+        --summary ${sample_id}.deacon.json \
+        --output ${sample_id}.depleted.fastq.gz \
+        ${index} \
         ${reads}
     """
 }
@@ -140,63 +140,88 @@ process DEACON_BUILD_VIRUS_INDEX_FROM_FASTA {
 
     script:
     """
-    deacon index build \\
-        -k ${params.virus_kmer_size} \\
-        -w ${params.virus_window_size} \\
-        -o virus_reference.k${params.virus_kmer_size}w${params.virus_window_size}.idx \\
+    deacon index build \
+        -k ${params.virus_kmer_size} \
+        -w ${params.virus_window_size} \
+        -o virus_reference.k${params.virus_kmer_size}w${params.virus_window_size}.idx \
         ${virus_fasta}
     """
 }
 
 process DEACON_FILTER_HUMAN_VIRUS_READS {
-    /*
-     * Extract human virus reads using deacon filter in non-deplete mode.
-     *
-     * Accepts pre-interleave input directly from GATHER_READS:
-     * - Paired (Illumina): takes R1/R2 as separate files. Deacon does pair-aware
-     *   k-mer counting and outputs interleaved FASTQ in a single pass.
-     * - Single-end (ONT): takes a single file, filtered as individual reads.
-     *
-     * Output is always tuple(sample_id, platform, read_structure, fastq) matching
-     * the shape expected by downstream preprocessing and SPAdes.
-     */
+    /* Extract human virus reads from resolved read bundles. */
 
-    tag "${sample_id}"
+    tag "${meta.id}"
     label "medium"
 
     errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
     maxRetries 2
 
     input:
-    tuple val(sample_id), val(platform), path(reads), path(reads2), path(deacon_idx)
+    tuple val(meta), path(read_files, stageAs: "reads??????/*"), path(deacon_idx)
 
     output:
-    tuple val(sample_id), val(platform), val(read_structure), path("${sample_id}.human_virus.fastq.gz"), emit: reads
-    tuple val(sample_id), path("${sample_id}.deacon_filter.json"), emit: stats
+    tuple val(meta.id), val(meta.platform), val(meta.deacon_read_structure), path("${meta.id}.human_virus.fastq.gz"), emit: reads
+    tuple val(meta.id), path("${meta.id}.deacon_filter.json"), emit: stats
 
     script:
-    read_structure = reads2.name != "NO_R2" ? "interleaved" : "single"
-    if (read_structure == "interleaved")
+    def files = read_files instanceof List ? read_files : [read_files]
+    def r1_count = meta.r1_count as int
+    def r1_files = files.take(r1_count)
+    def r2_files = files.drop(r1_count)
+    if (meta.read_mode == "single" && r1_files.size() == 1)
         """
-        deacon filter \\
-            --threads ${task.cpus} \\
-            --abs-threshold ${params.virus_abs_threshold} \\
-            --rel-threshold ${params.virus_rel_threshold} \\
-            --summary ${sample_id}.deacon_filter.json \\
-            --output ${sample_id}.human_virus.fastq.gz \\
-            ${deacon_idx} \\
-            ${reads} ${reads2}
+        deacon filter \
+            --threads ${task.cpus} \
+            --abs-threshold ${params.virus_abs_threshold} \
+            --rel-threshold ${params.virus_rel_threshold} \
+            --summary ${meta.id}.deacon_filter.json \
+            --output ${meta.id}.human_virus.fastq.gz \
+            ${deacon_idx} \
+            ${r1_files[0]}
+        """
+    else if (meta.read_mode == "paired" && r1_files.size() == 1 && r2_files.size() == 1)
+        """
+        deacon filter \
+            --threads ${task.cpus} \
+            --abs-threshold ${params.virus_abs_threshold} \
+            --rel-threshold ${params.virus_rel_threshold} \
+            --summary ${meta.id}.deacon_filter.json \
+            --output ${meta.id}.human_virus.fastq.gz \
+            ${deacon_idx} \
+            ${r1_files[0]} ${r2_files[0]}
+        """
+    else if (meta.read_mode == "single")
+        """
+        staged_reads=(reads??????/*)
+        printf '%s\n' "\${staged_reads[@]}" > reads.list
+
+        stream_fastqs_to_deacon.py \
+            --sample-id ${meta.id} \
+            --index ${deacon_idx} \
+            --reads-list reads.list \
+            --threads ${task.cpus} \
+            --abs-threshold ${params.virus_abs_threshold} \
+            --rel-threshold ${params.virus_rel_threshold} \
+            --summary ${meta.id}.deacon_filter.json \
+            --output ${meta.id}.human_virus.fastq.gz
         """
     else
         """
-        deacon filter \\
-            --threads ${task.cpus} \\
-            --abs-threshold ${params.virus_abs_threshold} \\
-            --rel-threshold ${params.virus_rel_threshold} \\
-            --summary ${sample_id}.deacon_filter.json \\
-            --output ${sample_id}.human_virus.fastq.gz \\
-            ${deacon_idx} \\
-            ${reads}
+        staged_reads=(reads??????/*)
+        printf '%s\n' "\${staged_reads[@]:0:${r1_count}}" > r1.list
+        printf '%s\n' "\${staged_reads[@]:${r1_count}}" > r2.list
+
+        stream_fastqs_to_deacon.py \
+            --sample-id ${meta.id} \
+            --index ${deacon_idx} \
+            --r1-list r1.list \
+            --r2-list r2.list \
+            --threads ${task.cpus} \
+            --abs-threshold ${params.virus_abs_threshold} \
+            --rel-threshold ${params.virus_rel_threshold} \
+            --summary ${meta.id}.deacon_filter.json \
+            --output ${meta.id}.human_virus.fastq.gz
         """
 }
 
@@ -229,12 +254,12 @@ process DEACON_FILTER_CONTIGS {
 
     script:
     """
-    deacon filter \\
-        --threads ${task.cpus} \\
-        --abs-threshold ${params.virus_abs_threshold} \\
-        --rel-threshold ${params.virus_rel_threshold} \\
-        --output ${sample_id}.human_virus.fasta \\
-        ${deacon_idx} \\
+    deacon filter \
+        --threads ${task.cpus} \
+        --abs-threshold ${params.virus_abs_threshold} \
+        --rel-threshold ${params.virus_rel_threshold} \
+        --output ${sample_id}.human_virus.fasta \
+        ${deacon_idx} \
         ${fasta}
     """
 }

@@ -9,23 +9,9 @@ include { DEDUP_WITH_CLUMPIFY ; TRIM_ADAPTERS ; FILTER_READS ; REPAIR_PAIRS } fr
 
 workflow PREPROCESS_READS {
     take:
-    ch_sample_fastqs  // Queue channel: pre-interleave tuples from GATHER_READS
-                      // Paired: tuple(sample_id, platform, R1, R2)
-                      // Single: tuple(sample_id, platform, fastq)
+    ch_read_bundles  // tuple(meta, read_files) from GATHER_READS
 
     main:
-    // Normalize mixed-size tuples from GATHER_READS:
-    //   Paired: (id, platform, R1, R2) -> (id, platform, R1, R2)
-    //   Single: (id, platform, fastq)  -> (id, platform, fastq, NO_R2)
-    // The sentinel file NO_R2 lets DEACON_FILTER_HUMAN_VIRUS_READS distinguish
-    // paired from single-end input with a fixed-size tuple.
-    ch_normalized_samples = ch_sample_fastqs
-        .map { items ->
-            if (items.size() == 4)
-                tuple(items[0], items[1], file(items[2]), file(items[3]))
-            else
-                tuple(items[0], items[1], file(items[2]), file("NO_R2"))
-        }
 
     // -------------------------------------------------------------------------
     // Step 1: Resolve virus index and frontloaded extraction
@@ -53,7 +39,7 @@ workflow PREPROCESS_READS {
     // Extract virus reads — runs BEFORE any preprocessing. For paired reads,
     // deacon takes R1/R2 and outputs interleaved FASTQ in one step.
     DEACON_FILTER_HUMAN_VIRUS_READS(
-        ch_normalized_samples.combine(ch_virus_index)
+        ch_read_bundles.combine(ch_virus_index)
     )
 
     // -------------------------------------------------------------------------

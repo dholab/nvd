@@ -23,7 +23,7 @@ include { COMPUTE_RUN_CONTEXT ; ENSURE_TAXONOMY } from "../modules/utils"
 
 workflow NVD_MAIN {
   take:
-  ch_samplesheet_row
+  ch_samplesheet
 
   main:
 
@@ -50,9 +50,9 @@ workflow NVD_MAIN {
     channel.value(dirs.taxonomy_dir)
   )
 
-  GATHER_READS(ch_samplesheet_row)
+  GATHER_READS(ch_samplesheet)
 
-  PREPROCESS_READS(GATHER_READS.out)
+  PREPROCESS_READS(GATHER_READS.out.reads)
 
   PREPROCESS_CONTIGS(PREPROCESS_READS.out.reads)
 
