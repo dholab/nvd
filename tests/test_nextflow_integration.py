@@ -198,6 +198,9 @@ def run_nextflow() -> tuple[subprocess.CompletedProcess[str], Path]:
     results_dir = run_dir / "results"
     work_dir = run_dir / "work"
     taxonomy_dir = run_dir / "taxonomy"
+    print(f"NVD e2e run directory: {run_dir}", flush=True)
+    print(f"NVD e2e results directory: {results_dir}", flush=True)
+    print(f"NVD e2e work directory: {work_dir}", flush=True)
     samplesheet = write_augmented_samplesheet(run_dir)
     write_mini_taxdump(taxonomy_dir)
     command = [
