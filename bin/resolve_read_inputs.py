@@ -16,14 +16,12 @@ from typing import Literal
 
 Source = Literal["single_file", "paired_files", "single_glob", "paired_globs", "sra"]
 
-SUPPORTED_COMPRESSIONS = {"none", "gz", "zst", "xz"}
+SUPPORTED_COMPRESSIONS = {"none", "gz", "xz"}
 SUPPORTED_FASTQ_SUFFIXES = (
     ".fastq",
     ".fq",
     ".fastq.gz",
     ".fq.gz",
-    ".fastq.zst",
-    ".fq.zst",
     ".fastq.xz",
     ".fq.xz",
 )
@@ -111,10 +109,15 @@ def read_rows(samplesheet: Path) -> tuple[SamplesheetRow, ...]:
         )
 
 
-def absolute_preserving_symlink(path: str, cwd: Path) -> Path:
+def absolute_preserving_symlink(path: str) -> Path:
     expanded = Path(path).expanduser()
     if not expanded.is_absolute():
-        expanded = cwd / expanded
+        message = (
+            "FASTQ paths and glob patterns must be absolute. "
+            "NVD resolves read inputs inside Nextflow task directories, where relative paths are ambiguous. "
+            "Use an absolute path, or an absolute symlink path from the stable cluster namespace."
+        )
+        raise ResolutionError(message)
     return Path(os.path.abspath(os.fspath(expanded)))
 
 
@@ -175,8 +178,6 @@ def compression_kind(path: Path) -> str:
     name = path.name
     if name.endswith(".gz"):
         return "gz"
-    if name.endswith(".zst"):
-        return "zst"
     if name.endswith(".xz"):
         return "xz"
     return "none"
@@ -287,8 +288,8 @@ def keyed_paths(
     raise ResolutionError(message)
 
 
-def resolve_glob(sample_id: str, column: str, pattern: str, cwd: Path) -> tuple[Path, ...]:
-    absolute_pattern = absolute_preserving_symlink(pattern, cwd)
+def resolve_glob(sample_id: str, column: str, pattern: str) -> tuple[Path, ...]:
+    absolute_pattern = absolute_preserving_symlink(pattern)
     matches = tuple(
         Path(match)
         for match in glob.glob(os.fspath(absolute_pattern), recursive=True)
@@ -340,15 +341,14 @@ def resolve_exact_files(
     row: SamplesheetRow,
     platform: str,
     platform_warnings: tuple[str, ...],
-    cwd: Path,
 ) -> ResolvedSample:
     reject_magic_in_exact_path(row.sample_id, "fastq1", row.fastq1)
-    fastq1 = absolute_preserving_symlink(row.fastq1, cwd)
+    fastq1 = absolute_preserving_symlink(row.fastq1)
     validate_existing_file(row.sample_id, "fastq1", fastq1)
 
     if row.fastq2:
         reject_magic_in_exact_path(row.sample_id, "fastq2", row.fastq2)
-        fastq2 = absolute_preserving_symlink(row.fastq2, cwd)
+        fastq2 = absolute_preserving_symlink(row.fastq2)
         validate_existing_file(row.sample_id, "fastq2", fastq2)
         validate_supported_fastqs(row.sample_id, (fastq1, fastq2))
         warnings = platform_warnings + shadowed_source_warnings(row, "paired_files")
@@ -376,10 +376,9 @@ def resolve_paired_globs(
     row: SamplesheetRow,
     platform: str,
     platform_warnings: tuple[str, ...],
-    cwd: Path,
 ) -> ResolvedSample:
-    r1_files = resolve_glob(row.sample_id, "fastq1_glob", row.fastq1_glob, cwd)
-    r2_files = resolve_glob(row.sample_id, "fastq2_glob", row.fastq2_glob, cwd)
+    r1_files = resolve_glob(row.sample_id, "fastq1_glob", row.fastq1_glob)
+    r2_files = resolve_glob(row.sample_id, "fastq2_glob", row.fastq2_glob)
     all_files = r1_files + r2_files
     validate_supported_fastqs(row.sample_id, all_files)
     validate_one_compression(row.sample_id, all_files)
@@ -410,9 +409,8 @@ def resolve_single_glob(
     row: SamplesheetRow,
     platform: str,
     platform_warnings: tuple[str, ...],
-    cwd: Path,
 ) -> ResolvedSample:
-    reads = resolve_glob(row.sample_id, "fastq1_glob", row.fastq1_glob, cwd)
+    reads = resolve_glob(row.sample_id, "fastq1_glob", row.fastq1_glob)
     validate_supported_fastqs(row.sample_id, reads)
     validate_one_compression(row.sample_id, reads)
     warnings = platform_warnings + shadowed_source_warnings(row, "single_glob")
@@ -439,7 +437,7 @@ def resolve_sra(
     )
 
 
-def resolve_row(row: SamplesheetRow, cwd: Path) -> ResolvedSample:
+def resolve_row(row: SamplesheetRow) -> ResolvedSample:
     if not row.sample_id:
         message = "Invalid FASTQ declaration\n\nThe sample_id column is required for every row."
         raise ResolutionError(message)
@@ -447,7 +445,7 @@ def resolve_row(row: SamplesheetRow, cwd: Path) -> ResolvedSample:
     platform, platform_warnings = normalize_platform(row.sample_id, row.platform)
 
     if row.fastq1:
-        return resolve_exact_files(row, platform, platform_warnings, cwd)
+        return resolve_exact_files(row, platform, platform_warnings)
     if row.fastq2:
         message = (
             f'Invalid FASTQ declaration for sample "{row.sample_id}"\n\n'
@@ -456,9 +454,9 @@ def resolve_row(row: SamplesheetRow, cwd: Path) -> ResolvedSample:
         )
         raise ResolutionError(message)
     if row.fastq1_glob and row.fastq2_glob:
-        return resolve_paired_globs(row, platform, platform_warnings, cwd)
+        return resolve_paired_globs(row, platform, platform_warnings)
     if row.fastq1_glob:
-        return resolve_single_glob(row, platform, platform_warnings, cwd)
+        return resolve_single_glob(row, platform, platform_warnings)
     if row.fastq2_glob:
         message = (
             f'Invalid FASTQ declaration for sample "{row.sample_id}"\n\n'
@@ -496,9 +494,9 @@ def validate_unique_sample_ids(rows: tuple[SamplesheetRow, ...]) -> None:
 
 
 def resolve_rows(rows: tuple[SamplesheetRow, ...], cwd: Path | None = None) -> Resolution:
-    working_dir = cwd or Path.cwd()
+    _ = cwd
     validate_unique_sample_ids(rows)
-    samples = tuple(resolve_row(row, working_dir) for row in rows)
+    samples = tuple(resolve_row(row) for row in rows)
     warnings = tuple(
         f'sample "{sample.sample_id}": {warning}'
         for sample in samples
@@ -535,7 +533,7 @@ def write_jsonl(samples: tuple[ResolvedSample, ...], output: Path) -> None:
 def main() -> None:
     args = parse_args()
     try:
-        resolution = resolve_rows(read_rows(args.samplesheet), cwd=Path.cwd())
+        resolution = resolve_rows(read_rows(args.samplesheet))
     except ResolutionError as error:
         sys.stderr.write(f"{error}\n")
         raise SystemExit(1) from error

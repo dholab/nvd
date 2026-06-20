@@ -81,7 +81,7 @@ def test_exact_paired_files_take_precedence_with_warning(tmp_path: Path) -> None
 
 
 def test_single_file_accepts_nanopore_alias(tmp_path: Path) -> None:
-    reads = touch(tmp_path / "reads.fastq.zst")
+    reads = touch(tmp_path / "reads.fastq.xz")
     rows = read_rows(
         write_samplesheet(
             tmp_path / "samples.csv",
@@ -117,7 +117,7 @@ def test_exact_paths_are_absolute_but_symlink_preserving(tmp_path: Path) -> None
                 {
                     "sample_id": "ONT1",
                     "platform": "ont",
-                    "fastq1": "stable/sample.fastq.gz",
+                    "fastq1": str(link),
                 },
             ],
         ),
@@ -272,7 +272,7 @@ def test_paired_glob_rejects_non_casava_names(tmp_path: Path) -> None:
 def test_glob_rejects_mixed_compression_within_sample(tmp_path: Path) -> None:
     reads_dir = tmp_path / "ont"
     touch(reads_dir / "chunk1.fastq.gz")
-    touch(reads_dir / "chunk2.fastq.zst")
+    touch(reads_dir / "chunk2.fastq.xz")
     rows = read_rows(
         write_samplesheet(
             tmp_path / "samples.csv",
@@ -287,6 +287,61 @@ def test_glob_rejects_mixed_compression_within_sample(tmp_path: Path) -> None:
     )
 
     with pytest.raises(ResolutionError, match="must use one compression type"):
+        resolve_rows(rows, cwd=tmp_path)
+
+
+def test_zst_suffix_is_rejected_until_streaming_support_exists(tmp_path: Path) -> None:
+    reads = touch(tmp_path / "reads.fastq.zst")
+    rows = read_rows(
+        write_samplesheet(
+            tmp_path / "samples.csv",
+            [
+                {
+                    "sample_id": "ONT1",
+                    "platform": "ont",
+                    "fastq1": str(reads),
+                },
+            ],
+        ),
+    )
+
+    with pytest.raises(ResolutionError, match="supported FASTQ suffix"):
+        resolve_rows(rows, cwd=tmp_path)
+
+
+def test_relative_exact_paths_are_rejected(tmp_path: Path) -> None:
+    rows = read_rows(
+        write_samplesheet(
+            tmp_path / "samples.csv",
+            [
+                {
+                    "sample_id": "ONT1",
+                    "platform": "ont",
+                    "fastq1": "reads.fastq.gz",
+                },
+            ],
+        ),
+    )
+
+    with pytest.raises(ResolutionError, match="must be absolute"):
+        resolve_rows(rows, cwd=tmp_path)
+
+
+def test_relative_glob_patterns_are_rejected(tmp_path: Path) -> None:
+    rows = read_rows(
+        write_samplesheet(
+            tmp_path / "samples.csv",
+            [
+                {
+                    "sample_id": "ONT1",
+                    "platform": "ont",
+                    "fastq1_glob": "*.fastq.gz",
+                },
+            ],
+        ),
+    )
+
+    with pytest.raises(ResolutionError, match="must be absolute"):
         resolve_rows(rows, cwd=tmp_path)
 
 
