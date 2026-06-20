@@ -70,6 +70,7 @@ process SOURMASH_GATHER_QUERY_METAGENOME {
 
   tag "${sample_id}"
   label "medium"
+  cpus 2
 
   input:
   tuple val(sample_id), val(platform), val(read_structure), path(query_sketch), path(ref_sketch)
@@ -79,14 +80,16 @@ process SOURMASH_GATHER_QUERY_METAGENOME {
 
   script:
   """
-  sourmash gather \
+  sourmash scripts fastgather \
       ${query_sketch} \
       ${ref_sketch} \
       -k ${params.sourmash_ksize} \
       --scaled ${params.sourmash_scaled} \
+      --moltype DNA \
+      --cores ${task.cpus} \
       --threshold-bp ${params.sourmash_threshold_bp} \
-      --create-empty-results \
       -o "${sample_id}.sourmash.gather.csv"
+  touch "${sample_id}.sourmash.gather.csv"
   """
 }
 

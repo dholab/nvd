@@ -355,7 +355,8 @@ def test_mini_sra_viral_pipeline_completes() -> None:
             gather_rows = read_csv_rows(gather_csv)
             assert gather_rows, f"No sourmash gather rows found for {sample_id}"
             assert any(
-                expected_species in row.get("name", "") for row in gather_rows
+                expected_species in (row.get("name") or row.get("match_name", ""))
+                for row in gather_rows
             ), f"No {expected_species} sourmash gather hit found for {sample_id}"
 
             tax_base = taxonomy_dir / f"{sample_id}.sourmash.tax_metagenome"
