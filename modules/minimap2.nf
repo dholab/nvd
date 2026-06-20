@@ -28,7 +28,8 @@ process MAP_READS_TO_CONTIGS {
     tuple val(sample_id), path("${sample_id}.bam"), path("${sample_id}.bam.bai")
 
     script:
-    def preset = platform == 'ont' || platform == 'sra'
+    // Platform describes sequencing chemistry; SRA is only an input source.
+    def preset = platform == 'ont'
         ? "map-ont"
         : "sr"
     def should_dedup_pos = params.dedup || params.dedup_pos
