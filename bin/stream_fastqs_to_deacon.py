@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import argparse
 import errno
-import gzip
 import lzma
 import os
 import shutil
@@ -13,6 +12,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
@@ -20,6 +20,7 @@ from threading import Event
 from typing import BinaryIO, Literal
 
 Compression = Literal["none", "gz", "zst", "xz"]
+DeaconRunner = Callable[[list[str]], subprocess.CompletedProcess[str]]
 
 
 class StreamError(RuntimeError):
@@ -126,29 +127,18 @@ def validate_files(name: str, files: tuple[Path, ...]) -> None:
     one_compression(files)
 
 
-def validate_no_zst(files: tuple[Path, ...]) -> None:
-    zst_files = [path for path in files if compression_kind(path) == "zst"]
-    if not zst_files:
-        return
-    message = (
-        "zst input streaming is not implemented in the Python helper yet; "
-        "convert to gzip/plain FASTQ or add a supervised zstd producer"
-    )
-    raise StreamError(message)
-
-
 def validate_sample_compression(files: tuple[Path, ...]) -> None:
-    validate_no_zst(files)
     one_compression(files)
 
 
-def validate_config(config: DeaconStreamConfig) -> None:
-    deacon_path = shutil.which(config.deacon_bin)
-    explicit_path = Path(config.deacon_bin)
-    explicit_executable = explicit_path.is_file() and os.access(explicit_path, os.X_OK)
-    if deacon_path is None and not explicit_executable:
-        message = f"deacon executable was not found: {config.deacon_bin}"
-        raise StreamError(message)
+def validate_config(config: DeaconStreamConfig, *, require_deacon_executable: bool = True) -> None:
+    if require_deacon_executable:
+        deacon_path = shutil.which(config.deacon_bin)
+        explicit_path = Path(config.deacon_bin)
+        explicit_executable = explicit_path.is_file() and os.access(explicit_path, os.X_OK)
+        if deacon_path is None and not explicit_executable:
+            message = f"deacon executable was not found: {config.deacon_bin}"
+            raise StreamError(message)
     single = bool(config.reads)
     paired = bool(config.r1 or config.r2)
     if single == paired:
@@ -166,23 +156,27 @@ def validate_config(config: DeaconStreamConfig) -> None:
         raise StreamError(message)
 
 
-def open_fastq(path: Path) -> BinaryIO:
+def fifo_suffix(compression: Compression) -> str:
+    match compression:
+        case "gz" | "zst":
+            return f".fastq.{compression}"
+        case "none" | "xz":
+            return ".fastq"
+
+
+def open_deacon_payload(path: Path) -> BinaryIO:
     match compression_kind(path):
-        case "none":
+        case "none" | "gz" | "zst":
             return path.open("rb")
-        case "gz":
-            return gzip.open(path, "rb")
         case "xz":
             return lzma.open(path, "rb")
-        case "zst":
-            message = "zst input should have been rejected during validation"
-            raise StreamError(message)
 
 
 def open_fifo_for_write(fifo: Path, stop: Event) -> BinaryIO:
     while not stop.is_set():
         try:
             fd = os.open(fifo, os.O_WRONLY | os.O_NONBLOCK)
+            os.set_blocking(fd, True)
             return os.fdopen(fd, "wb")
         except OSError as error:
             if error.errno != errno.ENXIO:
@@ -201,7 +195,7 @@ def stream_files_to_fifo(
     bytes_written = 0
     with open_fifo_for_write(fifo, stop) as output:
         for path in files:
-            with open_fastq(path) as source:
+            with open_deacon_payload(path) as source:
                 shutil.copyfileobj(source, output)
                 bytes_written += path.stat().st_size
     return ProducerResult(name=name, files=files, bytes_written=bytes_written)
@@ -226,6 +220,10 @@ def deacon_command(config: DeaconStreamConfig, inputs: tuple[Path, ...]) -> list
     ]
 
 
+def subprocess_deacon_runner(command: list[str]) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(command, check=False, text=True)  # noqa: S603
+
+
 def await_producers(futures: tuple[Future[ProducerResult], ...]) -> tuple[ProducerResult, ...]:
     results: list[ProducerResult] = []
     errors: list[str] = []
@@ -239,20 +237,26 @@ def await_producers(futures: tuple[Future[ProducerResult], ...]) -> tuple[Produc
     return tuple(results)
 
 
-def run_deacon_stream(config: DeaconStreamConfig) -> None:
-    validate_config(config)
+def run_deacon_stream(config: DeaconStreamConfig, runner: DeaconRunner | None = None) -> None:
+    if runner is None:
+        runner = subprocess_deacon_runner
+    validate_config(config, require_deacon_executable=runner is subprocess_deacon_runner)
     config.output.parent.mkdir(parents=True, exist_ok=True)
     config.summary.parent.mkdir(parents=True, exist_ok=True)
 
-    with tempfile.TemporaryDirectory(prefix=f"{config.sample_id}.deacon-fifo.") as tmp:
+    with tempfile.TemporaryDirectory(prefix=f"{config.sample_id}.deacon-input.") as tmp:
         tmpdir = Path(tmp)
         if config.reads:
-            fifo_specs = (("reads", config.reads, tmpdir / "reads.fastq"),)
+            suffix = fifo_suffix(compression_kind(config.reads[0]))
+            fifo_specs = (("reads", config.reads, tmpdir / f"reads{suffix}"),)
         else:
+            suffix = fifo_suffix(compression_kind(config.r1[0]))
             fifo_specs = (
-                ("r1", config.r1, tmpdir / "r1.fastq"),
-                ("r2", config.r2, tmpdir / "r2.fastq"),
+                ("r1", config.r1, tmpdir / f"r1{suffix}"),
+                ("r2", config.r2, tmpdir / f"r2{suffix}"),
             )
+
+        command_inputs = tuple(fifo for _name, _files, fifo in fifo_specs)
 
         for _name, _files, fifo in fifo_specs:
             os.mkfifo(fifo)
@@ -263,8 +267,8 @@ def run_deacon_stream(config: DeaconStreamConfig) -> None:
                 executor.submit(stream_files_to_fifo, name, files, fifo, stop)
                 for name, files, fifo in fifo_specs
             )
-            command = deacon_command(config, tuple(fifo for _name, _files, fifo in fifo_specs))
-            completed = subprocess.run(command, check=False, text=True)  # noqa: S603
+            command = deacon_command(config, command_inputs)
+            completed = runner(command)
             stop.set()
             try:
                 await_producers(futures)

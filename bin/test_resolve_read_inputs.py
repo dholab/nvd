@@ -290,7 +290,7 @@ def test_glob_rejects_mixed_compression_within_sample(tmp_path: Path) -> None:
         resolve_rows(rows, cwd=tmp_path)
 
 
-def test_zst_suffix_is_rejected_until_streaming_support_exists(tmp_path: Path) -> None:
+def test_zst_suffix_is_supported_for_deacon_extension_based_decoding(tmp_path: Path) -> None:
     reads = touch(tmp_path / "reads.fastq.zst")
     rows = read_rows(
         write_samplesheet(
@@ -305,8 +305,10 @@ def test_zst_suffix_is_rejected_until_streaming_support_exists(tmp_path: Path) -
         ),
     )
 
-    with pytest.raises(ResolutionError, match="supported FASTQ suffix"):
-        resolve_rows(rows, cwd=tmp_path)
+    resolved = resolve_rows(rows, cwd=tmp_path)
+
+    assert resolved.samples[0].source == "single_file"
+    assert resolved.samples[0].reads == (reads,)
 
 
 def test_relative_exact_paths_are_rejected(tmp_path: Path) -> None:

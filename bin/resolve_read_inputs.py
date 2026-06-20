@@ -16,7 +16,7 @@ from typing import Literal
 
 Source = Literal["single_file", "paired_files", "single_glob", "paired_globs", "sra"]
 
-SUPPORTED_COMPRESSIONS = {"none", "gz", "xz"}
+SUPPORTED_COMPRESSIONS = {"none", "gz", "xz", "zst"}
 SUPPORTED_FASTQ_SUFFIXES = (
     ".fastq",
     ".fq",
@@ -24,6 +24,8 @@ SUPPORTED_FASTQ_SUFFIXES = (
     ".fq.gz",
     ".fastq.xz",
     ".fq.xz",
+    ".fastq.zst",
+    ".fq.zst",
 )
 PLATFORM_ALIASES = {
     "illumina": "illumina",

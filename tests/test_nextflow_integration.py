@@ -21,6 +21,30 @@ DEACON_INDEX = DATA / "mini_virus_deacon.k31w1.idx"
 BLAST_DB_PREFIX = "mini_virus_blast"
 BLAST_DB = DATA
 E2E_OUTPUT_DIR = ROOT / ".e2e"
+LOCAL_FASTQ_FIXTURES = {
+    "hits_r1": DATA / "hits_only_R1.fastq.gz",
+    "hits_r2": DATA / "hits_only_R2.fastq.gz",
+    "water_plus_hits_r1": DATA / "water_plus_hits_R1.fastq.gz",
+    "water_plus_hits_r2": DATA / "water_plus_hits_R2.fastq.gz",
+}
+LOCAL_E2E_SAMPLES = (
+    {
+        "sample_id": "local_hits_exact",
+        "expected_organism": "Orf virus",
+        "taxid": 10258,
+        "source": "paired_files",
+        "fastq1": LOCAL_FASTQ_FIXTURES["hits_r1"],
+        "fastq2": LOCAL_FASTQ_FIXTURES["hits_r2"],
+    },
+    {
+        "sample_id": "local_hits_glob",
+        "expected_organism": "Orf virus",
+        "taxid": 10258,
+        "source": "paired_globs",
+        "fastq1_glob": "local_hits_glob_L*_R1_001.fastq.gz",
+        "fastq2_glob": "local_hits_glob_L*_R2_001.fastq.gz",
+    },
+)
 
 
 def write_mini_taxdump(taxonomy_dir: Path) -> None:
@@ -96,6 +120,66 @@ def make_e2e_run_dir() -> Path:
     return run_dir
 
 
+def local_sample_row(sample: dict[str, Any], local_fastq_dir: Path) -> dict[str, str]:
+    fastq1 = sample.get("fastq1")
+    fastq2 = sample.get("fastq2")
+    fastq1_glob = sample.get("fastq1_glob")
+    fastq2_glob = sample.get("fastq2_glob")
+    return {
+        "sample_id": str(sample["sample_id"]),
+        "srr": "",
+        "platform": "illumina",
+        "fastq1": str(fastq1.resolve()) if isinstance(fastq1, Path) else "",
+        "fastq2": str(fastq2.resolve()) if isinstance(fastq2, Path) else "",
+        "fastq1_glob": str(local_fastq_dir / fastq1_glob)
+        if isinstance(fastq1_glob, str)
+        else "",
+        "fastq2_glob": str(local_fastq_dir / fastq2_glob)
+        if isinstance(fastq2_glob, str)
+        else "",
+    }
+
+
+def write_augmented_samplesheet(run_dir: Path) -> Path:
+    """Write the e2e samplesheet with portable SRA rows plus absolute local FASTQs."""
+    local_fastq_dir = run_dir / "local_fastqs"
+    local_fastq_dir.mkdir(parents=True, exist_ok=True)
+
+    glob_links = {
+        "local_hits_glob_L001_R1_001.fastq.gz": LOCAL_FASTQ_FIXTURES["hits_r1"],
+        "local_hits_glob_L001_R2_001.fastq.gz": LOCAL_FASTQ_FIXTURES["hits_r2"],
+        "local_hits_glob_L002_R1_001.fastq.gz": LOCAL_FASTQ_FIXTURES["water_plus_hits_r1"],
+        "local_hits_glob_L002_R2_001.fastq.gz": LOCAL_FASTQ_FIXTURES["water_plus_hits_r2"],
+    }
+    for name, target in glob_links.items():
+        (local_fastq_dir / name).symlink_to(target.resolve())
+
+    fieldnames = [
+        "sample_id",
+        "srr",
+        "platform",
+        "fastq1",
+        "fastq2",
+        "fastq1_glob",
+        "fastq2_glob",
+    ]
+    rows: list[dict[str, str]] = []
+    with SAMPLESHEET.open(newline="", encoding="utf-8") as handle:
+        rows.extend(
+            {column: row.get(column, "") for column in fieldnames}
+            for row in csv.DictReader(handle)
+        )
+
+    rows.extend(local_sample_row(sample, local_fastq_dir) for sample in LOCAL_E2E_SAMPLES)
+
+    samplesheet = run_dir / "integration_samplesheet.csv"
+    with samplesheet.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
+    return samplesheet
+
+
 def run_nextflow() -> tuple[subprocess.CompletedProcess[str], Path]:
     profile = os.environ.get("NVD_INTEGRATION_PROFILE", "test")
     show_progress = os.environ.get("NVD_E2E_SHOW_PROGRESS") == "1"
@@ -103,6 +187,7 @@ def run_nextflow() -> tuple[subprocess.CompletedProcess[str], Path]:
     results_dir = run_dir / "results"
     work_dir = run_dir / "work"
     taxonomy_dir = run_dir / "taxonomy"
+    samplesheet = write_augmented_samplesheet(run_dir)
     write_mini_taxdump(taxonomy_dir)
     command = [
         "nextflow",
@@ -111,7 +196,7 @@ def run_nextflow() -> tuple[subprocess.CompletedProcess[str], Path]:
         "-profile",
         profile,
         "--samplesheet",
-        str(SAMPLESHEET),
+        str(samplesheet),
         "--virus_index",
         str(DEACON_INDEX),
         "--blast_db",
@@ -191,6 +276,26 @@ def test_mini_sra_viral_pipeline_completes() -> None:
             f"Missing expected BLAST tasks for {run_info['sample_id']}: "
             f"expected {sorted(expected_tasks)}, observed {sorted(observed_tasks)}"
         )
+
+    resolved_manifest = results_root / "00_input_resolution" / "resolved_reads.jsonl"
+    resolved_records = [
+        json.loads(line)
+        for line in resolved_manifest.read_text(encoding="utf-8").splitlines()
+    ]
+    resolved_by_sample = {record["sample_id"]: record for record in resolved_records}
+    for run_info in LOCAL_E2E_SAMPLES:
+        record = resolved_by_sample[run_info["sample_id"]]
+        assert record["source"] == run_info["source"]
+
+    glob_record = resolved_by_sample["local_hits_glob"]
+    assert [Path(path).name for path in glob_record["r1"]] == [
+        "local_hits_glob_L001_R1_001.fastq.gz",
+        "local_hits_glob_L002_R1_001.fastq.gz",
+    ]
+    assert [Path(path).name for path in glob_record["r2"]] == [
+        "local_hits_glob_L001_R2_001.fastq.gz",
+        "local_hits_glob_L002_R2_001.fastq.gz",
+    ]
 
     assert "Orf virus" in final_text
     assert "Monkeypox virus" in final_text
