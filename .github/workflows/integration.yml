@@ -58,9 +58,9 @@ jobs:
         uses: astral-sh/setup-uv@v2
 
       - name: Set up Pixi environment
-        uses: prefix-dev/setup-pixi@v0.8.10
+        uses: prefix-dev/setup-pixi@v0.9.6
         with:
-          pixi-version: v0.49.0
+          pixi-version: v0.68.0
           cache: true
 
       - name: Check Pixi-provided Nextflow

@@ -1,6 +1,6 @@
 """NVD CLI and pipeline helper library."""
 
-__version__ = "3.0.0"
+__version__ = "3.0.1"
 
 # Re-export key modules for convenient access.
 from py_nvd import models, params, paths, presets, taxonomy
