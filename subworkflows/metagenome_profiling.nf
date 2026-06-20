@@ -59,7 +59,11 @@ workflow METAGENOME_PROFILING {
 
     SOURMASH_GATHER_QUERY_METAGENOME(ch_gather_inputs)
 
-    ch_tax_inputs = SOURMASH_GATHER_QUERY_METAGENOME.out.gather_csv
+    ch_taxable_gather_csv = SOURMASH_GATHER_QUERY_METAGENOME.out.gather_csv.filter { _sample_id, _platform, _read_structure, gather_csv ->
+        file(gather_csv).size() > 0
+    }
+
+    ch_tax_inputs = ch_taxable_gather_csv
         .combine(SOURMASH_STAGE_REFERENCE.out.lineages)
 
     SOURMASH_TAX_METAGENOME(ch_tax_inputs)

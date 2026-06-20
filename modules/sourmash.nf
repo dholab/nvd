@@ -60,7 +60,7 @@ process SOURMASH_SKETCH_REF_FASTA {
   """
   sourmash sketch dna \
       ${ref_fasta} \
-      --name "sourmash_reference" \
+      --singleton \
       -p dna,k=${params.sourmash_ksize},scaled=${params.sourmash_scaled} \
       -o "sourmash_reference.k${params.sourmash_ksize}.scaled${params.sourmash_scaled}.sig.zip"
   """
@@ -83,7 +83,9 @@ process SOURMASH_GATHER_QUERY_METAGENOME {
       ${query_sketch} \
       ${ref_sketch} \
       -k ${params.sourmash_ksize} \
+      --scaled ${params.sourmash_scaled} \
       --threshold-bp ${params.sourmash_threshold_bp} \
+      --create-empty-results \
       -o "${sample_id}.sourmash.gather.csv"
   """
 }
@@ -139,6 +141,7 @@ process SOURMASH_TAX_METAGENOME {
   sourmash tax metagenome \
       --gather-csv ${gather_csv} \
       --taxonomy-csv ${lineages_csv} \
+      --keep-identifier-versions \
       --use-abundances \
       --output-format csv_summary lineage_summary krona kreport \
       --rank species \

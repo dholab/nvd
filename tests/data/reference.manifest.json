@@ -82,6 +82,10 @@
       "bytes": 2857075,
       "sha256": "b1c6bad8f01f9b89ea8b350070b04418710262526af51269993180c89f9117e8"
     },
+    "mini_sourmash_lineages.csv": {
+      "bytes": 379,
+      "sha256": "717bc3ddb1bc1e1e6b4156e49d91c9dbcdfb55b532a49a48268848639fda5fd2"
+    },
     "mini_virus_reference.fasta": {
       "bytes": 541795,
       "sha256": "d57623a3af3a52372a8fa4f5eb450fa648d2804838825d1f8010001e7fbebe1f"

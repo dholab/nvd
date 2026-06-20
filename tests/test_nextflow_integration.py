@@ -18,6 +18,8 @@ DATA = ROOT / "tests" / "data"
 MANIFEST = DATA / "reference.manifest.json"
 SAMPLESHEET = DATA / "integration_sra_samplesheet.csv"
 DEACON_INDEX = DATA / "mini_virus_deacon.k31w1.idx"
+SOURMASH_REF_FASTA = DATA / "mini_virus_reference.fasta"
+SOURMASH_LINEAGES = DATA / "mini_sourmash_lineages.csv"
 BLAST_DB_PREFIX = "mini_virus_blast"
 BLAST_DB = DATA
 E2E_OUTPUT_DIR = ROOT / ".e2e"
@@ -106,9 +108,17 @@ def verify_fixture_checksums(manifest: dict[str, Any]) -> None:
     )
 
 
-def read_tsv_rows(path: Path) -> list[dict[str, str]]:
+def read_delimited_rows(path: Path, *, delimiter: str) -> list[dict[str, str]]:
     with path.open(newline="", encoding="utf-8") as handle:
-        return list(csv.DictReader(handle, delimiter="\t"))
+        return list(csv.DictReader(handle, delimiter=delimiter))
+
+
+def read_csv_rows(path: Path) -> list[dict[str, str]]:
+    return read_delimited_rows(path, delimiter=",")
+
+
+def read_tsv_rows(path: Path) -> list[dict[str, str]]:
+    return read_delimited_rows(path, delimiter="\t")
 
 
 def make_e2e_run_dir() -> Path:
@@ -214,7 +224,16 @@ def run_nextflow() -> tuple[subprocess.CompletedProcess[str], Path]:
         str(work_dir),
     ]
     if experimental:
-        command.extend(["--experimental", "true"])
+        command.extend(
+            [
+                "--experimental",
+                "true",
+                "--sourmash_ref_fasta",
+                str(SOURMASH_REF_FASTA),
+                "--sourmash_lineages_path",
+                str(SOURMASH_LINEAGES),
+            ],
+        )
 
     completed = subprocess.run(  # noqa: S603
         command,
@@ -313,3 +332,40 @@ def test_mini_sra_viral_pipeline_completes() -> None:
 
     assert "Orf virus" in final_text
     assert "Monkeypox virus" in final_text
+
+    if experimental:
+        sourmash_root = results_root / "experimental_sourmash"
+        ref_dir = sourmash_root / "reference_profiling" / "reference"
+        gather_dir = sourmash_root / "reference_profiling" / "gather"
+        taxonomy_dir = sourmash_root / "reference_profiling" / "taxonomy"
+
+        ref_sketches = sorted(ref_dir.glob("sourmash_reference.k31.scaled50.sig.zip"))
+        assert ref_sketches, f"Missing sourmash reference sketch in {ref_dir}"
+
+        expected_species_by_sample = {
+            run_info["sample_id"]: run_info["expected_organism"]
+            for run_info in manifest["sra_runs"]
+        }
+        for sample_id, expected_species in expected_species_by_sample.items():
+            gather_csv = gather_dir / f"{sample_id}.sourmash.gather.csv"
+            assert gather_csv.is_file(), f"Missing sourmash gather CSV: {gather_csv}"
+            gather_rows = read_csv_rows(gather_csv)
+            assert gather_rows, f"No sourmash gather rows found for {sample_id}"
+            assert any(
+                expected_species in row.get("name", "") for row in gather_rows
+            ), f"No {expected_species} sourmash gather hit found for {sample_id}"
+
+            tax_base = taxonomy_dir / f"{sample_id}.sourmash.tax_metagenome"
+            summarized = Path(f"{tax_base}.summarized.csv")
+            lineage_summary = Path(f"{tax_base}.lineage_summary.tsv")
+            krona = Path(f"{tax_base}.krona.tsv")
+            kreport = Path(f"{tax_base}.kreport.txt")
+            for report in (summarized, lineage_summary, krona, kreport):
+                assert report.is_file(), f"Missing sourmash tax report: {report}"
+                assert report.stat().st_size > 0, f"Empty sourmash tax report: {report}"
+
+            tax_rows = read_csv_rows(summarized)
+            assert any(
+                row.get("rank") == "species" and expected_species in row.get("lineage", "")
+                for row in tax_rows
+            ), f"No {expected_species} species-level sourmash tax row for {sample_id}"
