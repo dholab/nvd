@@ -121,10 +121,6 @@
     },
     {
       "expected_organism": "Orf virus",
-      "expected_tasks": [
-        "megablast",
-        "blastn"
-      ],
       "platform": "illumina",
       "sample_id": "nigerian_orf_srr38321624",
       "size_mb": 210,

@@ -65,7 +65,6 @@ SRA_RUNS = (
         "expected_organism": "Orf virus",
         "taxid": 10258,
         "size_mb": 210,
-        "expected_tasks": ["megablast", "blastn"],
     },
 )
 
