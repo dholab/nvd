@@ -29,6 +29,7 @@ environments:
       - conda: https://conda.anaconda.org/bioconda/linux-64/samtools-1.23.1-ha83d96e_0.conda
       - conda: https://conda.anaconda.org/bioconda/linux-64/seqkit-2.13.0-he881be0_0.conda
       - conda: https://conda.anaconda.org/bioconda/linux-64/spades-4.2.0-h8d6e82b_2.conda
+      - conda: https://conda.anaconda.org/bioconda/linux-64/sracha-0.3.10-h54198d6_0.conda
       - conda: https://conda.anaconda.org/bioconda/linux-64/vsearch-2.31.0-hd2be7a0_0.conda
       - conda: https://conda.anaconda.org/bioconda/noarch/nextflow-25.10.4-h2a3209d_0.conda
       - conda: https://conda.anaconda.org/bioconda/noarch/perl-archive-tar-3.06-pl5321hdfd78af_0.conda
@@ -245,6 +246,7 @@ environments:
       - conda: https://conda.anaconda.org/bioconda/linux-aarch64/samtools-1.23.1-hc7977f4_0.conda
       - conda: https://conda.anaconda.org/bioconda/linux-aarch64/seqkit-2.13.0-h8865c2f_0.conda
       - conda: https://conda.anaconda.org/bioconda/linux-aarch64/spades-4.2.0-h3e01217_2.conda
+      - conda: https://conda.anaconda.org/bioconda/linux-aarch64/sracha-0.3.10-h389c417_0.conda
       - conda: https://conda.anaconda.org/bioconda/linux-aarch64/vsearch-2.31.0-hd0c913a_0.conda
       - conda: https://conda.anaconda.org/bioconda/noarch/nextflow-25.10.4-h2a3209d_0.conda
       - conda: https://conda.anaconda.org/bioconda/noarch/perl-archive-tar-3.06-pl5321hdfd78af_0.conda
@@ -464,6 +466,7 @@ environments:
       - conda: https://conda.anaconda.org/bioconda/osx-64/samtools-1.23.1-head6495_0.conda
       - conda: https://conda.anaconda.org/bioconda/osx-64/seqkit-2.13.0-h193322a_0.conda
       - conda: https://conda.anaconda.org/bioconda/osx-64/spades-4.2.0-hf6bce26_2.conda
+      - conda: https://conda.anaconda.org/bioconda/osx-64/sracha-0.3.10-h518e4cb_0.conda
       - conda: https://conda.anaconda.org/bioconda/osx-64/vsearch-2.31.0-h7aab66d_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/ca-certificates-2026.4.22-hbd8a1cb_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/compiler-rt_osx-64-19.1.7-h138dee1_1.conda
@@ -636,6 +639,7 @@ environments:
       - conda: https://conda.anaconda.org/bioconda/osx-arm64/samtools-1.23.1-hc612e98_0.conda
       - conda: https://conda.anaconda.org/bioconda/osx-arm64/seqkit-2.13.0-hd5f1084_0.conda
       - conda: https://conda.anaconda.org/bioconda/osx-arm64/spades-4.2.0-h4d841d5_2.conda
+      - conda: https://conda.anaconda.org/bioconda/osx-arm64/sracha-0.3.10-h1a4e967_0.conda
       - conda: https://conda.anaconda.org/bioconda/osx-arm64/vsearch-2.31.0-h0448ff9_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/ca-certificates-2026.4.22-hbd8a1cb_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/compiler-rt_osx-arm64-19.1.7-he32a8d3_1.conda
@@ -976,6 +980,17 @@ packages:
   license_family: GPL
   size: 19327462
   timestamp: 1758931918693
+- conda: https://conda.anaconda.org/bioconda/linux-64/sracha-0.3.10-h54198d6_0.conda
+  sha256: 1d60252f56f562b6755f843f8b89f5791c3b1bd31b802926133ea4cac384cdfe
+  md5: a7907ed06c30038a0cf4ce8fcd7690e5
+  depends:
+  - libgcc >=14
+  constrains:
+  - __glibc >=2.17
+  license: MIT
+  purls: []
+  size: 3017594
+  timestamp: 1781702733474
 - conda: https://conda.anaconda.org/bioconda/linux-64/vsearch-2.31.0-hd2be7a0_0.conda
   sha256: 2cb6740460d605597869ba3223b4ea337f19256d5fc9de6e14510f3f6171ac0b
   md5: 1688be9a6aa97ea509e853055f57b03d
@@ -1193,6 +1208,17 @@ packages:
   purls: []
   size: 35259065
   timestamp: 1758931426837
+- conda: https://conda.anaconda.org/bioconda/linux-aarch64/sracha-0.3.10-h389c417_0.conda
+  sha256: 7ec67ffe6c70e08a703fd17f57c497d0075004d9acef9ba5648b34605e4e1fac
+  md5: a289912644c2b9230d5265c075fe4c09
+  depends:
+  - libgcc >=14
+  constrains:
+  - __glibc >=2.17
+  license: MIT
+  purls: []
+  size: 2940791
+  timestamp: 1781702560184
 - conda: https://conda.anaconda.org/bioconda/linux-aarch64/vsearch-2.31.0-hd0c913a_0.conda
   sha256: e70bab441117c0420a4d77802ccf9123bbec3a76070956295e47688967197b39
   md5: 549678a7db61a3883543250b65d7c1a2
@@ -1447,6 +1473,15 @@ packages:
   purls: []
   size: 22850116
   timestamp: 1758933785330
+- conda: https://conda.anaconda.org/bioconda/osx-64/sracha-0.3.10-h518e4cb_0.conda
+  sha256: 88066ea09f4fa0adccbbfbd78816982f7adcab37f2ac6b1596b1fc03e60b39bf
+  md5: e8d683639d01a8957acaefc395f835de
+  constrains:
+  - __osx >=11.0
+  license: MIT
+  purls: []
+  size: 2935743
+  timestamp: 1781704340258
 - conda: https://conda.anaconda.org/bioconda/osx-64/vsearch-2.31.0-h7aab66d_0.conda
   sha256: 47236db3b8c996a26b3fbf6bfade7c209e3c222a799e53e5c8bb414a755a754f
   md5: cada888bf20c710bf62e724b6f01dcd7
@@ -1649,6 +1684,15 @@ packages:
   purls: []
   size: 21925186
   timestamp: 1758931207633
+- conda: https://conda.anaconda.org/bioconda/osx-arm64/sracha-0.3.10-h1a4e967_0.conda
+  sha256: 65bcf7c5bd794e14f738983454e8fe238f6039bd212ecc6f9016298113bd1067
+  md5: 94b548ff2ee360b6b4fdc236b896c5aa
+  constrains:
+  - __osx >=11.0
+  license: MIT
+  purls: []
+  size: 2654035
+  timestamp: 1781702356728
 - conda: https://conda.anaconda.org/bioconda/osx-arm64/vsearch-2.31.0-h0448ff9_0.conda
   sha256: 992bb9bf6858d0c53f502f11575fe45526862b47277c5d2bbd3de008136af7f0
   md5: 003a2cc62a2f4350d19d549a6db39e25

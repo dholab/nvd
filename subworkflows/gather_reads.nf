@@ -34,17 +34,16 @@ workflow GATHER_READS {
         // contains paired-end libraries with >=2 FASTQs, and the other contains the rest
         ch_sorted_fastqs = FETCH_FASTQ.out
             .branch { sample_id, platform, fastq_files ->
-
                 single: fastq_files.size() == 1
                     return tuple(sample_id, platform, file(fastq_files[0]))
 
-                paired: fastq_files.size() > 1 && file(fastq_files[0]).getName().endsWith("1.fastq") && file(fastq_files[1]).getName().endsWith("2.fastq")
+                paired: fastq_files.size() > 1 && (file(fastq_files[0]).getName().endsWith("1.fastq") || file(fastq_files[0]).getName().endsWith("1.fastq.gz")) && (file(fastq_files[1]).getName().endsWith("2.fastq") || file(fastq_files[1]).getName().endsWith("2.fastq.gz"))
                     return tuple(sample_id, platform, file(fastq_files[0]), file(fastq_files[1]))
 
-                triple1: fastq_files.size() > 2 && file(fastq_files[0]).getName().endsWith("1.fastq") && file(fastq_files[1]).getName().endsWith("2.fastq")
+                triple1: fastq_files.size() > 2 && (file(fastq_files[0]).getName().endsWith("1.fastq") || file(fastq_files[0]).getName().endsWith("1.fastq.gz")) && (file(fastq_files[1]).getName().endsWith("2.fastq") || file(fastq_files[1]).getName().endsWith("2.fastq.gz"))
                     return tuple(sample_id, platform, file(fastq_files[0]), file(fastq_files[1]))
 
-                triple2: fastq_files.size() > 2 && file(fastq_files[1]).getName().endsWith("1.fastq") && file(fastq_files[2]).getName().endsWith("2.fastq")
+                triple2: fastq_files.size() > 2 && (file(fastq_files[1]).getName().endsWith("1.fastq") || file(fastq_files[1]).getName().endsWith("1.fastq.gz")) && (file(fastq_files[2]).getName().endsWith("2.fastq") || file(fastq_files[2]).getName().endsWith("2.fastq.gz"))
                     return tuple(sample_id, platform, file(fastq_files[1]), file(fastq_files[2]))
 
                 other: true

@@ -22,7 +22,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def contains_non_phage_viruses(group: pd.DataFrame) -> bool:
-    virus_hits = group[group["rank"].str.contains("root:Viruses", na=False)]
+    virus_hits = group[group["rank"].str.contains("superkingdom:Viruses", na=False)]
     non_phage_viruses = virus_hits[
         ~virus_hits["stitle"].str.contains("phage", case=False)
     ]
