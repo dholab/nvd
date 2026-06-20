@@ -107,6 +107,11 @@ class NvdParams(BaseModel):
         description="Nextflow work directory",
         json_schema_extra={"category": "Core"},
     )
+    experimental: bool = Field(
+        default=False,
+        description="Enable experimental release-candidate features",
+        json_schema_extra={"category": "Core"},
+    )
 
     blast_db_version: str | None = Field(
         None,

@@ -129,6 +129,12 @@ def run(
         dir_okay=False,
         rich_help_panel=PANEL_CORE,
     ),
+    experimental: bool | None = typer.Option(
+        None,
+        "--experimental",
+        help="Enable experimental release-candidate features",
+        rich_help_panel=PANEL_CORE,
+    ),
     # -------------------------------------------------------------------------
     # Reference Paths
     # -------------------------------------------------------------------------
@@ -506,6 +512,7 @@ def run(
         "cleanup": cleanup,
         "work_dir": work_dir,
         "taxonomy_dir": resolved_taxonomy_dir,
+        "experimental": experimental,
         # Reference paths
         "blast_db": blast_db,
         "blast_db_prefix": blast_db_prefix,

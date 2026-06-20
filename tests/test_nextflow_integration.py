@@ -183,6 +183,7 @@ def write_augmented_samplesheet(run_dir: Path) -> Path:
 def run_nextflow() -> tuple[subprocess.CompletedProcess[str], Path]:
     profile = os.environ.get("NVD_INTEGRATION_PROFILE", "test")
     show_progress = os.environ.get("NVD_E2E_SHOW_PROGRESS") == "1"
+    experimental = os.environ.get("NVD_INTEGRATION_EXPERIMENTAL") == "1"
     run_dir = make_e2e_run_dir()
     results_dir = run_dir / "results"
     work_dir = run_dir / "work"
@@ -212,6 +213,9 @@ def run_nextflow() -> tuple[subprocess.CompletedProcess[str], Path]:
         "--work_dir",
         str(work_dir),
     ]
+    if experimental:
+        command.extend(["--experimental", "true"])
+
     completed = subprocess.run(  # noqa: S603
         command,
         cwd=ROOT,
@@ -251,10 +255,16 @@ def test_mini_sra_viral_pipeline_completes() -> None:
     final_blast_files = sorted(final_dir.glob("*_blast.final.tsv"))
     assert final_blast_files, f"No final BLAST TSVs found in {final_dir}"
 
-    experiment_blast = results_root / "08_experiment_summary" / "experiment_blast_results.tsv"
-    assert experiment_blast.is_file(), f"Missing experiment BLAST summary: {experiment_blast}"
+    experiment_blast = (
+        results_root / "08_experiment_summary" / "experiment_blast_results.tsv"
+    )
+    assert experiment_blast.is_file(), (
+        f"Missing experiment BLAST summary: {experiment_blast}"
+    )
 
-    final_text = "\n".join(path.read_text(encoding="utf-8") for path in final_blast_files)
+    final_text = "\n".join(
+        path.read_text(encoding="utf-8") for path in final_blast_files
+    )
     experiment_rows = read_tsv_rows(experiment_blast)
     assert experiment_rows, f"No experiment BLAST rows found in {experiment_blast}"
 
@@ -262,11 +272,15 @@ def test_mini_sra_viral_pipeline_completes() -> None:
         sample_rows = [
             row for row in experiment_rows if row.get("sample") == run_info["sample_id"]
         ]
-        assert sample_rows, f"No experiment BLAST rows found for {run_info['sample_id']}"
-        assert any(row.get("staxids") == str(run_info["taxid"]) for row in sample_rows), (
-            f"No {run_info['taxid']} BLAST taxid found for {run_info['sample_id']}"
+        assert sample_rows, (
+            f"No experiment BLAST rows found for {run_info['sample_id']}"
         )
-        assert any(run_info["expected_organism"] in row.get("rank", "") for row in sample_rows), (
+        assert any(
+            row.get("staxids") == str(run_info["taxid"]) for row in sample_rows
+        ), f"No {run_info['taxid']} BLAST taxid found for {run_info['sample_id']}"
+        assert any(
+            run_info["expected_organism"] in row.get("rank", "") for row in sample_rows
+        ), (
             f"No {run_info['expected_organism']} lineage found for "
             f"{run_info['sample_id']}"
         )

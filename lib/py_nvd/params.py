@@ -22,7 +22,7 @@ import yaml
 SCHEMA_FILENAME = "nvd-params.latest.schema.json"
 
 # GitHub raw URL for schema (fallback and for generated templates)
-SCHEMA_URL = "https://raw.githubusercontent.com/dholab/nvd/main/schemas/nvd-params.v3.0.0.schema.json"
+SCHEMA_URL = "https://raw.githubusercontent.com/dholab/nvd/main/schemas/nvd-params.v3.1.0.schema.json"
 
 
 def _find_schema_path() -> Path:
@@ -314,6 +314,15 @@ def _generate_yaml_template(path: Path, schema: dict, schema_url: str) -> None:
     properties: dict[str, dict] = schema.get("properties", {})
 
     _yaml_required_section(lines, properties)
+
+    _add_commented_section(
+        lines,
+        "Experimental Features",
+        ["experimental"],
+        properties,
+        subheading="Off by default. Enable only when intentionally testing release-candidate features.",
+    )
+
     _yaml_analysis_section(lines, properties)
 
     _add_commented_section(

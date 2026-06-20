@@ -42,6 +42,7 @@ class TestNvdParamsInstantiation:
             max_concurrent_downloads=5,
             cleanup=True,
             work_dir=Path("/fake/work"),
+            experimental=True,
             # Database versions
             blast_db_version="core-nt_2025-01-01",
             # Database paths
@@ -63,6 +64,7 @@ class TestNvdParamsInstantiation:
             labkey_server="example.com",
         )
         assert p.cleanup is True
+        assert p.experimental is True
         assert p.host_index == Path("/db/host.idx")
         assert p.cutoff_percent == 0.01
         assert p.labkey is True
@@ -415,6 +417,14 @@ class TestNvdParamsToNextflowArgs:
         cmd = p.to_nextflow_args(Path("/pipeline"))
         assert "--taxonomy_dir" not in cmd
 
+    def test_experimental_param(self) -> None:
+        """experimental is correctly propagated as a boolean param."""
+        p = NvdParams(experimental=True)
+        cmd = p.to_nextflow_args(Path("/pipeline"))
+
+        experimental_idx = cmd.index("--experimental")
+        assert cmd[experimental_idx + 1] == "true"
+
 
 class TestNvdParamsDefaults:
     """Tests for default values matching nextflow.config."""
@@ -454,6 +464,10 @@ class TestNvdParamsDefaults:
     def test_default_preprocess(self) -> None:
         """Default preprocess matches nextflow.config."""
         assert NvdParams().preprocess is False
+
+    def test_default_experimental(self) -> None:
+        """Default experimental gate matches nextflow.config."""
+        assert NvdParams().experimental is False
 
     def test_default_labkey(self) -> None:
         """Default labkey matches nextflow.config."""
