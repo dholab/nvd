@@ -173,6 +173,14 @@ For local FASTQ files:
 nvd samplesheet generate --from-dir ./fastqs --platform illumina --output samplesheet.csv
 ```
 
+If your Illumina FASTQs use CASAVA-style names like `patient-001_S7_L003_R1_001.fastq.gz`, add `--sanitize` when you want the generated `sample_id` to be `patient-001` rather than `patient-001_S7_L003`:
+
+```bash
+nvd samplesheet generate --from-dir ./fastqs --platform illumina --sanitize --output samplesheet.csv
+```
+
+`--sanitize` only changes generated sample IDs. It does not concatenate multiple lanes; multi-lane Illumina inputs still produce one row per discovered read pair.
+
 For Nanopore/ONT files, use `--platform ont`:
 
 ```bash

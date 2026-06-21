@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import csv
 import json
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -144,3 +145,32 @@ def test_run_uses_taxonomy_env_as_pipeline_param(
     assert result.exit_code == 0, result.output
     assert "--taxonomy_dir" in result.output
     assert str(taxonomy_dir) in result.output
+
+
+def test_samplesheet_generate_sanitizes_illumina_ids(tmp_path: Path) -> None:
+    fastq_dir = tmp_path / "fastqs"
+    fastq_dir.mkdir()
+    (fastq_dir / "patient-001_S7_L003_R1_001.fastq.gz").write_text("", encoding="utf-8")
+    (fastq_dir / "patient-001_S7_L003_R2_001.fastq.gz").write_text("", encoding="utf-8")
+    samplesheet = tmp_path / "samplesheet.csv"
+
+    result = runner.invoke(
+        app,
+        [
+            "samplesheet",
+            "generate",
+            "--from-dir",
+            str(fastq_dir),
+            "--platform",
+            "illumina",
+            "--output",
+            str(samplesheet),
+            "--force",
+            "--sanitize",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    with samplesheet.open(newline="", encoding="utf-8") as handle:
+        rows = list(csv.DictReader(handle))
+    assert rows[0]["sample_id"] == "patient-001"
