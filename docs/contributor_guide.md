@@ -138,6 +138,7 @@ nvd/
 │   └── py_nvd/             # Python CLI, params, presets, taxonomy helpers
 ├── modules/                # Individual Nextflow process modules
 ├── schemas/                # JSON schemas for params files
+├── scripts/                # Maintainer/build/developer scripts, not Nextflow runtime executables
 ├── subworkflows/           # Reusable Nextflow subworkflow modules
 ├── workflows/              # Main workflow orchestration
 ├── .github/scripts/        # CI validation scripts

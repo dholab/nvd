@@ -1,6 +1,10 @@
 set shell := ["bash", "-cu"]
 
-PYTHON_CI_PATHS := "lib/"
+PYTHON_CI_PATHS := "lib/ scripts/"
+NCBI_VIRUS_SOURMASH_SIG_URL := "https://farm.cse.ucdavis.edu/~ctbrown/sourmash-db.new/ncbi-viruses-2025.01/ncbi-viruses-2025.01.dna.k=31.sig.zip"
+NCBI_VIRUS_SOURMASH_LINEAGES_URL := "https://farm.cse.ucdavis.edu/~ctbrown/sourmash-db.new/ncbi-viruses-2025.01/ncbi-viruses.2025.01.lineages.csv"
+WVDB_FASTA_URL := "https://zenodo.org/records/20276352/files/WVDB_v1.0.fasta?download=1"
+WVDB_ANNOTATIONS_URL := "https://zenodo.org/records/20276352/files/WVDB_v1.0_annotations.tsv?download=1"
 
 # Default recipe: show available commands
 default:
@@ -72,6 +76,42 @@ config-check:
         pixi run nextflow config -profile "${profile}" > /dev/null; \
     done
 
+# === Reference Builds ===
+
+# fetch and validate the NCBI Virus sourmash reference; downloads large inputs
+fetch-sourmash-ncbi-virus approval="" work_dir="build/sourmash/ncbi-virus-wvdb-v2":
+    @if [ "{{ approval }}" != "yes" ]; then echo "This recipe downloads large reference files. Re-run with: just fetch-sourmash-ncbi-virus yes"; exit 2; fi
+    mkdir -p "{{ work_dir }}"
+    curl -fL "{{ NCBI_VIRUS_SOURMASH_SIG_URL }}" -o "{{ work_dir }}/ncbi-viruses-2025.01.dna.k31.scaled50.sig.zip"
+    curl -fL "{{ NCBI_VIRUS_SOURMASH_LINEAGES_URL }}" -o "{{ work_dir }}/ncbi-viruses-2025.01.lineages.csv"
+    @if file "{{ work_dir }}/ncbi-viruses-2025.01.dna.k31.scaled50.sig.zip" | grep -qi 'HTML'; then echo "Downloaded NCBI Virus sourmash sketch is HTML, not a sourmash zip. The upstream Farm URL may be serving a maintenance page."; exit 1; fi
+    @if file "{{ work_dir }}/ncbi-viruses-2025.01.lineages.csv" | grep -qi 'HTML'; then echo "Downloaded NCBI Virus lineages file is HTML, not CSV. The upstream Farm URL may be serving a maintenance page."; exit 1; fi
+    pixi run sourmash sig summarize "{{ work_dir }}/ncbi-viruses-2025.01.dna.k31.scaled50.sig.zip"
+    pixi run sourmash tax prepare --taxonomy-csv "{{ work_dir }}/ncbi-viruses-2025.01.lineages.csv" --keep-identifier-versions -F csv -o "{{ work_dir }}/ncbi-viruses-2025.01.lineages.validated.csv"
+
+# build and validate the WVDB sourmash reference side; downloads large WVDB inputs
+build-sourmash-wvdb approval="" work_dir="build/sourmash/ncbi-virus-wvdb-v2":
+    @if [ "{{ approval }}" != "yes" ]; then echo "This recipe downloads large WVDB reference files. Re-run with: just build-sourmash-wvdb yes"; exit 2; fi
+    mkdir -p "{{ work_dir }}"
+    curl -fL "{{ WVDB_FASTA_URL }}" -o "{{ work_dir }}/WVDB_v1.0.fasta"
+    curl -fL "{{ WVDB_ANNOTATIONS_URL }}" -o "{{ work_dir }}/WVDB_v1.0_annotations.tsv"
+    rm -f "{{ work_dir }}/WVDB_v2.normalized.fasta" "{{ work_dir }}/wvdb-v2.sourmash.lineages.csv" "{{ work_dir }}/wvdb-v2.dna.k31.scaled50.sig.zip" "{{ work_dir }}/wvdb-v2.manifest.csv" "{{ work_dir }}/wvdb-v2.sourmash.lineages.validated.csv"
+    uv run scripts/prepare_wvdb_sourmash_inputs.py prepare-inputs --fasta "{{ work_dir }}/WVDB_v1.0.fasta" --annotations-tsv "{{ work_dir }}/WVDB_v1.0_annotations.tsv" --normalized-fasta "{{ work_dir }}/WVDB_v2.normalized.fasta" --lineages-csv "{{ work_dir }}/wvdb-v2.sourmash.lineages.csv"
+    pixi run sourmash sketch dna "{{ work_dir }}/WVDB_v2.normalized.fasta" --singleton -p dna,k=31,scaled=50 -o "{{ work_dir }}/wvdb-v2.dna.k31.scaled50.sig.zip"
+    pixi run sourmash sig summarize "{{ work_dir }}/wvdb-v2.dna.k31.scaled50.sig.zip"
+    pixi run sourmash sig manifest "{{ work_dir }}/wvdb-v2.dna.k31.scaled50.sig.zip" -o "{{ work_dir }}/wvdb-v2.manifest.csv"
+    uv run scripts/prepare_wvdb_sourmash_inputs.py check-manifest-coverage --manifest-csv "{{ work_dir }}/wvdb-v2.manifest.csv" --lineages-csv "{{ work_dir }}/wvdb-v2.sourmash.lineages.csv"
+    pixi run sourmash tax prepare --taxonomy-csv "{{ work_dir }}/wvdb-v2.sourmash.lineages.csv" --keep-identifier-versions -F csv -o "{{ work_dir }}/wvdb-v2.sourmash.lineages.validated.csv"
+
+# build a combined NCBI Virus 2025.01 + WVDB v2 sourmash reference; downloads large inputs
+build-sourmash-ncbi-wvdb approval="" work_dir="build/sourmash/ncbi-virus-wvdb-v2": (fetch-sourmash-ncbi-virus approval work_dir) (build-sourmash-wvdb approval work_dir)
+    rm -f "{{ work_dir }}/ncbi-viruses-2025.01-plus-wvdb-v2.dna.k31.scaled50.sig.zip" "{{ work_dir }}/ncbi-viruses-2025.01-plus-wvdb-v2.lineages.csv" "{{ work_dir }}/ncbi-viruses-2025.01-plus-wvdb-v2.manifest.csv"
+    pixi run sourmash sig cat "{{ work_dir }}/ncbi-viruses-2025.01.dna.k31.scaled50.sig.zip" "{{ work_dir }}/wvdb-v2.dna.k31.scaled50.sig.zip" --dna -k 31 --unique -o "{{ work_dir }}/ncbi-viruses-2025.01-plus-wvdb-v2.dna.k31.scaled50.sig.zip"
+    pixi run sourmash tax prepare --taxonomy-csv "{{ work_dir }}/ncbi-viruses-2025.01.lineages.csv" "{{ work_dir }}/wvdb-v2.sourmash.lineages.csv" --keep-identifier-versions -F csv -o "{{ work_dir }}/ncbi-viruses-2025.01-plus-wvdb-v2.lineages.csv"
+    pixi run sourmash sig manifest "{{ work_dir }}/ncbi-viruses-2025.01-plus-wvdb-v2.dna.k31.scaled50.sig.zip" -o "{{ work_dir }}/ncbi-viruses-2025.01-plus-wvdb-v2.manifest.csv"
+    uv run scripts/prepare_wvdb_sourmash_inputs.py check-manifest-coverage --manifest-csv "{{ work_dir }}/ncbi-viruses-2025.01-plus-wvdb-v2.manifest.csv" --lineages-csv "{{ work_dir }}/ncbi-viruses-2025.01-plus-wvdb-v2.lineages.csv"
+    pixi run sourmash sig summarize "{{ work_dir }}/ncbi-viruses-2025.01-plus-wvdb-v2.dna.k31.scaled50.sig.zip"
+
 # === End-to-end Integration ===
 
 # run the slow mini SRA end-to-end test with progress output
@@ -120,3 +160,4 @@ alias nf-config := config
 alias config-test := config
 alias clean := clean-e2e
 alias build := docker-build
+alias wvdb := build-sourmash-ncbi-wvdb

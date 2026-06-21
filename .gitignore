@@ -72,9 +72,11 @@
 !/docs/contributor_guide.md
 !/docs/example_commands.md
 !/docs/nvd_cli_guide.md
+!/docs/sourmash_ncbi_wvdb_reference.md
 !/docs/virus_enrichment_index.md
 
 # scripts
+!/scripts
 !/scripts/*
 !/scripts/*.sh
 !/scripts/*.awk
