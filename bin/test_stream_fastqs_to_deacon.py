@@ -28,6 +28,7 @@ ROOT = Path(__file__).resolve().parents[1]
 INTEGRATION_DATA = ROOT / "tests" / "data"
 Runner = Callable[[list[str]], subprocess.CompletedProcess[str]]
 
+
 def write_fastq(path: Path, read_names: list[str]) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     text = "".join(f"@{name}\nACGT\n+\n!!!!\n" for name in read_names)
@@ -53,7 +54,12 @@ def command_io(command: list[str]) -> tuple[Path, Path, Path, tuple[Path, ...]]:
     index = command.index("filter") + 1
     while command[index].startswith("--"):
         index += 2
-    return output, summary, Path(command[index]), tuple(Path(item) for item in command[index + 1 :])
+    return (
+        output,
+        summary,
+        Path(command[index]),
+        tuple(Path(item) for item in command[index + 1 :]),
+    )
 
 
 def open_maybe_gzip(path: Path, mode: str) -> IO[Any]:
@@ -92,7 +98,9 @@ def copying_deacon_runner() -> Runner:
                     with open_maybe_gzip(input_path, "rb") as inp:
                         out.write(inp.read())
             summary.write_text(
-                json.dumps({"index": str(index), "inputs": [str(item) for item in inputs]}),
+                json.dumps(
+                    {"index": str(index), "inputs": [str(item) for item in inputs]},
+                ),
                 encoding="utf-8",
             )
             return subprocess.CompletedProcess(command, 0)
@@ -120,7 +128,10 @@ def stat_recording_deacon_runner(report: Path) -> Runner:
                 with input_path.open("rb") as inp:
                     out.write(inp.read())
         report.write_text(json.dumps(records), encoding="utf-8")
-        summary.write_text(json.dumps({"inputs": [str(item) for item in inputs]}), encoding="utf-8")
+        summary.write_text(
+            json.dumps({"inputs": [str(item) for item in inputs]}),
+            encoding="utf-8",
+        )
         return subprocess.CompletedProcess(command, 0)
 
     return run
@@ -205,7 +216,10 @@ def test_single_end_gzip_bundle_streams_in_order(tmp_path: Path) -> None:
     lane1 = write_fastq(tmp_path / "lane1.fastq.gz", ["L1_A", "L1_B"])
     lane2 = write_fastq(tmp_path / "lane2.fastq.gz", ["L2_C"])
 
-    run_deacon_stream(config(tmp_path, reads=(lane1, lane2)), runner=copying_deacon_runner())
+    run_deacon_stream(
+        config(tmp_path, reads=(lane1, lane2)),
+        runner=copying_deacon_runner(),
+    )
 
     output = (tmp_path / "out" / "S1.fastq").read_text(encoding="utf-8")
     assert output.index("@L1_A") < output.index("@L1_B") < output.index("@L2_C")
@@ -215,13 +229,18 @@ def test_plain_fastq_bundle_streams_in_order(tmp_path: Path) -> None:
     lane1 = write_fastq(tmp_path / "lane1.fastq", ["L1_A"])
     lane2 = write_fastq(tmp_path / "lane2.fastq", ["L2_B"])
 
-    run_deacon_stream(config(tmp_path, reads=(lane1, lane2)), runner=copying_deacon_runner())
+    run_deacon_stream(
+        config(tmp_path, reads=(lane1, lane2)),
+        runner=copying_deacon_runner(),
+    )
 
     output = (tmp_path / "out" / "S1.fastq").read_text(encoding="utf-8")
     assert output.index("@L1_A") < output.index("@L2_B")
 
 
-def test_single_end_gzip_inputs_are_fastq_gz_fifos_not_regular_files(tmp_path: Path) -> None:
+def test_single_end_gzip_inputs_are_fastq_gz_fifos_not_regular_files(
+    tmp_path: Path,
+) -> None:
     lane1 = write_fastq(tmp_path / "lane1.fastq.gz", ["L1_A"])
     lane2 = write_fastq(tmp_path / "lane2.fastq.gz", ["L2_B"])
     report = tmp_path / "input_stats.json"
@@ -237,15 +256,23 @@ def test_single_end_gzip_inputs_are_fastq_gz_fifos_not_regular_files(tmp_path: P
     assert not Path(records[0]["path"]).exists()
 
 
-def test_paired_gzip_inputs_are_fastq_gz_fifos_not_regular_files(tmp_path: Path) -> None:
+def test_paired_gzip_inputs_are_fastq_gz_fifos_not_regular_files(
+    tmp_path: Path,
+) -> None:
     r1 = write_fastq(tmp_path / "Sample_L001_R1_001.fastq.gz", ["L1_A/1"])
     r2 = write_fastq(tmp_path / "Sample_L001_R2_001.fastq.gz", ["L1_A/2"])
     report = tmp_path / "input_stats.json"
 
-    run_deacon_stream(config(tmp_path, r1=(r1,), r2=(r2,)), runner=stat_recording_deacon_runner(report))
+    run_deacon_stream(
+        config(tmp_path, r1=(r1,), r2=(r2,)),
+        runner=stat_recording_deacon_runner(report),
+    )
 
     records = json.loads(report.read_text(encoding="utf-8"))
-    assert [(Path(record["path"]).name, record["fifo"], record["regular"]) for record in records] == [
+    assert [
+        (Path(record["path"]).name, record["fifo"], record["regular"])
+        for record in records
+    ] == [
         ("r1.fastq.gz", True, False),
         ("r2.fastq.gz", True, False),
     ]
@@ -273,7 +300,9 @@ def test_paired_bundle_streams_both_mates_in_order(tmp_path: Path) -> None:
     assert output.index("@L1_A/2") < output.index("@L2_B/2")
 
 
-def test_paired_gzip_fifo_preserves_record_ordinality_across_lanes(tmp_path: Path) -> None:
+def test_paired_gzip_fifo_preserves_record_ordinality_across_lanes(
+    tmp_path: Path,
+) -> None:
     r1_lane1 = write_fastq(
         tmp_path / "Sample_L001_R1_001.fastq.gz",
         ["L001_A/1", "L001_B/1"],
@@ -319,12 +348,17 @@ def test_paired_gzip_fifo_detects_swapped_r2_lane_order(tmp_path: Path) -> None:
         )
 
 
-def test_missing_producer_file_fails_even_if_consumer_would_succeed(tmp_path: Path) -> None:
+def test_missing_producer_file_fails_even_if_consumer_would_succeed(
+    tmp_path: Path,
+) -> None:
     lane1 = write_fastq(tmp_path / "lane1.fastq.gz", ["L1_A"])
     missing = tmp_path / "missing.fastq.gz"
 
     with pytest.raises(StreamError, match="missing files"):
-        run_deacon_stream(config(tmp_path, reads=(lane1, missing)), runner=copying_deacon_runner())
+        run_deacon_stream(
+            config(tmp_path, reads=(lane1, missing)),
+            runner=copying_deacon_runner(),
+        )
 
 
 def test_corrupt_gzip_consumer_failure_is_reported(tmp_path: Path) -> None:
@@ -332,24 +366,35 @@ def test_corrupt_gzip_consumer_failure_is_reported(tmp_path: Path) -> None:
     corrupt.write_bytes(b"not actually gzip")
 
     with pytest.raises(StreamError, match="deacon filter failed"):
-        run_deacon_stream(config(tmp_path, reads=(corrupt,)), runner=copying_deacon_runner())
+        run_deacon_stream(
+            config(tmp_path, reads=(corrupt,)),
+            runner=copying_deacon_runner(),
+        )
 
 
-def test_truncated_gzip_consumer_failure_after_partial_stream_is_reported(tmp_path: Path) -> None:
+def test_truncated_gzip_consumer_failure_after_partial_stream_is_reported(
+    tmp_path: Path,
+) -> None:
     valid = write_fastq(tmp_path / "valid.fastq.gz", ["L1_A", "L1_B"])
     truncated = tmp_path / "truncated.fastq.gz"
     original = valid.read_bytes()
     truncated.write_bytes(original[:-8])
 
     with pytest.raises(StreamError, match="deacon filter failed"):
-        run_deacon_stream(config(tmp_path, reads=(truncated,)), runner=copying_deacon_runner())
+        run_deacon_stream(
+            config(tmp_path, reads=(truncated,)),
+            runner=copying_deacon_runner(),
+        )
 
 
 def test_deacon_failure_before_fifo_open_does_not_hang(tmp_path: Path) -> None:
     reads = write_fastq(tmp_path / "lane1.fastq.gz", ["L1_A"])
 
     with pytest.raises(StreamError, match="deacon filter failed with exit code 7"):
-        run_deacon_stream(config(tmp_path, reads=(reads,)), runner=failing_deacon_runner())
+        run_deacon_stream(
+            config(tmp_path, reads=(reads,)),
+            runner=failing_deacon_runner(),
+        )
 
 
 def test_deacon_failure_after_reading_from_fifo_does_not_hang(tmp_path: Path) -> None:
@@ -357,12 +402,17 @@ def test_deacon_failure_after_reading_from_fifo_does_not_hang(tmp_path: Path) ->
 
     started = time.monotonic()
     with pytest.raises(StreamError, match="deacon filter failed with exit code 7"):
-        run_deacon_stream(config(tmp_path, reads=(reads,)), runner=partial_read_failing_deacon_runner())
+        run_deacon_stream(
+            config(tmp_path, reads=(reads,)),
+            runner=partial_read_failing_deacon_runner(),
+        )
 
     assert time.monotonic() - started < HANG_GUARD_SECONDS
 
 
-def test_deacon_success_before_opening_all_plain_paired_fifos_does_not_hang(tmp_path: Path) -> None:
+def test_deacon_success_before_opening_all_plain_paired_fifos_does_not_hang(
+    tmp_path: Path,
+) -> None:
     r1 = write_fastq(tmp_path / "Sample_L001_R1_001.fastq", ["L1_A/1"])
     r2 = write_fastq(tmp_path / "Sample_L001_R2_001.fastq", ["L1_A/2"])
 
@@ -398,14 +448,20 @@ def test_mixed_compression_is_rejected(tmp_path: Path) -> None:
     gz = write_fastq(tmp_path / "lane2.fastq.gz", ["L2_B"])
 
     with pytest.raises(StreamError, match="one compression type"):
-        run_deacon_stream(config(tmp_path, reads=(plain, gz)), runner=copying_deacon_runner())
+        run_deacon_stream(
+            config(tmp_path, reads=(plain, gz)),
+            runner=copying_deacon_runner(),
+        )
 
 
 def test_xz_bundle_streams_in_order(tmp_path: Path) -> None:
     lane1 = write_fastq(tmp_path / "lane1.fastq.xz", ["L1_A"])
     lane2 = write_fastq(tmp_path / "lane2.fastq.xz", ["L2_B"])
 
-    run_deacon_stream(config(tmp_path, reads=(lane1, lane2)), runner=copying_deacon_runner())
+    run_deacon_stream(
+        config(tmp_path, reads=(lane1, lane2)),
+        runner=copying_deacon_runner(),
+    )
 
     output = (tmp_path / "out" / "S1.fastq").read_text(encoding="utf-8")
     assert output.index("@L1_A") < output.index("@L2_B")
@@ -417,7 +473,10 @@ def test_paired_list_length_mismatch_is_rejected(tmp_path: Path) -> None:
     extra_r2 = write_fastq(tmp_path / "Sample_L002_R2_001.fastq.gz", ["L2_B/2"])
 
     with pytest.raises(StreamError, match="R1/R2 file list length mismatch"):
-        run_deacon_stream(config(tmp_path, r1=(r1,), r2=(r2, extra_r2)), runner=copying_deacon_runner())
+        run_deacon_stream(
+            config(tmp_path, r1=(r1,), r2=(r2, extra_r2)),
+            runner=copying_deacon_runner(),
+        )
 
 
 def test_paired_mixed_compression_across_sample_is_rejected(tmp_path: Path) -> None:
@@ -425,7 +484,10 @@ def test_paired_mixed_compression_across_sample_is_rejected(tmp_path: Path) -> N
     r2 = write_fastq(tmp_path / "Sample_L001_R2_001.fastq.xz", ["L1_A/2"])
 
     with pytest.raises(StreamError, match="one compression type"):
-        run_deacon_stream(config(tmp_path, r1=(r1,), r2=(r2,)), runner=copying_deacon_runner())
+        run_deacon_stream(
+            config(tmp_path, r1=(r1,), r2=(r2,)),
+            runner=copying_deacon_runner(),
+        )
 
 
 def test_zst_bundle_streams_raw_bytes_through_fastq_zst_fifo(tmp_path: Path) -> None:
@@ -433,10 +495,16 @@ def test_zst_bundle_streams_raw_bytes_through_fastq_zst_fifo(tmp_path: Path) -> 
     zst.write_bytes(b"placeholder")
     report = tmp_path / "input_stats.json"
 
-    run_deacon_stream(config(tmp_path, reads=(zst,)), runner=stat_recording_deacon_runner(report))
+    run_deacon_stream(
+        config(tmp_path, reads=(zst,)),
+        runner=stat_recording_deacon_runner(report),
+    )
 
     records = json.loads(report.read_text(encoding="utf-8"))
-    assert [(Path(record["path"]).name, record["fifo"], record["regular"]) for record in records] == [
+    assert [
+        (Path(record["path"]).name, record["fifo"], record["regular"])
+        for record in records
+    ] == [
         ("reads.fastq.zst", True, False),
     ]
     assert (tmp_path / "out" / "S1.fastq").read_bytes() == b"placeholder"
@@ -449,16 +517,25 @@ def test_paired_zst_inputs_are_fastq_zst_fifos(tmp_path: Path) -> None:
     r2.write_bytes(b"r2-zstd-bytes")
     report = tmp_path / "input_stats.json"
 
-    run_deacon_stream(config(tmp_path, r1=(r1,), r2=(r2,)), runner=stat_recording_deacon_runner(report))
+    run_deacon_stream(
+        config(tmp_path, r1=(r1,), r2=(r2,)),
+        runner=stat_recording_deacon_runner(report),
+    )
 
     records = json.loads(report.read_text(encoding="utf-8"))
-    assert [(Path(record["path"]).name, record["fifo"], record["regular"]) for record in records] == [
+    assert [
+        (Path(record["path"]).name, record["fifo"], record["regular"])
+        for record in records
+    ] == [
         ("r1.fastq.zst", True, False),
         ("r2.fastq.zst", True, False),
     ]
 
 
-def test_cli_list_files_are_supported(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_cli_list_files_are_supported(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     reads = (write_fastq(tmp_path / "lane1.fastq.gz", ["L1_A"]),)
     reads_list = write_path_list(tmp_path / "reads.txt", reads)
     argv = [
@@ -498,7 +575,19 @@ def build_deacon_index(tmp_path: Path, deacon: str) -> Path:
     )
     index = tmp_path / "toy.k3w1.idx"
     subprocess.run(  # noqa: S603
-        [deacon, "index", "build", "-k", "3", "-w", "1", "-q", "-o", str(index), str(reference)],
+        [
+            deacon,
+            "index",
+            "build",
+            "-k",
+            "3",
+            "-w",
+            "1",
+            "-q",
+            "-o",
+            str(index),
+            str(reference),
+        ],
         check=True,
     )
     return index
@@ -567,14 +656,22 @@ def real_deacon_config(  # noqa: PLR0913
     )
 
 
-def test_real_deacon_reads_single_end_fifo_stream(tmp_path: Path, deacon_bin: str) -> None:
+def test_real_deacon_reads_single_end_fifo_stream(
+    tmp_path: Path,
+    deacon_bin: str,
+) -> None:
     index = build_deacon_index(tmp_path, deacon_bin)
     lane1 = write_fastq(tmp_path / "lane1.fastq.gz", ["L1_A", "L1_B"])
     lane2 = write_fastq(tmp_path / "lane2.fastq.gz", ["L2_C"])
-    control_input = concatenate_gzip_to_plain(tmp_path / "control.fastq", (lane1, lane2))
+    control_input = concatenate_gzip_to_plain(
+        tmp_path / "control.fastq",
+        (lane1, lane2),
+    )
     control_output = run_direct_deacon(tmp_path, deacon_bin, index, (control_input,))
 
-    run_deacon_stream(real_deacon_config(tmp_path, deacon_bin, index, reads=(lane1, lane2)))
+    run_deacon_stream(
+        real_deacon_config(tmp_path, deacon_bin, index, reads=(lane1, lane2)),
+    )
 
     output_path = tmp_path / "real" / "out.fastq"
     assert output_path.read_bytes() == control_output.read_bytes()
@@ -589,9 +686,20 @@ def test_real_deacon_reads_paired_fifo_stream(tmp_path: Path, deacon_bin: str) -
     r1_lane2 = write_fastq(tmp_path / "Sample_L002_R1_001.fastq.gz", ["L2_B/1"])
     r2_lane1 = write_fastq(tmp_path / "Sample_L001_R2_001.fastq.gz", ["L1_A/2"])
     r2_lane2 = write_fastq(tmp_path / "Sample_L002_R2_001.fastq.gz", ["L2_B/2"])
-    control_r1 = concatenate_gzip_to_plain(tmp_path / "control_R1.fastq", (r1_lane1, r1_lane2))
-    control_r2 = concatenate_gzip_to_plain(tmp_path / "control_R2.fastq", (r2_lane1, r2_lane2))
-    control_output = run_direct_deacon(tmp_path, deacon_bin, index, (control_r1, control_r2))
+    control_r1 = concatenate_gzip_to_plain(
+        tmp_path / "control_R1.fastq",
+        (r1_lane1, r1_lane2),
+    )
+    control_r2 = concatenate_gzip_to_plain(
+        tmp_path / "control_R2.fastq",
+        (r2_lane1, r2_lane2),
+    )
+    control_output = run_direct_deacon(
+        tmp_path,
+        deacon_bin,
+        index,
+        (control_r1, control_r2),
+    )
 
     run_deacon_stream(
         real_deacon_config(
@@ -625,9 +733,20 @@ def test_real_deacon_streams_larger_paired_bundle_in_pair_order(
     if missing:
         pytest.skip("integration FASTQ fixtures are unavailable")
 
-    control_r1 = concatenate_gzip_to_plain(tmp_path / "control_R1.fastq", (r1_lane1, r1_lane2))
-    control_r2 = concatenate_gzip_to_plain(tmp_path / "control_R2.fastq", (r2_lane1, r2_lane2))
-    control_output = run_direct_deacon(tmp_path, deacon_bin, index, (control_r1, control_r2))
+    control_r1 = concatenate_gzip_to_plain(
+        tmp_path / "control_R1.fastq",
+        (r1_lane1, r1_lane2),
+    )
+    control_r2 = concatenate_gzip_to_plain(
+        tmp_path / "control_R2.fastq",
+        (r2_lane1, r2_lane2),
+    )
+    control_output = run_direct_deacon(
+        tmp_path,
+        deacon_bin,
+        index,
+        (control_r1, control_r2),
+    )
 
     run_deacon_stream(
         real_deacon_config(

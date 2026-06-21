@@ -163,7 +163,9 @@ For Illumina/CASAVA directories where each biological sample may have reads spli
 nvd samplesheet generate --from-dir ./fastqs --platform illumina --group-lanes --sanitize --output samplesheet.csv
 ```
 
-The generated CSV uses the lower-level `fastq1_glob` and `fastq2_glob` columns only when grouped lanes are requested; ordinary exact-path samplesheets can keep the shorter five-column shape. See `assets/grouped_lane_samplesheet.csv` for an example of the expanded form.
+The generated CSV uses the lower-level `fastq1_glob` and `fastq2_glob` columns only when grouped lanes are requested; ordinary exact-path samplesheets can keep the shorter five-column shape. Grouped-lane glob patterns should be considered “live”: NVD resolves them during validation and at run startup. If new matching lane files appear later on a `nextflow run ... -resume`, say, those files will become part of the run. See `assets/grouped_lane_samplesheet.csv` for an illustrative expanded form. Its `/data/run42` paths are placeholders and are expected to fail filesystem-sensitive validation unless you replace them with paths that exist in your run environment.
+
+Samplesheet validation is includes filesystem checks. Local FASTQ paths and glob patterns must thus be absolute and accessible when validation runs. NVD preserves user-facing absolute symlink paths rather than rewriting them through `realpath`; on clusters, use the stable absolute namespace that nodes can also see.
 
 For Nanopore/ONT reads:
 

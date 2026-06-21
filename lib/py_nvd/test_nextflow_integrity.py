@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import py_compile
 import re
+import subprocess
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -89,3 +91,17 @@ def test_nextflow_referenced_python_scripts_exist_and_compile(
             cfile=str(tmp_path / f"{script_path.stem}.pyc"),
             doraise=True,
         )
+
+
+def test_resolve_read_inputs_starts_with_package_imports() -> None:
+    """The read resolver script should start without source-tree path shims."""
+    result = subprocess.run(  # noqa: S603
+        [sys.executable, str(ROOT / "bin" / "resolve_read_inputs.py"), "--help"],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0
+    assert "Resolve NVD samplesheet read declarations" in result.stdout

@@ -16,8 +16,7 @@ import csv
 import glob
 import re
 import sys
-from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 import typer
@@ -30,18 +29,26 @@ from py_nvd.cli.prompts import (
     is_interactive,
     prompt_with_timeout,
 )
+from py_nvd.cli.samplesheet_validation import render_samplesheet_validation_result
 from py_nvd.cli.utils import console, error, info, success, warning
-
-REQUIRED_COLUMNS = ("sample_id", "srr", "platform", "fastq1", "fastq2")
-GLOB_COLUMNS = ("fastq1_glob", "fastq2_glob")
-OUTPUT_COLUMNS = REQUIRED_COLUMNS + GLOB_COLUMNS
-VALID_PLATFORMS = {"illumina", "ont", ""}
+from py_nvd.read_filenames import (
+    GENERATED_FASTQ_SUFFIXES,
+    CasavaLaneName,
+    parse_casava_lane_name,
+)
+from py_nvd.read_inputs import (
+    ResolutionError,
+    normalize_platform,
+)
+from py_nvd.samplesheet_validation import (
+    OUTPUT_COLUMNS,
+    REQUIRED_COLUMNS,
+    validate_samplesheet,
+)
+from py_nvd.sra_accessions import looks_like_sra_accession
 
 # Expected number of FASTQ files for paired-end samples
 PAIRED_END_FILE_COUNT = 2
-
-# FASTQ file extensions to recognize
-FASTQ_EXTENSIONS = {".fastq", ".fq", ".fastq.gz", ".fq.gz"}
 
 # Regex patterns for extracting sample stem and read number
 # Matches: _R1, _R2, _1, _2, .R1, .R2, .1, .2 (optionally followed by _001 etc)
@@ -59,169 +66,10 @@ STEM_PATTERN = re.compile(
 # Illumina/CASAVA sample/lane suffixes left after read indicators are removed.
 # Example: sample_S1_L001_R1_001.fastq.gz -> sample_S1_L001 -> sample
 CASAVA_SAMPLE_LANE_SUFFIX_PATTERN = re.compile(r"_S\d+(?:_L\d{3})?$", re.IGNORECASE)
-CASAVA_LANE_FASTQ_PATTERN = re.compile(
-    r"^(?P<prefix>.+)_L(?P<lane>\d{3})_R(?P<read>[12])_"
-    r"(?P<chunk>\d{3})(?P<extension>\.(?:fastq|fq)(?:\.gz)?)$",
-    re.IGNORECASE,
-)
 
 
 class SamplesheetGenerationError(ValueError):
     """Raised when samplesheet generation cannot safely infer inputs."""
-
-
-@dataclass
-class SamplesheetValidationResult:
-    """
-    Result of samplesheet validation.
-
-    Attributes:
-        valid: True if samplesheet passed all validation checks
-        samples: List of valid sample IDs found
-        errors: List of validation error messages
-        warnings: List of warning messages (non-fatal)
-        header_valid: True if header contains all required columns
-    """
-
-    valid: bool
-    samples: list[str] = field(default_factory=list)
-    errors: list[str] = field(default_factory=list)
-    warnings: list[str] = field(default_factory=list)
-    header_valid: bool = False
-
-
-@dataclass(frozen=True)
-class CasavaLaneFastqName:
-    """Parsed Illumina/CASAVA lane FASTQ filename components."""
-
-    path: Path
-    prefix: str
-    lane: str
-    read: int
-    chunk: str
-    extension: str
-
-    @property
-    def lane_chunk_key(self) -> tuple[str, str]:
-        """Key that must have both R1 and R2 for paired lane grouping."""
-        return (self.lane, self.chunk)
-
-
-def validate_samplesheet(path: Path) -> SamplesheetValidationResult:
-    """
-    Validate a samplesheet CSV file.
-
-    Checks:
-    - File exists and is readable
-    - Header contains all required columns
-    - Each row has a non-empty sample_id (unless commented with #)
-    - Platform is valid (illumina, ont, or empty)
-    - Either srr or fastq1 is provided
-    - Warns on duplicate sample IDs
-
-    Args:
-        path: Path to the samplesheet CSV file
-
-    Returns:
-        SamplesheetValidationResult with validation status and details
-    """
-    result = SamplesheetValidationResult(valid=False)
-
-    if not path.exists():
-        result.errors.append(f"Samplesheet not found: {path}")
-        return result
-
-    try:
-        with path.open() as f:
-            reader = csv.DictReader(f)
-
-            if not reader.fieldnames:
-                result.errors.append("Samplesheet is empty or has no header")
-                return result
-
-            # Check for required columns
-            fieldnames: set[str] = set(reader.fieldnames)
-            required: set[str] = set(REQUIRED_COLUMNS)
-            missing_cols = required - fieldnames
-            if missing_cols:
-                result.errors.append(
-                    f"Missing required columns: {', '.join(sorted(missing_cols))}",
-                )
-                return result
-
-            result.header_valid = True
-
-            # Validate rows
-            samples: list[str] = []
-            for i, row in enumerate(reader, start=2):  # Line 1 is header
-                sample_id = row.get("sample_id", "").strip()
-
-                # Skip comment lines
-                if sample_id.startswith("#"):
-                    continue
-
-                # Check sample_id not empty
-                if not sample_id:
-                    result.errors.append(f"Line {i}: sample_id is empty")
-                    continue
-
-                # Check platform is valid
-                platform = row.get("platform", "").strip().lower()
-                if platform and platform not in VALID_PLATFORMS:
-                    result.errors.append(
-                        f"Line {i} ({sample_id}): invalid platform '{platform}'",
-                    )
-
-                # Check that either SRR or FASTQ files are provided
-                srr = row.get("srr", "").strip()
-                fastq1 = row.get("fastq1", "").strip()
-                fastq1_glob = row.get("fastq1_glob", "").strip()
-                fastq2_glob = row.get("fastq2_glob", "").strip()
-
-                if glob.has_magic(fastq1):
-                    result.errors.append(
-                        f"Line {i} ({sample_id}): fastq1 is for exact paths; "
-                        "use fastq1_glob for glob patterns",
-                    )
-
-                fastq2 = row.get("fastq2", "").strip()
-                if glob.has_magic(fastq2):
-                    result.errors.append(
-                        f"Line {i} ({sample_id}): fastq2 is for exact paths; "
-                        "use fastq2_glob for glob patterns",
-                    )
-
-                if fastq2_glob and not fastq1_glob:
-                    result.errors.append(
-                        f"Line {i} ({sample_id}): fastq2_glob requires fastq1_glob",
-                    )
-
-                if not srr and not fastq1 and not fastq1_glob:
-                    result.errors.append(
-                        f"Line {i} ({sample_id}): must provide 'srr', 'fastq1', "
-                        "or 'fastq1_glob'",
-                    )
-
-                samples.append(sample_id)
-
-            result.samples = samples
-
-            # Check for duplicate sample IDs
-            duplicates = [s for s, count in Counter(samples).items() if count > 1]
-            if duplicates:
-                result.warnings.append(
-                    f"Duplicate sample_id found: {', '.join(duplicates)}",
-                )
-
-            # Valid if no errors
-            result.valid = len(result.errors) == 0
-
-    except csv.Error as e:
-        result.errors.append(f"CSV parsing error: {e}")
-    except OSError as e:
-        result.errors.append(f"Failed to read samplesheet: {e}")
-
-    return result
 
 
 @dataclass
@@ -261,15 +109,37 @@ def _get_fastq_files(directory: Path) -> list[Path]:
         List of absolute Path objects for FASTQ files, sorted alphabetically
     """
     fastq_files: list[Path] = []
-    directory = directory.resolve()
+    directory = directory.absolute()
 
-    for ext in FASTQ_EXTENSIONS:
+    for ext in GENERATED_FASTQ_SUFFIXES:
         # Handle double extensions like .fastq.gz
         if ext.startswith((".fastq", ".fq")):
             fastq_files.extend(directory.glob(f"*{ext}"))
 
     # Deduplicate (glob patterns may overlap) and sort
     return sorted(set(fastq_files))
+
+
+def _ensure_unique_generated_sample_ids(samples: list[SampleEntry]) -> None:
+    """Reject generated samplesheets that would contain duplicate sample IDs."""
+    seen: set[str] = set()
+    duplicates: set[str] = set()
+    for sample in samples:
+        if sample.sample_id in seen:
+            duplicates.add(sample.sample_id)
+        seen.add(sample.sample_id)
+
+    if not duplicates:
+        return
+
+    duplicate_list = ", ".join(f"'{sample_id}'" for sample_id in sorted(duplicates))
+    msg = (
+        f"Generated sample_id values are not unique: {duplicate_list}. "
+        "If these rows are separate Illumina lanes for the same biological sample, "
+        "rerun with --group-lanes. If they should remain separate samples, omit "
+        "--sanitize or use more specific FASTQ filenames."
+    )
+    raise SamplesheetGenerationError(msg)
 
 
 def _strip_terminal_casava_sample_lane_suffix(stem: str) -> str:
@@ -304,7 +174,7 @@ def _extract_stem(filename: str, *, sanitize: bool = False) -> str | None:
 
     # Fallback: strip known extensions for single-end files
     name = filename
-    for ext in sorted(FASTQ_EXTENSIONS, key=len, reverse=True):
+    for ext in sorted(GENERATED_FASTQ_SUFFIXES, key=len, reverse=True):
         if name.lower().endswith(ext):  # ty:ignore[invalid-argument-type]
             name = name[: -len(ext)]
             break
@@ -331,22 +201,6 @@ def _get_read_number(filename: str) -> int | None:
     return None
 
 
-def _parse_casava_lane_fastq(path: Path) -> CasavaLaneFastqName | None:
-    """Parse an Illumina/CASAVA lane FASTQ filename."""
-    match = CASAVA_LANE_FASTQ_PATTERN.fullmatch(path.name)
-    if match is None:
-        return None
-
-    return CasavaLaneFastqName(
-        path=path,
-        prefix=match.group("prefix"),
-        lane=match.group("lane"),
-        read=int(match.group("read")),
-        chunk=match.group("chunk"),
-        extension=match.group("extension"),
-    )
-
-
 def _glob_for_casava_group(
     directory: Path,
     prefix: str,
@@ -364,10 +218,10 @@ def _scan_fastq_directory_grouped_by_lane(
     sanitize: bool,
 ) -> tuple[list[SampleEntry], list[str]]:
     """Scan CASAVA lane FASTQs and emit one glob-backed row per sample."""
-    parsed_names: list[CasavaLaneFastqName] = []
+    parsed_names: list[CasavaLaneName] = []
     unparseable: list[Path] = []
     for fq in fastq_files:
-        parsed = _parse_casava_lane_fastq(fq)
+        parsed = parse_casava_lane_name(fq)
         if parsed is None:
             unparseable.append(fq)
         else:
@@ -382,7 +236,7 @@ def _scan_fastq_directory_grouped_by_lane(
         )
         raise SamplesheetGenerationError(msg)
 
-    prefix_to_names: dict[str, list[CasavaLaneFastqName]] = {}
+    prefix_to_names: dict[str, list[CasavaLaneName]] = {}
     for parsed in parsed_names:
         prefix_to_names.setdefault(parsed.prefix, []).append(parsed)
 
@@ -560,7 +414,7 @@ def parse_sra_accessions(path: Path) -> tuple[list[SampleEntry], list[str]]:
                     continue
 
                 # Basic SRA accession validation (SRR, ERR, DRR followed by digits)
-                if not re.match(r"^[SED]RR\d+$", line, re.IGNORECASE):
+                if not looks_like_sra_accession(line):
                     warnings_list.append(
                         f"Line {line_num}: '{line}' doesn't look like an SRA accession",
                     )
@@ -763,9 +617,15 @@ def generate(
     # Handle platform
     if platform is not None:
         # Validate provided platform
-        platform = platform.lower()
-        if platform not in ("illumina", "ont"):
-            error(f"Invalid platform: {platform}. Must be 'illumina' or 'ont'.")
+        try:
+            platform, platform_warnings = normalize_platform(
+                "generated samplesheet",
+                platform,
+            )
+        except ResolutionError as exc:
+            error(str(exc))
+        for warn in platform_warnings:
+            warning(warn)
     else:
         # Need to prompt for platform
         if not is_interactive():
@@ -822,6 +682,11 @@ def generate(
 
     if not samples:
         error("No samples found")
+
+    try:
+        _ensure_unique_generated_sample_ids(samples)
+    except SamplesheetGenerationError as exc:
+        error(str(exc))
 
     # Display preview
     console.print()
@@ -933,27 +798,4 @@ def validate_cmd(
     console.print(f"\n[bold]Validating Samplesheet[/bold]: {samplesheet}\n")
 
     result = validate_samplesheet(samplesheet)
-
-    # Display header status
-    if result.header_valid:
-        success(f"Header valid: {', '.join(REQUIRED_COLUMNS)}")
-    elif result.errors:
-        # Header errors will be in the errors list
-        pass
-
-    # Display errors
-    if result.errors:
-        console.print("\n[red]Validation errors:[/red]")
-        for err in result.errors:
-            console.print(f"  • {err}")
-        console.print()
-        error(f"Found {len(result.errors)} validation error(s)")
-
-    # Display warnings
-    for warn in result.warnings:
-        warning(warn)
-
-    # Success
-    success(f"Found {len(result.samples)} valid samples")
-    console.print()
-    success("Samplesheet is valid")
+    render_samplesheet_validation_result(result)

@@ -178,6 +178,34 @@ def test_samplesheet_generate_sanitizes_illumina_ids(tmp_path: Path) -> None:
     assert rows[0]["sample_id"] == "patient-001"
 
 
+def test_samplesheet_generate_accepts_platform_aliases(tmp_path: Path) -> None:
+    fastq_dir = tmp_path / "fastqs"
+    fastq_dir.mkdir()
+    (fastq_dir / "nanopore.fastq.gz").write_text("", encoding="utf-8")
+    samplesheet = tmp_path / "samplesheet.csv"
+
+    result = runner.invoke(
+        app,
+        [
+            "samplesheet",
+            "generate",
+            "--from-dir",
+            str(fastq_dir),
+            "--platform",
+            "nanopore",
+            "--output",
+            str(samplesheet),
+            "--force",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "platform alias 'nanopore' was normalized to 'ont'" in result.output
+    with samplesheet.open(newline="", encoding="utf-8") as handle:
+        rows = list(csv.DictReader(handle))
+    assert rows[0]["platform"] == "ont"
+
+
 def test_samplesheet_generate_groups_illumina_lanes_in_glob_columns(
     tmp_path: Path,
 ) -> None:
@@ -233,12 +261,31 @@ def test_samplesheet_generate_groups_illumina_lanes_in_glob_columns(
             "fastq1": "",
             "fastq2": "",
             "fastq1_glob": str(
-                fastq_dir.resolve()
+                fastq_dir.absolute()
                 / "patient-001_S7_L[0-9][0-9][0-9]_R1_[0-9][0-9][0-9].fastq.gz",
             ),
             "fastq2_glob": str(
-                fastq_dir.resolve()
+                fastq_dir.absolute()
                 / "patient-001_S7_L[0-9][0-9][0-9]_R2_[0-9][0-9][0-9].fastq.gz",
             ),
         },
     ]
+
+
+def test_samplesheet_validation_subcommands_use_same_read_preflight(
+    tmp_path: Path,
+) -> None:
+    samplesheet = tmp_path / "samples.csv"
+    samplesheet.write_text(
+        "sample_id,srr,platform,fastq1,fastq2\nS1,,illumina,reads.fastq.gz,\n",
+        encoding="utf-8",
+    )
+
+    for command in (
+        ["samplesheet", "validate", str(samplesheet)],
+        ["validate", "samplesheet", str(samplesheet)],
+    ):
+        result = runner.invoke(app, command)
+
+        assert result.exit_code != 0
+        assert "FASTQ paths and glob patterns must be absolute" in result.output

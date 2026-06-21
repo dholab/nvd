@@ -17,9 +17,10 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from threading import Event
-from typing import BinaryIO, Literal
+from typing import BinaryIO
 
-Compression = Literal["none", "gz", "zst", "xz"]
+from py_nvd.read_filenames import Compression, compression_kind
+
 DeaconRunner = Callable[[list[str]], subprocess.CompletedProcess[str]]
 
 
@@ -93,17 +94,6 @@ def config_from_args(args: argparse.Namespace) -> DeaconStreamConfig:
     )
 
 
-def compression_kind(path: Path) -> Compression:
-    name = path.name
-    if name.endswith(".gz"):
-        return "gz"
-    if name.endswith(".zst"):
-        return "zst"
-    if name.endswith(".xz"):
-        return "xz"
-    return "none"
-
-
 def one_compression(files: tuple[Path, ...]) -> Compression:
     compressions = {compression_kind(path) for path in files}
     if len(compressions) == 1:
@@ -131,11 +121,18 @@ def validate_sample_compression(files: tuple[Path, ...]) -> None:
     one_compression(files)
 
 
-def validate_config(config: DeaconStreamConfig, *, require_deacon_executable: bool = True) -> None:
+def validate_config(
+    config: DeaconStreamConfig,
+    *,
+    require_deacon_executable: bool = True,
+) -> None:
     if require_deacon_executable:
         deacon_path = shutil.which(config.deacon_bin)
         explicit_path = Path(config.deacon_bin)
-        explicit_executable = explicit_path.is_file() and os.access(explicit_path, os.X_OK)
+        explicit_executable = explicit_path.is_file() and os.access(
+            explicit_path,
+            os.X_OK,
+        )
         if deacon_path is None and not explicit_executable:
             message = f"deacon executable was not found: {config.deacon_bin}"
             raise StreamError(message)
@@ -152,7 +149,9 @@ def validate_config(config: DeaconStreamConfig, *, require_deacon_executable: bo
     validate_files("r2", config.r2)
     validate_sample_compression(config.r1 + config.r2)
     if len(config.r1) != len(config.r2):
-        message = f"R1/R2 file list length mismatch: {len(config.r1)} != {len(config.r2)}"
+        message = (
+            f"R1/R2 file list length mismatch: {len(config.r1)} != {len(config.r2)}"
+        )
         raise StreamError(message)
 
 
@@ -224,7 +223,9 @@ def subprocess_deacon_runner(command: list[str]) -> subprocess.CompletedProcess[
     return subprocess.run(command, check=False, text=True)  # noqa: S603
 
 
-def await_producers(futures: tuple[Future[ProducerResult], ...]) -> tuple[ProducerResult, ...]:
+def await_producers(
+    futures: tuple[Future[ProducerResult], ...],
+) -> tuple[ProducerResult, ...]:
     results: list[ProducerResult] = []
     errors: list[str] = []
     for future in futures:
@@ -237,10 +238,16 @@ def await_producers(futures: tuple[Future[ProducerResult], ...]) -> tuple[Produc
     return tuple(results)
 
 
-def run_deacon_stream(config: DeaconStreamConfig, runner: DeaconRunner | None = None) -> None:
+def run_deacon_stream(
+    config: DeaconStreamConfig,
+    runner: DeaconRunner | None = None,
+) -> None:
     if runner is None:
         runner = subprocess_deacon_runner
-    validate_config(config, require_deacon_executable=runner is subprocess_deacon_runner)
+    validate_config(
+        config,
+        require_deacon_executable=runner is subprocess_deacon_runner,
+    )
     config.output.parent.mkdir(parents=True, exist_ok=True)
     config.summary.parent.mkdir(parents=True, exist_ok=True)
 
@@ -274,7 +281,9 @@ def run_deacon_stream(config: DeaconStreamConfig, runner: DeaconRunner | None = 
                 await_producers(futures)
             except StreamError:
                 if completed.returncode != 0:
-                    message = f"deacon filter failed with exit code {completed.returncode}"
+                    message = (
+                        f"deacon filter failed with exit code {completed.returncode}"
+                    )
                     raise StreamError(message) from None
                 raise
             if completed.returncode != 0:

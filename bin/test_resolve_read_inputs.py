@@ -7,13 +7,13 @@ import json
 from typing import TYPE_CHECKING
 
 import pytest
-from resolve_read_inputs import (
+from py_nvd.read_inputs import (
     ResolutionError,
-    main,
     read_rows,
     resolve_rows,
     write_jsonl,
 )
+from resolve_read_inputs import main
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -67,7 +67,7 @@ def test_exact_paired_files_take_precedence_with_warning(tmp_path: Path) -> None
         ),
     )
 
-    resolved = resolve_rows(rows, cwd=tmp_path)
+    resolved = resolve_rows(rows)
 
     assert resolved.samples[0].source == "paired_files"
     assert resolved.samples[0].r1 == (r1,)
@@ -95,13 +95,38 @@ def test_single_file_accepts_nanopore_alias(tmp_path: Path) -> None:
         ),
     )
 
-    resolved = resolve_rows(rows, cwd=tmp_path)
+    resolved = resolve_rows(rows)
 
     assert resolved.samples[0].source == "single_file"
     assert resolved.samples[0].platform == "ont"
     assert resolved.samples[0].reads == (reads,)
     assert resolved.samples[0].warnings == (
         "platform alias 'nanopore' was normalized to 'ont'",
+    )
+
+
+def test_sra_rows_warn_on_suspicious_accessions(tmp_path: Path) -> None:
+    rows = read_rows(
+        write_samplesheet(
+            tmp_path / "samples.csv",
+            [
+                {
+                    "sample_id": "S1",
+                    "platform": "illumina",
+                    "srr": "not-an-accession",
+                },
+            ],
+        ),
+    )
+
+    resolved = resolve_rows(rows)
+
+    assert resolved.samples[0].source == "sra"
+    assert resolved.samples[0].warnings == (
+        "SRA accession 'not-an-accession' does not look like an SRR/ERR/DRR accession",
+    )
+    assert resolved.warnings == (
+        "sample \"S1\": SRA accession 'not-an-accession' does not look like an SRR/ERR/DRR accession",
     )
 
 
@@ -123,7 +148,7 @@ def test_exact_paths_are_absolute_but_symlink_preserving(tmp_path: Path) -> None
         ),
     )
 
-    resolved = resolve_rows(rows, cwd=tmp_path)
+    resolved = resolve_rows(rows)
 
     assert resolved.samples[0].reads == (link,)
     assert resolved.samples[0].reads[0] != target
@@ -150,12 +175,14 @@ def test_paired_globs_pair_by_casava_key_not_path_order(tmp_path: Path) -> None:
         ),
     )
 
-    resolved = resolve_rows(rows, cwd=tmp_path)
+    resolved = resolve_rows(rows)
 
     assert resolved.samples[0].source == "paired_globs"
     assert resolved.samples[0].r1 == (r1_l001, r1_l002)
     assert resolved.samples[0].r2 == (r2_l001, r2_l002)
-    assert resolved.samples[0].warnings == ("using fastq1_glob/fastq2_glob; ignoring srr",)
+    assert resolved.samples[0].warnings == (
+        "using fastq1_glob/fastq2_glob; ignoring srr",
+    )
 
 
 def test_single_glob_sorts_naturally_without_casava_requirement(tmp_path: Path) -> None:
@@ -175,7 +202,7 @@ def test_single_glob_sorts_naturally_without_casava_requirement(tmp_path: Path) 
         ),
     )
 
-    resolved = resolve_rows(rows, cwd=tmp_path)
+    resolved = resolve_rows(rows)
 
     assert resolved.samples[0].source == "single_glob"
     assert resolved.samples[0].reads == (reads1, reads2, reads10)
@@ -193,7 +220,11 @@ def test_single_glob_sorts_naturally_without_casava_requirement(tmp_path: Path) 
             'Invalid platform for sample "S1"',
         ),
         (
-            {"sample_id": "S1", "platform": "illumina", "fastq2_glob": "*_R2_*.fastq.gz"},
+            {
+                "sample_id": "S1",
+                "platform": "illumina",
+                "fastq2_glob": "*_R2_*.fastq.gz",
+            },
             "fastq2_glob was provided without fastq1_glob",
         ),
     ],
@@ -206,7 +237,7 @@ def test_friendly_validation_errors(
     rows = read_rows(write_samplesheet(tmp_path / "samples.csv", [row]))
 
     with pytest.raises(ResolutionError, match=expected):
-        resolve_rows(rows, cwd=tmp_path)
+        resolve_rows(rows)
 
 
 def test_duplicate_sample_id_errors(tmp_path: Path) -> None:
@@ -221,7 +252,7 @@ def test_duplicate_sample_id_errors(tmp_path: Path) -> None:
     )
 
     with pytest.raises(ResolutionError, match='sample_id "S1" appears more than once'):
-        resolve_rows(rows, cwd=tmp_path)
+        resolve_rows(rows)
 
 
 def test_paired_glob_rejects_missing_pair(tmp_path: Path) -> None:
@@ -244,13 +275,13 @@ def test_paired_glob_rejects_missing_pair(tmp_path: Path) -> None:
     )
 
     with pytest.raises(ResolutionError, match="do not describe the same lane set"):
-        resolve_rows(rows, cwd=tmp_path)
+        resolve_rows(rows)
 
 
-def test_paired_glob_rejects_non_casava_names(tmp_path: Path) -> None:
+def test_paired_glob_accepts_terminal_read_markers(tmp_path: Path) -> None:
     lane_dir = tmp_path / "lanes"
-    touch(lane_dir / "Sample.R1.fastq.gz")
-    touch(lane_dir / "Sample.R2.fastq.gz")
+    r1 = touch(lane_dir / "Sample.R1.fastq.gz")
+    r2 = touch(lane_dir / "Sample.R2.fastq.gz")
     rows = read_rows(
         write_samplesheet(
             tmp_path / "samples.csv",
@@ -265,8 +296,58 @@ def test_paired_glob_rejects_non_casava_names(tmp_path: Path) -> None:
         ),
     )
 
-    with pytest.raises(ResolutionError, match="CASAVA-style Illumina lane name"):
-        resolve_rows(rows, cwd=tmp_path)
+    resolved = resolve_rows(rows)
+
+    assert resolved.samples[0].source == "paired_globs"
+    assert resolved.samples[0].r1 == (r1,)
+    assert resolved.samples[0].r2 == (r2,)
+
+
+def test_paired_glob_accepts_terminal_dot_digit_markers(tmp_path: Path) -> None:
+    lane_dir = tmp_path / "lanes"
+    r1 = touch(lane_dir / "Sample.1.fq.gz")
+    r2 = touch(lane_dir / "Sample.2.fq.gz")
+    rows = read_rows(
+        write_samplesheet(
+            tmp_path / "samples.csv",
+            [
+                {
+                    "sample_id": "S1",
+                    "platform": "illumina",
+                    "fastq1_glob": str(lane_dir / "*.1.fq.gz"),
+                    "fastq2_glob": str(lane_dir / "*.2.fq.gz"),
+                },
+            ],
+        ),
+    )
+
+    resolved = resolve_rows(rows)
+
+    assert resolved.samples[0].source == "paired_globs"
+    assert resolved.samples[0].r1 == (r1,)
+    assert resolved.samples[0].r2 == (r2,)
+
+
+def test_paired_glob_rejects_nonterminal_read_markers(tmp_path: Path) -> None:
+    lane_dir = tmp_path / "lanes"
+    touch(lane_dir / "Sample_R1_extra.fastq.gz")
+    touch(lane_dir / "Sample_R2_extra.fastq.gz")
+    rows = read_rows(
+        write_samplesheet(
+            tmp_path / "samples.csv",
+            [
+                {
+                    "sample_id": "S1",
+                    "platform": "illumina",
+                    "fastq1_glob": str(lane_dir / "*_R1_*.fastq.gz"),
+                    "fastq2_glob": str(lane_dir / "*_R2_*.fastq.gz"),
+                },
+            ],
+        ),
+    )
+
+    with pytest.raises(ResolutionError, match="simple terminal read markers"):
+        resolve_rows(rows)
 
 
 def test_glob_rejects_mixed_compression_within_sample(tmp_path: Path) -> None:
@@ -287,10 +368,56 @@ def test_glob_rejects_mixed_compression_within_sample(tmp_path: Path) -> None:
     )
 
     with pytest.raises(ResolutionError, match="must use one compression type"):
-        resolve_rows(rows, cwd=tmp_path)
+        resolve_rows(rows)
 
 
-def test_zst_suffix_is_supported_for_deacon_extension_based_decoding(tmp_path: Path) -> None:
+def test_all_zst_glob_inputs_succeed(tmp_path: Path) -> None:
+    reads_dir = tmp_path / "ont"
+    reads1 = touch(reads_dir / "chunk1.fastq.zst")
+    reads2 = touch(reads_dir / "chunk2.fastq.zst")
+    rows = read_rows(
+        write_samplesheet(
+            tmp_path / "samples.csv",
+            [
+                {
+                    "sample_id": "ONT1",
+                    "platform": "ont",
+                    "fastq1_glob": str(reads_dir / "*.fastq.zst"),
+                },
+            ],
+        ),
+    )
+
+    resolved = resolve_rows(rows)
+
+    assert resolved.samples[0].source == "single_glob"
+    assert resolved.samples[0].reads == (reads1, reads2)
+
+
+def test_glob_rejects_mixed_uncompressed_and_zst_inputs(tmp_path: Path) -> None:
+    reads_dir = tmp_path / "ont"
+    touch(reads_dir / "chunk1.fastq")
+    touch(reads_dir / "chunk2.fastq.zst")
+    rows = read_rows(
+        write_samplesheet(
+            tmp_path / "samples.csv",
+            [
+                {
+                    "sample_id": "ONT1",
+                    "platform": "ont",
+                    "fastq1_glob": str(reads_dir / "*.fastq*"),
+                },
+            ],
+        ),
+    )
+
+    with pytest.raises(ResolutionError, match="must use one compression type"):
+        resolve_rows(rows)
+
+
+def test_zst_suffix_is_supported_for_deacon_extension_based_decoding(
+    tmp_path: Path,
+) -> None:
     reads = touch(tmp_path / "reads.fastq.zst")
     rows = read_rows(
         write_samplesheet(
@@ -305,10 +432,35 @@ def test_zst_suffix_is_supported_for_deacon_extension_based_decoding(tmp_path: P
         ),
     )
 
-    resolved = resolve_rows(rows, cwd=tmp_path)
+    resolved = resolve_rows(rows)
 
     assert resolved.samples[0].source == "single_file"
     assert resolved.samples[0].reads == (reads,)
+
+
+def test_header_only_samplesheet_is_rejected(tmp_path: Path) -> None:
+    rows = read_rows(write_samplesheet(tmp_path / "samples.csv", []))
+
+    with pytest.raises(ResolutionError, match="at least one non-comment sample row"):
+        resolve_rows(rows)
+
+
+def test_comment_only_samplesheet_is_rejected(tmp_path: Path) -> None:
+    rows = read_rows(
+        write_samplesheet(
+            tmp_path / "samples.csv",
+            [
+                {
+                    "sample_id": "#S1",
+                    "platform": "ont",
+                    "fastq1": str(tmp_path / "reads.fastq.gz"),
+                },
+            ],
+        ),
+    )
+
+    with pytest.raises(ResolutionError, match="at least one non-comment sample row"):
+        resolve_rows(rows)
 
 
 def test_relative_exact_paths_are_rejected(tmp_path: Path) -> None:
@@ -326,7 +478,7 @@ def test_relative_exact_paths_are_rejected(tmp_path: Path) -> None:
     )
 
     with pytest.raises(ResolutionError, match="must be absolute"):
-        resolve_rows(rows, cwd=tmp_path)
+        resolve_rows(rows)
 
 
 def test_relative_glob_patterns_are_rejected(tmp_path: Path) -> None:
@@ -344,7 +496,7 @@ def test_relative_glob_patterns_are_rejected(tmp_path: Path) -> None:
     )
 
     with pytest.raises(ResolutionError, match="must be absolute"):
-        resolve_rows(rows, cwd=tmp_path)
+        resolve_rows(rows)
 
 
 def test_write_jsonl_uses_expected_shape(tmp_path: Path) -> None:
@@ -363,7 +515,7 @@ def test_write_jsonl_uses_expected_shape(tmp_path: Path) -> None:
             ],
         ),
     )
-    resolved = resolve_rows(rows, cwd=tmp_path)
+    resolved = resolve_rows(rows)
     output = tmp_path / "resolved.jsonl"
 
     write_jsonl(resolved.samples, output)

@@ -1,3 +1,4 @@
 sample_id,srr,platform,fastq1,fastq2,fastq1_glob,fastq2_glob
+# Illustrative only: replace placeholder /data/run42 paths before validation,,,,,,
 patient-001,,illumina,,,/data/run42/fastqs/patient-001_S7_L[0-9][0-9][0-9]_R1_[0-9][0-9][0-9].fastq.gz,/data/run42/fastqs/patient-001_S7_L[0-9][0-9][0-9]_R2_[0-9][0-9][0-9].fastq.gz
 patient-002,,illumina,,,/data/run42/fastqs/patient-002_S8_L[0-9][0-9][0-9]_R1_[0-9][0-9][0-9].fastq.gz,/data/run42/fastqs/patient-002_S8_L[0-9][0-9][0-9]_R2_[0-9][0-9][0-9].fastq.gz

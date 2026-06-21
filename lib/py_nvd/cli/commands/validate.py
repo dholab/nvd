@@ -11,16 +11,15 @@ Commands:
 
 from __future__ import annotations
 
-import csv
 import re
 import subprocess
 import sys
-from collections import Counter
 from pathlib import Path
 
 import typer
 
 from py_nvd.cli.commands.params import params_check
+from py_nvd.cli.samplesheet_validation import render_samplesheet_validation_result
 from py_nvd.cli.utils import (
     DEFAULT_CONFIG,
     check_command_exists,
@@ -33,6 +32,7 @@ from py_nvd.cli.utils import (
     success,
     warning,
 )
+from py_nvd.samplesheet_validation import validate_samplesheet
 
 validate_app = typer.Typer(
     name="validate",
@@ -134,84 +134,7 @@ def validate_samplesheet_cmd(
     """Validate samplesheet format and content."""
 
     console.print(f"\n[bold]Validating Samplesheet[/bold]: {samplesheet}\n")
-
-    if not samplesheet.exists():
-        error(f"Samplesheet not found: {samplesheet}")
-
-    # Read and validate
-    required_columns = {"sample_id", "srr", "platform", "fastq1", "fastq2"}
-    valid_platforms = {"illumina", "ont", ""}
-
-    try:
-        with samplesheet.open() as f:
-            reader = csv.DictReader(f)
-
-            if not reader.fieldnames:
-                error("Samplesheet is empty or has no header")
-
-            # Check for required columns
-            fieldnames = set(reader.fieldnames) if reader.fieldnames else set()
-            missing_cols = required_columns - fieldnames
-            if missing_cols:
-                error(f"Missing required columns: {', '.join(missing_cols)}")
-
-            success(f"Header valid: {', '.join(reader.fieldnames or [])}")
-
-            # Validate rows
-            samples = []
-            errors_found = []
-            for i, row in enumerate(reader, start=2):  # Start at 2 (header is line 1)
-                sample_id = row.get("sample_id", "").strip()
-
-                # Skip comment lines
-                if sample_id.startswith("#"):
-                    continue
-
-                # Check sample_id not empty
-                if not sample_id:
-                    errors_found.append(f"Line {i}: sample_id is empty")
-                    continue
-
-                # Check platform is valid
-                platform = row.get("platform", "").strip().lower()
-                if platform and platform not in valid_platforms:
-                    errors_found.append(
-                        f"Line {i} ({sample_id}): invalid platform '{platform}'",
-                    )
-
-                # Check that either SRR or FASTQ files are provided
-                srr = row.get("srr", "").strip()
-                fastq1 = row.get("fastq1", "").strip()
-
-                if not srr and not fastq1:
-                    msg = (
-                        f"Line {i} ({sample_id}): must provide either 'srr' or 'fastq1'"
-                    )
-                    errors_found.append(msg)
-
-                samples.append(sample_id)
-
-            if errors_found:
-                console.print("\n[red]Validation errors:[/red]")
-                for err in errors_found:
-                    console.print(f"  • {err}")
-                console.print()
-                error(f"Found {len(errors_found)} validation error(s)")
-
-            # Check for duplicate sample IDs
-            duplicates = [s for s, count in Counter(samples).items() if count > 1]
-            if duplicates:
-                warning(f"Duplicate sample_id found: {', '.join(duplicates)}")
-
-            success(f"Found {len(samples)} valid samples")
-
-            console.print()
-            success("Samplesheet is valid")
-
-    except csv.Error as e:
-        error(f"CSV parsing error: {e}")
-    except OSError as e:
-        error(f"Failed to read samplesheet: {e}")
+    render_samplesheet_validation_result(validate_samplesheet(samplesheet))
 
 
 @validate_app.command("databases")
