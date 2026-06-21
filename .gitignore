@@ -99,12 +99,6 @@
 !/.vscode/extensions.json
 !/.vscode/settings.json
 
-# temporary branch-local agent skills
-!/.claude
-!/.claude/skills
-!/.claude/skills/sourmash
-!/.claude/skills/sourmash/SKILL.md
-
 # testing data
 !/tests
 !/tests/*.py
