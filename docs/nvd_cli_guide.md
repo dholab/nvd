@@ -155,7 +155,15 @@ For Illumina/CASAVA filenames, add `--sanitize` when generated sample IDs should
 nvd samplesheet generate --from-dir ./fastqs --platform illumina --sanitize --output samplesheet.csv
 ```
 
-`--sanitize` only changes generated sample IDs. It does not concatenate multiple lanes; multi-lane Illumina samples still produce one row per discovered read pair.
+`--sanitize` only changes generated sample IDs. It does not group multiple lanes by itself; multi-lane Illumina samples still produce one row per discovered read pair.
+
+For Illumina/CASAVA directories where each biological sample may have reads split across multiple lanes, add `--group-lanes`. This writes one row per CASAVA sample prefix and leaves the FASTQ files untouched. NVD expands the grouped lane declarations when the run starts, so generation fails early if a lane is missing its R1 or R2 mate or if filenames do not follow the expected CASAVA pattern.
+
+```bash
+nvd samplesheet generate --from-dir ./fastqs --platform illumina --group-lanes --sanitize --output samplesheet.csv
+```
+
+The generated CSV uses the lower-level `fastq1_glob` and `fastq2_glob` columns only when grouped lanes are requested; ordinary exact-path samplesheets can keep the shorter five-column shape. See `assets/grouped_lane_samplesheet.csv` for an example of the expanded form.
 
 For Nanopore/ONT reads:
 
