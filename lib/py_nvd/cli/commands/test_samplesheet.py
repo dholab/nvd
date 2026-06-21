@@ -6,7 +6,11 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from py_nvd.cli.commands.samplesheet import _extract_stem, scan_fastq_directory
+from py_nvd.cli.commands.samplesheet import (
+    SamplesheetGenerationError,
+    _extract_stem,
+    scan_fastq_directory,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -110,3 +114,73 @@ def test_scan_fastq_directory_sanitizes_ids_without_collapsing_lanes(
     assert warnings == []
     assert [sample.sample_id for sample in samples] == ["patient-001", "patient-001"]
     assert len(samples) == 2
+
+
+def test_scan_fastq_directory_groups_casava_lanes_into_glob_columns(
+    tmp_path: Path,
+) -> None:
+    """Lane grouping emits glob columns, not glob patterns in exact path columns."""
+    for lane in ("L001", "L002"):
+        touch(tmp_path / f"patient-001_S7_{lane}_R1_001.fastq.gz")
+        touch(tmp_path / f"patient-001_S7_{lane}_R2_001.fastq.gz")
+
+    samples, warnings = scan_fastq_directory(
+        tmp_path,
+        sanitize=True,
+        group_lanes=True,
+    )
+
+    assert warnings == []
+    assert len(samples) == 1
+    assert samples[0].sample_id == "patient-001"
+    assert samples[0].fastq1 == ""
+    assert samples[0].fastq2 == ""
+    assert samples[0].fastq1_glob == str(
+        tmp_path.resolve()
+        / "patient-001_S7_L[0-9][0-9][0-9]_R1_[0-9][0-9][0-9].fastq.gz",
+    )
+    assert samples[0].fastq2_glob == str(
+        tmp_path.resolve()
+        / "patient-001_S7_L[0-9][0-9][0-9]_R2_[0-9][0-9][0-9].fastq.gz",
+    )
+
+
+def test_scan_fastq_directory_group_lanes_preserves_read_like_sample_tokens(
+    tmp_path: Path,
+) -> None:
+    """CASAVA parsing does not mistake read-like sample tokens for read markers."""
+    for lane in ("L001", "L002"):
+        touch(tmp_path / f"tumor_R1_control_S7_{lane}_R1_001.fastq.gz")
+        touch(tmp_path / f"tumor_R1_control_S7_{lane}_R2_001.fastq.gz")
+
+    samples, warnings = scan_fastq_directory(
+        tmp_path,
+        sanitize=True,
+        group_lanes=True,
+    )
+
+    assert warnings == []
+    assert [sample.sample_id for sample in samples] == ["tumor_R1_control"]
+
+
+def test_scan_fastq_directory_group_lanes_rejects_missing_lane_mate(
+    tmp_path: Path,
+) -> None:
+    """Generation fails before an expensive run when lane pairs are incomplete."""
+    touch(tmp_path / "sample_S1_L001_R1_001.fastq.gz")
+    touch(tmp_path / "sample_S1_L002_R1_001.fastq.gz")
+    touch(tmp_path / "sample_S1_L002_R2_001.fastq.gz")
+
+    with pytest.raises(SamplesheetGenerationError, match="missing matching R2"):
+        scan_fastq_directory(tmp_path, group_lanes=True)
+
+
+def test_scan_fastq_directory_group_lanes_rejects_non_casava_names(
+    tmp_path: Path,
+) -> None:
+    """Lane grouping is CASAVA-only rather than guessing arbitrary names."""
+    touch(tmp_path / "sample.R1.fastq.gz")
+    touch(tmp_path / "sample.R2.fastq.gz")
+
+    with pytest.raises(SamplesheetGenerationError, match="CASAVA-style"):
+        scan_fastq_directory(tmp_path, group_lanes=True)

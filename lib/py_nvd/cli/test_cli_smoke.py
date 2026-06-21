@@ -172,5 +172,73 @@ def test_samplesheet_generate_sanitizes_illumina_ids(tmp_path: Path) -> None:
 
     assert result.exit_code == 0, result.output
     with samplesheet.open(newline="", encoding="utf-8") as handle:
-        rows = list(csv.DictReader(handle))
+        reader = csv.DictReader(handle)
+        rows = list(reader)
+    assert reader.fieldnames == ["sample_id", "srr", "platform", "fastq1", "fastq2"]
     assert rows[0]["sample_id"] == "patient-001"
+
+
+def test_samplesheet_generate_groups_illumina_lanes_in_glob_columns(
+    tmp_path: Path,
+) -> None:
+    fastq_dir = tmp_path / "fastqs"
+    fastq_dir.mkdir()
+    for lane in ("L001", "L002"):
+        (fastq_dir / f"patient-001_S7_{lane}_R1_001.fastq.gz").write_text(
+            "",
+            encoding="utf-8",
+        )
+        (fastq_dir / f"patient-001_S7_{lane}_R2_001.fastq.gz").write_text(
+            "",
+            encoding="utf-8",
+        )
+    samplesheet = tmp_path / "samplesheet.csv"
+
+    result = runner.invoke(
+        app,
+        [
+            "samplesheet",
+            "generate",
+            "--from-dir",
+            str(fastq_dir),
+            "--platform",
+            "illumina",
+            "--output",
+            str(samplesheet),
+            "--force",
+            "--sanitize",
+            "--group-lanes",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    with samplesheet.open(newline="", encoding="utf-8") as handle:
+        reader = csv.DictReader(handle)
+        rows = list(reader)
+
+    assert reader.fieldnames == [
+        "sample_id",
+        "srr",
+        "platform",
+        "fastq1",
+        "fastq2",
+        "fastq1_glob",
+        "fastq2_glob",
+    ]
+    assert rows == [
+        {
+            "sample_id": "patient-001",
+            "srr": "",
+            "platform": "illumina",
+            "fastq1": "",
+            "fastq2": "",
+            "fastq1_glob": str(
+                fastq_dir.resolve()
+                / "patient-001_S7_L[0-9][0-9][0-9]_R1_[0-9][0-9][0-9].fastq.gz",
+            ),
+            "fastq2_glob": str(
+                fastq_dir.resolve()
+                / "patient-001_S7_L[0-9][0-9][0-9]_R2_[0-9][0-9][0-9].fastq.gz",
+            ),
+        },
+    ]

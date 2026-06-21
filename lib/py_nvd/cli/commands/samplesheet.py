@@ -13,6 +13,7 @@ using the same logic as the validate command.
 from __future__ import annotations
 
 import csv
+import glob
 import re
 import sys
 from collections import Counter
@@ -32,6 +33,8 @@ from py_nvd.cli.prompts import (
 from py_nvd.cli.utils import console, error, info, success, warning
 
 REQUIRED_COLUMNS = ("sample_id", "srr", "platform", "fastq1", "fastq2")
+GLOB_COLUMNS = ("fastq1_glob", "fastq2_glob")
+OUTPUT_COLUMNS = REQUIRED_COLUMNS + GLOB_COLUMNS
 VALID_PLATFORMS = {"illumina", "ont", ""}
 
 # Expected number of FASTQ files for paired-end samples
@@ -56,6 +59,15 @@ STEM_PATTERN = re.compile(
 # Illumina/CASAVA sample/lane suffixes left after read indicators are removed.
 # Example: sample_S1_L001_R1_001.fastq.gz -> sample_S1_L001 -> sample
 CASAVA_SAMPLE_LANE_SUFFIX_PATTERN = re.compile(r"_S\d+(?:_L\d{3})?$", re.IGNORECASE)
+CASAVA_LANE_FASTQ_PATTERN = re.compile(
+    r"^(?P<prefix>.+)_L(?P<lane>\d{3})_R(?P<read>[12])_"
+    r"(?P<chunk>\d{3})(?P<extension>\.(?:fastq|fq)(?:\.gz)?)$",
+    re.IGNORECASE,
+)
+
+
+class SamplesheetGenerationError(ValueError):
+    """Raised when samplesheet generation cannot safely infer inputs."""
 
 
 @dataclass
@@ -76,6 +88,23 @@ class SamplesheetValidationResult:
     errors: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     header_valid: bool = False
+
+
+@dataclass(frozen=True)
+class CasavaLaneFastqName:
+    """Parsed Illumina/CASAVA lane FASTQ filename components."""
+
+    path: Path
+    prefix: str
+    lane: str
+    read: int
+    chunk: str
+    extension: str
+
+    @property
+    def lane_chunk_key(self) -> tuple[str, str]:
+        """Key that must have both R1 and R2 for paired lane grouping."""
+        return (self.lane, self.chunk)
 
 
 def validate_samplesheet(path: Path) -> SamplesheetValidationResult:
@@ -146,10 +175,31 @@ def validate_samplesheet(path: Path) -> SamplesheetValidationResult:
                 # Check that either SRR or FASTQ files are provided
                 srr = row.get("srr", "").strip()
                 fastq1 = row.get("fastq1", "").strip()
+                fastq1_glob = row.get("fastq1_glob", "").strip()
+                fastq2_glob = row.get("fastq2_glob", "").strip()
 
-                if not srr and not fastq1:
+                if glob.has_magic(fastq1):
                     result.errors.append(
-                        f"Line {i} ({sample_id}): must provide either 'srr' or 'fastq1'",
+                        f"Line {i} ({sample_id}): fastq1 is for exact paths; "
+                        "use fastq1_glob for glob patterns",
+                    )
+
+                fastq2 = row.get("fastq2", "").strip()
+                if glob.has_magic(fastq2):
+                    result.errors.append(
+                        f"Line {i} ({sample_id}): fastq2 is for exact paths; "
+                        "use fastq2_glob for glob patterns",
+                    )
+
+                if fastq2_glob and not fastq1_glob:
+                    result.errors.append(
+                        f"Line {i} ({sample_id}): fastq2_glob requires fastq1_glob",
+                    )
+
+                if not srr and not fastq1 and not fastq1_glob:
+                    result.errors.append(
+                        f"Line {i} ({sample_id}): must provide 'srr', 'fastq1', "
+                        "or 'fastq1_glob'",
                     )
 
                 samples.append(sample_id)
@@ -185,6 +235,8 @@ class SampleEntry:
         platform: Sequencing platform (illumina or ont)
         fastq1: Path to read 1 FASTQ file
         fastq2: Path to read 2 FASTQ file (empty for single-end)
+        fastq1_glob: Glob pattern for read 1 FASTQ files
+        fastq2_glob: Glob pattern for read 2 FASTQ files
     """
 
     sample_id: str
@@ -192,6 +244,8 @@ class SampleEntry:
     platform: str = ""
     fastq1: str = ""
     fastq2: str = ""
+    fastq1_glob: str = ""
+    fastq2_glob: str = ""
 
 
 def _get_fastq_files(directory: Path) -> list[Path]:
@@ -277,10 +331,118 @@ def _get_read_number(filename: str) -> int | None:
     return None
 
 
+def _parse_casava_lane_fastq(path: Path) -> CasavaLaneFastqName | None:
+    """Parse an Illumina/CASAVA lane FASTQ filename."""
+    match = CASAVA_LANE_FASTQ_PATTERN.fullmatch(path.name)
+    if match is None:
+        return None
+
+    return CasavaLaneFastqName(
+        path=path,
+        prefix=match.group("prefix"),
+        lane=match.group("lane"),
+        read=int(match.group("read")),
+        chunk=match.group("chunk"),
+        extension=match.group("extension"),
+    )
+
+
+def _glob_for_casava_group(
+    directory: Path,
+    prefix: str,
+    read: int,
+    extension: str,
+) -> str:
+    """Build a tight glob for all CASAVA lanes/chunks in one read direction."""
+    escaped_prefix_path = glob.escape(str(directory / prefix))
+    return f"{escaped_prefix_path}_L[0-9][0-9][0-9]_R{read}_[0-9][0-9][0-9]{extension}"
+
+
+def _scan_fastq_directory_grouped_by_lane(
+    fastq_files: list[Path],
+    *,
+    sanitize: bool,
+) -> tuple[list[SampleEntry], list[str]]:
+    """Scan CASAVA lane FASTQs and emit one glob-backed row per sample."""
+    parsed_names: list[CasavaLaneFastqName] = []
+    unparseable: list[Path] = []
+    for fq in fastq_files:
+        parsed = _parse_casava_lane_fastq(fq)
+        if parsed is None:
+            unparseable.append(fq)
+        else:
+            parsed_names.append(parsed)
+
+    if unparseable:
+        examples = ", ".join(path.name for path in unparseable[:3])
+        msg = (
+            "--group-lanes requires CASAVA-style Illumina lane FASTQ names such "
+            "as sample_S1_L001_R1_001.fastq.gz and "
+            f"sample_S1_L001_R2_001.fastq.gz. Could not parse: {examples}"
+        )
+        raise SamplesheetGenerationError(msg)
+
+    prefix_to_names: dict[str, list[CasavaLaneFastqName]] = {}
+    for parsed in parsed_names:
+        prefix_to_names.setdefault(parsed.prefix, []).append(parsed)
+
+    samples: list[SampleEntry] = []
+    sample_id_to_prefix: dict[str, str] = {}
+    for prefix, names in sorted(prefix_to_names.items()):
+        extensions = {name.extension for name in names}
+        if len(extensions) != 1:
+            msg = (
+                f"Sample {prefix} has mixed FASTQ extensions. Lane grouping requires "
+                "one extension/compression type per sample."
+            )
+            raise SamplesheetGenerationError(msg)
+
+        lanes: dict[tuple[str, str], set[int]] = {}
+        for name in names:
+            lanes.setdefault(name.lane_chunk_key, set()).add(name.read)
+
+        for (lane, chunk), reads in sorted(lanes.items()):
+            if reads == {1, 2}:
+                continue
+            missing = "R2" if reads == {1} else "R1"
+            msg = (
+                f"Sample {prefix} lane L{lane} chunk {chunk} is missing matching "
+                f"{missing}. Fix the FASTQ directory before generating a grouped "
+                "lane samplesheet."
+            )
+            raise SamplesheetGenerationError(msg)
+
+        sample_id = (
+            _strip_terminal_casava_sample_lane_suffix(prefix) if sanitize else prefix
+        )
+        previous_prefix = sample_id_to_prefix.get(sample_id)
+        if previous_prefix is not None and previous_prefix != prefix:
+            msg = (
+                f"Grouping lanes would emit duplicate sample_id '{sample_id}' for "
+                f"{previous_prefix} and {prefix}. Use more specific filenames or "
+                "generate without --sanitize."
+            )
+            raise SamplesheetGenerationError(msg)
+        sample_id_to_prefix[sample_id] = prefix
+
+        directory = names[0].path.parent
+        extension = extensions.pop()
+        samples.append(
+            SampleEntry(
+                sample_id=sample_id,
+                fastq1_glob=_glob_for_casava_group(directory, prefix, 1, extension),
+                fastq2_glob=_glob_for_casava_group(directory, prefix, 2, extension),
+            ),
+        )
+
+    return samples, []
+
+
 def scan_fastq_directory(
     directory: Path,
     *,
     sanitize: bool = False,
+    group_lanes: bool = False,
 ) -> tuple[list[SampleEntry], list[str]]:
     """
     Scan a directory for FASTQ files and pair them by sample.
@@ -291,6 +453,7 @@ def scan_fastq_directory(
     Args:
         directory: Directory containing FASTQ files
         sanitize: Strip Illumina/CASAVA suffixes from generated sample IDs
+        group_lanes: Emit one row per CASAVA sample using FASTQ glob columns
 
     Returns:
         Tuple of (list of SampleEntry, list of warning messages)
@@ -300,6 +463,9 @@ def scan_fastq_directory(
 
     if not fastq_files:
         return [], [f"No FASTQ files found in {directory}"]
+
+    if group_lanes:
+        return _scan_fastq_directory_grouped_by_lane(fastq_files, sanitize=sanitize)
 
     # Group files by stem
     stem_to_files: dict[str, list[Path]] = {}
@@ -422,20 +588,27 @@ def write_samplesheet(samples: list[SampleEntry], output: Path, platform: str) -
         output: Output file path
         platform: Platform to set for all samples
     """
+    columns = (
+        OUTPUT_COLUMNS
+        if any(sample.fastq1_glob or sample.fastq2_glob for sample in samples)
+        else REQUIRED_COLUMNS
+    )
+
     with output.open("w", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(REQUIRED_COLUMNS)
+        writer.writerow(columns)
 
         for sample in samples:
-            writer.writerow(
-                [
-                    sample.sample_id,
-                    sample.srr,
-                    platform,
-                    sample.fastq1,
-                    sample.fastq2,
-                ],
-            )
+            row = [
+                sample.sample_id,
+                sample.srr,
+                platform,
+                sample.fastq1,
+                sample.fastq2,
+            ]
+            if columns == OUTPUT_COLUMNS:
+                row.extend([sample.fastq1_glob, sample.fastq2_glob])
+            writer.writerow(row)
 
 
 def format_samples_table(samples: list[SampleEntry], platform: str) -> Table:
@@ -460,8 +633,10 @@ def format_samples_table(samples: list[SampleEntry], platform: str) -> Table:
     max_display = 15
     for sample in samples[:max_display]:
         # Truncate long paths for display
-        fastq1_display = Path(sample.fastq1).name if sample.fastq1 else "-"
-        fastq2_display = Path(sample.fastq2).name if sample.fastq2 else "-"
+        fastq1 = sample.fastq1 or sample.fastq1_glob
+        fastq2 = sample.fastq2 or sample.fastq2_glob
+        fastq1_display = Path(fastq1).name if fastq1 else "-"
+        fastq2_display = Path(fastq2).name if fastq2 else "-"
 
         table.add_row(
             sample.sample_id,
@@ -540,6 +715,14 @@ def generate(
         "--sanitize",
         help="Strip Illumina/CASAVA suffixes from generated sample IDs",
     ),
+    group_lanes: bool = typer.Option(
+        False,
+        "--group-lanes",
+        help=(
+            "Group Illumina/CASAVA lanes into one row per sample using "
+            "fastq1_glob/fastq2_glob. Does not concatenate FASTQ files."
+        ),
+    ),
 ) -> None:
     """
     Generate a samplesheet CSV from FASTQ files or SRA accessions.
@@ -564,6 +747,9 @@ def generate(
 
         # Strip Illumina/CASAVA suffixes from sample IDs
         nvd samplesheet generate -d ./fastqs -p illumina --sanitize
+
+        # Group Illumina lanes into glob-backed samplesheet rows
+        nvd samplesheet generate -d ./fastqs -p illumina --group-lanes --sanitize
     """
     console.print()
 
@@ -608,10 +794,23 @@ def generate(
     # (either provided via CLI or obtained from prompt)
     assert platform is not None
 
+    if group_lanes:
+        if from_dir is None:
+            error("--group-lanes requires --from-dir")
+        if platform != "illumina":
+            error("--group-lanes requires --platform illumina")
+
     # Scan for samples
     if from_dir is not None:
         info(f"Scanning directory: {from_dir}")
-        samples, scan_warnings = scan_fastq_directory(from_dir, sanitize=sanitize)
+        try:
+            samples, scan_warnings = scan_fastq_directory(
+                from_dir,
+                sanitize=sanitize,
+                group_lanes=group_lanes,
+            )
+        except SamplesheetGenerationError as exc:
+            error(str(exc))
     else:
         assert from_sra is not None  # for type checker
         info(f"Reading SRA accessions: {from_sra}")
@@ -631,11 +830,18 @@ def generate(
     console.print()
 
     # Summary
-    paired = sum(1 for s in samples if s.fastq2)
-    single = sum(1 for s in samples if s.fastq1 and not s.fastq2)
+    paired = sum(1 for s in samples if s.fastq2 or s.fastq2_glob)
+    single = sum(
+        1
+        for s in samples
+        if (s.fastq1 or s.fastq1_glob) and not (s.fastq2 or s.fastq2_glob)
+    )
     sra = sum(1 for s in samples if s.srr)
+    grouped = sum(1 for s in samples if s.fastq1_glob)
 
     info(f"Found {len(samples)} samples:")
+    if grouped:
+        info(f"  • {grouped} lane-grouped")
     if paired:
         info(f"  • {paired} paired-end")
     if single:
