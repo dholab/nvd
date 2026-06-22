@@ -83,6 +83,7 @@ e2e-test-ci = "uv run pytest tests/test_nextflow_integration.py -m 'slow and net
 [dependency-groups]
 dev = [
   "basedpyright>=1.28.4",
+  "hypothesis>=6.155.7",
   "jupyter>=1.1.1",
   "marimo[sql]>=0.11.28",
   "polars>=1.26.0",
