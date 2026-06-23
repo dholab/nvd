@@ -28,6 +28,7 @@ TAXONOMY_RANKS = (
     "strain",
 )
 LINEAGE_COLUMNS = ("ident", *TAXONOMY_RANKS)
+LINEAGE_IDENTIFIER_COLUMNS = ("ident", "identifiers")
 SIGNATURE_IDENTITY_COLUMNS = (
     "md5",
     "ksize",
@@ -139,6 +140,25 @@ def require_lazy_columns(
         msg = f"{path} is missing required column(s): {', '.join(sorted(missing))}"
         raise ValueError(msg)
     return frame
+
+
+def normalize_lineage_identifier_column(
+    frame: pl.LazyFrame,
+    *,
+    path: Path,
+) -> pl.LazyFrame:
+    """Expose raw and prepared sourmash lineage identifiers as ident."""
+    available_columns = set(frame.collect_schema().names())
+    for column in LINEAGE_IDENTIFIER_COLUMNS:
+        if column not in available_columns:
+            continue
+        if column == "ident":
+            return frame
+        return frame.rename({column: "ident"})
+
+    expected = ", ".join(LINEAGE_IDENTIFIER_COLUMNS)
+    msg = f"{path} is missing required lineage identifier column (expected one of: {expected})"
+    raise ValueError(msg)
 
 
 def scan_annotations(annotations_tsv: Path) -> pl.LazyFrame:
@@ -257,9 +277,8 @@ def check_manifest_coverage(manifest_csv: Path, lineages_csv: Path) -> None:
     """Verify that every WVDB signature in a sourmash manifest has a lineage."""
     manifest = scan_sourmash_manifest(manifest_csv)
     lineages = scan_csv(lineages_csv).pipe(
-        require_lazy_columns,
+        normalize_lineage_identifier_column,
         path=lineages_csv,
-        columns={"ident"},
     )
 
     find_missing_wvdb_lineages(manifest, lineages).pipe(fail_on_missing_wvdb_lineages)

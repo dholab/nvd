@@ -248,6 +248,36 @@ def test_manifest_coverage_ignores_non_wvdb_references(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stderr
 
 
+def test_manifest_coverage_accepts_prepared_sourmash_taxonomy(
+    tmp_path: Path,
+) -> None:
+    """check-manifest-coverage accepts sourmash tax prepare output."""
+    manifest = tmp_path / "manifest.csv"
+    lineages = tmp_path / "lineages.csv"
+
+    manifest.write_text(
+        "# SOURMASH-MANIFEST-VERSION: 1.0\n"
+        "internal_location,md5,md5short,ksize,moltype,num,scaled,n_hashes,with_abundance,name,filename\n"
+        "signatures/b.sig.gz,def,def,31,DNA,0,50,10,False,WVDB|contig_1,ref.fa\n",
+        encoding="utf-8",
+    )
+    lineages.write_text(
+        "identifiers,superkingdom,phylum,class,order,family,genus,species,strain\n"
+        "WVDB|contig_1,Viruses,,,,,,,\n",
+        encoding="utf-8",
+    )
+
+    result = run_script(
+        "check-manifest-coverage",
+        "--manifest-csv",
+        manifest,
+        "--lineages-csv",
+        lineages,
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
 def test_manifest_coverage_fails_on_missing_wvdb_lineage(tmp_path: Path) -> None:
     """check-manifest-coverage fails when a WVDB signature lacks a lineage."""
     manifest = tmp_path / "manifest.csv"
