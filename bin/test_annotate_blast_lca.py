@@ -18,6 +18,7 @@ import pytest
 from annotate_blast_lca import (
     OUTPUT_COLUMNS,
     main,
+    parse_args,
 )
 from py_nvd import taxonomy
 
@@ -98,6 +99,7 @@ def mock_taxonomy_open(test_taxonomy_sqlite: Path, monkeypatch: pytest.MonkeyPat
     def test_taxdump_dir(*_args: object, **_kwargs: object) -> Path:
         return taxdump_dir
 
+    monkeypatch.setenv("NVD_TAXONOMY_DB", str(taxdump_dir))
     monkeypatch.setattr(
         taxonomy,
         "_ensure_taxdump",
@@ -107,6 +109,28 @@ def mock_taxonomy_open(test_taxonomy_sqlite: Path, monkeypatch: pytest.MonkeyPat
 
 class TestEndToEnd:
     """End-to-end tests for annotate_blast_lca.py."""
+
+    def test_taxonomy_policy_args_parse(self) -> None:
+        """Taxonomy mode and max-age arguments are accepted by the CLI parser."""
+        original_argv = sys.argv
+        try:
+            sys.argv = [
+                "annotate_blast_lca.py",
+                "-i",
+                "input.tsv",
+                "-o",
+                "output.tsv",
+                "--taxonomy-mode",
+                "read_only",
+                "--taxonomy-max-age-days",
+                "7",
+            ]
+            args = parse_args()
+        finally:
+            sys.argv = original_argv
+
+        assert args.taxonomy_mode == "read_only"
+        assert args.taxonomy_max_age_days == 7
 
     def test_close_scoring_taxids_resolve_to_their_lca(
         self,

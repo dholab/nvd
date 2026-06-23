@@ -372,6 +372,10 @@ nvd taxonomy status --taxonomy-dir /path/to/taxdump
 
 Existing taxonomy data is reused even when it is older than the freshness warning window. NVD downloads or rebuilds taxonomy only when required files are absent, which avoids mutating shared HPC taxonomy directories merely because they are old.
 
+For pipeline runs, `taxonomy_mode` controls whether NVD may prepare missing taxonomy. The default `null` preserves legacy behavior: `NVD_TAXONOMY_OFFLINE=1` selects read-only mode, otherwise NVD prepares taxonomy only when required files are absent. Set `taxonomy_mode: read_only` to require prepared taxonomy and never download or rebuild during the run, or `taxonomy_mode: missing` to allow missing-only preparation explicitly.
+
+For administrators refreshing a taxonomy directory outside a run, `nvd taxonomy ensure` accepts `--taxonomy-refresh missing|stale|force` and `--taxonomy-max-age-days`.
+
 
 You can also set:
 

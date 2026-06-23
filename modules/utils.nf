@@ -66,10 +66,16 @@ process ENSURE_TAXONOMY {
 
   script:
   def taxonomy_dir_arg = taxonomy_dir ? "--taxonomy-dir '${taxonomy_dir}'" : ""
+  def taxonomy_mode_arg = params.taxonomy_mode ? "--taxonomy-mode '${params.taxonomy_mode}'" : ""
+  def taxonomy_refresh_arg = params.taxonomy_refresh ? "--taxonomy-refresh '${params.taxonomy_refresh}'" : ""
+  def taxonomy_max_age_arg = params.taxonomy_max_age_days ? "--taxonomy-max-age-days ${params.taxonomy_max_age_days}" : ""
   """
   ensure_taxonomy.py \\
       --verbose \\
-      ${taxonomy_dir_arg}
+      ${taxonomy_dir_arg} \\
+      ${taxonomy_mode_arg} \\
+      ${taxonomy_refresh_arg} \\
+      ${taxonomy_max_age_arg}
   """
 }
 
@@ -90,8 +96,10 @@ process ANNOTATE_LEAST_COMMON_ANCESTORS {
 
   script:
   def taxonomy_dir_arg = taxonomy_dir ? "--taxonomy-dir '${taxonomy_dir}'" : ""
+  def taxonomy_mode_arg = params.taxonomy_mode ? "--taxonomy-mode '${params.taxonomy_mode}'" : ""
+  def taxonomy_max_age_arg = params.taxonomy_max_age_days ? "--taxonomy-max-age-days ${params.taxonomy_max_age_days}" : ""
   """
-  annotate_blast_lca.py -i ${all_blast_hits} -o ${sample_id}_blast.merged_with_lca.tsv ${taxonomy_dir_arg}
+  annotate_blast_lca.py -i ${all_blast_hits} -o ${sample_id}_blast.merged_with_lca.tsv ${taxonomy_dir_arg} ${taxonomy_mode_arg} ${taxonomy_max_age_arg}
   """
 }
 

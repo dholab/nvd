@@ -112,6 +112,24 @@ def run(
         help="Explicit taxonomy database directory",
         rich_help_panel=PANEL_CORE,
     ),
+    taxonomy_mode: str | None = typer.Option(
+        None,
+        "--taxonomy-mode",
+        help="Pipeline taxonomy mode: read_only or missing",
+        rich_help_panel=PANEL_CORE,
+    ),
+    taxonomy_refresh: str | None = typer.Option(
+        None,
+        "--taxonomy-refresh",
+        help="Taxonomy preflight refresh policy: missing, stale, or force",
+        rich_help_panel=PANEL_CORE,
+    ),
+    taxonomy_max_age_days: int | None = typer.Option(
+        None,
+        "--taxonomy-max-age-days",
+        help="Freshness threshold for taxonomy refreshes and warnings",
+        rich_help_panel=PANEL_CORE,
+    ),
     preset: str | None = typer.Option(
         None,
         "--preset",
@@ -560,6 +578,9 @@ def run(
         "cleanup": cleanup,
         "work_dir": work_dir,
         "taxonomy_dir": resolved_taxonomy_dir,
+        "taxonomy_mode": taxonomy_mode,
+        "taxonomy_refresh": taxonomy_refresh,
+        "taxonomy_max_age_days": taxonomy_max_age_days,
         "experimental": experimental,
         # Reference paths
         "blast_db": blast_db,

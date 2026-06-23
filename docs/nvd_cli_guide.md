@@ -218,6 +218,17 @@ nvd taxonomy ensure --taxonomy-dir /path/to/taxdump
 
 Existing taxonomy data is reused even when old, while missing required files still trigger download/build. This is the safest behavior for shared HPC references because worker jobs do not mutate a shared taxonomy directory merely because `nodes.dmp` is older than a freshness window.
 
+Pipeline runs can make that behavior explicit with `taxonomy_mode`. Use `read_only` when taxonomy must already be prepared and the run must never download or rebuild. Use `missing` when NVD may prepare taxonomy only if required files are absent. Leaving the mode unset preserves legacy `NVD_TAXONOMY_OFFLINE=1` behavior.
+
+Admin-managed refreshes are separate from pipeline mode:
+
+```bash
+nvd taxonomy ensure \
+  --taxonomy-dir /path/to/taxdump \
+  --taxonomy-refresh stale \
+  --taxonomy-max-age-days 90
+```
+
 
 Inspect the current state:
 

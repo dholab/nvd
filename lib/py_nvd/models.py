@@ -405,6 +405,21 @@ class NvdParams(BaseModel):
         description="Explicit taxonomy database directory",
         json_schema_extra={"category": "Core"},
     )
+    taxonomy_mode: str | None = Field(
+        None,
+        description="Pipeline taxonomy mode: read_only or missing",
+        json_schema_extra={"category": "Core"},
+    )
+    taxonomy_refresh: str = Field(
+        "missing",
+        description="Admin taxonomy refresh policy: missing, stale, or force",
+        json_schema_extra={"category": "Core"},
+    )
+    taxonomy_max_age_days: int = Field(
+        90,
+        description="Freshness threshold for taxonomy refreshes and warnings",
+        json_schema_extra={"category": "Core"},
+    )
 
     date: str | None = Field(
         None,
@@ -456,6 +471,7 @@ class NvdParams(BaseModel):
         "virus_abs_threshold",
         "sourmash_ksize",
         "sourmash_scaled",
+        "taxonomy_max_age_days",
     )
     @classmethod
     def validate_positive_int(cls, v: int) -> int:
@@ -489,6 +505,24 @@ class NvdParams(BaseModel):
         """Validate max_read_length is positive if set."""
         if v is not None and v < 1:
             msg = f"Must be >= 1, got {v}"
+            raise ValueError(msg)
+        return v
+
+    @field_validator("taxonomy_mode")
+    @classmethod
+    def validate_taxonomy_mode(cls, v: str | None) -> str | None:
+        """Validate pipeline taxonomy mode."""
+        if v is not None and v not in {"read_only", "missing"}:
+            msg = "taxonomy_mode must be one of ['missing', 'read_only']"
+            raise ValueError(msg)
+        return v
+
+    @field_validator("taxonomy_refresh")
+    @classmethod
+    def validate_taxonomy_refresh(cls, v: str) -> str:
+        """Validate admin taxonomy refresh policy."""
+        if v not in {"missing", "stale", "force"}:
+            msg = "taxonomy_refresh must be one of ['force', 'missing', 'stale']"
             raise ValueError(msg)
         return v
 

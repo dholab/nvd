@@ -105,3 +105,26 @@ def test_resolve_read_inputs_starts_with_package_imports() -> None:
 
     assert result.returncode == 0
     assert "Resolve NVD samplesheet read declarations" in result.stdout
+
+
+def test_taxonomy_processes_forward_policy_arguments() -> None:
+    """Taxonomy preflight and annotation processes should receive policy controls."""
+    expected = {
+        ROOT / "modules" / "utils.nf": ("ensure_taxonomy.py", "annotate_blast_lca.py"),
+        ROOT / "modules" / "blast.nf": ("annotate_blast_results.py",),
+    }
+
+    missing: list[str] = []
+    for path, commands in expected.items():
+        text = path.read_text(encoding="utf-8")
+        missing.extend(
+            f"{path.relative_to(ROOT)}: missing {command}"
+            for command in commands
+            if command not in text
+        )
+        if "--taxonomy-mode" not in text:
+            missing.append(f"{path.relative_to(ROOT)}: missing --taxonomy-mode")
+        if "--taxonomy-max-age-days" not in text:
+            missing.append(f"{path.relative_to(ROOT)}: missing --taxonomy-max-age-days")
+
+    assert not missing, "\n".join(missing)

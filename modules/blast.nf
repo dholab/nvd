@@ -54,13 +54,17 @@ process ANNOTATE_MEGABLAST_RESULTS {
 
   script:
   def taxonomy_dir_arg = taxonomy_dir ? "--taxonomy-dir '${taxonomy_dir}'" : ""
+  def taxonomy_mode_arg = params.taxonomy_mode ? "--taxonomy-mode '${params.taxonomy_mode}'" : ""
+  def taxonomy_max_age_arg = params.taxonomy_max_age_days ? "--taxonomy-max-age-days ${params.taxonomy_max_age_days}" : ""
   """
   annotate_blast_results.py \
   --input_file ${blast_txt} \
   --output_file ${sample_id}.annotated_megablast.txt \
   --sample_name ${sample_id} \
   --task 'megablast' \
-  ${taxonomy_dir_arg}
+  ${taxonomy_dir_arg} \
+  ${taxonomy_mode_arg} \
+  ${taxonomy_max_age_arg}
   """
 }
 
@@ -200,13 +204,17 @@ process ANNOTATE_BLASTN_RESULTS {
 
   script:
   def taxonomy_dir_arg = taxonomy_dir ? "--taxonomy-dir '${taxonomy_dir}'" : ""
+  def taxonomy_mode_arg = params.taxonomy_mode ? "--taxonomy-mode '${params.taxonomy_mode}'" : ""
+  def taxonomy_max_age_arg = params.taxonomy_max_age_days ? "--taxonomy-max-age-days ${params.taxonomy_max_age_days}" : ""
   """
     annotate_blast_results.py \
     --sample_name ${sample_id} \
     --input_file ${blastn_txt} \
     --output_file ${sample_id}.annotated_blastn.txt \
     --task 'blastn' \
-    ${taxonomy_dir_arg}
+    ${taxonomy_dir_arg} \
+    ${taxonomy_mode_arg} \
+    ${taxonomy_max_age_arg}
     """
 }
 

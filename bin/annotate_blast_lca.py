@@ -281,6 +281,18 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Require pre-cached taxonomy database (fail if unavailable)",
     )
+    parser.add_argument(
+        "--taxonomy-mode",
+        choices=[mode.value for mode in taxonomy.TaxonomyMode],
+        default=None,
+        help="Pipeline taxonomy mode: read_only or missing",
+    )
+    parser.add_argument(
+        "--taxonomy-max-age-days",
+        type=int,
+        default=None,
+        help="Freshness warning threshold for existing taxonomy",
+    )
 
     return parser.parse_args()
 
@@ -320,6 +332,8 @@ def main() -> None:
     with taxonomy.open(
         taxonomy_dir=args.taxonomy_dir,
         sync=args.sync,
+        taxonomy_mode=args.taxonomy_mode,
+        max_age_days=args.taxonomy_max_age_days,
     ) as tax:
         tx = tax.taxopy_db
 

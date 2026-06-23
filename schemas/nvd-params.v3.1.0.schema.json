@@ -383,6 +383,24 @@
       "type": ["string", "null"],
       "format": "path",
       "description": "Explicit taxonomy database directory containing NCBI taxdump files. When unset, Python taxonomy helpers resolve the cache location."
+    },
+    "taxonomy_mode": {
+      "type": ["string", "null"],
+      "enum": ["read_only", "missing", null],
+      "default": null,
+      "description": "Pipeline taxonomy availability mode. null preserves legacy NVD_TAXONOMY_OFFLINE behavior; read_only never downloads or rebuilds; missing prepares taxonomy only when required files are absent."
+    },
+    "taxonomy_refresh": {
+      "type": "string",
+      "enum": ["missing", "stale", "force"],
+      "default": "missing",
+      "description": "Admin taxonomy preflight refresh policy. missing downloads/builds only when required files are absent; stale refreshes when older than taxonomy_max_age_days; force always refreshes."
+    },
+    "taxonomy_max_age_days": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 90,
+      "description": "Freshness threshold in days for taxonomy stale refreshes and warnings."
     }
   },
   "additionalProperties": false

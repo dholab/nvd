@@ -84,6 +84,7 @@ def mock_taxonomy_open(test_taxonomy_sqlite: Path, monkeypatch: pytest.MonkeyPat
     def test_taxdump_dir(*_args: object, **_kwargs: object) -> Path:
         return taxdump_dir
 
+    monkeypatch.setenv("NVD_TAXONOMY_DB", str(taxdump_dir))
     monkeypatch.setattr(
         taxonomy,
         "_ensure_taxdump",
