@@ -36,7 +36,7 @@ process SOURMASH_FETCH_REF_SKETCH {
   val url
 
   output:
-  path "*", emit: ref_sketch
+  path "*.sig.zip", arity: '1', emit: ref_sketch
 
   script:
   def filename = url.tokenize('/').last()
@@ -102,7 +102,7 @@ process SOURMASH_FETCH_LINEAGES {
   val url
 
   output:
-  path "*", emit: lineages
+  path "*.csv", arity: '1', emit: lineages
 
   script:
   def filename = url.tokenize('/').last()
