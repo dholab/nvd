@@ -1,5 +1,5 @@
 include { SOURMASH_COLLECT_QUERY_SKETCHES ; SOURMASH_COMPARE_QUERY_SKETCHES } from "../modules/sourmash"
-include { COMPUTE_SAMPLE_SKETCH_DISTANCES ; COMPUTE_SAMPLE_ORDINATION ; REPORT_POSSIBLE_SAMPLE_MIXUPS ; SUMMARIZE_SAMPLE_SIMILARITY_CANDIDATE_EVIDENCE ; PLOT_SAMPLE_ORDINATION } from "../modules/sample_similarity"
+include { COMPUTE_SAMPLE_SKETCH_DISTANCES ; COMPUTE_SAMPLE_ORDINATION ; REPORT_POSSIBLE_SAMPLE_MIXUPS ; SUMMARIZE_SAMPLE_SIMILARITY ; PLOT_SAMPLE_ORDINATION } from "../modules/sample_similarity"
 
 workflow SAMPLE_SIMILARITY_QC {
   take:
@@ -27,7 +27,7 @@ workflow SAMPLE_SIMILARITY_QC {
     .map { _metric, _nearest, candidates -> candidates }
     .collect()
 
-  SUMMARIZE_SAMPLE_SIMILARITY_CANDIDATE_EVIDENCE(ch_candidate_reports)
+  SUMMARIZE_SAMPLE_SIMILARITY(ch_candidate_reports)
 
   ch_plot_inputs = COMPUTE_SAMPLE_ORDINATION.out.ordination.map { metric, _distance_matrix, ordination, variance -> tuple(metric, ordination, variance) }
 
@@ -39,6 +39,6 @@ workflow SAMPLE_SIMILARITY_QC {
   pairwise_distances      = COMPUTE_SAMPLE_SKETCH_DISTANCES.out.pairwise_distances
   ordination              = COMPUTE_SAMPLE_ORDINATION.out.ordination
   possible_mixups         = REPORT_POSSIBLE_SAMPLE_MIXUPS.out.reports
-  candidate_evidence      = SUMMARIZE_SAMPLE_SIMILARITY_CANDIDATE_EVIDENCE.out.evidence
+  candidate_evidence      = SUMMARIZE_SAMPLE_SIMILARITY.out.evidence
   plots                   = PLOT_SAMPLE_ORDINATION.out.plots
 }

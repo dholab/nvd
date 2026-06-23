@@ -61,7 +61,7 @@ process REPORT_POSSIBLE_SAMPLE_MIXUPS {
     """
 }
 
-process SUMMARIZE_SAMPLE_SIMILARITY_CANDIDATE_EVIDENCE {
+process SUMMARIZE_SAMPLE_SIMILARITY {
 
     tag "candidate_evidence"
     label "low"
