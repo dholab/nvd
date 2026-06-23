@@ -487,19 +487,19 @@ class TestTaxdumpManagement:
         assert taxonomy._is_taxdump_stale(minimal_taxdump) is False
 
     def test_is_taxdump_stale_old(self, minimal_taxdump: Path) -> None:
-        """Test that 31-day-old taxdump is considered stale."""
+        """Test that 91-day-old taxdump is considered stale."""
         nodes_dmp = minimal_taxdump / "nodes.dmp"
-        # Set mtime to 31 days ago
-        old_time = time.time() - (31 * 24 * 60 * 60)
+        # Set mtime to 91 days ago
+        old_time = time.time() - (91 * 24 * 60 * 60)
         os.utime(nodes_dmp, (old_time, old_time))
 
         assert taxonomy._is_taxdump_stale(minimal_taxdump) is True
 
-    def test_is_taxdump_stale_29_days_is_fresh(self, minimal_taxdump: Path) -> None:
-        """Test that 29-day-old taxdump is NOT stale (boundary test)."""
+    def test_is_taxdump_stale_89_days_is_fresh(self, minimal_taxdump: Path) -> None:
+        """Test that 89-day-old taxdump is NOT stale (boundary test)."""
         nodes_dmp = minimal_taxdump / "nodes.dmp"
-        # Set mtime to 29 days ago
-        old_time = time.time() - (29 * 24 * 60 * 60)
+        # Set mtime to 89 days ago
+        old_time = time.time() - (89 * 24 * 60 * 60)
         os.utime(nodes_dmp, (old_time, old_time))
 
         assert taxonomy._is_taxdump_stale(minimal_taxdump) is False
@@ -582,6 +582,41 @@ class TestEnsureTaxdump:
         # SQLite mtime should be unchanged
         assert sqlite_path.stat().st_mtime == original_mtime
         assert result == minimal_taxdump
+
+    def test_ensure_taxdump_reuses_stale_existing_taxonomy(
+        self,
+        minimal_taxdump: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Existing taxonomy is not refreshed only because it is old."""
+        taxonomy._build_sqlite_from_dmp(minimal_taxdump)
+        nodes_dmp = minimal_taxdump / "nodes.dmp"
+        old_time = time.time() - (91 * 24 * 60 * 60)
+        os.utime(nodes_dmp, (old_time, old_time))
+
+        download_called = []
+        build_called = []
+
+        def mock_download(_taxdump_dir: Path) -> None:
+            download_called.append(True)
+
+        def mock_build(taxdump_dir: Path) -> Path:
+            build_called.append(True)
+            return taxdump_dir / "taxonomy.sqlite"
+
+        monkeypatch.setattr(taxonomy, "_download_and_extract_taxdump", mock_download)
+        monkeypatch.setattr(taxonomy, "_build_sqlite_from_dmp", mock_build)
+        monkeypatch.setattr(
+            taxonomy,
+            "get_taxdump_dir",
+            lambda **_kwargs: minimal_taxdump,
+        )
+
+        result = taxonomy._ensure_taxdump()
+
+        assert result == minimal_taxdump
+        assert download_called == []
+        assert build_called == []
 
 
 class TestContextManagers:
@@ -972,26 +1007,25 @@ class TestSyncMode:
         ):
             pass
 
-        assert "missing or stale" in str(exc_info.value)
+        assert "source files are missing" in str(exc_info.value)
         assert exc_info.value.operation == "Loading taxonomy database"
 
-    def test_sync_mode_raises_when_taxonomy_stale(self, minimal_taxdump: Path) -> None:
-        """sync=True raises TaxonomyUnavailableError when taxonomy is >30 days old."""
+    def test_sync_mode_allows_stale_existing_taxonomy(
+        self,
+        minimal_taxdump: Path,
+    ) -> None:
+        """sync=True does not reject prepared taxonomy only because it is old."""
         # Build SQLite first
         taxonomy._build_sqlite_from_dmp(minimal_taxdump)
 
-        # Make nodes.dmp appear 31 days old
+        # Make nodes.dmp appear 91 days old
         nodes_dmp = minimal_taxdump / "nodes.dmp"
-        old_time = time.time() - (31 * 24 * 60 * 60)
+        old_time = time.time() - (91 * 24 * 60 * 60)
         os.utime(nodes_dmp, (old_time, old_time))
 
-        with (
-            pytest.raises(taxonomy.TaxonomyUnavailableError) as exc_info,
-            taxonomy.open(taxonomy_dir=minimal_taxdump, sync=True),
-        ):
-            pass
-
-        assert "missing or stale" in str(exc_info.value)
+        with taxonomy.open(taxonomy_dir=minimal_taxdump, sync=True) as tax:
+            taxon = tax.get_taxon(9606)
+            assert taxon is not None
 
     def test_sync_mode_raises_when_sqlite_missing(self, minimal_taxdump: Path) -> None:
         """sync=True raises TaxonomyUnavailableError when .dmp exists but SQLite doesn't."""
@@ -1074,9 +1108,11 @@ class TestSyncMode:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Verify the callback receives properly formatted warning."""
+        taxonomy._build_sqlite_from_dmp(minimal_taxdump)
+
         # Make taxonomy stale
         nodes_dmp = minimal_taxdump / "nodes.dmp"
-        old_time = time.time() - (31 * 24 * 60 * 60)
+        old_time = time.time() - (91 * 24 * 60 * 60)
         os.utime(nodes_dmp, (old_time, old_time))
 
         warnings_received = []
@@ -1084,9 +1120,10 @@ class TestSyncMode:
         def capture_warning(msg: str) -> None:
             warnings_received.append(msg)
 
-        # Patch to simulate successful download after warning
+        ensure_called = []
+
         def mock_ensure(**_kwargs: object) -> Path:
-            taxonomy._build_sqlite_from_dmp(minimal_taxdump)
+            ensure_called.append(True)
             return minimal_taxdump
 
         monkeypatch.setattr(taxonomy, "_ensure_taxdump", mock_ensure)
@@ -1106,6 +1143,8 @@ class TestSyncMode:
         assert "Operation:" in warning
         assert "Consequence:" in warning
         assert "Resolution:" in warning
+        assert "Continuing with the existing taxonomy database" in warning
+        assert ensure_called == [True]
 
 
 class TestTaxonomyUnavailableError:

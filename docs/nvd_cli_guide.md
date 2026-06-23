@@ -198,6 +198,9 @@ NVD uses NCBI taxonomy for BLAST annotation and LCA resolution. For local work, 
 nvd taxonomy ensure --taxonomy-dir /path/to/taxdump
 ```
 
+Existing taxonomy data is reused even when old, while missing required files still trigger download/build. This is the safest behavior for shared HPC references because worker jobs do not mutate a shared taxonomy directory merely because `nodes.dmp` is older than a freshness window.
+
+
 Inspect the current state:
 
 ```bash

@@ -358,6 +358,9 @@ nvd taxonomy ensure --taxonomy-dir /path/to/taxdump
 nvd taxonomy status --taxonomy-dir /path/to/taxdump
 ```
 
+Existing taxonomy data is reused even when it is older than the freshness warning window. NVD downloads or rebuilds taxonomy only when required files are absent, which avoids mutating shared HPC taxonomy directories merely because they are old.
+
+
 You can also set:
 
 ```bash
