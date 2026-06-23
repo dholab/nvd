@@ -9,11 +9,11 @@ To make novel or poorly characterized taxa in WVDB “visible,” we use a proce
 The runtime artifacts consumed by NVD are only these two files:
 
 ```text
-ncbi-viruses-2025.01-plus-wvdb-v2.dna.k31.scaled50.sig.zip
-ncbi-viruses-2025.01-plus-wvdb-v2.lineages.csv
+ncbi-viruses-2025.01-plus-wvdb-v1.0.dna.k31.scaled50.sig.zip
+ncbi-viruses-2025.01-plus-wvdb-v1.0.lineages.csv
 ```
 
-The workflow also produces as reference manifest and build directory, which should be thought of as provenance/debugging artifacts.
+The build briefly writes an external sourmash manifest under `.work/combined/` so the recipe can validate that WVDB signatures are covered by the combined lineages. NVD does not need this manifest at runtime, and it is not a publishable artifact; the sourmash zip database already carries its own manifest.
 
 ## A quick note on organization
 
@@ -63,18 +63,29 @@ Because the commands used to run the build are intricate and must be run in a sp
 just build-sourmash-ncbi-wvdb yes
 ```
 
-By default, outputs are written under:
+By default, final outputs are written under:
 
 ```text
-build/sourmash/ncbi-virus-wvdb-v2/
+build/sourmash/ncbi-virus-wvdb-v1.0/
 ```
+
+The build root is intentionally treated like a small release directory. The prominent files are the publishable artifacts:
+
+```text
+build/sourmash/ncbi-virus-wvdb-v1.0/
+├── ncbi-viruses-2025.01-plus-wvdb-v1.0.dna.k31.scaled50.sig.zip
+├── ncbi-viruses-2025.01-plus-wvdb-v1.0.lineages.csv
+└── .work/
+```
+
+Downloaded inputs and intermediate NCBI/WVDB products live under `.work/`. If an uncompressed directory with a final-looking `.sig` suffix appears at the build root, do not publish or use it as the NVD reference. The sourmash artifact NVD expects is the `.sig.zip` database.
 
 Use a different build directory when needed:
 
 ```bash
 just build-sourmash-ncbi-wvdb \
   yes \
-  /path/to/reference-build/ncbi-virus-wvdb-v2
+  /path/to/reference-build/ncbi-virus-wvdb-v1.0
 ```
 
 The workflow is decomposed into smaller recipes so maintainers can rebuild one side without repeating all downloads:
@@ -85,9 +96,9 @@ just build-sourmash-wvdb yes
 just build-sourmash-ncbi-wvdb yes
 ```
 
-The top-level `build-sourmash-ncbi-wvdb` recipe uses Just dependencies to run the NCBI and WVDB recipes before combining their outputs. The NCBI recipe downloads the NCBI Virus sourmash sketch and matching lineage CSV first, then validates them with sourmash before any WVDB work. The WVDB recipe downloads WVDB FASTA and annotations, removes derived WVDB outputs from any previous partial build, runs `scripts/prepare_wvdb_sourmash_inputs.py` to write a normalized WVDB FASTA and WVDB lineage CSV, sketches WVDB with `dna,k=31,scaled=50`, writes a sourmash manifest, checks WVDB manifest coverage, and validates the WVDB taxonomy with `sourmash tax prepare`.
+The top-level `build-sourmash-ncbi-wvdb` recipe uses Just dependencies to run the NCBI and WVDB recipes before combining their outputs. The NCBI recipe downloads the NCBI Virus sourmash sketch and matching lineage CSV into `.work/ncbi/`, then validates them with sourmash before any WVDB work. The WVDB recipe downloads WVDB FASTA and annotations into `.work/wvdb/`, removes derived WVDB outputs from any previous partial build, runs `scripts/prepare_wvdb_sourmash_inputs.py` to write a normalized WVDB FASTA and WVDB lineage CSV, sketches WVDB with `dna,k=31,scaled=50`, writes a sourmash manifest, checks WVDB manifest coverage, and validates the WVDB taxonomy with `sourmash tax prepare`.
 
-The combined recipe removes stale combined outputs, concatenates the NCBI and WVDB sketches, prepares the combined lineage CSV, writes a sourmash manifest, checks WVDB manifest coverage against the combined lineages, and summarizes the combined sketch.
+The combined recipe removes stale combined outputs from the build root, including final-looking uncompressed `.sig` directories, concatenates the NCBI and WVDB sketches, prepares the combined lineage CSV, writes a temporary external sourmash manifest under `.work/combined/` for the coverage check, checks WVDB manifest coverage against the combined lineages, and summarizes the combined sketch.
 
 NVD’s justfile contains URLs where it expects to find the prebuild NCBI Virus signature and lineage at UCSD’s data farm. If the farm URLs are temporarily unavailable, use a mirror by overriding the Just variables rather than editing the recipe:
 
@@ -107,8 +118,8 @@ An example YAML-formatted params file for such a preset would look like this:
 ```yaml
 experimental: true
 
-sourmash_ref_url: "https://example.org/nvd/sourmash/ncbi-viruses-2025.01-plus-wvdb-v2.dna.k31.scaled50.sig.zip"
-sourmash_lineages_url: "https://example.org/nvd/sourmash/ncbi-viruses-2025.01-plus-wvdb-v2.lineages.csv"
+sourmash_ref_url: "https://example.org/nvd/sourmash/ncbi-viruses-2025.01-plus-wvdb-v1.0.dna.k31.scaled50.sig.zip"
+sourmash_lineages_url: "https://example.org/nvd/sourmash/ncbi-viruses-2025.01-plus-wvdb-v1.0.lineages.csv"
 sourmash_ksize: 31
 sourmash_scaled: 50
 sourmash_threshold_bp: 50
@@ -118,11 +129,11 @@ Then register and use it:
 
 ```bash
 nvd preset register \
-  sourmash-ncbi-virus-wvdb-v2 \
-  --from-file nvd-sourmash-ncbi-virus-wvdb-v2.yaml \
-  --description "Experimental sourmash profiling against NCBI Virus 2025.01 plus WVDB v2"
+  sourmash-ncbi-virus-wvdb-v1.0 \
+  --from-file nvd-sourmash-ncbi-virus-wvdb-v1.0.yaml \
+  --description "Experimental sourmash profiling against NCBI Virus 2025.01 plus WVDB v1.0"
 
-nvd run --preset sourmash-ncbi-virus-wvdb-v2 --params-file run-specific.yaml
+nvd run --preset sourmash-ncbi-virus-wvdb-v1.0 --params-file run-specific.yaml
 ```
 
 NVD will download the two sourmash reference files, sketch query metagenomes with abundance tracking, run taxonomic decomposition against the new reference, and summarize results in a variety of formats.

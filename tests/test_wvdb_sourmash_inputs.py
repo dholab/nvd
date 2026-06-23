@@ -174,8 +174,8 @@ TGCATGCA
 def test_prepare_inputs_normalizes_fasta_and_maps_lineages(tmp_path: Path) -> None:
     """prepare-inputs writes normalized FASTA IDs and sourmash lineages."""
     fasta, annotations = write_wvdb_fixtures(tmp_path)
-    normalized_fasta = tmp_path / "WVDB_v2.normalized.fasta"
-    lineages_csv = tmp_path / "wvdb-v2.sourmash.lineages.csv"
+    normalized_fasta = tmp_path / "WVDB_v1.0.normalized.fasta"
+    lineages_csv = tmp_path / "wvdb-v1.0.sourmash.lineages.csv"
 
     result = run_script(
         "prepare-inputs",
