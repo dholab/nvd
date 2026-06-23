@@ -8,10 +8,12 @@ on:
       - "conf/**"
       - "bin/**"
       - "lib/**"
+      - "tests/**"
       - "schemas/**"
       - ".github/scripts/**"
       - "install.sh"
       - "pyproject.toml"
+      - "uv.lock"
       - "assets/example_samplesheet.csv"
       - "modules/**/*.nf"
       - "subworkflows/**/*.nf"
@@ -24,10 +26,12 @@ on:
       - "conf/**"
       - "bin/**"
       - "lib/**"
+      - "tests/**"
       - "schemas/**"
       - ".github/scripts/**"
       - "install.sh"
       - "pyproject.toml"
+      - "uv.lock"
       - "assets/example_samplesheet.csv"
       - "modules/**/*.nf"
       - "subworkflows/**/*.nf"
@@ -51,7 +55,7 @@ jobs:
         uses: astral-sh/setup-uv@v2
 
       - name: Set up Python
-        run: uv python install 3.10
+        run: uv python install 3.12
 
       - name: Validate schema covers all params
         run: |
@@ -85,7 +89,7 @@ jobs:
         uses: astral-sh/setup-uv@v2
 
       - name: Set up Python
-        run: uv python install 3.10
+        run: uv python install 3.12
 
       - name: Install dependencies
         run: uv sync
@@ -95,6 +99,28 @@ jobs:
 
       - name: Run ruff format check
         run: uv run ruff format --check lib/
+
+  test:
+    name: Fast Pytest Suite
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v2
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Run fast pytest suite
+        env:
+          COLUMNS: "200"
+        run: uv run pytest -m "not slow and not network"
 
   validate-nextflow-syntax:
     name: Validate Nextflow Config Syntax
@@ -327,7 +353,7 @@ jobs:
         uses: astral-sh/setup-uv@v2
 
       - name: Set up Python
-        run: uv python install 3.10
+        run: uv python install 3.12
 
       - name: Install dependencies
         run: uv sync

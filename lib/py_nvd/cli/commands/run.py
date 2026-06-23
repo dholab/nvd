@@ -604,8 +604,10 @@ def run(
         warning("No config file found. Using command-line parameters only.")
         warning(f"Consider creating a config file at: {DEFAULT_CONFIG}")
 
-    # Check Nextflow is installed
-    if not check_command_exists("nextflow"):
+    # Check Nextflow is installed before real execution. Dry-run mode only needs
+    # to render the command, which is useful on systems where Nextflow is not
+    # installed yet.
+    if not dry_run and not check_command_exists("nextflow"):
         error(
             "Nextflow not found. Please install Nextflow:\n"
             "  curl -s https://get.nextflow.io | bash\n"
