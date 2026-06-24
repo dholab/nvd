@@ -11,6 +11,8 @@ import os
 
 import pandas as pd
 
+LINEAGE_TOKEN_PARTS = 2
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -21,10 +23,19 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def is_virus_lineage(lineage: object) -> bool:
+    """Return true when a lineage token names Viruses exactly."""
+    for token in str(lineage).split(";"):
+        parts = token.strip().split(":", maxsplit=1)
+        if len(parts) == LINEAGE_TOKEN_PARTS and parts[1].strip() == "Viruses":
+            return True
+    return False
+
+
 def contains_non_phage_viruses(group: pd.DataFrame) -> bool:
-    virus_hits = group[group["rank"].str.contains("superkingdom:Viruses", na=False)]
+    virus_hits = group[group["rank"].apply(is_virus_lineage)]
     non_phage_viruses = virus_hits[
-        ~virus_hits["stitle"].str.contains("phage", case=False)
+        ~virus_hits["stitle"].str.contains("phage", case=False, na=False)
     ]
     return len(non_phage_viruses) > 0
 

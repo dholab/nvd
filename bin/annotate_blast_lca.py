@@ -36,7 +36,6 @@ Usage:
 """
 
 import argparse
-import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -54,6 +53,28 @@ DEFAULT_MIN_ID = 90.0  # for blastn; adjust for aa
 DEFAULT_MAX_E = 1e-10
 DEFAULT_DELTA_S = 5.0  # ΔS window for "near ties"
 DEFAULT_MIN_SUPPORT = 0.8  # dominance threshold
+INPUT_COLUMNS = [
+    "task",
+    "sample",
+    "qseqid",
+    "qlen",
+    "sseqid",
+    "stitle",
+    "length",
+    "pident",
+    "evalue",
+    "bitscore",
+    "sscinames",
+    "staxids",
+    "rank",
+]
+LCA_COLUMNS = [
+    "adjusted_taxid",
+    "adjusted_taxid_name",
+    "adjusted_taxid_rank",
+    "adjustment_method",
+]
+OUTPUT_COLUMNS = [*INPUT_COLUMNS, *LCA_COLUMNS]
 
 
 @dataclass
@@ -76,6 +97,20 @@ class LcaParams:
     max_evalue: float = DEFAULT_MAX_E
     delta_s_window: float = DEFAULT_DELTA_S
     min_support: float = DEFAULT_MIN_SUPPORT
+
+
+def input_has_data_rows(path: Path) -> bool:
+    """Return true when a TSV has at least one row after its header."""
+    if path.stat().st_size == 0:
+        return False
+    with path.open(encoding="utf-8") as handle:
+        next(handle, None)
+        return next(handle, None) is not None
+
+
+def write_empty_lca_output(path: Path) -> None:
+    """Write a header-only LCA TSV for valid no-hit samples."""
+    path.write_text("\t".join(OUTPUT_COLUMNS) + "\n", encoding="utf-8")
 
 
 def filter_blast_hits(unfiltered_hits: pl.LazyFrame, params: LcaParams) -> pl.LazyFrame:
@@ -477,10 +512,11 @@ def main() -> None:
     )
 
     logger.info("Loading NCBI taxonomy database...")
-    # Handle empty input file
-    if os.path.getsize(args.input_file) == 0:
-        logger.warning("Input file is empty. Creating empty output file.")
-        Path(args.output_file).touch()
+    input_path = Path(args.input_file)
+    output_path = Path(args.output_file)
+    if not input_has_data_rows(input_path):
+        logger.warning("Input file has no BLAST data rows. Creating header-only output file.")
+        write_empty_lca_output(output_path)
         return
 
     with taxonomy.open(
