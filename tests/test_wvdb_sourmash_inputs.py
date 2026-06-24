@@ -112,6 +112,10 @@ def write_wvdb_fixtures(tmp_path: Path) -> tuple[Path, Path]:
 ACGTACGT
 >contig_without_species
 TGCATGCA
+>contig_species_without_genus
+AACCGGTT
+>contig_order_without_phylum_or_class
+CCAATTGG
 """,
         encoding="utf-8",
     )
@@ -166,6 +170,38 @@ TGCATGCA
                 "",
                 "ICTVfallbackfamily",
             ],
+            [
+                "contig_species_without_genus",
+                "Pisuviricota",
+                "Pisoniviricetes",
+                "Picornavirales",
+                "Unclassified",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "Wenzhou_picorna-like_virus_47",
+                "",
+                "",
+                "",
+            ],
+            [
+                "contig_order_without_phylum_or_class",
+                "",
+                "",
+                "Picornavirales",
+                "Unclassified",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+            ],
         ],
     )
     return fasta, annotations
@@ -191,7 +227,10 @@ def test_prepare_inputs_normalizes_fasta_and_maps_lineages(tmp_path: Path) -> No
 
     assert result.returncode == 0, result.stderr
     assert normalized_fasta.read_text(encoding="utf-8") == (
-        ">WVDB|contig_with_species\nACGTACGT\n>WVDB|contig_without_species\nTGCATGCA\n"
+        ">WVDB|contig_with_species\nACGTACGT\n"
+        ">WVDB|contig_without_species\nTGCATGCA\n"
+        ">WVDB|contig_species_without_genus\nAACCGGTT\n"
+        ">WVDB|contig_order_without_phylum_or_class\nCCAATTGG\n"
     )
 
     rows = read_csv_rows(lineages_csv)
@@ -213,6 +252,26 @@ def test_prepare_inputs_normalizes_fasta_and_maps_lineages(tmp_path: Path) -> No
             "class": "Fallbackonlyclass",
             "order": "Fallbackonlyorder",
             "family": "Fallbackonlyfamily",
+            "genus": "",
+            "species": "",
+        },
+        {
+            "ident": "WVDB|contig_species_without_genus",
+            "superkingdom": "Viruses",
+            "phylum": "Pisuviricota",
+            "class": "Pisoniviricetes",
+            "order": "Picornavirales",
+            "family": "Unclassified",
+            "genus": "unclassified genus",
+            "species": "Wenzhou_picorna-like_virus_47",
+        },
+        {
+            "ident": "WVDB|contig_order_without_phylum_or_class",
+            "superkingdom": "Viruses",
+            "phylum": "unclassified phylum",
+            "class": "unclassified class",
+            "order": "Picornavirales",
+            "family": "Unclassified",
             "genus": "",
             "species": "",
         },

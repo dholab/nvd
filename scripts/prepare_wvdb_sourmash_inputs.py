@@ -27,7 +27,9 @@ TAXONOMY_RANKS = (
     "species",
     "strain",
 )
-LINEAGE_COLUMNS = ("ident", *TAXONOMY_RANKS)
+LINEAGE_COLUMNS = ("ident", *TAXONOMY_RANKS[:-1])
+WVDB_TAXONOMY_RANKS = LINEAGE_COLUMNS[1:]
+CURATED_LINEAGE_COLUMNS = ("ident", *TAXONOMY_RANKS)
 LINEAGE_IDENTIFIER_COLUMNS = ("ident", "identifiers")
 SIGNATURE_IDENTITY_COLUMNS = (
     "md5",
@@ -195,6 +197,28 @@ def require_unique_identifiers(lineages: pl.DataFrame) -> pl.DataFrame:
     return lineages
 
 
+def fill_internal_lineage_gaps(lineages: pl.LazyFrame) -> pl.LazyFrame:
+    """Fill missing intermediate ranks when a lower rank is present."""
+    expressions = []
+    for index, rank in enumerate(WVDB_TAXONOMY_RANKS):
+        lower_ranks = WVDB_TAXONOMY_RANKS[index + 1 :]
+        if not lower_ranks:
+            continue
+
+        has_lower_rank = pl.any_horizontal(
+            cleaned_string(lower_rank).is_not_null() for lower_rank in lower_ranks
+        )
+        missing_rank = cleaned_string(rank).is_null()
+        expressions.append(
+            pl.when(missing_rank & has_lower_rank)
+            .then(pl.lit(f"unclassified {rank}"))
+            .otherwise(pl.col(rank))
+            .alias(rank),
+        )
+
+    return lineages.with_columns(expressions)
+
+
 def select_wvdb_lineages(annotations: pl.LazyFrame) -> pl.LazyFrame:
     """Project WVDB annotation columns into sourmash lineage columns."""
     available_columns = set(annotations.collect_schema().names())
@@ -220,7 +244,7 @@ def select_wvdb_lineages(annotations: pl.LazyFrame) -> pl.LazyFrame:
         ).alias("family"),
         first_nonempty(available_columns, "Genus_RdRp").alias("genus"),
         first_nonempty(available_columns, "Species_RdRp").alias("species"),
-    )
+    ).pipe(fill_internal_lineage_gaps)
 
 
 def build_wvdb_lineages(annotations: pl.LazyFrame) -> pl.DataFrame:
@@ -612,10 +636,14 @@ def write_curated_lineages(path: Path, rows: list[dict[str, str]]) -> None:
     """Write only the lineage columns consumed by sourmash taxonomy commands."""
     ensure_parent(path)
     with path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=LINEAGE_COLUMNS, lineterminator="\n")
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=CURATED_LINEAGE_COLUMNS,
+            lineterminator="\n",
+        )
         writer.writeheader()
         writer.writerows(
-            {column: row[column] for column in LINEAGE_COLUMNS} for row in rows
+            {column: row[column] for column in CURATED_LINEAGE_COLUMNS} for row in rows
         )
 
 

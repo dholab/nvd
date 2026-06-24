@@ -41,7 +41,7 @@ Our first stab at projecting WVDB contigs into sourmash’s standard lineage col
 | `genus` | `Genus_RdRp` when present |
 | `species` | `Species_RdRp` when present |
 
-Contigs without genus or species assignments are left blank at those ranks. We do not invent species names to satisfy a species-rank output. Blank lower ranks are preferable to false precision.
+Trailing missing ranks are left blank. When a lower rank is present but an intermediate rank is blank, the builder fills the missing internal rank with an explicit placeholder such as `unclassified genus`. These placeholders make the lineage path structurally valid for tree consumers while preserving the fact that WVDB did not provide a classified value at that rank.
 
 The FASTA identifiers are normalized with the same `WVDB|` prefix before sketching, so the sourmash signature names and lineage identifiers match.
 
