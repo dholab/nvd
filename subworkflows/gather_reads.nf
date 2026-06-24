@@ -3,7 +3,7 @@ include { FETCH_FASTQ } from "../modules/sratools"
 process RESOLVE_READ_INPUTS {
 
     label "low"
-    cache false
+    // cache false
 
     input:
     path samplesheet
