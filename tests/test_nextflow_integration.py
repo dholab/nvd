@@ -352,6 +352,7 @@ def test_mini_sra_viral_pipeline_completes() -> None:
         gather_dir = sourmash_root / "reference_profiling" / "gather"
         taxonomy_dir = sourmash_root / "reference_profiling" / "taxonomy"
         taxburst_dir = sourmash_root / "reference_profiling" / "reports" / "taxburst"
+        sankey_dir = sourmash_root / "reference_profiling" / "reports" / "sankey"
 
         ref_sketches = sorted(ref_dir.glob("sourmash_reference.k31.scaled50.sig.zip"))
         assert ref_sketches, f"Missing sourmash reference sketch in {ref_dir}"
@@ -390,3 +391,7 @@ def test_mini_sra_viral_pipeline_completes() -> None:
             for report in (taxburst_html, taxburst_json):
                 assert report.is_file(), f"Missing sourmash taxburst report: {report}"
                 assert report.stat().st_size > 0, f"Empty sourmash taxburst report: {report}"
+
+            sankey_html = sankey_dir / f"{sample_id}.sourmash.sankey.html"
+            assert sankey_html.is_file(), f"Missing sourmash Sankey report: {sankey_html}"
+            assert sankey_html.stat().st_size > 0, f"Empty sourmash Sankey report: {sankey_html}"

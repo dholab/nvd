@@ -140,13 +140,16 @@ process SOURMASH_TAX_METAGENOME {
   tuple val(sample_id), val(platform), val(read_structure), path("${sample_id}.sourmash.tax_metagenome*"), emit: tax_reports
 
   script:
+  def output_formats = params.sourmash_output_bioboxes
+      ? "csv_summary lineage_summary krona kreport bioboxes"
+      : "csv_summary lineage_summary krona kreport"
   """
   sourmash tax metagenome \
       --gather-csv ${gather_csv} \
       --taxonomy-csv ${lineages_csv} \
       --keep-identifier-versions \
       --use-abundances \
-      --output-format csv_summary lineage_summary krona kreport \
+      --output-format ${output_formats} \
       --rank species \
       --output-base "${sample_id}.sourmash.tax_metagenome"
   """

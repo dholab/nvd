@@ -24,6 +24,7 @@ dependencies = [
   "pyyaml>=6.0.2",
   "rich>=14.0.0",
   "slack-sdk>=3.39.0",
+  "sourmash-plugin-betterplot>=0.5.9",
   "taxopy>=0.14.0",
   "typer>=0.15.2",
   "vl-convert-python>=1.9.0.post1",
@@ -61,6 +62,10 @@ sracha = { version = ">=0.3.10,<0.4", channel = "bioconda" }
 sourmash = ">=4.9.4,<5"
 sourmash_plugin_branchwater = ">=0.9.15,<0.10"
 taxburst = ">=0.3.2,<0.4"
+# BetterPlot currently declares a hard PyPI pyqt5 dependency. Keep PyQt on the
+# conda side so Pixi can use platform packages instead of building PyQt from
+# source for linux-aarch64 and other headless pipeline platforms.
+pyqt = ">=5.15.11,<6"
 
 # ----------------------------------------------------------------------------------- #
 

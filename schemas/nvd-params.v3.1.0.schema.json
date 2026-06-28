@@ -192,6 +192,11 @@
       "minimum": 0,
       "description": "Minimum estimated base-pair overlap for experimental sourmash gather"
     },
+    "sourmash_output_bioboxes": {
+      "type": "boolean",
+      "default": false,
+      "description": "Write sourmash tax metagenome CAMI bioboxes profiles. Enable only with taxonomy lineages that include NCBI taxpath values."
+    },
     "preprocess": {
       "type": "boolean",
       "default": false,

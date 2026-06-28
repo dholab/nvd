@@ -1,6 +1,6 @@
 include { ADD_READ_COUNTS_TO_BLAST; CONCATENATE_EXPERIMENT_BLAST; VIRUS_ENRICHMENT_REPORT } from "../modules/utils"
 include { NOTIFY_SLACK } from "../modules/utils"
-include { RENDER_TAXON_ABUNDANCE_SUNBURST } from "../modules/reporting"
+include { RENDER_TAXON_ABUNDANCE_SUNBURST; RENDER_SOURMASH_SANKEY } from "../modules/reporting"
 include { LIMS_INTEGRATION } from "./lims_integration"
 
 workflow REPORTING {
@@ -48,6 +48,7 @@ workflow REPORTING {
     )
 
     RENDER_TAXON_ABUNDANCE_SUNBURST(ch_sourmash_tax_reports)
+    RENDER_SOURMASH_SANKEY(ch_sourmash_tax_reports)
 
     LIMS_INTEGRATION(
         ch_split_blast_results.for_labkey_upload,
@@ -76,6 +77,7 @@ workflow REPORTING {
     experiment_blast = CONCATENATE_EXPERIMENT_BLAST.out.concatenated_tsv
     virus_enrichment_report = VIRUS_ENRICHMENT_REPORT.out.summary_tsv
     taxon_abundance_sunbursts = RENDER_TAXON_ABUNDANCE_SUNBURST.out.reports
+    sourmash_sankey_reports = RENDER_SOURMASH_SANKEY.out.report
     labkey_log = LIMS_INTEGRATION.out.upload_log
     final_labkey_log = LIMS_INTEGRATION.out.final_labkey_log
     labkey_registered = LIMS_INTEGRATION.out.registered
