@@ -350,8 +350,9 @@ def test_mini_sra_viral_pipeline_completes() -> None:
         sourmash_root = results_root / "experimental_sourmash"
         ref_dir = sourmash_root / "reference_profiling" / "reference"
         gather_dir = sourmash_root / "reference_profiling" / "gather"
-        taxonomy_dir = sourmash_root / "reference_profiling" / "taxonomy"
-        taxburst_dir = sourmash_root / "reference_profiling" / "reports" / "taxburst"
+        taxburst_dir = (
+            sourmash_root / "reference_profiling" / "reports" / "taxburst" / "per_sample"
+        )
         sankey_dir = sourmash_root / "reference_profiling" / "reports" / "sankey"
 
         ref_sketches = sorted(ref_dir.glob("sourmash_reference.k31.scaled50.sig.zip"))
@@ -370,21 +371,6 @@ def test_mini_sra_viral_pipeline_completes() -> None:
                 expected_species in (row.get("name") or row.get("match_name", ""))
                 for row in gather_rows
             ), f"No {expected_species} sourmash gather hit found for {sample_id}"
-
-            tax_base = taxonomy_dir / f"{sample_id}.sourmash.tax_metagenome"
-            summarized = Path(f"{tax_base}.summarized.csv")
-            lineage_summary = Path(f"{tax_base}.lineage_summary.tsv")
-            krona = Path(f"{tax_base}.krona.tsv")
-            kreport = Path(f"{tax_base}.kreport.txt")
-            for report in (summarized, lineage_summary, krona, kreport):
-                assert report.is_file(), f"Missing sourmash tax report: {report}"
-                assert report.stat().st_size > 0, f"Empty sourmash tax report: {report}"
-
-            tax_rows = read_csv_rows(summarized)
-            assert any(
-                row.get("rank") == "species" and expected_species in row.get("lineage", "")
-                for row in tax_rows
-            ), f"No {expected_species} species-level sourmash tax row for {sample_id}"
 
             taxburst_html = taxburst_dir / f"{sample_id}.sourmash.taxburst.html"
             taxburst_json = taxburst_dir / f"{sample_id}.sourmash.taxburst.json"

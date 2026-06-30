@@ -1,6 +1,6 @@
 include { ADD_READ_COUNTS_TO_BLAST; CONCATENATE_EXPERIMENT_BLAST; VIRUS_ENRICHMENT_REPORT } from "../modules/utils"
 include { NOTIFY_SLACK } from "../modules/utils"
-include { RENDER_TAXON_ABUNDANCE_SUNBURST; RENDER_SOURMASH_SANKEY } from "../modules/reporting"
+include { NORMALIZE_TAXONOMIC_PROFILE_SUMMARY; RENDER_TAXON_ABUNDANCE_SUNBURST; RENDER_SOURMASH_SANKEY } from "../modules/reporting"
 include { LIMS_INTEGRATION } from "./lims_integration"
 
 workflow REPORTING {
@@ -47,8 +47,9 @@ workflow REPORTING {
         ch_virus_enrichment_stats.map { _sample_id, json -> json }.collect()
     )
 
-    RENDER_TAXON_ABUNDANCE_SUNBURST(ch_sourmash_tax_reports)
-    RENDER_SOURMASH_SANKEY(ch_sourmash_tax_reports)
+    NORMALIZE_TAXONOMIC_PROFILE_SUMMARY(ch_sourmash_tax_reports)
+    RENDER_TAXON_ABUNDANCE_SUNBURST(NORMALIZE_TAXONOMIC_PROFILE_SUMMARY.out.summary)
+    RENDER_SOURMASH_SANKEY(NORMALIZE_TAXONOMIC_PROFILE_SUMMARY.out.summary)
 
     LIMS_INTEGRATION(
         ch_split_blast_results.for_labkey_upload,
