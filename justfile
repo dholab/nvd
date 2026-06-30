@@ -127,6 +127,14 @@ e2e profile="test":
 e2e-experimental profile="test":
     NVD_INTEGRATION_PROFILE="{{ profile }}" NVD_INTEGRATION_EXPERIMENTAL=1 pixi run e2e-test
 
+# run the slow mini SRA end-to-end test without scheduling SPAdes assembly
+e2e-skip-assembly profile="test":
+    NVD_INTEGRATION_PROFILE="{{ profile }}" NVD_INTEGRATION_SKIP_ASSEMBLY=1 pixi run e2e-test
+
+# run the slow mini SRA end-to-end test with experimental features but no SPAdes assembly
+e2e-experimental-skip-assembly profile="test":
+    NVD_INTEGRATION_PROFILE="{{ profile }}" NVD_INTEGRATION_EXPERIMENTAL=1 NVD_INTEGRATION_SKIP_ASSEMBLY=1 pixi run e2e-test
+
 # run the slow mini SRA end-to-end test as CI does
 e2e-ci profile="test":
     NVD_INTEGRATION_PROFILE="{{ profile }}" pixi run e2e-test-ci
@@ -160,7 +168,9 @@ alias e := e2e
 alias e2e-test := e2e
 alias test-drive := e2e
 alias ci-e2e := e2e-ci
-alias exp-e2e := e2e-experimental
+alias e2e-exp := e2e-experimental
+alias e2e-lite := e2e-skip-assembly
+alias e2e-exp-lite := e2e-experimental-skip-assembly
 alias nf-config := config
 alias config-test := config
 alias clean := clean-e2e

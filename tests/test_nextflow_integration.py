@@ -139,6 +139,10 @@ def integration_experimental_enabled() -> bool:
     return os.environ.get("NVD_INTEGRATION_EXPERIMENTAL") == "1"
 
 
+def integration_skip_assembly_enabled() -> bool:
+    return os.environ.get("NVD_INTEGRATION_SKIP_ASSEMBLY") == "1"
+
+
 def local_sample_row(sample: dict[str, Any], local_fastq_dir: Path) -> dict[str, str]:
     fastq1 = sample.get("fastq1")
     fastq2 = sample.get("fastq2")
@@ -167,8 +171,12 @@ def write_augmented_samplesheet(run_dir: Path) -> Path:
     glob_links = {
         "local_hits_glob_L001_R1_001.fastq.gz": LOCAL_FASTQ_FIXTURES["hits_r1"],
         "local_hits_glob_L001_R2_001.fastq.gz": LOCAL_FASTQ_FIXTURES["hits_r2"],
-        "local_hits_glob_L002_R1_001.fastq.gz": LOCAL_FASTQ_FIXTURES["water_plus_hits_r1"],
-        "local_hits_glob_L002_R2_001.fastq.gz": LOCAL_FASTQ_FIXTURES["water_plus_hits_r2"],
+        "local_hits_glob_L002_R1_001.fastq.gz": LOCAL_FASTQ_FIXTURES[
+            "water_plus_hits_r1"
+        ],
+        "local_hits_glob_L002_R2_001.fastq.gz": LOCAL_FASTQ_FIXTURES[
+            "water_plus_hits_r2"
+        ],
     }
     for name, target in glob_links.items():
         (local_fastq_dir / name).symlink_to(target.resolve())
@@ -189,7 +197,9 @@ def write_augmented_samplesheet(run_dir: Path) -> Path:
             for row in csv.DictReader(handle)
         )
 
-    rows.extend(local_sample_row(sample, local_fastq_dir) for sample in LOCAL_E2E_SAMPLES)
+    rows.extend(
+        local_sample_row(sample, local_fastq_dir) for sample in LOCAL_E2E_SAMPLES
+    )
 
     samplesheet = run_dir / "integration_samplesheet.csv"
     with samplesheet.open("w", newline="", encoding="utf-8") as handle:
@@ -203,6 +213,7 @@ def run_nextflow() -> tuple[subprocess.CompletedProcess[str], Path]:
     profile = os.environ.get("NVD_INTEGRATION_PROFILE", "test")
     show_progress = os.environ.get("NVD_E2E_SHOW_PROGRESS") == "1"
     experimental = integration_experimental_enabled()
+    skip_assembly = integration_skip_assembly_enabled()
     run_dir = make_e2e_run_dir()
     results_dir = run_dir / "results"
     work_dir = run_dir / "work"
@@ -246,6 +257,8 @@ def run_nextflow() -> tuple[subprocess.CompletedProcess[str], Path]:
                 str(SOURMASH_LINEAGES),
             ],
         )
+    if skip_assembly:
+        command.extend(["--skip_assembly", "true"])
     completed = subprocess.run(  # noqa: S603
         command,
         cwd=ROOT,
@@ -272,6 +285,7 @@ def test_mini_sra_viral_pipeline_completes() -> None:
     manifest = load_manifest()
     verify_fixture_checksums(manifest)
     experimental = integration_experimental_enabled()
+    skip_assembly = integration_skip_assembly_enabled()
 
     completed, run_dir = run_nextflow()
     assert completed.returncode == 0, (
@@ -284,72 +298,89 @@ def test_mini_sra_viral_pipeline_completes() -> None:
     results_root = run_dir / "results" / "nvd"
     final_dir = results_root / "07_merged_blast_results" / "final"
     final_blast_files = sorted(final_dir.glob("*_blast.final.tsv"))
-    assert final_blast_files, f"No final BLAST TSVs found in {final_dir}"
 
     experiment_blast = (
         results_root / "08_experiment_summary" / "experiment_blast_results.tsv"
     )
-    assert experiment_blast.is_file(), (
-        f"Missing experiment BLAST summary: {experiment_blast}"
-    )
 
-    final_text = "\n".join(
-        path.read_text(encoding="utf-8") for path in final_blast_files
-    )
-    experiment_rows = read_tsv_rows(experiment_blast)
-    assert experiment_rows, f"No experiment BLAST rows found in {experiment_blast}"
+    if skip_assembly:
+        assert not final_blast_files, (
+            f"Skip-assembly run unexpectedly produced final BLAST TSVs: {final_blast_files}"
+        )
+        if experiment_blast.exists():
+            assert experiment_blast.read_text(encoding="utf-8") == ""
+    else:
+        assert experiment_blast.is_file(), (
+            f"Missing experiment BLAST summary: {experiment_blast}"
+        )
+        assert final_blast_files, f"No final BLAST TSVs found in {final_dir}"
 
-    for run_info in manifest["sra_runs"]:
-        sample_rows = [
-            row for row in experiment_rows if row.get("sample") == run_info["sample_id"]
+        final_text = "\n".join(
+            path.read_text(encoding="utf-8") for path in final_blast_files
+        )
+        experiment_rows = read_tsv_rows(experiment_blast)
+        assert experiment_rows, f"No experiment BLAST rows found in {experiment_blast}"
+
+        for run_info in manifest["sra_runs"]:
+            sample_rows = [
+                row
+                for row in experiment_rows
+                if row.get("sample") == run_info["sample_id"]
+            ]
+            assert sample_rows, (
+                f"No experiment BLAST rows found for {run_info['sample_id']}"
+            )
+            assert any(
+                row.get("staxids") == str(run_info["taxid"]) for row in sample_rows
+            ), f"No {run_info['taxid']} BLAST taxid found for {run_info['sample_id']}"
+            assert any(
+                run_info["expected_organism"] in row.get("rank", "")
+                for row in sample_rows
+            ), (
+                f"No {run_info['expected_organism']} lineage found for "
+                f"{run_info['sample_id']}"
+            )
+            expected_tasks = run_info.get("expected_tasks", [])
+            observed_tasks = {row.get("task") for row in sample_rows}
+            assert set(expected_tasks) <= observed_tasks, (
+                f"Missing expected BLAST tasks for {run_info['sample_id']}: "
+                f"expected {sorted(expected_tasks)}, observed {sorted(observed_tasks)}"
+            )
+
+        resolved_manifest = (
+            results_root / "00_input_resolution" / "resolved_reads.jsonl"
+        )
+        resolved_records = [
+            json.loads(line)
+            for line in resolved_manifest.read_text(encoding="utf-8").splitlines()
         ]
-        assert sample_rows, (
-            f"No experiment BLAST rows found for {run_info['sample_id']}"
-        )
-        assert any(
-            row.get("staxids") == str(run_info["taxid"]) for row in sample_rows
-        ), f"No {run_info['taxid']} BLAST taxid found for {run_info['sample_id']}"
-        assert any(
-            run_info["expected_organism"] in row.get("rank", "") for row in sample_rows
-        ), (
-            f"No {run_info['expected_organism']} lineage found for "
-            f"{run_info['sample_id']}"
-        )
-        expected_tasks = run_info.get("expected_tasks", [])
-        observed_tasks = {row.get("task") for row in sample_rows}
-        assert set(expected_tasks) <= observed_tasks, (
-            f"Missing expected BLAST tasks for {run_info['sample_id']}: "
-            f"expected {sorted(expected_tasks)}, observed {sorted(observed_tasks)}"
-        )
+        resolved_by_sample = {
+            record["sample_id"]: record for record in resolved_records
+        }
+        for run_info in LOCAL_E2E_SAMPLES:
+            record = resolved_by_sample[run_info["sample_id"]]
+            assert record["source"] == run_info["source"]
 
-    resolved_manifest = results_root / "00_input_resolution" / "resolved_reads.jsonl"
-    resolved_records = [
-        json.loads(line)
-        for line in resolved_manifest.read_text(encoding="utf-8").splitlines()
-    ]
-    resolved_by_sample = {record["sample_id"]: record for record in resolved_records}
-    for run_info in LOCAL_E2E_SAMPLES:
-        record = resolved_by_sample[run_info["sample_id"]]
-        assert record["source"] == run_info["source"]
+        glob_record = resolved_by_sample["local_hits_glob"]
+        assert [Path(path).name for path in glob_record["r1"]] == [
+            "local_hits_glob_L001_R1_001.fastq.gz",
+            "local_hits_glob_L002_R1_001.fastq.gz",
+        ]
+        assert [Path(path).name for path in glob_record["r2"]] == [
+            "local_hits_glob_L001_R2_001.fastq.gz",
+            "local_hits_glob_L002_R2_001.fastq.gz",
+        ]
 
-    glob_record = resolved_by_sample["local_hits_glob"]
-    assert [Path(path).name for path in glob_record["r1"]] == [
-        "local_hits_glob_L001_R1_001.fastq.gz",
-        "local_hits_glob_L002_R1_001.fastq.gz",
-    ]
-    assert [Path(path).name for path in glob_record["r2"]] == [
-        "local_hits_glob_L001_R2_001.fastq.gz",
-        "local_hits_glob_L002_R2_001.fastq.gz",
-    ]
-
-    assert "Orf virus" in final_text
-    assert "Monkeypox virus" in final_text
+        assert "Orf virus" in final_text
+        assert "Monkeypox virus" in final_text
 
     if experimental:
         sourmash_root = results_root / "experimental_sourmash"
         ref_dir = sourmash_root / "reference_profiling" / "reference"
         gather_dir = sourmash_root / "reference_profiling" / "gather"
-        merged_taxburst_dir = sourmash_root / "reference_profiling" / "reports" / "taxburst"
+        merged_taxburst_dir = (
+            sourmash_root / "reference_profiling" / "reports" / "taxburst"
+        )
         taxburst_dir = merged_taxburst_dir / "per_sample"
         sankey_dir = sourmash_root / "reference_profiling" / "reports" / "sankey"
 
