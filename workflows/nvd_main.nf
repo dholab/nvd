@@ -27,18 +27,20 @@ workflow NVD_MAIN {
 
   main:
 
-  // Validate required params
-  assert params.blast_db && file(params.blast_db).isDirectory() && (params.virus_index || params.virus_index_url || params.virus_reference_fasta) : """
+  // Validate required params. BLAST DB is only required when assembled contigs
+  // can reach BLAST classification.
+  def requires_blast_db = !(params.skip_assembly || params.skip_blast)
+  assert (!requires_blast_db || (params.blast_db && file(params.blast_db).isDirectory())) && (params.virus_index || params.virus_index_url || params.virus_reference_fasta) : """
     One or more required parameters are missing or point to non-existent files:
 
-      blast_db                        -> ${params.blast_db}
+      blast_db                        -> ${requires_blast_db ? params.blast_db : 'not required when skip_assembly or skip_blast is enabled'}
       virus_index / virus_index_url / virus_reference_fasta: at least one must be set
 
     Please supply the above in your `-c nextflow.config` or via `-params-file`.
     """
 
   // Reference channels
-  ch_blast_db_files = channel.fromPath(params.blast_db)
+  ch_blast_db_files = params.blast_db ? channel.fromPath(params.blast_db) : channel.empty()
 
   // Resolve explicit taxonomy path; Python owns fallback taxonomy-cache rules.
   dirs = NvdDirs.resolve(params, log)

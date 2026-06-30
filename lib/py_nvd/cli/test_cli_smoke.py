@@ -147,6 +147,30 @@ def test_run_uses_taxonomy_env_as_pipeline_param(
     assert str(taxonomy_dir) in result.output
 
 
+def test_run_accepts_skip_stage_flags(tmp_path: Path) -> None:
+    """Hyphenated CLI flags map to underscore Nextflow params."""
+    samplesheet = tmp_path / "samples.csv"
+    samplesheet.write_text("sample_id,srr,platform,fastq1,fastq2\n", encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        [
+            "run",
+            "--samplesheet",
+            str(samplesheet),
+            "--skip-assembly",
+            "--skip-blast",
+            "--dry-run",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "--skip_assembly" in result.output
+    assert "--skip_blast" in result.output
+    assert "--skip-assembly" not in result.output
+    assert "--skip-blast" not in result.output
+
+
 def test_samplesheet_generate_sanitizes_illumina_ids(tmp_path: Path) -> None:
     fastq_dir = tmp_path / "fastqs"
     fastq_dir.mkdir()

@@ -323,6 +323,14 @@ def _generate_yaml_template(path: Path, schema: dict, schema_url: str) -> None:
         subheading="Off by default. Enable only when intentionally testing release-candidate features.",
     )
 
+    _add_commented_section(
+        lines,
+        "Execution Controls",
+        ["skip_assembly", "skip_blast"],
+        properties,
+        subheading="Skip expensive downstream stages for diagnostics or partial runs.",
+    )
+
     _yaml_analysis_section(lines, properties)
 
     _add_commented_section(

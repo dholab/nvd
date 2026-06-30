@@ -128,3 +128,39 @@ def test_taxonomy_processes_forward_policy_arguments() -> None:
             missing.append(f"{path.relative_to(ROOT)}: missing --taxonomy-max-age-days")
 
     assert not missing, "\n".join(missing)
+
+
+def test_skip_stage_params_gate_expensive_nextflow_processes() -> None:
+    """Skip params should guard scheduling before SPAdes and MEGABLAST."""
+    expected = {
+        ROOT / "subworkflows" / "preprocess_contigs.nf": (
+            "params.skip_assembly",
+            "RUN_SPADES(",
+        ),
+        ROOT / "subworkflows" / "classify_with_megablast.nf": (
+            "params.skip_blast",
+            "MEGABLAST(",
+        ),
+    }
+
+    missing: list[str] = []
+    for path, fragments in expected.items():
+        text = path.read_text(encoding="utf-8")
+        missing.extend(
+            f"{path.relative_to(ROOT)}: missing {fragment}"
+            for fragment in fragments
+            if fragment not in text
+        )
+
+    main_text = (ROOT / "workflows" / "nvd_main.nf").read_text(encoding="utf-8")
+    missing.extend(
+        f"workflows/nvd_main.nf: missing {fragment}"
+        for fragment in (
+            "requires_blast_db",
+            "params.skip_assembly",
+            "params.skip_blast",
+        )
+        if fragment not in main_text
+    )
+
+    assert not missing, "\n".join(missing)

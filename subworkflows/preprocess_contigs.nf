@@ -11,6 +11,7 @@ workflow PREPROCESS_CONTIGS {
     // Filter out samples with fewer than 100 reads (insufficient for assembly).
     RUN_SPADES(
         ch_sample_fastqs
+            .filter { _id, _platform, _read_structure, _fq -> !params.skip_assembly }
             .map { id, platform, read_structure, fq -> tuple(id, platform, read_structure, fq, file(fq).countFastq()) }
             .filter { _id, _platform, _read_structure, _fq, count -> count >= 100 }
             .map { id, platform, read_structure, fq, _count -> tuple(id, platform, read_structure, file(fq)) }

@@ -72,6 +72,16 @@
       "default": false,
       "description": "Enable experimental release-candidate features that may change or be removed."
     },
+    "skip_assembly": {
+      "type": "boolean",
+      "default": false,
+      "description": "Skip SPAdes assembly and all downstream contig classification."
+    },
+    "skip_blast": {
+      "type": "boolean",
+      "default": false,
+      "description": "Skip MEGABLAST and BLASTN contig search."
+    },
     "blast_db_version": {
       "type": "string",
       "description": "BLAST database version identifier"

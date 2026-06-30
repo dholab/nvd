@@ -153,6 +153,18 @@ def run(
         help="Enable experimental release-candidate features",
         rich_help_panel=PANEL_CORE,
     ),
+    skip_assembly: bool | None = typer.Option(
+        None,
+        "--skip-assembly",
+        help="Skip SPAdes assembly and downstream contig classification",
+        rich_help_panel=PANEL_CORE,
+    ),
+    skip_blast: bool | None = typer.Option(
+        None,
+        "--skip-blast",
+        help="Skip MEGABLAST and BLASTN contig search.",
+        rich_help_panel=PANEL_CORE,
+    ),
     # -------------------------------------------------------------------------
     # Reference Paths
     # -------------------------------------------------------------------------
@@ -582,6 +594,8 @@ def run(
         "taxonomy_refresh": taxonomy_refresh,
         "taxonomy_max_age_days": taxonomy_max_age_days,
         "experimental": experimental,
+        "skip_assembly": skip_assembly,
+        "skip_blast": skip_blast,
         # Reference paths
         "blast_db": blast_db,
         "blast_db_prefix": blast_db_prefix,

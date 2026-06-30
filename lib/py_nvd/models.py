@@ -113,6 +113,16 @@ class NvdParams(BaseModel):
         description="Enable experimental release-candidate features",
         json_schema_extra={"category": "Core"},
     )
+    skip_assembly: bool = Field(
+        default=False,
+        description="Skip SPAdes assembly and all downstream contig classification",
+        json_schema_extra={"category": "Core"},
+    )
+    skip_blast: bool = Field(
+        default=False,
+        description="Skip MEGABLAST and BLASTN contig search.",
+        json_schema_extra={"category": "Core"},
+    )
 
     blast_db_version: str | None = Field(
         None,
