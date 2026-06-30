@@ -246,7 +246,6 @@ def run_nextflow() -> tuple[subprocess.CompletedProcess[str], Path]:
                 str(SOURMASH_LINEAGES),
             ],
         )
-
     completed = subprocess.run(  # noqa: S603
         command,
         cwd=ROOT,
@@ -350,9 +349,8 @@ def test_mini_sra_viral_pipeline_completes() -> None:
         sourmash_root = results_root / "experimental_sourmash"
         ref_dir = sourmash_root / "reference_profiling" / "reference"
         gather_dir = sourmash_root / "reference_profiling" / "gather"
-        taxburst_dir = (
-            sourmash_root / "reference_profiling" / "reports" / "taxburst" / "per_sample"
-        )
+        merged_taxburst_dir = sourmash_root / "reference_profiling" / "reports" / "taxburst"
+        taxburst_dir = merged_taxburst_dir / "per_sample"
         sankey_dir = sourmash_root / "reference_profiling" / "reports" / "sankey"
 
         ref_sketches = sorted(ref_dir.glob("sourmash_reference.k31.scaled50.sig.zip"))
@@ -362,6 +360,14 @@ def test_mini_sra_viral_pipeline_completes() -> None:
             run_info["sample_id"]: run_info["expected_organism"]
             for run_info in manifest["sra_runs"]
         }
+        merged_taxburst_html = merged_taxburst_dir / "sourmash.taxburst.html"
+        assert merged_taxburst_html.is_file(), (
+            f"Missing merged sourmash taxburst report: {merged_taxburst_html}"
+        )
+        assert merged_taxburst_html.stat().st_size > 0, (
+            f"Empty merged sourmash taxburst report: {merged_taxburst_html}"
+        )
+
         for sample_id, expected_species in expected_species_by_sample.items():
             gather_csv = gather_dir / f"{sample_id}.sourmash.gather.csv"
             assert gather_csv.is_file(), f"Missing sourmash gather CSV: {gather_csv}"
@@ -376,8 +382,14 @@ def test_mini_sra_viral_pipeline_completes() -> None:
             taxburst_json = taxburst_dir / f"{sample_id}.sourmash.taxburst.json"
             for report in (taxburst_html, taxburst_json):
                 assert report.is_file(), f"Missing sourmash taxburst report: {report}"
-                assert report.stat().st_size > 0, f"Empty sourmash taxburst report: {report}"
+                assert report.stat().st_size > 0, (
+                    f"Empty sourmash taxburst report: {report}"
+                )
 
             sankey_html = sankey_dir / f"{sample_id}.sourmash.sankey.html"
-            assert sankey_html.is_file(), f"Missing sourmash Sankey report: {sankey_html}"
-            assert sankey_html.stat().st_size > 0, f"Empty sourmash Sankey report: {sankey_html}"
+            assert sankey_html.is_file(), (
+                f"Missing sourmash Sankey report: {sankey_html}"
+            )
+            assert sankey_html.stat().st_size > 0, (
+                f"Empty sourmash Sankey report: {sankey_html}"
+            )

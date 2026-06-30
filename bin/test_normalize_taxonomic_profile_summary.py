@@ -5,7 +5,12 @@ from __future__ import annotations
 import csv
 from typing import TYPE_CHECKING
 
-from normalize_taxonomic_profile_summary import normalize_taxonomic_profile_summary
+from normalize_taxonomic_profile_summary import (
+    apply_lineage_replacements,
+    normalize_taxonomic_profile_summary,
+    read_normalization_map,
+    write_normalization_map,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -182,3 +187,100 @@ def test_non_superkingdom_bare_unclassified_rows_are_left_alone(
     normalize_taxonomic_profile_summary(input_path=source, output_path=normalized)
 
     assert read_rows(normalized) == read_rows(source)
+
+
+def test_global_map_makes_sample_normalization_consistent(tmp_path: Path) -> None:
+    """Run-level maps should avoid sample-specific display names."""
+    sample_a = tmp_path / "sample_a.csv"
+    sample_b = tmp_path / "sample_b.csv"
+    normalized_a = tmp_path / "sample_a.normalized.csv"
+    normalized_b = tmp_path / "sample_b.normalized.csv"
+    normalization_map = tmp_path / "normalization_map.json"
+    shared_lineage = "Viruses;Pisuviricota;Pisoniviricetes;Picornavirales;Unclassified"
+    write_summary(
+        sample_a,
+        [
+            {"rank": "superkingdom", "lineage": "Viruses", "fraction": "1.0"},
+            {
+                "rank": "phylum",
+                "lineage": "Viruses;Pisuviricota",
+                "fraction": "1.0",
+            },
+            {
+                "rank": "class",
+                "lineage": "Viruses;Pisuviricota;Pisoniviricetes",
+                "fraction": "1.0",
+            },
+            {
+                "rank": "order",
+                "lineage": "Viruses;Pisuviricota;Pisoniviricetes;Picornavirales",
+                "fraction": "1.0",
+            },
+            {"rank": "family", "lineage": shared_lineage, "fraction": "1.0"},
+        ],
+    )
+    write_summary(
+        sample_b,
+        [
+            {"rank": "superkingdom", "lineage": "Viruses", "fraction": "1.0"},
+            {
+                "rank": "phylum",
+                "lineage": "Viruses;Pisuviricota",
+                "fraction": "0.5",
+            },
+            {
+                "rank": "class",
+                "lineage": "Viruses;Pisuviricota;Pisoniviricetes",
+                "fraction": "0.5",
+            },
+            {
+                "rank": "order",
+                "lineage": "Viruses;Pisuviricota;Pisoniviricetes;Picornavirales",
+                "fraction": "0.5",
+            },
+            {"rank": "family", "lineage": shared_lineage, "fraction": "0.5"},
+            {
+                "rank": "phylum",
+                "lineage": "Viruses;Kitrinoviricota",
+                "fraction": "0.5",
+            },
+            {
+                "rank": "class",
+                "lineage": "Viruses;Kitrinoviricota;Alsuviricetes",
+                "fraction": "0.5",
+            },
+            {
+                "rank": "order",
+                "lineage": "Viruses;Kitrinoviricota;Alsuviricetes;Hepelivirales",
+                "fraction": "0.5",
+            },
+            {
+                "rank": "family",
+                "lineage": "Viruses;Kitrinoviricota;Alsuviricetes;Hepelivirales;Unclassified",
+                "fraction": "0.5",
+            },
+        ],
+    )
+
+    write_normalization_map(
+        input_paths=[sample_a, sample_b],
+        output_path=normalization_map,
+    )
+    replacements = read_normalization_map(normalization_map)
+    apply_lineage_replacements(
+        input_path=sample_a,
+        output_path=normalized_a,
+        replacements=replacements,
+    )
+    apply_lineage_replacements(
+        input_path=sample_b,
+        output_path=normalized_b,
+        replacements=replacements,
+    )
+
+    expected = (
+        "Viruses;Pisuviricota;Pisoniviricetes;Picornavirales;"
+        "Unclassified [family under Picornavirales]"
+    )
+    assert read_rows(normalized_a)[-1]["lineage"] == expected
+    assert read_rows(normalized_b)[4]["lineage"] == expected
