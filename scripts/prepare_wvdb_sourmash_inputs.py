@@ -9,8 +9,9 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import warnings
-from collections import defaultdict
+from collections import Counter, defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -28,7 +29,6 @@ TAXONOMY_RANKS = (
     "strain",
 )
 LINEAGE_COLUMNS = ("ident", *TAXONOMY_RANKS[:-1])
-WVDB_TAXONOMY_RANKS = LINEAGE_COLUMNS[1:]
 CURATED_LINEAGE_COLUMNS = ("ident", *TAXONOMY_RANKS)
 LINEAGE_IDENTIFIER_COLUMNS = ("ident", "identifiers")
 SIGNATURE_IDENTITY_COLUMNS = (
@@ -72,6 +72,9 @@ class CurationPaths:
     diagnostics_tsv: Path
 
 
+PLACEHOLDER_SENTINELS = frozenset({"unclassified", "unknown", "na", "n/a", "none"})
+
+
 def ensure_parent(path: Path) -> None:
     """Create the parent directory for an output path when needed."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -83,12 +86,39 @@ def cleaned_string(name: str) -> pl.Expr:
     return pl.when(value.str.len_chars() > 0).then(value).otherwise(None)
 
 
+def informative_string(name: str) -> pl.Expr:
+    """Return a stripped source value, with unknown sentinels treated as null."""
+    value = cleaned_string(name)
+    return (
+        pl.when(value.str.to_lowercase().is_in(PLACEHOLDER_SENTINELS))
+        .then(None)
+        .otherwise(value)
+    )
+
+
+def sentinel_string(name: str) -> pl.Expr:
+    """Return a stripped source value only when it is an unknown sentinel."""
+    value = cleaned_string(name)
+    return (
+        pl.when(value.str.to_lowercase().is_in(PLACEHOLDER_SENTINELS))
+        .then(value)
+        .otherwise(None)
+    )
+
+
 def first_nonempty(available_columns: set[str], *columns: str) -> pl.Expr:
-    """Return the first non-empty value among columns present in a frame."""
-    values = [cleaned_string(name) for name in columns if name in available_columns]
+    """Return the first informative value among columns present in a frame.
+
+    Unknown sentinels such as ``Unclassified`` fall through to later informative
+    source columns. If no informative value exists, the first sentinel is kept so
+    downstream lineage construction can preserve the explicit unknown rank.
+    """
+    present_columns = [name for name in columns if name in available_columns]
+    values = [informative_string(name) for name in present_columns]
+    sentinel_values = [sentinel_string(name) for name in present_columns]
     if not values:
         return pl.lit("")
-    return pl.coalesce(values).fill_null("")
+    return pl.coalesce([*values, *sentinel_values]).fill_null("")
 
 
 def normalize_fasta_ids(source: Path, destination: Path) -> None:
@@ -197,26 +227,171 @@ def require_unique_identifiers(lineages: pl.DataFrame) -> pl.DataFrame:
     return lineages
 
 
-def fill_internal_lineage_gaps(lineages: pl.LazyFrame) -> pl.LazyFrame:
-    """Fill missing intermediate ranks when a lower rank is present."""
-    expressions = []
-    for index, rank in enumerate(WVDB_TAXONOMY_RANKS):
-        lower_ranks = WVDB_TAXONOMY_RANKS[index + 1 :]
-        if not lower_ranks:
-            continue
+def clean_cell(value: object) -> str:
+    """Return a stripped string value, treating nulls as empty strings."""
+    if value is None:
+        return ""
+    return str(value).strip()
 
-        has_lower_rank = pl.any_horizontal(
-            cleaned_string(lower_rank).is_not_null() for lower_rank in lower_ranks
-        )
-        missing_rank = cleaned_string(rank).is_null()
-        expressions.append(
-            pl.when(missing_rank & has_lower_rank)
-            .then(pl.lit(f"unclassified {rank}"))
-            .otherwise(pl.col(rank))
-            .alias(rank),
-        )
 
-    return lineages.with_columns(expressions)
+def bare_placeholder(rank: str) -> str:
+    """Return the canonical pre-context placeholder name for a taxonomy rank."""
+    return f"unclassified {rank}"
+
+
+def is_bare_placeholder(name: str) -> bool:
+    """Return whether a name is one of the canonical pre-context placeholders."""
+    return name in {bare_placeholder(rank) for rank in TAXONOMY_RANKS}
+
+
+def is_placeholder_sentinel(value: object, *, rank: str) -> bool:
+    """Return whether a source value means this rank is explicitly unknown."""
+    text = clean_cell(value)
+    if not text:
+        return False
+    lowered = text.lower()
+    return lowered in PLACEHOLDER_SENTINELS or lowered == bare_placeholder(rank)
+
+
+def has_lower_rank_value(values: dict[str, str], rank_index: int) -> bool:
+    """Return whether any lower rank has a source value."""
+    return any(values[rank] for rank in TAXONOMY_RANKS[rank_index + 1 :])
+
+
+def nearest_non_placeholder_context(parent: tuple[str, ...]) -> str:
+    """Return the nearest classified ancestor name, falling back to root."""
+    for name in reversed(parent):
+        if not is_bare_placeholder(name):
+            return name
+    return "root"
+
+
+def placeholder_contexts(parent: tuple[str, ...]) -> list[str]:
+    """Return increasingly specific parent contexts for a placeholder node."""
+    contexts: list[str] = []
+
+    def add(context: str) -> None:
+        if context and context not in contexts:
+            contexts.append(context)
+
+    add(nearest_non_placeholder_context(parent))
+    for depth in range(1, len(parent) + 1):
+        add(" > ".join(parent[-depth:]))
+    if not contexts:
+        add("root")
+    return contexts
+
+
+def short_hash(prefix: tuple[str, ...]) -> str:
+    """Return a short deterministic suffix for pathological placeholder clashes."""
+    digest = hashlib.sha1(";".join(prefix).encode("utf-8"), usedforsecurity=False)
+    return digest.hexdigest()[:8]
+
+
+def choose_placeholder_names(
+    placeholder_nodes: dict[tuple[str, ...], str],
+    *,
+    reserved_names: set[str],
+) -> dict[tuple[str, ...], str]:
+    """Choose stable, contextual display names for WVDB placeholder nodes."""
+    nodes_by_placeholder: defaultdict[str, list[tuple[str, ...]]] = defaultdict(list)
+    for prefix in placeholder_nodes:
+        nodes_by_placeholder[prefix[-1]].append(prefix)
+
+    replacements: dict[tuple[str, ...], str] = {}
+    reserved = set(reserved_names)
+    for placeholder, prefixes in nodes_by_placeholder.items():
+        contexts = {prefix: placeholder_contexts(prefix[:-1]) for prefix in prefixes}
+        context_indexes = dict.fromkeys(prefixes, 0)
+
+        while True:
+            names = {
+                prefix: f"{placeholder} [under {contexts[prefix][context_indexes[prefix]]}]"
+                for prefix in prefixes
+            }
+            counts = Counter(names.values())
+            colliding = {
+                prefix
+                for prefix, name in names.items()
+                if counts[name] > 1 or name in reserved
+            }
+            if not colliding:
+                replacements.update(names)
+                reserved.update(names.values())
+                break
+
+            advanced = False
+            for prefix in colliding:
+                if context_indexes[prefix] < len(contexts[prefix]) - 1:
+                    context_indexes[prefix] += 1
+                    advanced = True
+
+            if not advanced:
+                resolved_names = {
+                    prefix: f"{name} #{short_hash(prefix)}"
+                    if prefix in colliding
+                    else name
+                    for prefix, name in names.items()
+                }
+                replacements.update(resolved_names)
+                reserved.update(resolved_names.values())
+                break
+
+    return replacements
+
+
+def contextualize_wvdb_placeholders(lineages: pl.DataFrame) -> pl.DataFrame:
+    """Convert WVDB unknown-rank markers into stable contextual lineage names."""
+    output_rows: list[dict[str, str]] = []
+    prefixes_by_row: list[dict[str, tuple[str, ...]]] = []
+    placeholder_nodes: dict[tuple[str, ...], str] = {}
+    real_names: set[str] = set()
+
+    for row in lineages.iter_rows(named=True):
+        values = {rank: clean_cell(row.get(rank)) for rank in TAXONOMY_RANKS}
+        output_row = {str(key): clean_cell(value) for key, value in row.items()}
+        prefixes: dict[str, tuple[str, ...]] = {}
+        lineage_prefix: list[str] = []
+
+        for rank_index, rank in enumerate(TAXONOMY_RANKS):
+            value = values[rank]
+            is_placeholder = is_placeholder_sentinel(value, rank=rank) or (
+                not value and has_lower_rank_value(values, rank_index)
+            )
+
+            if is_placeholder:
+                label = bare_placeholder(rank)
+            elif value:
+                label = value
+            else:
+                label = ""
+
+            output_row[rank] = label
+            if not label:
+                continue
+
+            lineage_prefix.append(label)
+            prefix = tuple(lineage_prefix)
+            prefixes[rank] = prefix
+            if is_placeholder:
+                placeholder_nodes.setdefault(prefix, rank)
+            else:
+                real_names.add(label)
+
+        output_rows.append(output_row)
+        prefixes_by_row.append(prefixes)
+
+    replacements = choose_placeholder_names(
+        placeholder_nodes,
+        reserved_names=real_names,
+    )
+    for output_row, prefixes in zip(output_rows, prefixes_by_row, strict=True):
+        for rank, prefix in prefixes.items():
+            replacement = replacements.get(prefix)
+            if replacement is not None:
+                output_row[rank] = replacement
+
+    return pl.DataFrame(output_rows).select(lineages.columns)
 
 
 def select_wvdb_lineages(annotations: pl.LazyFrame) -> pl.LazyFrame:
@@ -244,7 +419,7 @@ def select_wvdb_lineages(annotations: pl.LazyFrame) -> pl.LazyFrame:
         ).alias("family"),
         first_nonempty(available_columns, "Genus_RdRp").alias("genus"),
         first_nonempty(available_columns, "Species_RdRp").alias("species"),
-    ).pipe(fill_internal_lineage_gaps)
+    )
 
 
 def build_wvdb_lineages(annotations: pl.LazyFrame) -> pl.DataFrame:
@@ -252,6 +427,7 @@ def build_wvdb_lineages(annotations: pl.LazyFrame) -> pl.DataFrame:
     return (
         annotations.pipe(select_wvdb_lineages)
         .collect()
+        .pipe(contextualize_wvdb_placeholders)
         .pipe(require_unique_identifiers)
     )
 
@@ -306,11 +482,6 @@ def check_manifest_coverage(manifest_csv: Path, lineages_csv: Path) -> None:
     )
 
     find_missing_wvdb_lineages(manifest, lineages).pipe(fail_on_missing_wvdb_lineages)
-
-
-def clean_cell(value: object) -> str:
-    """Return a stripped string for CSV values that may be missing."""
-    return "" if value is None else str(value).strip()
 
 
 def read_csv_dicts(path: Path) -> list[dict[str, str]]:

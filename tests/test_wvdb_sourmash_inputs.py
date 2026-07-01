@@ -39,6 +39,11 @@ def read_tsv_rows(path: Path) -> list[dict[str, str]]:
         return list(csv.DictReader(handle, delimiter="\t"))
 
 
+def read_csv_rows_by_ident(path: Path) -> dict[str, dict[str, str]]:
+    """Read CSV rows keyed by sourmash lineage identifier."""
+    return {row["ident"]: row for row in read_csv_rows(path)}
+
+
 def write_tsv_rows(path: Path, rows: list[list[str]]) -> None:
     """Write TSV rows to a fixture file."""
     with path.open("w", newline="", encoding="utf-8") as handle:
@@ -261,21 +266,295 @@ def test_prepare_inputs_normalizes_fasta_and_maps_lineages(tmp_path: Path) -> No
             "phylum": "Pisuviricota",
             "class": "Pisoniviricetes",
             "order": "Picornavirales",
-            "family": "Unclassified",
-            "genus": "unclassified genus",
+            "family": "unclassified family [under Pisoniviricetes > Picornavirales]",
+            "genus": "unclassified genus [under Picornavirales]",
             "species": "Wenzhou_picorna-like_virus_47",
         },
         {
             "ident": "WVDB|contig_order_without_phylum_or_class",
             "superkingdom": "Viruses",
-            "phylum": "unclassified phylum",
-            "class": "unclassified class",
+            "phylum": "unclassified phylum [under Viruses]",
+            "class": "unclassified class [under Viruses]",
             "order": "Picornavirales",
-            "family": "Unclassified",
+            "family": "unclassified family [under unclassified class > Picornavirales]",
             "genus": "",
             "species": "",
         },
     ]
+
+
+def test_prepare_inputs_contextualizes_wvdb_placeholder_taxa(tmp_path: Path) -> None:
+    """WVDB placeholder ranks should be named by stable lineage context."""
+    fasta, annotations = write_wvdb_fixtures(tmp_path)
+    normalized_fasta = tmp_path / "WVDB_v1.0.normalized.fasta"
+    lineages_csv = tmp_path / "wvdb-v1.0.sourmash.lineages.csv"
+
+    result = run_script(
+        "prepare-inputs",
+        "--fasta",
+        fasta,
+        "--annotations-tsv",
+        annotations,
+        "--normalized-fasta",
+        normalized_fasta,
+        "--lineages-csv",
+        lineages_csv,
+    )
+
+    assert result.returncode == 0, result.stderr
+    rows = read_csv_rows_by_ident(lineages_csv)
+
+    assert rows["WVDB|contig_species_without_genus"]["family"] == (
+        "unclassified family [under Pisoniviricetes > Picornavirales]"
+    )
+    assert rows["WVDB|contig_species_without_genus"]["genus"] == (
+        "unclassified genus [under Picornavirales]"
+    )
+    assert rows["WVDB|contig_order_without_phylum_or_class"]["phylum"] == (
+        "unclassified phylum [under Viruses]"
+    )
+    assert rows["WVDB|contig_order_without_phylum_or_class"]["class"] == (
+        "unclassified class [under Viruses]"
+    )
+    assert rows["WVDB|contig_order_without_phylum_or_class"]["family"] == (
+        "unclassified family [under unclassified class > Picornavirales]"
+    )
+
+
+def test_prepare_inputs_placeholder_names_do_not_depend_on_row_order(
+    tmp_path: Path,
+) -> None:
+    """Contextual placeholder names should be stable across annotation ordering."""
+    forward_dir = tmp_path / "forward"
+    reverse_dir = tmp_path / "reverse"
+    forward_dir.mkdir()
+    reverse_dir.mkdir()
+    fasta, annotations = write_wvdb_fixtures(forward_dir)
+
+    with annotations.open(newline="", encoding="utf-8") as handle:
+        annotation_rows = list(csv.reader(handle, delimiter="\t"))
+    reversed_annotations = reverse_dir / annotations.name
+    write_tsv_rows(
+        reversed_annotations,
+        [annotation_rows[0], *reversed(annotation_rows[1:])],
+    )
+
+    forward_lineages = forward_dir / "wvdb-v1.0.sourmash.lineages.csv"
+    reverse_lineages = reverse_dir / "wvdb-v1.0.sourmash.lineages.csv"
+
+    forward_result = run_script(
+        "prepare-inputs",
+        "--fasta",
+        fasta,
+        "--annotations-tsv",
+        annotations,
+        "--normalized-fasta",
+        forward_dir / "WVDB_v1.0.normalized.fasta",
+        "--lineages-csv",
+        forward_lineages,
+    )
+    reverse_result = run_script(
+        "prepare-inputs",
+        "--fasta",
+        fasta,
+        "--annotations-tsv",
+        reversed_annotations,
+        "--normalized-fasta",
+        reverse_dir / "WVDB_v1.0.normalized.fasta",
+        "--lineages-csv",
+        reverse_lineages,
+    )
+
+    assert forward_result.returncode == 0, forward_result.stderr
+    assert reverse_result.returncode == 0, reverse_result.stderr
+
+    assert read_csv_rows_by_ident(forward_lineages) == read_csv_rows_by_ident(
+        reverse_lineages,
+    )
+
+
+def test_prepare_inputs_falls_through_sentinel_source_values(
+    tmp_path: Path,
+) -> None:
+    """Source sentinels should not mask later informative fallback columns."""
+    fasta = tmp_path / "WVDB_v1.0.fasta"
+    annotations = tmp_path / "WVDB_v1.0_annotations.tsv"
+    fasta.write_text(
+        ">contig_with_fallbacks\nACGTACGT\n",
+        encoding="utf-8",
+    )
+    write_tsv_rows(
+        annotations,
+        [
+            [
+                "contig",
+                "Phylum_gNd",
+                "Class_gNd",
+                "Order_gNd",
+                "Family_gNd",
+                "Phylum_RdRp",
+                "Class_RdRp",
+                "Order_RdRp",
+                "Family_RdRp",
+                "Genus_RdRp",
+                "Species_RdRp",
+                "Order_consensus",
+                "Family_consensus",
+                "Family_ICTV",
+            ],
+            [
+                "contig_with_fallbacks",
+                "Pisuviricota",
+                "Pisoniviricetes",
+                "Picornavirales",
+                "Fallbackfamily",
+                "Unclassified",
+                "Unknown",
+                "Picornavirales",
+                "Picornaviridae",
+                "",
+                "",
+                "Unclassified",
+                "Unclassified",
+                "ICTVfamily",
+            ],
+        ],
+    )
+    lineages_csv = tmp_path / "wvdb-v1.0.sourmash.lineages.csv"
+
+    result = run_script(
+        "prepare-inputs",
+        "--fasta",
+        fasta,
+        "--annotations-tsv",
+        annotations,
+        "--normalized-fasta",
+        tmp_path / "WVDB_v1.0.normalized.fasta",
+        "--lineages-csv",
+        lineages_csv,
+    )
+
+    assert result.returncode == 0, result.stderr
+    row = read_csv_rows_by_ident(lineages_csv)["WVDB|contig_with_fallbacks"]
+    assert row["phylum"] == "Pisuviricota"
+    assert row["class"] == "Pisoniviricetes"
+    assert row["order"] == "Picornavirales"
+    assert row["family"] == "Picornaviridae"
+
+
+def test_prepare_inputs_contextualizes_sentinel_variants(tmp_path: Path) -> None:
+    """Common unknown-value spellings should become contextual placeholders."""
+    fasta = tmp_path / "WVDB_v1.0.fasta"
+    annotations = tmp_path / "WVDB_v1.0_annotations.tsv"
+    fasta.write_text(
+        ">contig_with_sentinels\nACGTACGT\n",
+        encoding="utf-8",
+    )
+    write_tsv_rows(
+        annotations,
+        [
+            [
+                "contig",
+                "Phylum_gNd",
+                "Class_gNd",
+                "Order_gNd",
+                "Family_gNd",
+                "Genus_RdRp",
+                "Species_RdRp",
+            ],
+            [
+                "contig_with_sentinels",
+                "  Unclassified  ",
+                "Unknown",
+                "NA",
+                "n/a",
+                "None",
+                "Example species",
+            ],
+        ],
+    )
+    lineages_csv = tmp_path / "wvdb-v1.0.sourmash.lineages.csv"
+
+    result = run_script(
+        "prepare-inputs",
+        "--fasta",
+        fasta,
+        "--annotations-tsv",
+        annotations,
+        "--normalized-fasta",
+        tmp_path / "WVDB_v1.0.normalized.fasta",
+        "--lineages-csv",
+        lineages_csv,
+    )
+
+    assert result.returncode == 0, result.stderr
+    row = read_csv_rows_by_ident(lineages_csv)["WVDB|contig_with_sentinels"]
+    assert row["phylum"].startswith("unclassified phylum [under Viruses]")
+    assert row["class"].startswith("unclassified class [under Viruses]")
+    assert row["order"].startswith("unclassified order [under Viruses]")
+    assert row["family"].startswith("unclassified family [under Viruses]")
+    assert row["genus"].startswith("unclassified genus [under Viruses]")
+
+
+def test_prepare_inputs_avoids_placeholder_label_collisions(
+    tmp_path: Path,
+) -> None:
+    """Generated placeholder labels should not duplicate real source labels."""
+    fasta = tmp_path / "WVDB_v1.0.fasta"
+    annotations = tmp_path / "WVDB_v1.0_annotations.tsv"
+    fasta.write_text(
+        ">contig_real_label\nACGTACGT\n>contig_placeholder\nTGCATGCA\n",
+        encoding="utf-8",
+    )
+    write_tsv_rows(
+        annotations,
+        [
+            [
+                "contig",
+                "Phylum_gNd",
+                "Class_gNd",
+                "Order_gNd",
+                "Family_gNd",
+            ],
+            [
+                "contig_real_label",
+                "Pisuviricota",
+                "Pisoniviricetes",
+                "Picornavirales",
+                "unclassified family [under Picornavirales]",
+            ],
+            [
+                "contig_placeholder",
+                "Pisuviricota",
+                "Pisoniviricetes",
+                "Picornavirales",
+                "Unclassified",
+            ],
+        ],
+    )
+    lineages_csv = tmp_path / "wvdb-v1.0.sourmash.lineages.csv"
+
+    result = run_script(
+        "prepare-inputs",
+        "--fasta",
+        fasta,
+        "--annotations-tsv",
+        annotations,
+        "--normalized-fasta",
+        tmp_path / "WVDB_v1.0.normalized.fasta",
+        "--lineages-csv",
+        lineages_csv,
+    )
+
+    assert result.returncode == 0, result.stderr
+    rows = read_csv_rows_by_ident(lineages_csv)
+    real_label = rows["WVDB|contig_real_label"]["family"]
+    generated_label = rows["WVDB|contig_placeholder"]["family"]
+    assert real_label == "unclassified family [under Picornavirales]"
+    assert generated_label != real_label
+    assert generated_label.startswith(
+        "unclassified family [under Pisoniviricetes > Picornavirales]",
+    )
 
 
 def test_manifest_coverage_ignores_non_wvdb_references(tmp_path: Path) -> None:

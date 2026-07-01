@@ -41,7 +41,7 @@ Our first stab at projecting WVDB contigs into sourmash’s standard lineage col
 | `genus` | `Genus_RdRp` when present |
 | `species` | `Species_RdRp` when present |
 
-Trailing missing ranks are left blank. When a lower rank is present but an intermediate rank is blank, the builder fills the missing internal rank with an explicit placeholder such as `unclassified genus`. These placeholders make the lineage path structurally valid for tree consumers while preserving the fact that WVDB did not provide a classified value at that rank.
+Trailing missing ranks are left blank. Unknown-value sentinels such as `Unclassified`, `Unknown`, and `NA` are skipped when a later source column provides a more informative classification. When WVDB provides only an explicit placeholder for a rank, or when a lower rank is present but an intermediate rank is blank, the builder fills the rank with a contextual placeholder such as `unclassified family [under Picornavirales]`. These placeholders make the lineage path structurally valid for tree consumers while preserving the fact that WVDB did not provide a classified value at that rank. The context is part of the reference release policy, so placeholder names are stable across NVD runs and do not depend on which samples happened to be processed together.
 
 The FASTA identifiers are normalized with the same `WVDB|` prefix before sketching, so the sourmash signature names and lineage identifiers match.
 
