@@ -164,3 +164,36 @@ def test_skip_stage_params_gate_expensive_nextflow_processes() -> None:
     )
 
     assert not missing, "\n".join(missing)
+
+
+def test_sourmash_reports_do_not_wait_for_runtime_taxonomy_normalization() -> None:
+    """Per-sample sourmash reports should stream from each summary CSV."""
+    reporting_module = (ROOT / "modules" / "reporting.nf").read_text(
+        encoding="utf-8",
+    )
+    reporting_subworkflow = (ROOT / "subworkflows" / "reporting.nf").read_text(
+        encoding="utf-8",
+    )
+
+    forbidden_fragments = (
+        "BUILD_TAXONOMIC_PROFILE_NORMALIZATION_MAP",
+        "NORMALIZE_TAXONOMIC_PROFILE_SUMMARY",
+        "normalize_taxonomic_profile_summary.py",
+        "taxonomic_profile.summary.normalized.csv",
+    )
+    for fragment in forbidden_fragments:
+        assert fragment not in reporting_module
+        assert fragment not in reporting_subworkflow
+
+    assert "ch_sourmash_profile_summaries = ch_sourmash_tax_reports" in (
+        reporting_subworkflow
+    )
+    assert "RENDER_TAXON_ABUNDANCE_SUNBURST(ch_sourmash_profile_summaries)" in (
+        reporting_subworkflow
+    )
+    assert "RENDER_SOURMASH_SANKEY(ch_sourmash_profile_summaries)" in (
+        reporting_subworkflow
+    )
+    assert "ch_merged_taxburst_input = ch_sourmash_profile_summaries" in (
+        reporting_subworkflow
+    )
