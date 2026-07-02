@@ -179,12 +179,24 @@ If your Illumina FASTQs use CASAVA-style names like `patient-001_S7_L003_R1_001.
 nvd samplesheet generate --from-dir ./fastqs --platform illumina --sanitize --output samplesheet.csv
 ```
 
-`--sanitize` only changes generated sample IDs. It does not concatenate multiple lanes; multi-lane Illumina inputs still produce one row per discovered read pair.
+`--sanitize` only changes generated sample IDs. It does not group multiple lanes by itself; multi-lane Illumina inputs still produce one row per discovered read pair unless you also provide `--group-by illumina-lanes`.
+
+For Illumina directories where each biological sample may have reads split across multiple lanes, use `--group-by illumina-lanes`:
+
+```bash
+nvd samplesheet generate --from-dir ./fastqs --platform illumina --group-by illumina-lanes --sanitize --output samplesheet.csv
+```
 
 For Nanopore/ONT files, use `--platform ont`:
 
 ```bash
 nvd samplesheet generate --from-dir ./nanopore-fastqs --platform ont --output samplesheet.csv
+```
+
+For demultiplexed ONT barcode directories where each `barcodeXX` directory contains multiple FASTQ chunks, use `--group-by ont-barcodes` and point `--from-dir` at the directory containing those barcode directories, such as `fastq_pass`:
+
+```bash
+nvd samplesheet generate --from-dir ./fastq_pass --platform ont --group-by ont-barcodes --output samplesheet.csv
 ```
 
 For public SRA inputs, put one accession per line in a text file:

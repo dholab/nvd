@@ -235,7 +235,8 @@ def test_samplesheet_generate_groups_illumina_lanes_in_glob_columns(
             str(samplesheet),
             "--force",
             "--sanitize",
-            "--group-lanes",
+            "--group-by",
+            "illumina-lanes",
         ],
     )
 

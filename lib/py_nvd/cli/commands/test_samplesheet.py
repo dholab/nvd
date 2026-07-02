@@ -10,6 +10,7 @@ from typer.testing import CliRunner
 
 from py_nvd.cli.app import app
 from py_nvd.cli.commands.samplesheet import (
+    FastqGrouping,
     SamplesheetGenerationError,
     _extract_stem,
     scan_fastq_directory,
@@ -188,14 +189,15 @@ def test_samplesheet_generate_rejects_duplicate_sanitized_ids_before_write(
 
     assert result.exit_code != 0
     assert not output.exists()
-    assert "--group-lanes" in result.output
-    assert "omit --sanitize" in result.output
+    assert "--group-by illumina-lanes" in result.output
+    assert "omit" in result.output
+    assert "--sanitize" in result.output
 
 
 def test_scan_fastq_directory_groups_casava_lanes_into_glob_columns(
     tmp_path: Path,
 ) -> None:
-    """Lane grouping emits glob columns, not glob patterns in exact path columns."""
+    """Illumina lane grouping emits glob columns, not exact path columns."""
     for lane in ("L001", "L002"):
         touch(tmp_path / f"patient-001_S7_{lane}_R1_001.fastq.gz")
         touch(tmp_path / f"patient-001_S7_{lane}_R2_001.fastq.gz")
@@ -203,7 +205,7 @@ def test_scan_fastq_directory_groups_casava_lanes_into_glob_columns(
     samples, warnings = scan_fastq_directory(
         tmp_path,
         sanitize=True,
-        group_lanes=True,
+        group_by=FastqGrouping.ILLUMINA_LANES,
     )
 
     assert warnings == []
@@ -221,7 +223,7 @@ def test_scan_fastq_directory_groups_casava_lanes_into_glob_columns(
     )
 
 
-def test_scan_fastq_directory_group_lanes_preserves_read_like_sample_tokens(
+def test_scan_fastq_directory_group_by_illumina_lanes_preserves_read_like_sample_tokens(
     tmp_path: Path,
 ) -> None:
     """CASAVA parsing does not mistake read-like sample tokens for read markers."""
@@ -232,14 +234,14 @@ def test_scan_fastq_directory_group_lanes_preserves_read_like_sample_tokens(
     samples, warnings = scan_fastq_directory(
         tmp_path,
         sanitize=True,
-        group_lanes=True,
+        group_by=FastqGrouping.ILLUMINA_LANES,
     )
 
     assert warnings == []
     assert [sample.sample_id for sample in samples] == ["tumor_R1_control"]
 
 
-def test_scan_fastq_directory_group_lanes_rejects_missing_lane_mate(
+def test_scan_fastq_directory_group_by_illumina_lanes_rejects_missing_lane_mate(
     tmp_path: Path,
 ) -> None:
     """Generation fails before an expensive run when lane pairs are incomplete."""
@@ -248,10 +250,10 @@ def test_scan_fastq_directory_group_lanes_rejects_missing_lane_mate(
     touch(tmp_path / "sample_S1_L002_R2_001.fastq.gz")
 
     with pytest.raises(SamplesheetGenerationError, match="missing matching R2"):
-        scan_fastq_directory(tmp_path, group_lanes=True)
+        scan_fastq_directory(tmp_path, group_by=FastqGrouping.ILLUMINA_LANES)
 
 
-def test_scan_fastq_directory_group_lanes_rejects_non_casava_names(
+def test_scan_fastq_directory_group_by_illumina_lanes_rejects_non_casava_names(
     tmp_path: Path,
 ) -> None:
     """Lane grouping is CASAVA-only rather than guessing arbitrary names."""
@@ -259,7 +261,98 @@ def test_scan_fastq_directory_group_lanes_rejects_non_casava_names(
     touch(tmp_path / "sample.R2.fastq.gz")
 
     with pytest.raises(SamplesheetGenerationError, match="CASAVA-style"):
-        scan_fastq_directory(tmp_path, group_lanes=True)
+        scan_fastq_directory(tmp_path, group_by=FastqGrouping.ILLUMINA_LANES)
+
+
+def test_scan_fastq_directory_groups_ont_barcodes_into_single_glob_columns(
+    tmp_path: Path,
+) -> None:
+    touch(tmp_path / "barcode02" / "chunk2.fastq.gz")
+    touch(tmp_path / "barcode02" / "chunk10.fastq.gz")
+    touch(tmp_path / "barcode01" / "chunk1.fastq.gz")
+
+    samples, warnings = scan_fastq_directory(
+        tmp_path,
+        group_by=FastqGrouping.ONT_BARCODES,
+    )
+
+    assert warnings == []
+    assert [sample.sample_id for sample in samples] == ["barcode01", "barcode02"]
+    assert samples[0].fastq1_glob == str(
+        tmp_path.absolute() / "barcode01" / "*.fastq.gz",
+    )
+    assert samples[0].fastq2_glob == ""
+    assert samples[1].fastq1_glob == str(
+        tmp_path.absolute() / "barcode02" / "*.fastq.gz",
+    )
+    assert samples[1].fastq2_glob == ""
+
+
+def test_scan_fastq_directory_group_by_ont_barcodes_skips_non_barcode_dirs(
+    tmp_path: Path,
+) -> None:
+    touch(tmp_path / "barcode01" / "chunk1.fastq.gz")
+    touch(tmp_path / "unclassified" / "chunk1.fastq.gz")
+
+    samples, warnings = scan_fastq_directory(
+        tmp_path,
+        group_by=FastqGrouping.ONT_BARCODES,
+    )
+
+    assert [sample.sample_id for sample in samples] == ["barcode01"]
+    assert warnings == ["Skipping non-barcode directory: unclassified"]
+
+
+def test_scan_fastq_directory_group_by_ont_barcodes_rejects_mixed_extensions(
+    tmp_path: Path,
+) -> None:
+    touch(tmp_path / "barcode01" / "chunk1.fastq.gz")
+    touch(tmp_path / "barcode01" / "chunk2.fastq")
+
+    with pytest.raises(SamplesheetGenerationError, match="mixed FASTQ extensions"):
+        scan_fastq_directory(tmp_path, group_by=FastqGrouping.ONT_BARCODES)
+
+
+def test_samplesheet_generate_requires_group_by_value(tmp_path: Path) -> None:
+    fastq_dir = tmp_path / "fastqs"
+    touch(fastq_dir / "reads.fastq.gz")
+
+    result = runner.invoke(
+        app,
+        [
+            "samplesheet",
+            "generate",
+            "--from-dir",
+            str(fastq_dir),
+            "--platform",
+            "ont",
+            "--group-by",
+        ],
+    )
+
+    assert result.exit_code != 0
+
+
+def test_samplesheet_generate_rejects_cross_platform_grouping(tmp_path: Path) -> None:
+    fastq_dir = tmp_path / "fastqs"
+    touch(fastq_dir / "reads.fastq.gz")
+
+    result = runner.invoke(
+        app,
+        [
+            "samplesheet",
+            "generate",
+            "--from-dir",
+            str(fastq_dir),
+            "--platform",
+            "ont",
+            "--group-by",
+            "illumina-lanes",
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "--group-by illumina-lanes requires --platform illumina" in result.output
 
 
 @pytest.mark.parametrize(

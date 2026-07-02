@@ -17,6 +17,7 @@ import glob
 import re
 import sys
 from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
 
 import typer
@@ -72,6 +73,13 @@ class SamplesheetGenerationError(ValueError):
     """Raised when samplesheet generation cannot safely infer inputs."""
 
 
+class FastqGrouping(StrEnum):
+    """FASTQ grouping modes supported by samplesheet generation."""
+
+    ILLUMINA_LANES = "illumina-lanes"
+    ONT_BARCODES = "ont-barcodes"
+
+
 @dataclass
 class SampleEntry:
     """
@@ -94,6 +102,15 @@ class SampleEntry:
     fastq2: str = ""
     fastq1_glob: str = ""
     fastq2_glob: str = ""
+
+
+def _generated_fastq_extension(path: Path) -> str:
+    name = path.name
+    for suffix in sorted(GENERATED_FASTQ_SUFFIXES, key=len, reverse=True):
+        if name.lower().endswith(suffix):
+            return suffix
+    msg = f"Unsupported FASTQ suffix for generated samplesheet input: {path}"
+    raise SamplesheetGenerationError(msg)
 
 
 def _get_fastq_files(directory: Path) -> list[Path]:
@@ -136,7 +153,7 @@ def _ensure_unique_generated_sample_ids(samples: list[SampleEntry]) -> None:
     msg = (
         f"Generated sample_id values are not unique: {duplicate_list}. "
         "If these rows are separate Illumina lanes for the same biological sample, "
-        "rerun with --group-lanes. If they should remain separate samples, omit "
+        "rerun with --group-by illumina-lanes. If they should remain separate samples, omit "
         "--sanitize or use more specific FASTQ filenames."
     )
     raise SamplesheetGenerationError(msg)
@@ -212,12 +229,12 @@ def _glob_for_casava_group(
     return f"{escaped_prefix_path}_L[0-9][0-9][0-9]_R{read}_[0-9][0-9][0-9]{extension}"
 
 
-def _scan_fastq_directory_grouped_by_lane(
+def _scan_fastq_directory_grouped_by_illumina_lanes(
     fastq_files: list[Path],
     *,
     sanitize: bool,
 ) -> tuple[list[SampleEntry], list[str]]:
-    """Scan CASAVA lane FASTQs and emit one glob-backed row per sample."""
+    """Scan Illumina lane FASTQs and emit one glob-backed row per sample."""
     parsed_names: list[CasavaLaneName] = []
     unparseable: list[Path] = []
     for fq in fastq_files:
@@ -230,7 +247,7 @@ def _scan_fastq_directory_grouped_by_lane(
     if unparseable:
         examples = ", ".join(path.name for path in unparseable[:3])
         msg = (
-            "--group-lanes requires CASAVA-style Illumina lane FASTQ names such "
+            "--group-by illumina-lanes requires CASAVA-style Illumina lane FASTQ names such "
             "as sample_S1_L001_R1_001.fastq.gz and "
             f"sample_S1_L001_R2_001.fastq.gz. Could not parse: {examples}"
         )
@@ -292,11 +309,52 @@ def _scan_fastq_directory_grouped_by_lane(
     return samples, []
 
 
+def _scan_fastq_directory_grouped_by_ont_barcodes(
+    directory: Path,
+) -> tuple[list[SampleEntry], list[str]]:
+    """Scan ONT barcode directories and emit one glob-backed row per barcode."""
+    directory = directory.absolute()
+    samples: list[SampleEntry] = []
+    warnings_list: list[str] = []
+
+    for barcode_dir in sorted(directory.iterdir()):
+        if not barcode_dir.is_dir():
+            continue
+        if not re.fullmatch(r"barcode\d+", barcode_dir.name, flags=re.IGNORECASE):
+            warnings_list.append(f"Skipping non-barcode directory: {barcode_dir.name}")
+            continue
+
+        fastq_files = _get_fastq_files(barcode_dir)
+        if not fastq_files:
+            warnings_list.append(
+                f"Skipping empty barcode directory: {barcode_dir.name}",
+            )
+            continue
+
+        extensions = {_generated_fastq_extension(path) for path in fastq_files}
+        if len(extensions) != 1:
+            msg = (
+                f"Barcode {barcode_dir.name} has mixed FASTQ extensions. ONT barcode "
+                "grouping requires one extension/compression type per barcode."
+            )
+            raise SamplesheetGenerationError(msg)
+
+        extension = extensions.pop()
+        samples.append(
+            SampleEntry(
+                sample_id=barcode_dir.name,
+                fastq1_glob=f"{glob.escape(str(barcode_dir))}/*{extension}",
+            ),
+        )
+
+    return samples, warnings_list
+
+
 def scan_fastq_directory(
     directory: Path,
     *,
     sanitize: bool = False,
-    group_lanes: bool = False,
+    group_by: FastqGrouping | None = None,
 ) -> tuple[list[SampleEntry], list[str]]:
     """
     Scan a directory for FASTQ files and pair them by sample.
@@ -307,19 +365,26 @@ def scan_fastq_directory(
     Args:
         directory: Directory containing FASTQ files
         sanitize: Strip Illumina/CASAVA suffixes from generated sample IDs
-        group_lanes: Emit one row per CASAVA sample using FASTQ glob columns
+        group_by: Optional FASTQ grouping mode before writing samplesheet rows
 
     Returns:
         Tuple of (list of SampleEntry, list of warning messages)
     """
-    fastq_files = _get_fastq_files(directory)
     warnings_list: list[str] = []
+
+    if group_by == FastqGrouping.ONT_BARCODES:
+        return _scan_fastq_directory_grouped_by_ont_barcodes(directory)
+
+    fastq_files = _get_fastq_files(directory)
 
     if not fastq_files:
         return [], [f"No FASTQ files found in {directory}"]
 
-    if group_lanes:
-        return _scan_fastq_directory_grouped_by_lane(fastq_files, sanitize=sanitize)
+    if group_by == FastqGrouping.ILLUMINA_LANES:
+        return _scan_fastq_directory_grouped_by_illumina_lanes(
+            fastq_files,
+            sanitize=sanitize,
+        )
 
     # Group files by stem
     stem_to_files: dict[str, list[Path]] = {}
@@ -569,12 +634,12 @@ def generate(
         "--sanitize",
         help="Strip Illumina/CASAVA suffixes from generated sample IDs",
     ),
-    group_lanes: bool = typer.Option(
-        False,
-        "--group-lanes",
+    group_by: FastqGrouping | None = typer.Option(
+        None,
+        "--group-by",
         help=(
-            "Group Illumina/CASAVA lanes into one row per sample using "
-            "fastq1_glob/fastq2_glob. Does not concatenate FASTQ files."
+            "Group discovered FASTQs before writing samplesheet rows. "
+            "Choices: illumina-lanes, ont-barcodes."
         ),
     ),
 ) -> None:
@@ -603,7 +668,10 @@ def generate(
         nvd samplesheet generate -d ./fastqs -p illumina --sanitize
 
         # Group Illumina lanes into glob-backed samplesheet rows
-        nvd samplesheet generate -d ./fastqs -p illumina --group-lanes --sanitize
+        nvd samplesheet generate -d ./fastqs -p illumina --group-by illumina-lanes --sanitize
+
+        # Group ONT barcode directories into glob-backed samplesheet rows
+        nvd samplesheet generate -d ./fastq_pass -p ont --group-by ont-barcodes
     """
     console.print()
 
@@ -654,11 +722,13 @@ def generate(
     # (either provided via CLI or obtained from prompt)
     assert platform is not None
 
-    if group_lanes:
+    if group_by is not None:
         if from_dir is None:
-            error("--group-lanes requires --from-dir")
-        if platform != "illumina":
-            error("--group-lanes requires --platform illumina")
+            error("--group-by requires --from-dir")
+        if group_by == FastqGrouping.ILLUMINA_LANES and platform != "illumina":
+            error("--group-by illumina-lanes requires --platform illumina")
+        if group_by == FastqGrouping.ONT_BARCODES and platform != "ont":
+            error("--group-by ont-barcodes requires --platform ont")
 
     # Scan for samples
     if from_dir is not None:
@@ -667,7 +737,7 @@ def generate(
             samples, scan_warnings = scan_fastq_directory(
                 from_dir,
                 sanitize=sanitize,
-                group_lanes=group_lanes,
+                group_by=group_by,
             )
         except SamplesheetGenerationError as exc:
             error(str(exc))

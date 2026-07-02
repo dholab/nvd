@@ -1,4 +1,4 @@
-"""Golden seam tests for generated grouped-lane FASTQ inputs."""
+"""Golden seam tests for generated grouped FASTQ inputs."""
 
 from __future__ import annotations
 
@@ -15,7 +15,11 @@ from typing import IO, Any
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
-from py_nvd.cli.commands.samplesheet import scan_fastq_directory, write_samplesheet
+from py_nvd.cli.commands.samplesheet import (
+    FastqGrouping,
+    scan_fastq_directory,
+    write_samplesheet,
+)
 from py_nvd.read_inputs import ResolvedSample, read_rows, resolve_rows
 from stream_fastqs_to_deacon import DeaconStreamConfig, run_deacon_stream
 
@@ -125,7 +129,7 @@ def stream_config(
 
 
 @dataclass(frozen=True)
-class LaneConcatObservation:
+class FastqGroupingObservation:
     warnings: list[str]
     resolution_warnings: tuple[str, ...]
     samples: tuple[ResolvedSample, ...]
@@ -135,7 +139,7 @@ class LaneConcatObservation:
     expected_pairs: list[list[str]]
 
 
-def test_generated_grouped_lane_samplesheet_streams_paired_lanes_in_order(
+def test_generated_illumina_lane_grouping_streams_paired_lanes_in_order(
     tmp_path: Path,
 ) -> None:
     fastq_dir = tmp_path / "fastqs"
@@ -159,7 +163,7 @@ def test_generated_grouped_lane_samplesheet_streams_paired_lanes_in_order(
     samples, warnings = scan_fastq_directory(
         fastq_dir,
         sanitize=True,
-        group_lanes=True,
+        group_by=FastqGrouping.ILLUMINA_LANES,
     )
     samplesheet = tmp_path / "samplesheet.csv"
     write_samplesheet(samples, samplesheet, platform="illumina")
@@ -224,9 +228,9 @@ stress_lane_chunk_bundles = st.lists(
 )
 
 
-def run_grouped_lane_concat_case(
+def run_grouped_illumina_lane_case(
     bundles: list[tuple[int, int, int]],
-) -> LaneConcatObservation:
+) -> FastqGroupingObservation:
     with tempfile.TemporaryDirectory(prefix="nvd-lane-concat-property.") as tmp:
         case_dir = Path(tmp)
         fastq_dir = case_dir / "fastqs"
@@ -250,7 +254,7 @@ def run_grouped_lane_concat_case(
         samples, warnings = scan_fastq_directory(
             fastq_dir,
             sanitize=True,
-            group_lanes=True,
+            group_by=FastqGrouping.ILLUMINA_LANES,
         )
         samplesheet = case_dir / "samplesheet.csv"
         write_samplesheet(samples, samplesheet, platform="illumina")
@@ -286,7 +290,7 @@ def run_grouped_lane_concat_case(
             runner=pair_checking_deacon_runner(report),
         )
 
-        return LaneConcatObservation(
+        return FastqGroupingObservation(
             warnings=warnings,
             resolution_warnings=resolution.warnings,
             samples=resolution.samples,
@@ -302,10 +306,10 @@ def run_grouped_lane_concat_case(
     max_examples=150,
     deadline=None,
 )
-def test_grouped_lane_generation_resolution_and_streaming_preserve_pair_order(
+def test_illumina_lane_grouping_resolution_and_streaming_preserve_pair_order(
     bundles: list[tuple[int, int, int]],
 ) -> None:
-    case = run_grouped_lane_concat_case(bundles)
+    case = run_grouped_illumina_lane_case(bundles)
     assert case.warnings == []
     assert case.resolution_warnings == ()
     assert len(case.samples) == 1
@@ -324,10 +328,10 @@ def test_grouped_lane_generation_resolution_and_streaming_preserve_pair_order(
     max_examples=500,
     deadline=None,
 )
-def test_grouped_lane_generation_resolution_and_streaming_preserve_pair_order_stress(
+def test_illumina_lane_grouping_resolution_and_streaming_preserve_pair_order_stress(
     bundles: list[tuple[int, int, int]],
 ) -> None:
-    case = run_grouped_lane_concat_case(bundles)
+    case = run_grouped_illumina_lane_case(bundles)
     assert case.warnings == []
     assert case.resolution_warnings == ()
     assert len(case.samples) == 1
