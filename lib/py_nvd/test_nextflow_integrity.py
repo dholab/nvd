@@ -197,3 +197,19 @@ def test_sourmash_reports_do_not_wait_for_runtime_taxonomy_normalization() -> No
     assert "ch_merged_taxburst_input = ch_sourmash_profile_summaries" in (
         reporting_subworkflow
     )
+
+
+def test_crumbs_coverage_process_streams_zero_inclusive_depth() -> None:
+    """CRUMBS coverage summarization should consume a streamed depth -aa table."""
+    text = (ROOT / "modules" / "samtools.nf").read_text(encoding="utf-8")
+    expected_fragments = (
+        "process SUMMARIZE_CONTIG_COVERAGE",
+        "samtools depth -aa",
+        "summarize_contig_coverage.py",
+        "--depth-tsv -",
+        "emit: coverage_summary",
+    )
+
+    missing = [fragment for fragment in expected_fragments if fragment not in text]
+
+    assert not missing, "modules/samtools.nf missing: " + ", ".join(missing)
