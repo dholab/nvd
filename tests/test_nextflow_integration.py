@@ -108,6 +108,145 @@ def verify_fixture_checksums(manifest: dict[str, Any]) -> None:
     )
 
 
+def test_mini_sourmash_lineages_support_bioboxes() -> None:
+    """The mini sourmash taxonomy fixture must include BioBoxes taxpaths."""
+    with SOURMASH_LINEAGES.open(newline="", encoding="utf-8") as handle:
+        rows = list(csv.DictReader(handle))
+
+    ranks = (
+        "superkingdom",
+        "phylum",
+        "class",
+        "order",
+        "family",
+        "genus",
+        "species",
+        "strain",
+    )
+    assert rows, f"No sourmash lineage rows found in {SOURMASH_LINEAGES}"
+    for row in rows:
+        taxpath = row.get("taxpath", "")
+        taxids = taxpath.split("|") if taxpath else []
+        assert len(taxids) == len(ranks), row
+        for rank, taxid in zip(ranks, taxids, strict=True):
+            assert bool(row.get(rank)) == bool(taxid), row
+
+
+def run_sourmash(*args: str | Path) -> subprocess.CompletedProcess[str]:
+    """Run sourmash from the test environment."""
+    return subprocess.run(  # noqa: S603
+        ["sourmash", *(str(arg) for arg in args)],  # noqa: S607
+        cwd=ROOT,
+        check=False,
+        text=True,
+        capture_output=True,
+        timeout=120,
+    )
+
+
+def test_sourmash_tax_metagenome_writes_all_formats_with_strain_taxids(
+    tmp_path: Path,
+) -> None:
+    """Sourmash 4.9.4 consumes the complete positional taxonomy contract."""
+    query = tmp_path / "query.sig.zip"
+    reference = tmp_path / "reference.sig.zip"
+    gather = tmp_path / "gather.csv"
+    output_base = tmp_path / "profile"
+    commands = [
+        (
+            "sketch",
+            "dna",
+            SOURMASH_REF_FASTA,
+            "-p",
+            "dna,k=31,scaled=50,abund",
+            "-o",
+            query,
+        ),
+        (
+            "sketch",
+            "dna",
+            SOURMASH_REF_FASTA,
+            "--singleton",
+            "-p",
+            "dna,k=31,scaled=50",
+            "-o",
+            reference,
+        ),
+        (
+            "gather",
+            query,
+            reference,
+            "-k",
+            "31",
+            "--scaled",
+            "50",
+            "-o",
+            gather,
+        ),
+        (
+            "tax",
+            "metagenome",
+            "--gather-csv",
+            gather,
+            "--taxonomy-csv",
+            SOURMASH_LINEAGES,
+            "--keep-identifier-versions",
+            "--use-abundances",
+            "--output-format",
+            "csv_summary",
+            "lineage_summary",
+            "krona",
+            "kreport",
+            "bioboxes",
+            "--rank",
+            "species",
+            "--output-base",
+            output_base,
+        ),
+    ]
+
+    for command in commands:
+        result = run_sourmash(*command)
+        assert result.returncode == 0, result.stderr
+
+    outputs = (
+        tmp_path / "profile.summarized.csv",
+        tmp_path / "profile.lineage_summary.tsv",
+        tmp_path / "profile.krona.tsv",
+        tmp_path / "profile.kreport.txt",
+        tmp_path / "profile.bioboxes.profile",
+    )
+    for output in outputs:
+        assert output.stat().st_size > 0, output
+
+    bioboxes_lines = outputs[-1].read_text(encoding="utf-8").splitlines()
+    assert not any("None" in line for line in bioboxes_lines)
+    profile_rows = [
+        line.split("\t")
+        for line in bioboxes_lines
+        if line and not line.startswith(("#", "@"))
+    ]
+    assert profile_rows
+    rank_order = (
+        "superkingdom",
+        "phylum",
+        "class",
+        "order",
+        "family",
+        "genus",
+        "species",
+        "strain",
+    )
+    for taxid, rank, taxpath, taxpath_names, percentage in profile_rows:
+        taxids = taxpath.split("|")
+        names = taxpath_names.split("|")
+        assert taxid == taxids[-1]
+        assert rank == rank_order[len(taxids) - 1]
+        assert len(taxids) == len(names)
+        assert all(taxids)
+        assert 0 <= float(percentage) <= 100  # noqa: PLR2004
+
+
 def read_delimited_rows(path: Path, *, delimiter: str) -> list[dict[str, str]]:
     with path.open(newline="", encoding="utf-8") as handle:
         return list(csv.DictReader(handle, delimiter=delimiter))

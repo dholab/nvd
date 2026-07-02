@@ -225,15 +225,6 @@ class NvdParams(BaseModel):
         description="Minimum estimated base-pair overlap for experimental sourmash gather",
         json_schema_extra={"category": "Databases"},
     )
-    sourmash_output_bioboxes: bool = Field(
-        default=False,
-        description=(
-            "Write sourmash tax metagenome CAMI bioboxes profiles; requires "
-            "taxonomy lineages with NCBI taxpath values"
-        ),
-        json_schema_extra={"category": "Databases"},
-    )
-
     preprocess: bool = Field(
         default=False,
         description="Enable all preprocessing steps",

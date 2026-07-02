@@ -543,7 +543,6 @@ class TestNvdParamsDefaults:
         assert NvdParams().sourmash_ksize == 31
         assert NvdParams().sourmash_scaled == 50
         assert NvdParams().sourmash_threshold_bp == 50
-        assert NvdParams().sourmash_output_bioboxes is False
 
     def test_default_max_blast_targets(self) -> None:
         """Default max_blast_targets matches nextflow.config."""
