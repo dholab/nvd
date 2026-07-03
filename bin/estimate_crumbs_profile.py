@@ -45,7 +45,14 @@ COVERAGE_COLUMNS = [
     "crumbs_p95",
     "crumbs_p99",
 ]
-PROFILE_TAXONOMY_COLUMNS = ["taxon_id", "taxon_name", "rank", "taxpath", "taxpathsn"]
+PROFILE_TAXONOMY_COLUMNS = [
+    "taxon_id",
+    "taxon_name",
+    "rank",
+    "taxpath",
+    "taxpathsn",
+    "rankpath",
+]
 CONTIG_OUTPUT_COLUMNS = [
     "sample_id",
     "qseqid",
@@ -76,6 +83,7 @@ TAXON_OUTPUT_COLUMNS = [
     "rank",
     "taxpath",
     "taxpathsn",
+    "rankpath",
     "n_contigs",
     "total_contig_length",
     "total_covered_bases_1x",
@@ -123,6 +131,7 @@ PROFILE_TAXONOMY_SCHEMA_OVERRIDES = {
     "rank": pl.String,
     "taxpath": pl.String,
     "taxpathsn": pl.String,
+    "rankpath": pl.String,
 }
 
 
@@ -330,9 +339,11 @@ def prepare_profile_taxonomy(profile_taxonomy: pl.DataFrame) -> pl.DataFrame:
     with_paths = typed.with_columns(
         pl.col("taxpath").str.split("|").alias("taxpath_parts"),
         pl.col("taxpathsn").str.split("|").alias("taxpathsn_parts"),
+        pl.col("rankpath").str.split("|").alias("rankpath_parts"),
     )
     length_mismatches = with_paths.filter(
-        pl.col("taxpath_parts").list.len() != pl.col("taxpathsn_parts").list.len(),
+        (pl.col("taxpath_parts").list.len() != pl.col("taxpathsn_parts").list.len())
+        | (pl.col("taxpath_parts").list.len() != pl.col("rankpath_parts").list.len()),
     )
     if length_mismatches.height > 0:
         taxon_id = length_mismatches.get_column("taxon_id").item(0)
@@ -353,6 +364,13 @@ def prepare_profile_taxonomy(profile_taxonomy: pl.DataFrame) -> pl.DataFrame:
     if taxpathsn_terminal_mismatches.height > 0:
         taxon_id = taxpathsn_terminal_mismatches.get_column("taxon_id").item(0)
         message = f"profile taxonomy taxpathsn for taxon_id {taxon_id} does not end with taxon_name"
+        raise CrumbsProfileError(message)
+    rankpath_terminal_mismatches = with_paths.filter(
+        pl.col("rankpath_parts").list.last() != pl.col("rank"),
+    )
+    if rankpath_terminal_mismatches.height > 0:
+        taxon_id = rankpath_terminal_mismatches.get_column("taxon_id").item(0)
+        message = f"profile taxonomy rankpath for taxon_id {taxon_id} does not end with rank"
         raise CrumbsProfileError(message)
     return typed
 

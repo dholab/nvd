@@ -26,7 +26,7 @@ if TYPE_CHECKING:
     from py_nvd.models import Taxon
 
 
-OUTPUT_COLUMNS = ["taxon_id", "taxon_name", "rank", "taxpath", "taxpathsn"]
+OUTPUT_COLUMNS = ["taxon_id", "taxon_name", "rank", "taxpath", "taxpathsn", "rankpath"]
 
 
 class ProfileTaxonomyError(ValueError):
@@ -40,6 +40,7 @@ class ProfileTaxonRow:
     rank: str
     taxpath: str
     taxpathsn: str
+    rankpath: str
 
     def as_dict(self) -> dict[str, str]:
         return {
@@ -48,6 +49,7 @@ class ProfileTaxonRow:
             "rank": self.rank,
             "taxpath": self.taxpath,
             "taxpathsn": self.taxpathsn,
+            "rankpath": self.rankpath,
         }
 
 
@@ -104,6 +106,7 @@ def build_profile_taxon_row(
     """Build and validate a profile taxonomy row from resolved lineage."""
     taxpath_parts = [str(lineage_taxon.tax_id) for lineage_taxon in lineage]
     taxpathsn_parts = [lineage_taxon.scientific_name for lineage_taxon in lineage]
+    rankpath_parts = [lineage_taxon.rank for lineage_taxon in lineage]
     taxon_id = str(taxon.tax_id)
     taxon_name = taxon.scientific_name
 
@@ -116,6 +119,12 @@ def build_profile_taxon_row(
     if len(taxpath_parts) != len(taxpathsn_parts):
         message = f"lineage ids and names differ in length for taxid {taxon_id}"
         raise ProfileTaxonomyError(message)
+    if len(taxpath_parts) != len(rankpath_parts):
+        message = f"lineage ids and ranks differ in length for taxid {taxon_id}"
+        raise ProfileTaxonomyError(message)
+    if not rankpath_parts or rankpath_parts[-1] != taxon.rank:
+        message = f"lineage ranks for taxid {taxon_id} do not end with the taxon rank"
+        raise ProfileTaxonomyError(message)
 
     return ProfileTaxonRow(
         taxon_id=taxon_id,
@@ -123,6 +132,7 @@ def build_profile_taxon_row(
         rank=taxon.rank,
         taxpath="|".join(taxpath_parts),
         taxpathsn="|".join(taxpathsn_parts),
+        rankpath="|".join(rankpath_parts),
     )
 
 

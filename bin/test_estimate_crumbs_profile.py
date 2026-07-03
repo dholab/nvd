@@ -49,7 +49,7 @@ COVERAGE_FIELDS = [
     "crumbs_p95",
     "crumbs_p99",
 ]
-TAXONOMY_FIELDS = ["taxon_id", "taxon_name", "rank", "taxpath", "taxpathsn"]
+TAXONOMY_FIELDS = ["taxon_id", "taxon_name", "rank", "taxpath", "taxpathsn", "rankpath"]
 
 
 def write_tsv(path: Path, fieldnames: list[str], rows: list[dict[str, object]]) -> Path:
@@ -137,6 +137,7 @@ def write_minimal_inputs(
                 "rank": "species",
                 "taxpath": "131567|2759|9605|9606",
                 "taxpathsn": "cellular organisms|Eukaryota|Homo|Homo sapiens",
+                "rankpath": "no rank|superkingdom|genus|species",
             },
         ],
     )
@@ -169,6 +170,7 @@ def taxon_metadata(taxon_ids: set[str]) -> pl.DataFrame:
                 "rank": "species",
                 "taxpath": f"root|{taxon_id}",
                 "taxpathsn": f"root|{taxon_id}",
+                "rankpath": "no rank|species",
             }
             for taxon_id in sorted(taxon_ids)
         ],
@@ -355,7 +357,7 @@ def test_estimates_taxon_crumbs_and_bioboxes_profile(tmp_path: Path) -> None:
     )
     taxonomy = write_tsv(
         tmp_path / "profile_taxonomy.tsv",
-        ["taxon_id", "taxon_name", "rank", "taxpath", "taxpathsn"],
+        TAXONOMY_FIELDS,
         [
             {
                 "taxon_id": 9606,
@@ -363,6 +365,7 @@ def test_estimates_taxon_crumbs_and_bioboxes_profile(tmp_path: Path) -> None:
                 "rank": "species",
                 "taxpath": "131567|2759|9605|9606",
                 "taxpathsn": "cellular organisms|Eukaryota|Homo|Homo sapiens",
+                "rankpath": "no rank|superkingdom|genus|species",
             },
             {
                 "taxon_id": 9598,
@@ -370,6 +373,7 @@ def test_estimates_taxon_crumbs_and_bioboxes_profile(tmp_path: Path) -> None:
                 "rank": "species",
                 "taxpath": "131567|2759|9596|9598",
                 "taxpathsn": "cellular organisms|Eukaryota|Pan|Pan troglodytes",
+                "rankpath": "no rank|superkingdom|genus|species",
             },
             {
                 "taxon_id": 9605,
@@ -377,6 +381,7 @@ def test_estimates_taxon_crumbs_and_bioboxes_profile(tmp_path: Path) -> None:
                 "rank": "genus",
                 "taxpath": "131567|2759|9605",
                 "taxpathsn": "cellular organisms|Eukaryota|Homo",
+                "rankpath": "no rank|superkingdom|genus",
             },
         ],
     )
@@ -414,6 +419,8 @@ def test_estimates_taxon_crumbs_and_bioboxes_profile(tmp_path: Path) -> None:
     assert float(taxa_by_id["9598"]["taxon_crumbs"]) == EXPECTED_PAN_TAXON_CRUMBS
     assert float(taxa_by_id["9605"]["taxon_crumbs"]) == EXPECTED_ZERO_TAXON_CRUMBS
     assert taxa_by_id["9605"]["n_zero_crumbs_contigs"] == "1"
+    assert taxa_by_id["9606"]["rankpath"] == "no rank|superkingdom|genus|species"
+    assert taxa_by_id["9605"]["rankpath"] == "no rank|superkingdom|genus"
 
     profile = bioboxes_data_rows(tmp_path / "sample-1.crumbs.bioboxes.profile.tsv")
     profile_by_id = {row["@@TAXID"]: row for row in profile}
@@ -649,6 +656,7 @@ def test_profile_taxonomy_path_contract_is_validated(
                 "rank": "species",
                 "taxpath": "131567|2759|9605",
                 "taxpathsn": "cellular organisms|Eukaryota|Homo|Homo sapiens",
+                "rankpath": "no rank|superkingdom|genus|species",
             },
         ],
     )
@@ -670,6 +678,7 @@ def test_profile_taxonomy_taxpath_must_end_with_taxon_id(tmp_path: Path) -> None
                 "rank": "species",
                 "taxpath": "131567|2759|9605",
                 "taxpathsn": "cellular organisms|Eukaryota|Homo sapiens",
+                "rankpath": "no rank|superkingdom|species",
             },
         ],
     )
@@ -691,6 +700,7 @@ def test_profile_taxonomy_taxpathsn_must_end_with_taxon_name(tmp_path: Path) -> 
                 "rank": "species",
                 "taxpath": "131567|2759|9606",
                 "taxpathsn": "cellular organisms|Eukaryota|Homo",
+                "rankpath": "no rank|superkingdom|species",
             },
         ],
     )
@@ -698,6 +708,52 @@ def test_profile_taxonomy_taxpathsn_must_end_with_taxon_name(tmp_path: Path) -> 
     with pytest.raises(
         CrumbsProfileError,
         match="taxpathsn for taxon_id 9606 does not end with taxon_name",
+    ):
+        run_estimator(tmp_path, blast, coverage, taxonomy)
+
+
+def test_profile_taxonomy_rankpath_length_must_match_taxpath(tmp_path: Path) -> None:
+    blast, coverage, taxonomy = write_minimal_inputs(
+        tmp_path,
+        taxonomy_rows=[
+            {
+                "taxon_id": 9606,
+                "taxon_name": "Homo sapiens",
+                "rank": "species",
+                "taxpath": "131567|2759|9605|9606",
+                "taxpathsn": "cellular organisms|Eukaryota|Homo|Homo sapiens",
+                "rankpath": "no rank|superkingdom|species",
+            },
+        ],
+    )
+
+    with pytest.raises(
+        CrumbsProfileError,
+        match="path length mismatch for taxon_id 9606",
+    ):
+        run_estimator(tmp_path, blast, coverage, taxonomy)
+
+
+def test_profile_taxonomy_rankpath_must_end_with_terminal_rank(
+    tmp_path: Path,
+) -> None:
+    blast, coverage, taxonomy = write_minimal_inputs(
+        tmp_path,
+        taxonomy_rows=[
+            {
+                "taxon_id": 9606,
+                "taxon_name": "Homo sapiens",
+                "rank": "species",
+                "taxpath": "131567|2759|9605|9606",
+                "taxpathsn": "cellular organisms|Eukaryota|Homo|Homo sapiens",
+                "rankpath": "no rank|superkingdom|genus|genus",
+            },
+        ],
+    )
+
+    with pytest.raises(
+        CrumbsProfileError,
+        match="rankpath for taxon_id 9606 does not end with rank",
     ):
         run_estimator(tmp_path, blast, coverage, taxonomy)
 
@@ -712,6 +768,7 @@ def test_profile_taxonomy_blank_required_values_fail(tmp_path: Path) -> None:
                 "rank": "species",
                 "taxpath": "131567|2759|9606",
                 "taxpathsn": "cellular organisms|Eukaryota|Homo sapiens",
+                "rankpath": "no rank|superkingdom|species",
             },
         ],
     )

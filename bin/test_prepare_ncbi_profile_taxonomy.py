@@ -90,6 +90,7 @@ def test_observed_taxids_are_written_as_profile_taxonomy_rows(
             "rank": "species",
             "taxpath": "131567|2759|33208|9604|207598|9605|9606",
             "taxpathsn": "cellular organisms|Eukaryota|Metazoa|Hominidae|Homininae|Homo|Homo sapiens",
+            "rankpath": "no rank|superkingdom|kingdom|family|subfamily|genus|species",
         },
         {
             "taxon_id": "9598",
@@ -97,6 +98,7 @@ def test_observed_taxids_are_written_as_profile_taxonomy_rows(
             "rank": "species",
             "taxpath": "131567|2759|33208|9604|207598|9596|9598",
             "taxpathsn": "cellular organisms|Eukaryota|Metazoa|Hominidae|Homininae|Pan|Pan troglodytes",
+            "rankpath": "no rank|superkingdom|kingdom|family|subfamily|genus|species",
         },
     ]
 
