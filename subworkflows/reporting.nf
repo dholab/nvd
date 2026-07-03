@@ -1,6 +1,7 @@
 include { ADD_READ_COUNTS_TO_BLAST; CONCATENATE_EXPERIMENT_BLAST; VIRUS_ENRICHMENT_REPORT } from "../modules/utils"
 include { NOTIFY_SLACK } from "../modules/utils"
 include { RENDER_MERGED_TAXON_ABUNDANCE_SUNBURST; RENDER_TAXON_ABUNDANCE_SUNBURST; RENDER_SOURMASH_SANKEY } from "../modules/reporting"
+include { CRUMBS_PROFILING } from "./crumbs_profiling"
 include { LIMS_INTEGRATION } from "./lims_integration"
 
 workflow REPORTING {
@@ -9,7 +10,9 @@ workflow REPORTING {
     ch_read_counts
     ch_contig_sequences
     ch_contig_read_counts
+    ch_filtered_bam
     ch_virus_enrichment_stats
+    ch_taxonomy_dir
     ch_run_ready
     ch_run_context
     ch_sourmash_tax_reports
@@ -65,6 +68,12 @@ workflow REPORTING {
 
     RENDER_MERGED_TAXON_ABUNDANCE_SUNBURST(ch_merged_taxburst_input)
 
+    CRUMBS_PROFILING(
+        ch_split_blast_results.for_emit,
+        ch_filtered_bam,
+        ch_taxonomy_dir,
+    )
+
     LIMS_INTEGRATION(
         ch_split_blast_results.for_labkey_upload,
         ch_contig_sequences,
@@ -97,4 +106,9 @@ workflow REPORTING {
     labkey_log = LIMS_INTEGRATION.out.upload_log
     final_labkey_log = LIMS_INTEGRATION.out.final_labkey_log
     labkey_registered = LIMS_INTEGRATION.out.registered
+    crumbs_contigs = CRUMBS_PROFILING.out.contigs
+    crumbs_taxa = CRUMBS_PROFILING.out.taxa
+    crumbs_bioboxes_profile = CRUMBS_PROFILING.out.bioboxes_profile
+    crumbs_qc = CRUMBS_PROFILING.out.qc
+    crumbs_profile_taxonomy = CRUMBS_PROFILING.out.profile_taxonomy
 }
