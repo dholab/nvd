@@ -2,7 +2,8 @@ include { SUMMARIZE_CONTIG_COVERAGE } from "../modules/samtools"
 include {
     COLLECT_CRUMBS_TAXIDS ;
     PREPARE_NCBI_PROFILE_TAXONOMY ;
-    ESTIMATE_CRUMBS_PROFILE
+    ESTIMATE_CRUMBS_PROFILE ;
+    EXPORT_CRUMBS_TAXONOMIC_REPORTS
 } from "../modules/crumbs"
 
 workflow CRUMBS_PROFILING {
@@ -44,11 +45,14 @@ workflow CRUMBS_PROFILING {
         }
 
     ESTIMATE_CRUMBS_PROFILE(ch_profile_inputs)
+    EXPORT_CRUMBS_TAXONOMIC_REPORTS(ESTIMATE_CRUMBS_PROFILE.out.taxa)
 
     emit:
     contigs = ESTIMATE_CRUMBS_PROFILE.out.contigs
     taxa = ESTIMATE_CRUMBS_PROFILE.out.taxa
     bioboxes_profile = ESTIMATE_CRUMBS_PROFILE.out.bioboxes_profile
     qc = ESTIMATE_CRUMBS_PROFILE.out.qc
+    krona = EXPORT_CRUMBS_TAXONOMIC_REPORTS.out.krona
+    kreport = EXPORT_CRUMBS_TAXONOMIC_REPORTS.out.kreport
     profile_taxonomy = PREPARE_NCBI_PROFILE_TAXONOMY.out.profile_taxonomy
 }

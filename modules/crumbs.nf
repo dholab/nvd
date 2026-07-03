@@ -83,3 +83,24 @@ process ESTIMATE_CRUMBS_PROFILE {
         --output-dir .
     """
 }
+
+process EXPORT_CRUMBS_TAXONOMIC_REPORTS {
+
+    tag "${sample_id}"
+    label "low"
+
+    input:
+    tuple val(sample_id), path(taxa_tsv)
+
+    output:
+    tuple val(sample_id), path("${sample_id}.crumbs.krona.tsv"), emit: krona
+    tuple val(sample_id), path("${sample_id}.crumbs.kreport.txt"), emit: kreport
+
+    script:
+    """
+    export_crumbs_taxonomic_reports.py \
+        --sample-id ${sample_id} \
+        --taxa-tsv ${taxa_tsv} \
+        --output-dir .
+    """
+}

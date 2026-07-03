@@ -213,3 +213,28 @@ def test_crumbs_coverage_process_streams_zero_inclusive_depth() -> None:
     missing = [fragment for fragment in expected_fragments if fragment not in text]
 
     assert not missing, "modules/samtools.nf missing: " + ", ".join(missing)
+
+
+def test_crumbs_report_exporter_consumes_only_taxon_evidence() -> None:
+    """CRUMBS terminal report exports should format the taxon evidence table."""
+    crumbs_module = (ROOT / "modules" / "crumbs.nf").read_text(encoding="utf-8")
+    crumbs_subworkflow = (ROOT / "subworkflows" / "crumbs_profiling.nf").read_text(
+        encoding="utf-8",
+    )
+
+    expected_module_fragments = (
+        "process EXPORT_CRUMBS_TAXONOMIC_REPORTS",
+        "tuple val(sample_id), path(taxa_tsv)",
+        "--taxa-tsv ${taxa_tsv}",
+        "emit: krona",
+        "emit: kreport",
+    )
+    missing = [
+        fragment for fragment in expected_module_fragments if fragment not in crumbs_module
+    ]
+
+    assert not missing, "modules/crumbs.nf missing: " + ", ".join(missing)
+    assert (
+        "EXPORT_CRUMBS_TAXONOMIC_REPORTS(ESTIMATE_CRUMBS_PROFILE.out.taxa)"
+        in crumbs_subworkflow
+    )
