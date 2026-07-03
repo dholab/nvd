@@ -131,10 +131,18 @@ def test_taxonomy_processes_forward_policy_arguments() -> None:
 
 
 def test_skip_stage_params_gate_expensive_nextflow_processes() -> None:
-    """Skip params should guard scheduling before SPAdes and MEGABLAST."""
+    """Skip params should guard scheduling before assembly and MEGABLAST."""
     expected = {
-        ROOT / "subworkflows" / "preprocess_contigs.nf": (
+        ROOT / "workflows" / "nvd_main.nf": (
             "params.skip_assembly",
+            "ch_reads_by_platform",
+            "SHORT_READ_DENOVO_ASSEMBLY(",
+            "LONG_READ_DENOVO_ENSEMBLY(",
+        ),
+        ROOT / "subworkflows" / "short_read_denovo_assembly.nf": (
+            "RUN_SPADES(",
+        ),
+        ROOT / "subworkflows" / "long_read_denovo_ensembly.nf": (
             "RUN_SPADES(",
         ),
         ROOT / "subworkflows" / "classify_with_megablast.nf": (

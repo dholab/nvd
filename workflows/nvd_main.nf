@@ -13,6 +13,8 @@ nextflow.enable.dsl = 2
 
 include { GATHER_READS            } from "../subworkflows/gather_reads"
 include { PREPROCESS_READS        } from "../subworkflows/preprocess_reads"
+include { SHORT_READ_DENOVO_ASSEMBLY } from "../subworkflows/short_read_denovo_assembly"
+include { LONG_READ_DENOVO_ENSEMBLY  } from "../subworkflows/long_read_denovo_ensembly"
 include { PREPROCESS_CONTIGS      } from "../subworkflows/preprocess_contigs"
 include { EXTRACT_HUMAN_VIRUSES   } from "../subworkflows/extract_human_virus_contigs"
 include { CLASSIFY_WITH_MEGABLAST } from "../subworkflows/classify_with_megablast"
@@ -73,13 +75,32 @@ workflow NVD_MAIN {
     ch_sourmash_tax_reports = rapid_screening.tax_reports
   }
 
-  PREPROCESS_CONTIGS(PREPROCESS_READS.out.reads)
+  // Filter out samples with fewer than 100 reads before assembly; they are
+  // insufficient for de novo assembly and would otherwise fan out downstream.
+  ch_reads_for_assembly = PREPROCESS_READS.out.reads
+    .filter { _id, _platform, _read_structure, _fq -> !params.skip_assembly }
+    .map { id, platform, read_structure, fq -> tuple(id, platform, read_structure, fq, file(fq).countFastq()) }
+    .filter { _id, _platform, _read_structure, _fq, count -> count >= 100 }
+    .map { id, platform, read_structure, fq, _count -> tuple(id, platform, read_structure, file(fq)) }
+
+  ch_reads_by_platform = ch_reads_for_assembly.branch { _id, platform, _read_structure, _fq ->
+    illumina: platform == "illumina"
+    long_read: true
+  }
+
+  SHORT_READ_DENOVO_ASSEMBLY(ch_reads_by_platform.illumina)
+  LONG_READ_DENOVO_ENSEMBLY(ch_reads_by_platform.long_read)
+
+  ch_assembled_contigs = SHORT_READ_DENOVO_ASSEMBLY.out.contigs
+    .mix(LONG_READ_DENOVO_ENSEMBLY.out.contigs)
+
+  PREPROCESS_CONTIGS(ch_assembled_contigs)
 
   ch_run_context = COMPUTE_RUN_CONTEXT.out.run_context
   ch_taxonomy_dir = ENSURE_TAXONOMY.out.taxonomy_dir
   EXTRACT_HUMAN_VIRUSES(
     PREPROCESS_CONTIGS.out.contigs,
-    PREPROCESS_CONTIGS.out.viral_reads,
+    PREPROCESS_READS.out.reads,
     PREPROCESS_READS.out.virus_index,
     PREPROCESS_READS.out.depletion_index,
   )
