@@ -1,24 +1,13 @@
 include { MASK_LOW_COMPLEXITY ; FILTER_SHORT_CONTIGS } from "../modules/bbmap"
-include { RUN_SPADES                } from "../modules/spades"
 
 workflow PREPROCESS_CONTIGS {
     take:
-    ch_sample_fastqs  // tuple(sample_id, platform, read_structure, fastq) — already virus-filtered and preprocessed
+    ch_assembled_contigs  // tuple(sample_id, platform, read_structure, fasta)
 
     main:
 
-    // Assemble virus reads into contigs with SPAdes.
-    // Filter out samples with fewer than 100 reads (insufficient for assembly).
-    RUN_SPADES(
-        ch_sample_fastqs
-            .filter { _id, _platform, _read_structure, _fq -> !params.skip_assembly }
-            .map { id, platform, read_structure, fq -> tuple(id, platform, read_structure, fq, file(fq).countFastq()) }
-            .filter { _id, _platform, _read_structure, _fq, count -> count >= 100 }
-            .map { id, platform, read_structure, fq, _count -> tuple(id, platform, read_structure, file(fq)) }
-    )
-
     MASK_LOW_COMPLEXITY(
-        RUN_SPADES.out
+        ch_assembled_contigs
     )
 
     FILTER_SHORT_CONTIGS(
@@ -33,5 +22,4 @@ workflow PREPROCESS_CONTIGS {
 
     emit:
     contigs = ch_filtered_contigs  // tuple(sample_id, platform, read_structure, fasta)
-    viral_reads = ch_sample_fastqs  // the incoming reads ARE the viral reads (extracted upstream)
 }

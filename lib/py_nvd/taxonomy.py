@@ -638,7 +638,11 @@ class TaxonomyDB:
 
     def get_lineage(self, tax_id: int) -> list[Taxon]:
         """
-        Get full lineage for a tax ID (from root to taxon).
+        Get lineage for a tax ID in ancestor-to-taxon order.
+
+        The returned lineage excludes NCBI's synthetic root taxid 1. It begins
+        with the first taxon below root, such as ``131567`` for cellular
+        organisms in the standard NCBI taxonomy.
 
         Results are cached for performance during batch operations.
         """
@@ -661,7 +665,7 @@ class TaxonomyDB:
 
     def get_lineage_ids(self, tax_id: int) -> list[int]:
         """
-        Get lineage as list of tax IDs from root to leaf.
+        Get lineage as list of tax IDs from below NCBI root to leaf.
 
         Used by hits_to_report.py for LCA calculation.
 

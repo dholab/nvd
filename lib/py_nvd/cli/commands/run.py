@@ -399,6 +399,12 @@ def run(
         help="Filter reads by quality/length (default: follows --preprocess)",
         rich_help_panel=PANEL_PREPROCESSING,
     ),
+    filter_low_complexity_reads: bool | None = typer.Option(
+        None,
+        "--filter-low-complexity-reads/--no-filter-low-complexity-reads",
+        help="Filter reads with low normalized 5-mer entropy (default: false)",
+        rich_help_panel=PANEL_PREPROCESSING,
+    ),
     min_read_quality_illumina: int | None = typer.Option(
         None,
         "--min-read-quality-illumina",
@@ -421,6 +427,12 @@ def run(
         None,
         "--max-read-length",
         help="Maximum read length (default: no limit)",
+        rich_help_panel=PANEL_PREPROCESSING,
+    ),
+    min_read_entropy: float | None = typer.Option(
+        None,
+        "--min-read-entropy",
+        help="Minimum normalized 5-mer entropy over 50-base windows (default: 0.9)",
         rich_help_panel=PANEL_PREPROCESSING,
     ),
     # -------------------------------------------------------------------------
@@ -643,10 +655,12 @@ def run(
         "host_index_url": host_index_url,
         "host_contaminants_fasta": host_contaminants_fasta,
         "filter_reads": filter_reads,
+        "filter_low_complexity_reads": filter_low_complexity_reads,
         "min_read_quality_illumina": min_read_quality_illumina,
         "min_read_quality_nanopore": min_read_quality_nanopore,
         "min_read_length": min_read_length,
         "max_read_length": max_read_length,
+        "min_read_entropy": min_read_entropy,
         # LabKey
         "labkey": labkey,
         "labkey_server": labkey_server,

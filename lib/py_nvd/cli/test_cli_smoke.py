@@ -192,6 +192,30 @@ def test_run_accepts_no_enrichment_flag(tmp_path: Path) -> None:
     assert "--no-enrichment" not in result.output
 
 
+def test_run_accepts_low_complexity_read_filter_options(tmp_path: Path) -> None:
+    """Read-complexity CLI options map to underscore Nextflow params."""
+    samplesheet = tmp_path / "samples.csv"
+    samplesheet.write_text("sample_id,srr,platform,fastq1,fastq2\n", encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        [
+            "run",
+            "--samplesheet",
+            str(samplesheet),
+            "--filter-low-complexity-reads",
+            "--min-read-entropy",
+            "0.65",
+            "--dry-run",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "--filter_low_complexity_reads" in result.output
+    assert "--min_read_entropy" in result.output
+    assert "0.65" in result.output
+
+
 def test_samplesheet_generate_sanitizes_illumina_ids(tmp_path: Path) -> None:
     fastq_dir = tmp_path / "fastqs"
     fastq_dir.mkdir()
