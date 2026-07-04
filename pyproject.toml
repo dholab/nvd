@@ -45,7 +45,6 @@ minimap2 = ">=2.22,<3"
 samtools = ">=1.5,<2"
 seqkit = ">=2.10.0,<3"
 spades = ">=4.1.0,<5"
-vsearch = ">=2.30.0,<3"
 rust = ">=1.94.0,<1.95"
 
 # System Dependencies
@@ -66,6 +65,7 @@ taxburst = ">=0.3.2,<0.4"
 # conda side so Pixi can use platform packages instead of building PyQt from
 # source for linux-aarch64 and other headless pipeline platforms.
 pyqt = ">=5.15.11,<6"
+mmseqs2 = ">=18.8cc5c,<19"
 
 # ----------------------------------------------------------------------------------- #
 
