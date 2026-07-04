@@ -1,4 +1,4 @@
-process RUN_SPADES {
+process ASSEMBLE_WITH_SPADES {
 
     tag "${sample_id}"
     label "high"

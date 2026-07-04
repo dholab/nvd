@@ -1,4 +1,4 @@
-include { RUN_SPADES } from "../modules/spades"
+include { ASSEMBLE_WITH_SPADES } from "../modules/spades"
 
 workflow SHORT_READ_DENOVO_ASSEMBLY {
     take:
@@ -6,8 +6,8 @@ workflow SHORT_READ_DENOVO_ASSEMBLY {
 
     main:
 
-    RUN_SPADES(ch_short_read_fastqs)
+    ASSEMBLE_WITH_SPADES(ch_short_read_fastqs)
 
     emit:
-    contigs = RUN_SPADES.out  // tuple(sample_id, platform, read_structure, fasta)
+    contigs = ASSEMBLE_WITH_SPADES.out  // tuple(sample_id, platform, read_structure, fasta)
 }

@@ -1,4 +1,4 @@
-process RUN_MYLOASM {
+process ASSEMBLE_WITH_MYLOASM {
 
     tag "${sample_id}"
     label "high"
@@ -24,7 +24,7 @@ process RUN_MYLOASM {
     """
 }
 
-process RUN_METAMDBG {
+process ASSEMBLE_WITH_METAMDBG {
 
     tag "${sample_id}"
     label "high"
@@ -52,7 +52,7 @@ process RUN_METAMDBG {
     """
 }
 
-process RUN_METAFLYE {
+process ASSEMBLE_WITH_METAFLYE {
 
     tag "${sample_id}"
     label "high"
