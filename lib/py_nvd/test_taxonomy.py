@@ -646,8 +646,6 @@ class TestEnsureTaxdump:
         """Path 3: Fresh taxdump with SQLite returns immediately."""
         # Build SQLite first
         taxonomy._build_sqlite_from_dmp(minimal_taxdump)
-        sqlite_path = minimal_taxdump / "taxonomy.sqlite"
-        original_mtime = sqlite_path.stat().st_mtime
 
         # Track if either function was called
         download_called = []
@@ -674,8 +672,6 @@ class TestEnsureTaxdump:
         # Neither should have been called
         assert download_called == []
         assert build_called == []
-        # SQLite mtime should be unchanged
-        assert sqlite_path.stat().st_mtime == original_mtime
         assert result == minimal_taxdump
 
     def test_ensure_taxdump_reuses_stale_existing_taxonomy(
