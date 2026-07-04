@@ -16,7 +16,8 @@ include { PREPROCESS_READS        } from "../subworkflows/preprocess_reads"
 include { SHORT_READ_DENOVO_ASSEMBLY } from "../subworkflows/short_read_denovo_assembly"
 include { LONG_READ_DENOVO_ENSEMBLY  } from "../subworkflows/long_read_denovo_ensembly"
 include { PROCESS_CONTIGS         } from "../subworkflows/process_contigs"
-include { EXTRACT_HUMAN_VIRUSES   } from "../subworkflows/extract_human_virus_contigs"
+include { SCREEN_CONTIGS          } from "../subworkflows/screen_contigs"
+include { MAP_READS_TO_SCREENED_CONTIGS } from "../subworkflows/map_reads_to_screened_contigs"
 include { CLASSIFY_WITH_MEGABLAST } from "../subworkflows/classify_with_megablast"
 include { CLASSIFY_WITH_BLASTN    } from "../subworkflows/classify_with_blastn"
 include { RAPID_SCREENING         } from "../subworkflows/rapid_screening"
@@ -98,15 +99,20 @@ workflow NVD_MAIN {
 
   ch_run_context = COMPUTE_RUN_CONTEXT.out.run_context
   ch_taxonomy_dir = ENSURE_TAXONOMY.out.taxonomy_dir
-  EXTRACT_HUMAN_VIRUSES(
+
+  SCREEN_CONTIGS(
     PROCESS_CONTIGS.out.contigs,
-    PREPROCESS_READS.out.reads,
     PREPROCESS_READS.out.virus_index,
     PREPROCESS_READS.out.depletion_index,
   )
 
+  MAP_READS_TO_SCREENED_CONTIGS(
+    SCREEN_CONTIGS.out.contigs,
+    PREPROCESS_READS.out.reads,
+  )
+
   CLASSIFY_WITH_MEGABLAST(
-    EXTRACT_HUMAN_VIRUSES.out.contigs,
+    SCREEN_CONTIGS.out.contigs,
     ch_blast_db_files,
     ch_taxonomy_dir,
   )
@@ -121,10 +127,9 @@ workflow NVD_MAIN {
   REPORTING(
     CLASSIFY_WITH_BLASTN.out.merged_results,
     PREPROCESS_READS.out.read_counts,
-    EXTRACT_HUMAN_VIRUSES.out.contigs,
-    EXTRACT_HUMAN_VIRUSES.out.contig_read_counts,
-    PROCESS_CONTIGS.out.contig_lookups,
-    EXTRACT_HUMAN_VIRUSES.out.filtered_bam,
+    SCREEN_CONTIGS.out.contigs,
+    MAP_READS_TO_SCREENED_CONTIGS.out.contig_read_counts,
+    MAP_READS_TO_SCREENED_CONTIGS.out.filtered_bam,
     PREPROCESS_READS.out.virus_enrichment_stats,
     ch_taxonomy_dir,
     COMPUTE_RUN_CONTEXT.out.ready,

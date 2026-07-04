@@ -10,7 +10,7 @@ workflow PROCESS_CONTIGS {
     COLLECT_CONTIGS(ch_assembled_contigs)
 
     MASK_LOW_COMPLEXITY(
-        COLLECT_CONTIGS.out.fasta
+        COLLECT_CONTIGS.out.contigs
     )
 
     FILTER_SHORT_CONTIGS(
@@ -18,12 +18,11 @@ workflow PROCESS_CONTIGS {
     )
 
     ch_filtered_contigs = FILTER_SHORT_CONTIGS.out
-        .filter { _id, _platform, _read_structure, fasta ->
+        .filter { _id, _platform, _read_structure, fasta, _lookup ->
             def recordCount = fasta.countFasta()
             recordCount > 0
         }
 
     emit:
-    contigs = ch_filtered_contigs  // tuple(sample_id, platform, read_structure, fasta)
-    contig_lookups = COLLECT_CONTIGS.out.lookup
+    contigs = ch_filtered_contigs  // tuple(sample_id, platform, read_structure, fasta, lookup)
 }
