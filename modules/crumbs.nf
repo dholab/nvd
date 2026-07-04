@@ -104,3 +104,24 @@ process EXPORT_CRUMBS_TAXONOMIC_REPORTS {
         --output-dir .
     """
 }
+
+process RENDER_CRUMBS_TAXBURST {
+
+    tag "${sample_id}"
+    label "low"
+
+    input:
+    tuple val(sample_id), path(taxa_tsv)
+
+    output:
+    tuple val(sample_id), path("${sample_id}.crumbs.taxburst.html"), path("${sample_id}.crumbs.taxburst.json"), emit: reports
+
+    script:
+    """
+    render_multisample_taxburst.py \
+        --input-format crumbs \
+        --summary "${sample_id}=${taxa_tsv}" \
+        --output "${sample_id}.crumbs.taxburst.html" \
+        --output-json "${sample_id}.crumbs.taxburst.json"
+    """
+}

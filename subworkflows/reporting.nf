@@ -112,5 +112,6 @@ workflow REPORTING {
     crumbs_qc = CRUMBS_PROFILING.out.qc
     crumbs_krona = CRUMBS_PROFILING.out.krona
     crumbs_kreport = CRUMBS_PROFILING.out.kreport
+    crumbs_taxburst = CRUMBS_PROFILING.out.taxburst
     crumbs_profile_taxonomy = CRUMBS_PROFILING.out.profile_taxonomy
 }

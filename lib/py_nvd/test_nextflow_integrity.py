@@ -230,11 +230,42 @@ def test_crumbs_report_exporter_consumes_only_taxon_evidence() -> None:
         "emit: kreport",
     )
     missing = [
-        fragment for fragment in expected_module_fragments if fragment not in crumbs_module
+        fragment
+        for fragment in expected_module_fragments
+        if fragment not in crumbs_module
     ]
 
     assert not missing, "modules/crumbs.nf missing: " + ", ".join(missing)
     assert (
         "EXPORT_CRUMBS_TAXONOMIC_REPORTS(ESTIMATE_CRUMBS_PROFILE.out.taxa)"
+        in crumbs_subworkflow
+    )
+
+
+def test_crumbs_taxburst_renders_from_taxon_evidence() -> None:
+    """CRUMBS Taxburst should retain the complete taxon evidence hierarchy."""
+    crumbs_module = (ROOT / "modules" / "crumbs.nf").read_text(encoding="utf-8")
+    crumbs_subworkflow = (ROOT / "subworkflows" / "crumbs_profiling.nf").read_text(
+        encoding="utf-8",
+    )
+
+    expected_module_fragments = (
+        "process RENDER_CRUMBS_TAXBURST",
+        "tuple val(sample_id), path(taxa_tsv)",
+        "render_multisample_taxburst.py",
+        "--input-format crumbs",
+        '--summary "${sample_id}=${taxa_tsv}"',
+        "--output-json",
+        "emit: reports",
+    )
+    missing = [
+        fragment
+        for fragment in expected_module_fragments
+        if fragment not in crumbs_module
+    ]
+
+    assert not missing, "modules/crumbs.nf missing: " + ", ".join(missing)
+    assert (
+        "RENDER_CRUMBS_TAXBURST(ESTIMATE_CRUMBS_PROFILE.out.taxa)"
         in crumbs_subworkflow
     )
