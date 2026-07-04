@@ -4,7 +4,7 @@ include { COUNT_MAPPED_READS    } from "../modules/samtools"
 
 workflow EXTRACT_HUMAN_VIRUSES {
     take:
-    ch_filtered_contigs   // tuple(sample_id, platform, read_structure, fasta) from PREPROCESS_CONTIGS
+    ch_filtered_contigs   // tuple(sample_id, platform, read_structure, fasta) from PROCESS_CONTIGS
     ch_viral_reads        // tuple(sample_id, platform, read_structure, fastq) from DEACON_FILTER_HUMAN_VIRUS_READS
     ch_virus_index        // path: pre-built or freshly-built virus deacon index
     ch_depletion_index    // tuple(use_depletion, path): resolved host/contaminant depletion index or sentinel

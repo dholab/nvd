@@ -1,13 +1,16 @@
 include { MASK_LOW_COMPLEXITY ; FILTER_SHORT_CONTIGS } from "../modules/bbmap"
+include { COLLECT_CONTIGS } from "../modules/contigs"
 
-workflow PREPROCESS_CONTIGS {
+workflow PROCESS_CONTIGS {
     take:
-    ch_assembled_contigs  // tuple(sample_id, platform, read_structure, fasta)
+    ch_assembled_contigs  // tuple(sample_id, platform, read_structure, producer, fasta)
 
     main:
 
+    COLLECT_CONTIGS(ch_assembled_contigs)
+
     MASK_LOW_COMPLEXITY(
-        ch_assembled_contigs
+        COLLECT_CONTIGS.out.fasta
     )
 
     FILTER_SHORT_CONTIGS(
@@ -22,4 +25,5 @@ workflow PREPROCESS_CONTIGS {
 
     emit:
     contigs = ch_filtered_contigs  // tuple(sample_id, platform, read_structure, fasta)
+    contig_lookups = COLLECT_CONTIGS.out.lookup
 }
