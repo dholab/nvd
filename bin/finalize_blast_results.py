@@ -10,7 +10,10 @@ regardless of whether LabKey is enabled.
 
 import argparse
 import csv
+import sqlite3
 from pathlib import Path
+
+MIN_CONTIG_COUNT_COLUMNS = 2
 
 
 def load_contig_counts(contig_counts_path: Path) -> dict[str, str]:
@@ -20,12 +23,27 @@ def load_contig_counts(contig_counts_path: Path) -> dict[str, str]:
         with open(contig_counts_path) as f:
             for line in f:
                 parts = line.strip().split("\t")
-                if len(parts) >= 2:
+                if len(parts) >= MIN_CONTIG_COUNT_COLUMNS:
                     contig_counts[parts[0]] = parts[1]
     return contig_counts
 
 
-def main():
+def load_contig_metadata(contig_lookup_path: Path | None) -> dict[str, dict[str, str]]:
+    """Load contig metadata keyed by stable BLAST query ID."""
+    if contig_lookup_path is None:
+        return {}
+    with sqlite3.connect(contig_lookup_path) as connection:
+        connection.row_factory = sqlite3.Row
+        rows = connection.execute(
+            """
+            select qseqid, evidence_class, producer, contig_id
+            from contigs
+            """,
+        ).fetchall()
+    return {row["qseqid"]: dict(row) for row in rows}
+
+
+def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         description="Enrich merged BLAST results with pipeline metadata.",
     )
@@ -48,6 +66,12 @@ def main():
         help="Output enriched BLAST TSV",
     )
     parser.add_argument(
+        "--contig-lookup",
+        type=Path,
+        default=None,
+        help="Optional per-sample SQLite lookup keyed by qseqid",
+    )
+    parser.add_argument(
         "--total-reads",
         required=True,
         help="Sample-level total input read count",
@@ -67,11 +91,15 @@ def main():
         required=True,
         help="Workflow run identifier",
     )
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     contig_counts = load_contig_counts(args.contig_counts)
+    contigs_by_qseqid = load_contig_metadata(args.contig_lookup)
 
     metadata_columns = [
+        "evidence_class",
+        "producer",
+        "contig_id",
         "mapped_reads",
         "total_reads",
         "blast_db_version",
@@ -88,7 +116,12 @@ def main():
         )
         writer.writeheader()
         for row in reader:
-            row["mapped_reads"] = contig_counts.get(row.get("qseqid", ""), "0")
+            qseqid = row.get("qseqid", "")
+            contig = contigs_by_qseqid.get(qseqid, {})
+            row["evidence_class"] = contig.get("evidence_class", "")
+            row["producer"] = contig.get("producer", "")
+            row["contig_id"] = contig.get("contig_id", "")
+            row["mapped_reads"] = contig_counts.get(qseqid, "0")
             row["total_reads"] = args.total_reads
             row["blast_db_version"] = args.blast_db_version
             row["virus_index_version"] = args.virus_index_version

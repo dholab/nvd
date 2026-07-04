@@ -52,7 +52,6 @@ def run_filterbyname(
         "seqkit",
         "grep",
         "-v",
-        "-n",
         "-f",
         f"{names_file}",
         "-o",

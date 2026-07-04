@@ -28,5 +28,5 @@ workflow LONG_READ_DENOVO_ENSEMBLY {
     }
 
     emit:
-    contigs = ch_long_read_contigs  // tuple(sample_id, platform, read_structure, fasta)
+    contigs = ch_long_read_contigs  // tuple(sample_id, platform, read_structure, producer, fasta)
 }

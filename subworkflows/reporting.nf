@@ -10,6 +10,7 @@ workflow REPORTING {
     ch_read_counts
     ch_contig_sequences
     ch_contig_read_counts
+    ch_contig_lookups
     ch_filtered_bam
     ch_virus_enrichment_stats
     ch_taxonomy_dir
@@ -29,6 +30,7 @@ workflow REPORTING {
     ch_blast_finalize = ch_blast_results
         .join(ch_read_counts, by: 0)
         .join(ch_contig_read_counts, by: 0)
+        .join(ch_contig_lookups, by: 0)
 
     ADD_READ_COUNTS_TO_BLAST(ch_blast_finalize, run_id)
 
