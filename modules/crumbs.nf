@@ -125,3 +125,24 @@ process RENDER_CRUMBS_TAXBURST {
         --output-json "${sample_id}.crumbs.taxburst.json"
     """
 }
+
+process RENDER_MERGED_CRUMBS_TAXBURST {
+
+    label "low"
+
+    input:
+    tuple val(sample_ids), path(taxa_tsvs)
+
+    output:
+    path("crumbs.taxburst.html"), emit: report
+
+    script:
+    def pairs = [sample_ids, taxa_tsvs].transpose().sort { left, right -> left[0] <=> right[0] }
+    def summary_args = pairs.collect { sample_id, taxa_tsv -> "--summary \"${sample_id}=${taxa_tsv}\"" }.join(" ")
+    """
+    render_multisample_taxburst.py \
+        --input-format crumbs \
+        ${summary_args} \
+        --output crumbs.taxburst.html
+    """
+}

@@ -269,3 +269,33 @@ def test_crumbs_taxburst_renders_from_taxon_evidence() -> None:
         "RENDER_CRUMBS_TAXBURST(ESTIMATE_CRUMBS_PROFILE.out.taxa)"
         in crumbs_subworkflow
     )
+
+
+def test_merged_crumbs_taxburst_groups_taxon_evidence() -> None:
+    """Merged CRUMBS Taxburst should retain each sample's complete hierarchy."""
+    crumbs_module = (ROOT / "modules" / "crumbs.nf").read_text(encoding="utf-8")
+    crumbs_subworkflow = (ROOT / "subworkflows" / "crumbs_profiling.nf").read_text(
+        encoding="utf-8",
+    )
+
+    expected_module_fragments = (
+        "process RENDER_MERGED_CRUMBS_TAXBURST",
+        "tuple val(sample_ids), path(taxa_tsvs)",
+        "render_multisample_taxburst.py",
+        "--input-format crumbs",
+        "--output crumbs.taxburst.html",
+        "emit: report",
+    )
+    missing = [
+        fragment
+        for fragment in expected_module_fragments
+        if fragment not in crumbs_module
+    ]
+
+    assert not missing, "modules/crumbs.nf missing: " + ", ".join(missing)
+    assert "ch_merged_taxburst_input = ESTIMATE_CRUMBS_PROFILE.out.taxa" in (
+        crumbs_subworkflow
+    )
+    assert "RENDER_MERGED_CRUMBS_TAXBURST(ch_merged_taxburst_input)" in (
+        crumbs_subworkflow
+    )

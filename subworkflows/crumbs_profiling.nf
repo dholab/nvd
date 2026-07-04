@@ -4,7 +4,8 @@ include {
     PREPARE_NCBI_PROFILE_TAXONOMY ;
     ESTIMATE_CRUMBS_PROFILE ;
     EXPORT_CRUMBS_TAXONOMIC_REPORTS ;
-    RENDER_CRUMBS_TAXBURST
+    RENDER_CRUMBS_TAXBURST ;
+    RENDER_MERGED_CRUMBS_TAXBURST
 } from "../modules/crumbs"
 
 workflow CRUMBS_PROFILING {
@@ -14,15 +15,7 @@ workflow CRUMBS_PROFILING {
     ch_taxonomy_dir
 
     main:
-    ch_requested_blast = ch_blast_results.filter { _sample_id, _blast_tsv ->
-        params.experimental == true
-    }
-
-    ch_requested_bam = ch_filtered_bam.filter { _sample_id, _bam, _bai ->
-        params.experimental == true
-    }
-
-    ch_taxid_inputs = ch_requested_blast
+    ch_taxid_inputs = ch_blast_results
         .map { _sample_id, blast_tsv -> tuple("crumbs", blast_tsv) }
         .groupTuple()
 
@@ -33,12 +26,12 @@ workflow CRUMBS_PROFILING {
         ch_taxonomy_dir,
     )
 
-    SUMMARIZE_CONTIG_COVERAGE(ch_requested_bam)
+    SUMMARIZE_CONTIG_COVERAGE(ch_filtered_bam)
 
     ch_profile_taxonomy = PREPARE_NCBI_PROFILE_TAXONOMY.out.profile_taxonomy
         .map { _profile_id, profile_taxonomy_tsv -> profile_taxonomy_tsv }
 
-    ch_profile_inputs = ch_requested_blast
+    ch_profile_inputs = ch_blast_results
         .join(SUMMARIZE_CONTIG_COVERAGE.out.coverage_summary, by: 0)
         .combine(ch_profile_taxonomy)
         .map { sample_id, blast_tsv, coverage_tsv, profile_taxonomy_tsv ->
@@ -49,6 +42,13 @@ workflow CRUMBS_PROFILING {
     EXPORT_CRUMBS_TAXONOMIC_REPORTS(ESTIMATE_CRUMBS_PROFILE.out.taxa)
     RENDER_CRUMBS_TAXBURST(ESTIMATE_CRUMBS_PROFILE.out.taxa)
 
+    ch_merged_taxburst_input = ESTIMATE_CRUMBS_PROFILE.out.taxa
+        .map { sample_id, taxa_tsv -> tuple("all", sample_id, taxa_tsv) }
+        .groupTuple()
+        .map { _key, sample_ids, taxa_tsvs -> tuple(sample_ids, taxa_tsvs) }
+
+    RENDER_MERGED_CRUMBS_TAXBURST(ch_merged_taxburst_input)
+
     emit:
     contigs = ESTIMATE_CRUMBS_PROFILE.out.contigs
     taxa = ESTIMATE_CRUMBS_PROFILE.out.taxa
@@ -57,5 +57,6 @@ workflow CRUMBS_PROFILING {
     krona = EXPORT_CRUMBS_TAXONOMIC_REPORTS.out.krona
     kreport = EXPORT_CRUMBS_TAXONOMIC_REPORTS.out.kreport
     taxburst = RENDER_CRUMBS_TAXBURST.out.reports
+    merged_taxburst = RENDER_MERGED_CRUMBS_TAXBURST.out.report
     profile_taxonomy = PREPARE_NCBI_PROFILE_TAXONOMY.out.profile_taxonomy
 }

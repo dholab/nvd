@@ -55,8 +55,11 @@ def write_mini_taxdump(taxonomy_dir: Path) -> None:
     (taxonomy_dir / "nodes.dmp").write_text(
         """\
 1\t|\t1\t|\tno rank\t|\t
-10239\t|\t1\t|\tsuperkingdom\t|\t
-10240\t|\t10239\t|\tfamily\t|\t
+10239\t|\t1\t|\tacellular root\t|\t
+2732408\t|\t10239\t|\tphylum\t|\t
+2732506\t|\t2732408\t|\tclass\t|\t
+2732544\t|\t2732506\t|\torder\t|\t
+10240\t|\t2732544\t|\tfamily\t|\t
 10242\t|\t10240\t|\tgenus\t|\t
 10244\t|\t10242\t|\tspecies\t|\t
 10255\t|\t10240\t|\tgenus\t|\t
@@ -68,6 +71,9 @@ def write_mini_taxdump(taxonomy_dir: Path) -> None:
         """\
 1\t|\troot\t|\t\t|\tscientific name\t|
 10239\t|\tViruses\t|\t\t|\tscientific name\t|
+2732408\t|\tNucleocytoviricota\t|\t\t|\tscientific name\t|
+2732506\t|\tPokkesviricetes\t|\t\t|\tscientific name\t|
+2732544\t|\tChitovirales\t|\t\t|\tscientific name\t|
 10240\t|\tPoxviridae\t|\t\t|\tscientific name\t|
 10242\t|\tOrthopoxvirus\t|\t\t|\tscientific name\t|
 10244\t|\tMonkeypox virus\t|\t\t|\tscientific name\t|
@@ -289,6 +295,18 @@ def test_sourmash_tax_metagenome_writes_all_formats_with_strain_taxids(
         assert len(taxids) == len(names)
         assert all(taxids)
         assert 0 <= float(percentage) <= 100  # noqa: PLR2004
+
+
+def test_mini_nvd_taxdump_preserves_noncanonical_virus_root_rank(
+    tmp_path: Path,
+) -> None:
+    """The mini NVD taxonomy should exercise modern NCBI virus ranks."""
+    write_mini_taxdump(tmp_path)
+
+    nodes_text = (tmp_path / "nodes.dmp").read_text(encoding="utf-8")
+
+    assert "10239\t|\t1\t|\tacellular root\t|" in nodes_text
+    assert "10239\t|\t1\t|\tsuperkingdom\t|" not in nodes_text
 
 
 def read_delimited_rows(path: Path, *, delimiter: str) -> list[dict[str, str]]:

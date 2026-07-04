@@ -189,6 +189,111 @@ def test_crumbs_rendering_accumulates_direct_and_duplicate_mass(tmp_path: Path) 
     assert "<count><val>900.0</val></count>" in html
 
 
+def test_merged_crumbs_html_conserves_each_samples_mass(tmp_path: Path) -> None:
+    water = tmp_path / "water.crumbs.taxa.tsv"
+    madison = tmp_path / "madison.crumbs.taxa.tsv"
+    write_crumbs_taxa(
+        water,
+        [
+            {
+                "sample_id": "Water",
+                "taxon_id": "10780",
+                "taxon_name": "Parvoviridae",
+                "rank": "family",
+                "taxpath": "10239|10780",
+                "taxpathsn": "Viruses|Parvoviridae",
+                "rankpath": "acellular root|family",
+                "percentage_emitted": "40",
+            },
+            {
+                "sample_id": "Water",
+                "taxon_id": "10780",
+                "taxon_name": "Parvoviridae",
+                "rank": "family",
+                "taxpath": "10239|10780",
+                "taxpathsn": "Viruses|Parvoviridae",
+                "rankpath": "acellular root|family",
+                "percentage_emitted": "60",
+            },
+        ],
+    )
+    write_crumbs_taxa(
+        madison,
+        [
+            {
+                "sample_id": "Madison",
+                "taxon_id": "11308",
+                "taxon_name": "Orthomyxoviridae",
+                "rank": "family",
+                "taxpath": "10239|11308",
+                "taxpathsn": "Viruses|Orthomyxoviridae",
+                "rankpath": "acellular root|family",
+                "percentage_emitted": "25",
+            },
+            {
+                "sample_id": "Madison",
+                "taxon_id": "10912",
+                "taxon_name": "Rotavirus",
+                "rank": "genus",
+                "taxpath": "10239|10912",
+                "taxpathsn": "Viruses|Rotavirus",
+                "rankpath": "acellular root|genus",
+                "percentage_emitted": "75",
+            },
+        ],
+    )
+
+    html = render_html(
+        [("Water", water), ("Madison", madison)],
+        input_format="crumbs",
+    )
+
+    assert "<count><val>1000.0</val><val>1000.0</val></count>" in html
+    assert '<node name="Parvoviridae">' in html
+    assert "<count><val>1000.0</val><val>0.0</val></count>" in html
+    assert '<node name="Orthomyxoviridae">' in html
+    assert "<count><val>0.0</val><val>250.0</val></count>" in html
+    assert '<node name="Rotavirus">' in html
+
+
+def test_crumbs_rendering_keeps_duplicate_names_with_distinct_taxon_ids(
+    tmp_path: Path,
+) -> None:
+    taxa = tmp_path / "sample.crumbs.taxa.tsv"
+    write_crumbs_taxa(
+        taxa,
+        [
+            {
+                "sample_id": "sample",
+                "taxon_id": "1001",
+                "taxon_name": "Shared name",
+                "rank": "species",
+                "taxpath": "10239|1001",
+                "taxpathsn": "Viruses|Shared name",
+                "rankpath": "acellular root|species",
+                "percentage_emitted": "40",
+            },
+            {
+                "sample_id": "sample",
+                "taxon_id": "1002",
+                "taxon_name": "Shared name",
+                "rank": "species",
+                "taxpath": "10239|1002",
+                "taxpathsn": "Viruses|Shared name",
+                "rankpath": "acellular root|species",
+                "percentage_emitted": "60",
+            },
+        ],
+    )
+
+    html = render_html([("sample", taxa)], input_format="crumbs")
+
+    expected_nodes = 2
+    assert html.count('<node name="Shared name">') == expected_nodes
+    assert "<count><val>400.0</val></count>" in html
+    assert "<count><val>600.0</val></count>" in html
+
+
 def test_merged_html_contains_one_dataset_per_sample(tmp_path: Path) -> None:
     sample_a = tmp_path / "sample_a.csv"
     sample_b = tmp_path / "sample_b.csv"
