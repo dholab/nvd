@@ -15,7 +15,7 @@ include { GATHER_READS            } from "../subworkflows/gather_reads"
 include { PREPROCESS_READS        } from "../subworkflows/preprocess_reads"
 include { SHORT_READ_DENOVO_ASSEMBLY } from "../subworkflows/short_read_denovo_assembly"
 include { LONG_READ_DENOVO_ENSEMBLY  } from "../subworkflows/long_read_denovo_ensembly"
-include { PREPROCESS_CONTIGS      } from "../subworkflows/preprocess_contigs"
+include { PROCESS_CONTIGS         } from "../subworkflows/process_contigs"
 include { EXTRACT_HUMAN_VIRUSES   } from "../subworkflows/extract_human_virus_contigs"
 include { CLASSIFY_WITH_MEGABLAST } from "../subworkflows/classify_with_megablast"
 include { CLASSIFY_WITH_BLASTN    } from "../subworkflows/classify_with_blastn"
@@ -23,7 +23,6 @@ include { RAPID_SCREENING         } from "../subworkflows/rapid_screening"
 include { SAMPLE_SIMILARITY_QC    } from "../subworkflows/sample_similarity_qc"
 include { RAPID_SCREENING_EVAL    } from "../subworkflows/rapid_screening_eval"
 include { REPORTING               } from "../subworkflows/reporting"
-include { COLLECT_CONTIGS         } from "../modules/contigs"
 include { COMPUTE_RUN_CONTEXT ; ENSURE_TAXONOMY } from "../modules/utils"
 
 
@@ -95,18 +94,12 @@ workflow NVD_MAIN {
   ch_assembled_contigs = SHORT_READ_DENOVO_ASSEMBLY.out.contigs
     .mix(LONG_READ_DENOVO_ENSEMBLY.out.contigs)
 
-  COLLECT_CONTIGS(
-    ch_assembled_contigs.map { sample_id, platform, read_structure, fasta ->
-      tuple(sample_id, platform, read_structure, fasta, "spades")
-    }
-  )
-
-  PREPROCESS_CONTIGS(COLLECT_CONTIGS.out.fasta)
+  PROCESS_CONTIGS(ch_assembled_contigs)
 
   ch_run_context = COMPUTE_RUN_CONTEXT.out.run_context
   ch_taxonomy_dir = ENSURE_TAXONOMY.out.taxonomy_dir
   EXTRACT_HUMAN_VIRUSES(
-    PREPROCESS_CONTIGS.out.contigs,
+    PROCESS_CONTIGS.out.contigs,
     PREPROCESS_READS.out.reads,
     PREPROCESS_READS.out.virus_index,
     PREPROCESS_READS.out.depletion_index,
@@ -130,7 +123,7 @@ workflow NVD_MAIN {
     PREPROCESS_READS.out.read_counts,
     EXTRACT_HUMAN_VIRUSES.out.contigs,
     EXTRACT_HUMAN_VIRUSES.out.contig_read_counts,
-    COLLECT_CONTIGS.out.lookup,
+    PROCESS_CONTIGS.out.contig_lookups,
     EXTRACT_HUMAN_VIRUSES.out.filtered_bam,
     PREPROCESS_READS.out.virus_enrichment_stats,
     ch_taxonomy_dir,
