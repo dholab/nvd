@@ -252,10 +252,10 @@ process DEACON_FILTER_CONTIGS {
     maxRetries 2
 
     input:
-    tuple val(sample_id), val(platform), val(read_structure), path(fasta), path(deacon_idx), val(use_depletion), path(depletion_idx)
+    tuple val(sample_id), val(platform), val(read_structure), path(fasta), path(contig_lookup), path(deacon_idx), val(use_depletion), path(depletion_idx)
 
     output:
-    tuple val(sample_id), path("${sample_id}.human_virus.fasta")
+    tuple val(sample_id), val(platform), val(read_structure), path("${sample_id}.human_virus.fasta"), path(contig_lookup)
 
     script:
     def target_deplete_arg = NvdUtils.targetEnrichmentEnabled(params) ? "" : "--deplete"

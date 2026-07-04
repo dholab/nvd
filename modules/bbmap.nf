@@ -211,10 +211,10 @@ process MASK_LOW_COMPLEXITY {
 	memory 8.GB
 
 	input:
-	tuple val(sample_id), val(platform), val(read_structure), path(contigs)
+	tuple val(sample_id), val(platform), val(read_structure), path(contigs), path(contig_lookup)
 
 	output:
-	tuple val(sample_id), val(platform), val(read_structure), path("${sample_id}.masked.fasta")
+	tuple val(sample_id), val(platform), val(read_structure), path("${sample_id}.masked.fasta"), path(contig_lookup)
 
 	script:
 	"""
@@ -247,10 +247,10 @@ process FILTER_SHORT_CONTIGS {
 	memory 8.GB
 
 	input:
-	tuple val(sample_id), val(platform), val(read_structure), path(masked_contigs)
+	tuple val(sample_id), val(platform), val(read_structure), path(masked_contigs), path(contig_lookup)
 
 	output:
-	tuple val(sample_id), val(platform), val(read_structure), path("${sample_id}.short_filtered.fasta")
+	tuple val(sample_id), val(platform), val(read_structure), path("${sample_id}.short_filtered.fasta"), path(contig_lookup)
 
 	script:
 	"""
