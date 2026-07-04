@@ -232,17 +232,18 @@ def read_inputs_manifest(path: Path) -> list[InputFasta]:
         if not required <= set(reader.fieldnames or []):
             msg = "inputs manifest must contain assembler and source_fasta columns"
             raise ValueError(msg)
-        inputs: list[InputFasta] = []
+        rows: list[tuple[str, str]] = []
         for index, row in enumerate(reader):
             assembler = row["assembler"].strip()
             source_fasta = row["source_fasta"].strip()
             if not assembler or not source_fasta:
                 msg = f"inputs manifest row {index + 2} has empty assembler or source_fasta"
                 raise ValueError(msg)
-            inputs.append(
-                InputFasta(index=index, assembler=assembler, path=Path(source_fasta)),
-            )
-        return inputs
+            rows.append((assembler, source_fasta))
+        return [
+            InputFasta(index=index, assembler=assembler, path=Path(source_fasta))
+            for index, (assembler, source_fasta) in enumerate(sorted(rows))
+        ]
 
 
 def initialize_database(path: Path) -> sqlite3.Connection:

@@ -10,7 +10,11 @@ process NORMALIZE_CONTIGS {
     tuple val(sample_id), val(platform), val(read_structure), path("union.representatives.fasta"), path("union.sqlite"), path("union_meta.json"), emit: prepared
 
     script:
-    def manifestRows = assemblers.indices.collect { index -> "printf '%s\\t%s\\n' '${assemblers[index]}' '${contigs[index]}'" }.join("\n")
+    def manifestRows = assemblers.indices
+        .collect { index -> [assembler: assemblers[index], fasta: contigs[index]] }
+        .sort { left, right -> left.assembler <=> right.assembler ?: left.fasta.toString() <=> right.fasta.toString() }
+        .collect { row -> "printf '%s\\t%s\\n' '${row.assembler}' '${row.fasta}'" }
+        .join("\n")
     """
     {
         printf '%s\t%s\n' 'assembler' 'source_fasta'
