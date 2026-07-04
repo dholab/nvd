@@ -95,7 +95,11 @@ workflow NVD_MAIN {
   ch_assembled_contigs = SHORT_READ_DENOVO_ASSEMBLY.out.contigs
     .mix(LONG_READ_DENOVO_ENSEMBLY.out.contigs)
 
-  COLLECT_CONTIGS(ch_assembled_contigs)
+  COLLECT_CONTIGS(
+    ch_assembled_contigs.map { sample_id, platform, read_structure, fasta ->
+      tuple(sample_id, platform, read_structure, fasta, "spades")
+    }
+  )
 
   PREPROCESS_CONTIGS(COLLECT_CONTIGS.out.fasta)
 

@@ -22,6 +22,6 @@ process COLLECT_CONTIGS {
         --output-fasta ${sample_id}.contigs.fasta \
         --contig-lookup ${sample_id}.contigs.sqlite \
         --producer '${producer}' \
-        --evidence-class assembly_contig
+        --long-contig-min-length 10000
     """
 }
