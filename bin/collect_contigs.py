@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Collect SPAdes contigs under stable NVD query IDs."""
+"""Collect assembler contigs under stable NVD query IDs."""
 
 from __future__ import annotations
 
@@ -13,6 +13,8 @@ from typing import TextIO
 
 SAMPLE_ID_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
 WRAP_WIDTH = 80
+SHORT_ASSEMBLY_CONTIG = "short_assembly_contig"
+LONG_ASSEMBLY_CONTIG = "long_assembly_contig"
 
 
 class ContigCollectionError(Exception):
@@ -47,16 +49,26 @@ class CollectedContig:
         return hashlib.sha256(self.sequence.encode()).hexdigest()
 
 
+@dataclass(frozen=True)
+class ContigProducerRun:
+    """Summary of one producer's contig output for one sample."""
+
+    sample_id: str
+    producer: str
+    input_fasta: Path
+    long_contig_min_length: int
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Collect SPAdes contigs under stable NVD query IDs.",
+        description="Collect assembler contigs under stable NVD query IDs.",
     )
     parser.add_argument("--sample-id", required=True)
     parser.add_argument("--input-fasta", required=True, type=Path)
     parser.add_argument("--output-fasta", required=True, type=Path)
     parser.add_argument("--contig-lookup", required=True, type=Path)
-    parser.add_argument("--producer", default="spades")
-    parser.add_argument("--evidence-class", default="assembly_contig")
+    parser.add_argument("--producer", required=True)
+    parser.add_argument("--long-contig-min-length", required=True, type=int)
     return parser.parse_args(argv)
 
 
@@ -95,12 +107,11 @@ def parse_fasta(handle: TextIO) -> list[FastaRecord]:
 def validate_inputs(
     *,
     sample_id: str,
-    evidence_class: str,
     producer: str,
+    long_contig_min_length: int,
 ) -> None:
     for label, value in (
         ("sample_id", sample_id),
-        ("evidence_class", evidence_class),
         ("producer", producer),
     ):
         if not value:
@@ -109,19 +120,29 @@ def validate_inputs(
         if not SAMPLE_ID_RE.match(value):
             msg = f"{label} contains characters unsafe for FASTA key-value labels: {value!r}."
             raise ContigCollectionError(msg)
+    if long_contig_min_length <= 0:
+        msg = "long_contig_min_length must be greater than zero."
+        raise ContigCollectionError(msg)
+
+
+def classify_assembly_contig(length: int, *, long_contig_min_length: int) -> str:
+    """Return the length-based assembly-contig evidence class."""
+    if length >= long_contig_min_length:
+        return LONG_ASSEMBLY_CONTIG
+    return SHORT_ASSEMBLY_CONTIG
 
 
 def collect_contigs(
     records: list[FastaRecord],
     *,
     sample_id: str,
-    evidence_class: str,
     producer: str,
+    long_contig_min_length: int,
 ) -> list[CollectedContig]:
     validate_inputs(
         sample_id=sample_id,
-        evidence_class=evidence_class,
         producer=producer,
+        long_contig_min_length=long_contig_min_length,
     )
 
     seen_contigs: set[str] = set()
@@ -138,7 +159,10 @@ def collect_contigs(
             CollectedContig(
                 qseqid=f"nvdContig1_{sample_id}_{index:06d}",
                 sample_id=sample_id,
-                evidence_class=evidence_class,
+                evidence_class=classify_assembly_contig(
+                    len(record.sequence),
+                    long_contig_min_length=long_contig_min_length,
+                ),
                 producer=producer,
                 contig_id=record.identifier,
                 sequence=record.sequence,
@@ -166,7 +190,12 @@ def write_fasta(path: Path, contigs: list[CollectedContig]) -> None:
             handle.write(f"{wrapped(record.sequence)}\n")
 
 
-def write_contig_lookup(path: Path, contigs: list[CollectedContig]) -> None:
+def write_contig_lookup(
+    path: Path,
+    contigs: list[CollectedContig],
+    *,
+    producer_run: ContigProducerRun,
+) -> None:
     if path.exists():
         path.unlink()
 
@@ -181,6 +210,20 @@ def write_contig_lookup(path: Path, contigs: list[CollectedContig]) -> None:
                 contig_id text not null,
                 length integer not null,
                 sha256 text not null
+            )
+            """,
+        )
+        connection.execute(
+            """
+            create table contig_producer_runs (
+                sample_id text not null,
+                producer text not null,
+                input_fasta text not null,
+                n_contigs integer not null,
+                n_short_assembly_contigs integer not null,
+                n_long_assembly_contigs integer not null,
+                long_contig_min_length integer not null,
+                primary key (sample_id, producer)
             )
             """,
         )
@@ -213,6 +256,32 @@ def write_contig_lookup(path: Path, contigs: list[CollectedContig]) -> None:
         connection.execute(
             "create unique index contigs_contig_id on contigs(contig_id)",
         )
+        connection.execute(
+            """
+            insert into contig_producer_runs (
+                sample_id,
+                producer,
+                input_fasta,
+                n_contigs,
+                n_short_assembly_contigs,
+                n_long_assembly_contigs,
+                long_contig_min_length
+            ) values (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                producer_run.sample_id,
+                producer_run.producer,
+                str(producer_run.input_fasta),
+                len(contigs),
+                sum(
+                    record.evidence_class == SHORT_ASSEMBLY_CONTIG for record in contigs
+                ),
+                sum(
+                    record.evidence_class == LONG_ASSEMBLY_CONTIG for record in contigs
+                ),
+                producer_run.long_contig_min_length,
+            ),
+        )
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -222,11 +291,20 @@ def main(argv: list[str] | None = None) -> None:
     contigs = collect_contigs(
         fasta_records,
         sample_id=args.sample_id,
-        evidence_class=args.evidence_class,
         producer=args.producer,
+        long_contig_min_length=args.long_contig_min_length,
     )
     write_fasta(args.output_fasta, contigs)
-    write_contig_lookup(args.contig_lookup, contigs)
+    write_contig_lookup(
+        args.contig_lookup,
+        contigs,
+        producer_run=ContigProducerRun(
+            sample_id=args.sample_id,
+            producer=args.producer,
+            input_fasta=args.input_fasta,
+            long_contig_min_length=args.long_contig_min_length,
+        ),
+    )
 
 
 if __name__ == "__main__":

@@ -99,7 +99,7 @@ def write_contig_lookup(path: Path) -> None:
             (
                 "nvdContig1_sample-1_000001",
                 "sample-1",
-                "assembly_contig",
+                "short_assembly_contig",
                 "spades",
                 "NODE_1_length_4_cov_1.0",
                 4,
@@ -140,7 +140,7 @@ def test_final_blast_rows_include_collected_contig_metadata(tmp_path: Path) -> N
 
     [row] = read_tsv(output)
     assert row["qseqid"] == "nvdContig1_sample-1_000001"
-    assert row["evidence_class"] == "assembly_contig"
+    assert row["evidence_class"] == "short_assembly_contig"
     assert row["producer"] == "spades"
     assert row["contig_id"] == "NODE_1_length_4_cov_1.0"
     assert row["mapped_reads"] == "7"
