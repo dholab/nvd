@@ -18,6 +18,7 @@ include { LONG_READ_DENOVO_ENSEMBLY  } from "../subworkflows/long_read_denovo_en
 include { PROCESS_CONTIGS         } from "../subworkflows/process_contigs"
 include { SCREEN_CONTIGS          } from "../subworkflows/screen_contigs"
 include { MAP_READS_TO_SCREENED_CONTIGS } from "../subworkflows/map_reads_to_screened_contigs"
+include { SELECT_BLAST_QUERIES  } from "../modules/blast_queries"
 include { CLASSIFY_WITH_MEGABLAST } from "../subworkflows/classify_with_megablast"
 include { CLASSIFY_WITH_BLASTN    } from "../subworkflows/classify_with_blastn"
 include { RAPID_SCREENING         } from "../subworkflows/rapid_screening"
@@ -111,8 +112,12 @@ workflow NVD_MAIN {
     PREPROCESS_READS.out.reads,
   )
 
-  CLASSIFY_WITH_MEGABLAST(
+  SELECT_BLAST_QUERIES(
     SCREEN_CONTIGS.out.contigs,
+  )
+
+  CLASSIFY_WITH_MEGABLAST(
+    SELECT_BLAST_QUERIES.out.queries,
     ch_blast_db_files,
     ch_taxonomy_dir,
   )
@@ -127,7 +132,7 @@ workflow NVD_MAIN {
   REPORTING(
     CLASSIFY_WITH_BLASTN.out.merged_results,
     PREPROCESS_READS.out.read_counts,
-    SCREEN_CONTIGS.out.contigs,
+    SELECT_BLAST_QUERIES.out.queries,
     MAP_READS_TO_SCREENED_CONTIGS.out.contig_read_counts,
     MAP_READS_TO_SCREENED_CONTIGS.out.filtered_bam,
     PREPROCESS_READS.out.virus_enrichment_stats,
