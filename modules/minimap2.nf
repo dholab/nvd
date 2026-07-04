@@ -22,7 +22,7 @@ process MAP_READS_TO_CONTIGS {
     cpus 4
 
     input:
-    tuple val(sample_id), val(platform), path(reads), path(contigs)
+    tuple val(sample_id), val(platform), val(read_structure), path(reads), path(contigs)
 
     output:
     tuple val(sample_id), path("${sample_id}.bam"), path("${sample_id}.bam.bai")
@@ -53,4 +53,41 @@ process MAP_READS_TO_CONTIGS {
         samtools index ${sample_id}.bam
         """
     }
+}
+
+process EXTRACT_UNMAPPED_READS {
+    /* Extract reads that do not map back to screened contigs. */
+
+    tag "${sample_id}"
+    label "medium"
+
+    errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
+    maxRetries 2
+
+    cpus 4
+
+    input:
+    tuple val(sample_id), val(platform), val(read_structure), path(reads), path(contigs)
+
+    output:
+    tuple val(sample_id), val(platform), val(read_structure), path("${sample_id}.mapback_unmapped.fastq.gz"), emit: reads
+    tuple val(sample_id), val(platform), val(read_structure), path("${sample_id}.mapback_unmapped_counts.tsv"), emit: counts
+
+    script:
+    // Platform describes sequencing chemistry; SRA is only an input source.
+    def preset = platform == 'ont'
+        ? "map-ont"
+        : "sr"
+    """
+    minimap2 -ax ${preset} -t ${task.cpus} ${contigs} ${reads} \
+    | samtools view -b -o ${sample_id}.mapback_all.bam
+
+    unmapped_reads=\$(samtools view -c -f 4 ${sample_id}.mapback_all.bam)
+    samtools fastq -f 4 ${sample_id}.mapback_all.bam \
+    | gzip -c > ${sample_id}.mapback_unmapped.fastq.gz
+
+    printf 'sample_id\tplatform\tread_structure\tunmapped_reads\n' > ${sample_id}.mapback_unmapped_counts.tsv
+    printf '${sample_id}\t${platform}\t${read_structure}\t%s\n' "\${unmapped_reads}" >> ${sample_id}.mapback_unmapped_counts.tsv
+    printf 'nvd.mapback_unmapped_reads sample_id=${sample_id} platform=${platform} read_structure=${read_structure} unmapped_reads=%s\n' "\${unmapped_reads}" >&2
+    """
 }
