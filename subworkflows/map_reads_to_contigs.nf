@@ -3,7 +3,7 @@ include { COUNT_MAPPED_READS   } from "../modules/samtools"
 
 workflow MAP_READS_TO_CONTIGS {
     take:
-    ch_screened_contigs   // tuple(sample_id, platform, read_structure, fasta, lookup) from SCREEN_CONTIGS
+    ch_screened_contigs   // tuple(sample_id, platform, read_structure, fasta, lookup) from DEACON_FILTER_CONTIGS
     ch_viral_reads        // tuple(sample_id, platform, read_structure, fastq) from PREPROCESS_READS
 
     main:
