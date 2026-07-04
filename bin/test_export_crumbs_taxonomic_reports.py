@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import csv
+import shutil
+import subprocess
 from typing import TYPE_CHECKING
 
 import pytest
@@ -47,6 +49,12 @@ def write_tsv(path: Path, rows: list[dict[str, object]]) -> Path:
 def read_tsv(path: Path) -> list[dict[str, str]]:
     with path.open(newline="", encoding="utf-8") as handle:
         return list(csv.DictReader(handle, delimiter="\t"))
+
+
+def read_tsv_header(path: Path) -> list[str]:
+    with path.open(newline="", encoding="utf-8") as handle:
+        reader = csv.reader(handle, delimiter="\t")
+        return next(reader)
 
 
 def taxon_row(  # noqa: PLR0913 - explicit taxonomy fixtures are clearer here.
@@ -106,9 +114,9 @@ def test_exports_krona_rows_with_taxburst_rank_columns(tmp_path: Path) -> None:
                 taxon_id=9606,
                 taxon_name="Homo sapiens",
                 rank="species",
-                taxpath="131567|2759|9605|9606",
-                taxpathsn="cellular organisms|Eukaryota|Homo|Homo sapiens",
-                rankpath="no rank|superkingdom|genus|species",
+                taxpath="2759|7711|40674|9443|9604|9605|9606",
+                taxpathsn="Eukaryota|Chordata|Mammalia|Primates|Hominidae|Homo|Homo sapiens",
+                rankpath="superkingdom|phylum|class|order|family|genus|species",
                 percentage_emitted=33.3333333333,
             ),
             taxon_row(
@@ -125,24 +133,109 @@ def test_exports_krona_rows_with_taxburst_rank_columns(tmp_path: Path) -> None:
 
     run_export(tmp_path, taxa_tsv)
 
-    rows = read_tsv(tmp_path / "sample-1.crumbs.krona.tsv")
+    krona_tsv = tmp_path / "sample-1.crumbs.krona.tsv"
+    rows = read_tsv(krona_tsv)
+    assert read_tsv_header(krona_tsv) == [
+        "fraction",
+        "superkingdom",
+        "phylum",
+        "class",
+        "order",
+    ]
     assert rows[0] == {
         "fraction": "0.333333333333",
         "superkingdom": "Eukaryota",
-        "phylum": "",
-        "class": "",
-        "order": "",
-        "family": "",
-        "genus": "Homo",
-        "species": "Homo sapiens",
-        "strain": "",
-        "genome": "",
+        "phylum": "Chordata",
+        "class": "Mammalia",
+        "order": "Primates",
     }
     assert rows[1]["superkingdom"] == "Viruses"
     assert rows[1]["phylum"] == "Cossaviricota"
     assert rows[1]["class"] == "Quintoviricetes"
     assert rows[1]["order"] == "Piccovirales"
-    assert rows[1]["species"] == "Monkeypox virus"
+
+
+def test_krona_header_omits_trailing_blank_ranks_for_taxburst(
+    tmp_path: Path,
+) -> None:
+    taxa_tsv = write_tsv(
+        tmp_path / "sample-1.crumbs.taxa.tsv",
+        [
+            taxon_row(
+                taxon_id=10258,
+                taxon_name="Orf virus",
+                rank="species",
+                taxpath="10239|2732408|2732506|2732544|10240|10255|10258",
+                taxpathsn="Viruses|Nucleocytoviricota|Pokkesviricetes|Chitovirales|Poxviridae|Parapoxvirus|Orf virus",
+                rankpath="superkingdom|phylum|class|order|family|genus|species",
+                percentage_emitted=100.0,
+            ),
+        ],
+    )
+
+    run_export(tmp_path, taxa_tsv)
+
+    krona_tsv = tmp_path / "sample-1.crumbs.krona.tsv"
+    assert read_tsv_header(krona_tsv) == [
+        "fraction",
+        "superkingdom",
+        "phylum",
+        "class",
+        "order",
+        "family",
+        "genus",
+        "species",
+    ]
+    assert (
+        krona_tsv.read_text(encoding="utf-8")
+        .splitlines()[1]
+        .endswith(
+            "\tOrf virus",
+        )
+    )
+
+
+def test_krona_assigns_rankless_taxa_to_unclassified_superkingdom(
+    tmp_path: Path,
+) -> None:
+    taxa_tsv = write_tsv(
+        tmp_path / "sample-1.crumbs.taxa.tsv",
+        [
+            taxon_row(
+                taxon_id=1,
+                taxon_name="root",
+                rank="no rank",
+                taxpath="1",
+                taxpathsn="root",
+                rankpath="no rank",
+                percentage_emitted=100.0,
+            ),
+        ],
+    )
+
+    run_export(tmp_path, taxa_tsv)
+
+    krona_tsv = tmp_path / "sample-1.crumbs.krona.tsv"
+    assert read_tsv_header(krona_tsv) == ["fraction", "superkingdom"]
+    assert read_tsv(krona_tsv) == [
+        {"fraction": "1", "superkingdom": "unclassified"},
+    ]
+
+    taxburst = shutil.which("taxburst")
+    assert taxburst is not None
+    subprocess.run(  # noqa: S603 - exercise the installed TaxBurst CLI compatibility seam.
+        [
+            taxburst,
+            "-F",
+            "krona",
+            str(krona_tsv),
+            "-o",
+            str(tmp_path / "sample-1.crumbs.taxburst.html"),
+            "--save-json",
+            str(tmp_path / "sample-1.crumbs.taxburst.json"),
+        ],
+        check=True,
+    )
 
 
 def test_exports_ancestor_expanded_kreport_with_scaled_profile_mass(

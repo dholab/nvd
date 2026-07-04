@@ -163,21 +163,44 @@ def read_positive_taxa(path: Path, sample_id: str) -> list[TaxonProfileRow]:
     return [row for row in rows if row.percentage_emitted > 0]
 
 
-def krona_row(row: TaxonProfileRow) -> dict[str, str]:
+def krona_values(row: TaxonProfileRow) -> dict[str, str]:
     values = dict.fromkeys(KRONA_RANKS, "")
     for rank, name in zip(row.rankpath, row.taxpathsn, strict=True):
         if rank in values:
             values[rank] = name
-    return {"fraction": f"{row.fraction:.12g}", **values}
+    if not values["superkingdom"]:
+        values["superkingdom"] = "unclassified"
+    return values
+
+
+def taxburst_safe_krona_ranks(rows: Sequence[TaxonProfileRow]) -> list[str]:
+    if not rows:
+        return KRONA_RANKS
+
+    row_values = [krona_values(row) for row in rows]
+    ranks: list[str] = []
+    for rank in KRONA_RANKS:
+        if all(values[rank] for values in row_values):
+            ranks.append(rank)
+            continue
+        break
+    return ranks
+
+
+def krona_row(row: TaxonProfileRow, ranks: Sequence[str]) -> dict[str, str]:
+    values = krona_values(row)
+    selected_values = {rank: values[rank] for rank in ranks}
+    return {"fraction": f"{row.fraction:.12g}", **selected_values}
 
 
 def write_krona(rows: Sequence[TaxonProfileRow], path: Path) -> None:
     with path.open("w", newline="", encoding="utf-8") as handle:
-        fieldnames = ["fraction", *KRONA_RANKS]
+        ranks = taxburst_safe_krona_ranks(rows)
+        fieldnames = ["fraction", *ranks]
         writer = csv.DictWriter(handle, fieldnames=fieldnames, delimiter="\t")
         writer.writeheader()
         for row in rows:
-            writer.writerow(krona_row(row))
+            writer.writerow(krona_row(row, ranks))
 
 
 def add_to_tree(roots: dict[str, TreeNode], row: TaxonProfileRow) -> None:
