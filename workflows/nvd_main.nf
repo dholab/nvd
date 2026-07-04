@@ -23,6 +23,7 @@ include { RAPID_SCREENING         } from "../subworkflows/rapid_screening"
 include { SAMPLE_SIMILARITY_QC    } from "../subworkflows/sample_similarity_qc"
 include { RAPID_SCREENING_EVAL    } from "../subworkflows/rapid_screening_eval"
 include { REPORTING               } from "../subworkflows/reporting"
+include { COLLECT_CONTIGS         } from "../modules/contigs"
 include { COMPUTE_RUN_CONTEXT ; ENSURE_TAXONOMY } from "../modules/utils"
 
 
@@ -94,7 +95,9 @@ workflow NVD_MAIN {
   ch_assembled_contigs = SHORT_READ_DENOVO_ASSEMBLY.out.contigs
     .mix(LONG_READ_DENOVO_ENSEMBLY.out.contigs)
 
-  PREPROCESS_CONTIGS(ch_assembled_contigs)
+  COLLECT_CONTIGS(ch_assembled_contigs)
+
+  PREPROCESS_CONTIGS(COLLECT_CONTIGS.out.fasta)
 
   ch_run_context = COMPUTE_RUN_CONTEXT.out.run_context
   ch_taxonomy_dir = ENSURE_TAXONOMY.out.taxonomy_dir
@@ -123,6 +126,7 @@ workflow NVD_MAIN {
     PREPROCESS_READS.out.read_counts,
     EXTRACT_HUMAN_VIRUSES.out.contigs,
     EXTRACT_HUMAN_VIRUSES.out.contig_read_counts,
+    COLLECT_CONTIGS.out.lookup,
     EXTRACT_HUMAN_VIRUSES.out.filtered_bam,
     PREPROCESS_READS.out.virus_enrichment_stats,
     ch_taxonomy_dir,

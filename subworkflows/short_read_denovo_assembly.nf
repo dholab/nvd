@@ -9,5 +9,5 @@ workflow SHORT_READ_DENOVO_ASSEMBLY {
     ASSEMBLE_WITH_SPADES(ch_short_read_fastqs)
 
     emit:
-    contigs = ASSEMBLE_WITH_SPADES.out  // tuple(sample_id, platform, read_structure, fasta)
+    contigs = ASSEMBLE_WITH_SPADES.out  // tuple(sample_id, platform, read_structure, producer, fasta)
 }

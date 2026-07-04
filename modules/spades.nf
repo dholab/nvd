@@ -10,7 +10,7 @@ process ASSEMBLE_WITH_SPADES {
     tuple val(sample_id), val(platform), val(read_structure), path(reads)
 
     output:
-    tuple val(sample_id), val(platform), val(read_structure), path("${sample_id}.spades.contigs.fasta")
+    tuple val(sample_id), val(platform), val(read_structure), val("spades"), path("${sample_id}.spades.contigs.fasta")
 
     script:
     // Use interleaved mode (--12) only for actual interleaved paired-end reads.
