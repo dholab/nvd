@@ -1,5 +1,6 @@
 include { RUN_SPADES } from "../modules/spades"
-include { RUN_MYLOASM ; RUN_METAMDBG ; RUN_METAFLYE ; CONCAT_LONG_READ_ASSEMBLIES } from "../modules/long_read_assembly"
+include { RUN_MYLOASM ; RUN_METAMDBG ; RUN_METAFLYE } from "../modules/long_read_assembly"
+include { NORMALIZE_CONTIGS ; FIND_CONTAINMENT_DUPLICATES ; EXTRACT_UNIQUE_CONTIGS } from "../modules/contig_union"
 
 workflow LONG_READ_DENOVO_ENSEMBLY {
     take:
@@ -15,13 +16,12 @@ workflow LONG_READ_DENOVO_ENSEMBLY {
         ch_assembler_contigs = RUN_MYLOASM.out.contigs
             .mix(RUN_METAMDBG.out.contigs)
             .mix(RUN_METAFLYE.out.contigs)
-            .map { sample_id, platform, read_structure, _assembler, fasta ->
-                tuple(sample_id, platform, read_structure, fasta)
-            }
-            .groupTuple(by: [0, 1, 2])
+            .groupTuple(by: [0, 1, 2], size: 3)
 
-        CONCAT_LONG_READ_ASSEMBLIES(ch_assembler_contigs)
-        ch_long_read_contigs = CONCAT_LONG_READ_ASSEMBLIES.out.contigs
+        NORMALIZE_CONTIGS(ch_assembler_contigs)
+        FIND_CONTAINMENT_DUPLICATES(NORMALIZE_CONTIGS.out.prepared)
+        EXTRACT_UNIQUE_CONTIGS(FIND_CONTAINMENT_DUPLICATES.out.candidates)
+        ch_long_read_contigs = EXTRACT_UNIQUE_CONTIGS.out.contigs
     } else {
         RUN_SPADES(ch_long_read_fastqs)
         ch_long_read_contigs = RUN_SPADES.out

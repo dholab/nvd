@@ -77,20 +77,3 @@ process RUN_METAFLYE {
     fi
     """
 }
-
-process CONCAT_LONG_READ_ASSEMBLIES {
-
-    tag "${sample_id}"
-    label "medium"
-
-    input:
-    tuple val(sample_id), val(platform), val(read_structure), path(contigs)
-
-    output:
-    tuple val(sample_id), val(platform), val(read_structure), path("${sample_id}.ensembled_contigs.fasta"), emit: contigs
-
-    script:
-    """
-    cat ${contigs} > ${sample_id}.ensembled_contigs.fasta
-    """
-}
