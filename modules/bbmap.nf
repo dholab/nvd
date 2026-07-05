@@ -14,8 +14,7 @@ process MERGE_PAIRS {
 	tuple val(sample_id), val(platform), val(read_structure), path(reads)
 
 	output:
-	tuple val(sample_id), val(platform), val("merged"), val("overlap_merged_pair"), val("overlap_merged_pair"), path("${sample_id}.merged.fastq.gz"), emit: merged
-	tuple val(sample_id), val(platform), val("interleaved"), val("single_read"), val("unmerged_reads"), path("${sample_id}.unmerged.fastq.gz"), emit: unmerged
+	tuple val(sample_id), val(platform), path("${sample_id}.merged.fastq.gz"), path("${sample_id}.unmerged.fastq.gz"), emit: reads
 
 	script:
 	"""

@@ -101,7 +101,8 @@ workflow NVD_MAIN {
 
   PREPARE_BLAST_QUERIES(
     PROCESS_CONTIGS.out.contigs,
-    PREPROCESS_READS.out.reads_for_mapback,
+    PREPROCESS_READS.out.paired_reads_for_mapback,
+    PREPROCESS_READS.out.single_reads_for_mapback,
     PREPROCESS_READS.out.virus_index,
     PREPROCESS_READS.out.depletion_index,
   )

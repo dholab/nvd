@@ -7,7 +7,6 @@ import argparse
 import gzip
 import os
 import re
-import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -32,7 +31,6 @@ class MapbackConfig:
     platform: str
     contigs: Path
     threads: int
-    work_dir: Path
     minimap2_bin: str
     samtools_bin: str
 
@@ -49,6 +47,14 @@ class FastqMappingInput:
 @dataclass(frozen=True)
 class MappedBamFifo:
     """Task-local FIFO carrying mapped BAM records for one FASTQ input."""
+
+    input: FastqMappingInput
+    path: Path
+
+
+@dataclass(frozen=True)
+class UnmappedBamFifo:
+    """Task-local FIFO carrying unmapped BAM records for one FASTQ input."""
 
     input: FastqMappingInput
     path: Path
@@ -79,8 +85,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="One FASTQ input for mapback. Repeat for merged and unmerged paired-derived reads.",
     )
     parser.add_argument("--threads", required=True, type=int)
-    parser.add_argument("--work-dir", type=Path)
     parser.add_argument("--dedup-pos", action="store_true")
+    parser.add_argument("--extract-unmapped", action="store_true")
     parser.add_argument("--minimap2-bin", default="minimap2")
     parser.add_argument("--samtools-bin", default="samtools")
     return parser.parse_args(argv)
@@ -96,7 +102,6 @@ def config_from_args(args: argparse.Namespace) -> MapbackConfig:
         platform=args.platform,
         contigs=args.contigs,
         threads=args.threads,
-        work_dir=args.work_dir or Path(f"{sample_id}.mapback_work"),
         minimap2_bin=args.minimap2_bin,
         samtools_bin=args.samtools_bin,
     )
@@ -170,57 +175,85 @@ def run_mapback(
     inputs: Sequence[FastqMappingInput],
     *,
     dedup_pos: bool,
+    extract_unmapped: bool,
 ) -> None:
-    fifos = create_mapped_bam_fifos(inputs, config.work_dir)
+    mapped_fifos = create_mapped_bam_fifos(inputs)
+    unmapped_fifos = create_unmapped_bam_fifos(inputs) if extract_unmapped else ()
     commands: list[StartedCommand] = []
-    completed = False
 
     try:
         write_empty_unmapped_outputs(config)
-        header = config.work_dir / "combined.header.sam"
+        header = combined_header_path()
         write_combined_sam_header(config, inputs, header)
 
         commands.extend(
             start_pipeline(
                 "sample BAM writer",
-                sample_bam_commands(config, fifos, header, dedup_pos=dedup_pos),
+                sample_bam_commands(config, mapped_fifos, header, dedup_pos=dedup_pos),
             ),
         )
+
+        if extract_unmapped:
+            for fifo in unmapped_fifos:
+                commands.extend(start_unmapped_fastq_writer(config, fifo))
+
         mapper_threads = threads_per_mapper(config.threads, len(inputs))
-        for fifo in fifos:
-            commands.extend(start_fastq_mapper(config, fifo, mapper_threads))
+        for mapped_fifo in mapped_fifos:
+            commands.extend(
+                start_fastq_mapper(
+                    config,
+                    mapped_fifo,
+                    matching_unmapped_fifo(mapped_fifo, unmapped_fifos),
+                    mapper_threads,
+                ),
+            )
 
         wait_all_or_stop(commands)
         index_bam(config)
-        write_empty_unmapped_counts(config)
-        completed = True
+        write_unmapped_counts(config, inputs)
     finally:
         terminate_running(commands)
-        remove_mapped_bam_fifos(fifos)
-        if completed:
-            shutil.rmtree(config.work_dir, ignore_errors=True)
+        remove_fifos(mapped_fifos)
+        remove_fifos(unmapped_fifos)
+        combined_header_path().unlink(missing_ok=True)
 
 
 def create_mapped_bam_fifos(
     inputs: Sequence[FastqMappingInput],
-    work_dir: Path,
 ) -> tuple[MappedBamFifo, ...]:
-    work_dir.mkdir(parents=True, exist_ok=True)
     fifos = tuple(
         MappedBamFifo(
             input=input_,
-            path=work_dir / f"{input_.read_group_id}.mapped.bam.fifo",
+            path=mapped_bam_fifo_path(input_.read_group_id),
         )
         for input_ in inputs
     )
+    create_fifos(fifos)
+    return fifos
+
+
+def create_unmapped_bam_fifos(
+    inputs: Sequence[FastqMappingInput],
+) -> tuple[UnmappedBamFifo, ...]:
+    fifos = tuple(
+        UnmappedBamFifo(
+            input=input_,
+            path=unmapped_bam_fifo_path(input_.read_group_id),
+        )
+        for input_ in inputs
+    )
+    create_fifos(fifos)
+    return fifos
+
+
+def create_fifos(fifos: Sequence[MappedBamFifo | UnmappedBamFifo]) -> None:
     for fifo in fifos:
         if fifo.path.exists():
             fifo.path.unlink()
         os.mkfifo(fifo.path)
-    return fifos
 
 
-def remove_mapped_bam_fifos(fifos: Sequence[MappedBamFifo]) -> None:
+def remove_fifos(fifos: Sequence[MappedBamFifo | UnmappedBamFifo]) -> None:
     for fifo in fifos:
         fifo.path.unlink(missing_ok=True)
 
@@ -234,11 +267,20 @@ def write_empty_unmapped_outputs(config: MapbackConfig) -> None:
             handle.write(b"")
 
 
-def write_empty_unmapped_counts(config: MapbackConfig) -> None:
+def write_unmapped_counts(
+    config: MapbackConfig,
+    inputs: Sequence[FastqMappingInput],
+) -> None:
     header = "sample_id\tplatform\tevidence_class\tunmapped_reads\n"
-    for evidence_class in EVIDENCE_CLASSES:
-        row = f"{config.sample_id}\t{config.platform}\t{evidence_class}\t0\n"
-        unmapped_counts_path(config.sample_id, evidence_class).write_text(
+    for input_ in inputs:
+        unmapped_reads = count_fastq_records(
+            unmapped_fastq_path(config.sample_id, input_.evidence_class),
+        )
+        row = (
+            f"{config.sample_id}\t{config.platform}\t{input_.evidence_class}"
+            f"\t{unmapped_reads}\n"
+        )
+        unmapped_counts_path(config.sample_id, input_.evidence_class).write_text(
             header + row,
             encoding="utf-8",
         )
@@ -327,23 +369,28 @@ def sample_bam_commands(
 def start_fastq_mapper(
     config: MapbackConfig,
     fifo: MappedBamFifo,
+    unmapped_fifo: UnmappedBamFifo | None,
     threads: int,
 ) -> list[StartedCommand]:
+    view_command = [
+        config.samtools_bin,
+        "view",
+        "-u",
+        "-F",
+        "4",
+        "-o",
+        str(fifo.path),
+    ]
+    if unmapped_fifo is not None:
+        view_command += ["-U", str(unmapped_fifo.path)]
+    view_command += ["-"]
+
     minimap2 = subprocess.Popen(  # noqa: S603
         minimap2_command(config, fifo.input, threads),
         stdout=subprocess.PIPE,
     )
     mapped = subprocess.Popen(  # noqa: S603
-        [
-            config.samtools_bin,
-            "view",
-            "-u",
-            "-F",
-            "4",
-            "-o",
-            str(fifo.path),
-            "-",
-        ],
+        view_command,
         stdin=minimap2.stdout,
     )
     if minimap2.stdout is not None:
@@ -356,17 +403,43 @@ def start_fastq_mapper(
         ),
         StartedCommand(
             name=f"samtools mapped BAM {fifo.input.read_group_id}",
-            command=[
-                config.samtools_bin,
-                "view",
-                "-u",
-                "-F",
-                "4",
-                "-o",
-                str(fifo.path),
-                "-",
-            ],
+            command=view_command,
             process=mapped,
+        ),
+    ]
+
+
+def start_unmapped_fastq_writer(
+    config: MapbackConfig,
+    fifo: UnmappedBamFifo,
+) -> list[StartedCommand]:
+    fastq_command = [config.samtools_bin, "fastq", str(fifo.path)]
+    gzip_command = ["gzip", "-c"]
+    gzip_output = unmapped_fastq_path(config.sample_id, fifo.input.evidence_class)
+
+    fastq = subprocess.Popen(  # noqa: S603
+        fastq_command,
+        stdout=subprocess.PIPE,
+    )
+    gzip_handle = gzip_output.open("wb")
+    gzip_process = subprocess.Popen(  # noqa: S603
+        gzip_command,
+        stdin=fastq.stdout,
+        stdout=gzip_handle,
+    )
+    gzip_handle.close()
+    if fastq.stdout is not None:
+        fastq.stdout.close()
+    return [
+        StartedCommand(
+            name=f"samtools unmapped FASTQ {fifo.input.read_group_id}",
+            command=fastq_command,
+            process=fastq,
+        ),
+        StartedCommand(
+            name=f"gzip unmapped FASTQ {fifo.input.read_group_id}",
+            command=gzip_command,
+            process=gzip_process,
         ),
     ]
 
@@ -457,6 +530,28 @@ def threads_per_mapper(total_threads: int, input_count: int) -> int:
     return max(1, total_threads // (input_count + 1))
 
 
+def matching_unmapped_fifo(
+    mapped_fifo: MappedBamFifo,
+    unmapped_fifos: Sequence[UnmappedBamFifo],
+) -> UnmappedBamFifo | None:
+    for unmapped_fifo in unmapped_fifos:
+        if unmapped_fifo.input.read_group_id == mapped_fifo.input.read_group_id:
+            return unmapped_fifo
+    return None
+
+
+def combined_header_path() -> Path:
+    return Path(".mapback.combined.header.sam")
+
+
+def mapped_bam_fifo_path(read_group_id: str) -> Path:
+    return Path(f".mapback.{read_group_id}.mapped.bam.fifo")
+
+
+def unmapped_bam_fifo_path(read_group_id: str) -> Path:
+    return Path(f".mapback.{read_group_id}.unmapped.bam.fifo")
+
+
 def sample_bam_path(config: MapbackConfig) -> Path:
     return Path(f"{config.sample_id}.bam")
 
@@ -471,6 +566,11 @@ def unmapped_counts_path(sample_id: str, evidence_class: str) -> Path:
 
 def index_bam(config: MapbackConfig) -> None:
     run_checked([config.samtools_bin, "index", str(sample_bam_path(config))])
+
+
+def count_fastq_records(path: Path) -> int:
+    with gzip.open(path, "rt", encoding="utf-8") as handle:
+        return sum(1 for _line in handle) // 4
 
 
 def run_checked(command: list[str]) -> None:
@@ -492,6 +592,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         config,
         inputs,
         dedup_pos=bool(args.dedup_pos),
+        extract_unmapped=bool(args.extract_unmapped),
     )
 
 
