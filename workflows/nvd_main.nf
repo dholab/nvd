@@ -32,11 +32,13 @@ workflow NVD_MAIN {
   // Validate required params. BLAST DB is only required when assembled contigs
   // can reach BLAST classification.
   def requires_blast_db = !(params.skip_assembly || params.skip_blast)
-  assert (!requires_blast_db || (params.blast_db && file(params.blast_db).isDirectory())) && (params.virus_index || params.virus_index_url || params.virus_reference_fasta) : """
+  def target_enrichment_enabled = NvdUtils.targetEnrichmentEnabled(params)
+  def has_target_enrichment_index = NvdUtils.hasTargetEnrichmentIndex(params)
+  assert (!requires_blast_db || (params.blast_db && file(params.blast_db).isDirectory())) && (!target_enrichment_enabled || has_target_enrichment_index) : """
     One or more required parameters are missing or point to non-existent files:
 
       blast_db                        -> ${requires_blast_db ? params.blast_db : 'not required when skip_assembly or skip_blast is enabled'}
-      virus_index / virus_index_url / virus_reference_fasta: at least one must be set
+      target enrichment index source  -> ${target_enrichment_enabled ? 'virus_index / virus_index_url / virus_reference_fasta: at least one must be set' : 'not required when target enrichment is disabled'}
 
     Please supply the above in your `-c nextflow.config` or via `-params-file`.
     """

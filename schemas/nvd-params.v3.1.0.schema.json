@@ -119,6 +119,11 @@
       "default": null,
       "description": "Custom vertebrate-infecting virus FASTA to build and union with other virus indexes. Providing this enables virus read enrichment."
     },
+    "no_enrichment": {
+      "type": "boolean",
+      "default": false,
+      "description": "Disable target enrichment even when virus_index, virus_index_url, or virus_reference_fasta is set."
+    },
     "virus_kmer_size": {
       "type": "integer",
       "default": 31,

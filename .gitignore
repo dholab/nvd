@@ -65,6 +65,7 @@
 !/assets/grouped_ont_barcode_samplesheet.csv
 !/assets/test_samplesheet.csv
 !/assets/human_viruses_taxlist.txt.zst
+!/assets/empty_deacon.k31w1.idx
 
 # docs
 !/docs

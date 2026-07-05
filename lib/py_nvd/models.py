@@ -165,6 +165,11 @@ class NvdParams(BaseModel):
         description="Custom vertebrate-infecting virus FASTA for building an enrichment index",
         json_schema_extra={"category": "Databases"},
     )
+    no_enrichment: bool = Field(
+        default=False,
+        description="Disable target enrichment even when a virus index source is provided",
+        json_schema_extra={"category": "Databases"},
+    )
     virus_kmer_size: int = Field(
         31,
         description="K-mer size for building a custom virus enrichment index",

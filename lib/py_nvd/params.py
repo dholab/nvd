@@ -359,6 +359,7 @@ def _generate_yaml_template(path: Path, schema: dict, schema_url: str) -> None:
             "virus_index",
             "virus_index_url",
             "virus_reference_fasta",
+            "no_enrichment",
             "virus_kmer_size",
             "virus_window_size",
             "virus_abs_threshold",

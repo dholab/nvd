@@ -525,6 +525,7 @@ class TestNvdParamsDefaults:
 
     def test_default_virus_index_sources(self) -> None:
         """Virus enrichment has no index source by default."""
+        assert NvdParams().no_enrichment is False
         assert NvdParams().virus_index is None
         assert NvdParams().virus_index_url is None
         assert NvdParams().virus_reference_fasta is None
@@ -532,6 +533,15 @@ class TestNvdParamsDefaults:
         assert NvdParams().virus_window_size == 1
         assert NvdParams().virus_abs_threshold == 1
         assert NvdParams().virus_rel_threshold == 0.0
+
+    def test_no_enrichment_param(self) -> None:
+        """The no-enrichment override is propagated with Nextflow underscore naming."""
+        p = NvdParams(no_enrichment=True)
+        cmd = p.to_nextflow_args(Path("/pipeline"))
+
+        no_enrichment_idx = cmd.index("--no_enrichment")
+        assert cmd[no_enrichment_idx + 1] == "true"
+        assert "--no-enrichment" not in cmd
 
     def test_default_sourmash_reference_sources(self) -> None:
         """Experimental sourmash reference profiling is off by default."""

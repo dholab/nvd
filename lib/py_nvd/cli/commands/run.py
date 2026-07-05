@@ -198,6 +198,12 @@ def run(
         help="Custom vertebrate-infecting virus FASTA for building an enrichment index",
         rich_help_panel=PANEL_DATABASES,
     ),
+    no_enrichment: bool | None = typer.Option(
+        None,
+        "--no-enrichment",
+        help="Disable target enrichment even when an index source is configured",
+        rich_help_panel=PANEL_DATABASES,
+    ),
     sourmash_ref_path: Path | None = typer.Option(
         None,
         "--sourmash-ref-path",
@@ -602,6 +608,7 @@ def run(
         "virus_index": virus_index,
         "virus_index_url": virus_index_url,
         "virus_reference_fasta": virus_reference_fasta,
+        "no_enrichment": no_enrichment,
         "virus_kmer_size": virus_kmer_size,
         "virus_window_size": virus_window_size,
         "virus_abs_threshold": virus_abs_threshold,

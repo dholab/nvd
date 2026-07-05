@@ -128,6 +128,7 @@ process ADD_READ_COUNTS_TO_BLAST {
   tuple val(sample_id), path("${sample_id}_blast.final.tsv")
 
   script:
+  def virus_index_version = NvdUtils.targetEnrichmentEnabled(params) ? params.virus_index_version : "not_used"
   """
   finalize_blast_results.py \\
       --blast-tsv ${blast_tsv} \\
@@ -135,7 +136,7 @@ process ADD_READ_COUNTS_TO_BLAST {
       --output ${sample_id}_blast.final.tsv \\
       --total-reads ${total_reads} \\
       --blast-db-version '${params.blast_db_version}' \\
-      --virus-index-version '${params.virus_index_version}' \\
+      --virus-index-version '${virus_index_version}' \\
       --run-id '${run_id}'
   """
 }

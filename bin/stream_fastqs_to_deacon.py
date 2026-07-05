@@ -40,6 +40,7 @@ class DeaconStreamConfig:
     threads: int
     abs_threshold: int
     rel_threshold: float
+    deplete: bool
     deacon_bin: str
 
 
@@ -64,6 +65,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--threads", type=int, default=1)
     parser.add_argument("--abs-threshold", type=int, default=1)
     parser.add_argument("--rel-threshold", type=float, default=0.0)
+    parser.add_argument("--deplete", action="store_true")
     parser.add_argument("--deacon-bin", default="deacon")
     return parser.parse_args(argv)
 
@@ -90,6 +92,7 @@ def config_from_args(args: argparse.Namespace) -> DeaconStreamConfig:
         threads=args.threads,
         abs_threshold=args.abs_threshold,
         rel_threshold=args.rel_threshold,
+        deplete=args.deplete,
         deacon_bin=args.deacon_bin,
     )
 
@@ -201,7 +204,7 @@ def stream_files_to_fifo(
 
 
 def deacon_command(config: DeaconStreamConfig, inputs: tuple[Path, ...]) -> list[str]:
-    return [
+    command = [
         config.deacon_bin,
         "filter",
         "--threads",
@@ -217,6 +220,9 @@ def deacon_command(config: DeaconStreamConfig, inputs: tuple[Path, ...]) -> list
         str(config.index),
         *(str(path) for path in inputs),
     ]
+    if config.deplete:
+        command.insert(2, "--deplete")
+    return command
 
 
 def subprocess_deacon_runner(command: list[str]) -> subprocess.CompletedProcess[str]:

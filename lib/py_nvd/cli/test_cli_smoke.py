@@ -171,6 +171,27 @@ def test_run_accepts_skip_stage_flags(tmp_path: Path) -> None:
     assert "--skip-blast" not in result.output
 
 
+def test_run_accepts_no_enrichment_flag(tmp_path: Path) -> None:
+    """Hyphenated CLI flag maps to the underscore Nextflow param."""
+    samplesheet = tmp_path / "samples.csv"
+    samplesheet.write_text("sample_id,srr,platform,fastq1,fastq2\n", encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        [
+            "run",
+            "--samplesheet",
+            str(samplesheet),
+            "--no-enrichment",
+            "--dry-run",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "--no_enrichment" in result.output
+    assert "--no-enrichment" not in result.output
+
+
 def test_samplesheet_generate_sanitizes_illumina_ids(tmp_path: Path) -> None:
     fastq_dir = tmp_path / "fastqs"
     fastq_dir.mkdir()

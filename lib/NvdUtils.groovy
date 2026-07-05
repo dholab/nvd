@@ -43,6 +43,24 @@ class NvdUtils {
         validateLabkeyParams(params, requiredParams, 'NVD BLAST reporting')
     }
 
+    /**
+     * Returns true when any target-enrichment index source has been configured.
+     */
+    public static boolean hasTargetEnrichmentIndex(params) {
+        return params.virus_index || params.virus_index_url || params.virus_reference_fasta
+    }
+
+    /**
+     * Resolve the effective target enrichment mode.
+     *
+     * Target enrichment is enabled when an index source is configured unless
+     * no_enrichment explicitly disables it.
+     */
+    public static boolean targetEnrichmentEnabled(params) {
+        def disabled = parseOptionalBool(params.no_enrichment) ?: false
+        return hasTargetEnrichmentIndex(params) && !disabled
+    }
+
     // -------------------------------------------------------------------------
     // Private helpers
     // -------------------------------------------------------------------------
@@ -93,5 +111,22 @@ class NvdUtils {
             |""".stripMargin()
 
         throw new IllegalStateException(message)
+    }
+
+    private static Boolean parseOptionalBool(value) {
+        if (value == null) {
+            return null
+        }
+        if (value instanceof Boolean) {
+            return value
+        }
+        def normalized = value.toString().trim().toLowerCase()
+        if (['true', '1', 'yes', 'y', 'on'].contains(normalized)) {
+            return true
+        }
+        if (['false', '0', 'no', 'n', 'off'].contains(normalized)) {
+            return false
+        }
+        throw new IllegalArgumentException("Expected boolean-like value for no_enrichment, got '${value}'")
     }
 }

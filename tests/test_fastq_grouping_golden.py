@@ -124,6 +124,7 @@ def stream_config(
         threads=1,
         abs_threshold=1,
         rel_threshold=0.0,
+        deplete=False,
         deacon_bin="deacon",
     )
 

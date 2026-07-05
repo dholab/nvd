@@ -148,8 +148,8 @@ process DEACON_BUILD_VIRUS_INDEX_FROM_FASTA {
     """
 }
 
-process DEACON_FILTER_HUMAN_VIRUS_READS {
-    /* Extract human virus reads from resolved read bundles. */
+process DEACON_ENRICH_TARGET_READS {
+    /* Extract target reads from resolved read bundles, or pass all reads through when target enrichment is disabled. */
 
     tag "${meta.id}"
     label "medium"
@@ -158,7 +158,7 @@ process DEACON_FILTER_HUMAN_VIRUS_READS {
     maxRetries 2
 
     input:
-    tuple val(meta), path(read_files, stageAs: "reads??????/*"), path(deacon_idx)
+    tuple val(meta), path(read_files, stageAs: "reads??????/*"), path(deacon_idx), val(target_enrichment_enabled)
 
     output:
     tuple val(meta.id), val(meta.platform), val(meta.deacon_read_structure), path("${meta.id}.human_virus.fastq.gz"), emit: reads
@@ -169,9 +169,11 @@ process DEACON_FILTER_HUMAN_VIRUS_READS {
     def r1_count = meta.r1_count as int
     def r1_files = files.take(r1_count)
     def r2_files = files.drop(r1_count)
+    def deplete_arg = target_enrichment_enabled ? "" : "--deplete"
     if (meta.read_mode == "single" && r1_files.size() == 1)
         """
         deacon filter \
+            ${deplete_arg} \
             --threads ${task.cpus} \
             --abs-threshold ${params.virus_abs_threshold} \
             --rel-threshold ${params.virus_rel_threshold} \
@@ -183,6 +185,7 @@ process DEACON_FILTER_HUMAN_VIRUS_READS {
     else if (meta.read_mode == "paired" && r1_files.size() == 1 && r2_files.size() == 1)
         """
         deacon filter \
+            ${deplete_arg} \
             --threads ${task.cpus} \
             --abs-threshold ${params.virus_abs_threshold} \
             --rel-threshold ${params.virus_rel_threshold} \
@@ -199,6 +202,7 @@ process DEACON_FILTER_HUMAN_VIRUS_READS {
         stream_fastqs_to_deacon.py \
             --sample-id ${meta.id} \
             --index ${deacon_idx} \
+            ${deplete_arg} \
             --reads-list reads.list \
             --threads ${task.cpus} \
             --abs-threshold ${params.virus_abs_threshold} \
@@ -215,6 +219,7 @@ process DEACON_FILTER_HUMAN_VIRUS_READS {
         stream_fastqs_to_deacon.py \
             --sample-id ${meta.id} \
             --index ${deacon_idx} \
+            ${deplete_arg} \
             --r1-list r1.list \
             --r2-list r2.list \
             --threads ${task.cpus} \
@@ -253,11 +258,13 @@ process DEACON_FILTER_CONTIGS {
     tuple val(sample_id), path("${sample_id}.human_virus.fasta")
 
     script:
+    def target_deplete_arg = NvdUtils.targetEnrichmentEnabled(params) ? "" : "--deplete"
     if (use_depletion)
         """
         set -euo pipefail
 
         deacon filter \
+            ${target_deplete_arg} \
             --threads ${task.cpus} \
             --abs-threshold ${params.virus_abs_threshold} \
             --rel-threshold ${params.virus_rel_threshold} \
@@ -275,6 +282,7 @@ process DEACON_FILTER_CONTIGS {
     else
         """
         deacon filter \
+            ${target_deplete_arg} \
             --threads ${task.cpus} \
             --abs-threshold ${params.virus_abs_threshold} \
             --rel-threshold ${params.virus_rel_threshold} \

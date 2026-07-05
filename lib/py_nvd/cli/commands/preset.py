@@ -211,6 +211,11 @@ def preset_register(
         "--virus-reference-fasta",
         help="Custom vertebrate-infecting virus FASTA for enrichment",
     ),
+    no_enrichment: bool | None = typer.Option(
+        None,
+        "--no-enrichment",
+        help="Disable target enrichment even when an index source is configured",
+    ),
     virus_kmer_size: int | None = typer.Option(
         None,
         "--virus-kmer-size",
@@ -288,6 +293,7 @@ def preset_register(
         "virus_index": virus_index,
         "virus_index_url": virus_index_url,
         "virus_reference_fasta": virus_reference_fasta,
+        "no_enrichment": no_enrichment,
         "virus_kmer_size": virus_kmer_size,
         "virus_window_size": virus_window_size,
         "virus_abs_threshold": virus_abs_threshold,

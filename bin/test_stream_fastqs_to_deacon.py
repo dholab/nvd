@@ -208,6 +208,7 @@ def config(
         threads=1,
         abs_threshold=1,
         rel_threshold=0.0,
+        deplete=False,
         deacon_bin=str(deacon_bin),
     )
 
@@ -547,6 +548,7 @@ def test_cli_list_files_are_supported(
         str(tmp_path / "out.fastq.gz"),
         "--summary",
         str(tmp_path / "summary.json"),
+        "--deplete",
         "--reads-list",
         str(reads_list),
     ]
@@ -556,6 +558,7 @@ def test_cli_list_files_are_supported(
     loaded = config_from_args(parsed)
 
     assert loaded.reads == reads
+    assert loaded.deplete is True
     assert capsys.readouterr().err == ""
 
 
@@ -652,6 +655,7 @@ def real_deacon_config(  # noqa: PLR0913
         threads=1,
         abs_threshold=1,
         rel_threshold=0.0,
+        deplete=False,
         deacon_bin=deacon,
     )
 
