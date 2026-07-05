@@ -35,19 +35,19 @@ process MAP_SINGLE_READS {
     def should_dedup_pos = params.dedup || params.dedup_pos
     if (should_dedup_pos) {
         """
-        minimap2 -ax ${preset} -t ${task.cpus} ${contigs} ${reads} \\
-        | samtools view -b -F 4 \\
-        | samtools collate -@ ${task.cpus} -O -u - \\
-        | samtools fixmate -@ ${task.cpus} -m -u - - \\
-        | samtools sort -@ ${task.cpus} -u - \\
+        minimap2 -ax ${preset} -t ${task.cpus} ${contigs} ${reads} \
+        | samtools view -b -F 4 \
+        | samtools collate -@ ${task.cpus} -O -u - \
+        | samtools fixmate -@ ${task.cpus} -m -u - - \
+        | samtools sort -@ ${task.cpus} -u - \
         | samtools markdup -@ ${task.cpus} -s -r --duplicate-count - ${sample_id}.bam
 
         samtools index ${sample_id}.bam
         """
     } else {
         """
-        minimap2 -ax ${preset} -t ${task.cpus} ${contigs} ${reads} \\
-        | samtools view -b -F 4 \\
+        minimap2 -ax ${preset} -t ${task.cpus} ${contigs} ${reads} \
+        | samtools view -b -F 4 \
         | samtools sort -@ ${task.cpus} -o ${sample_id}.bam
 
         samtools index ${sample_id}.bam
@@ -66,38 +66,34 @@ process MAP_PAIRED_READS {
     cpus 4
 
     input:
-    tuple val(sample_id), val(platform), val(read_structure), path(reads), path(contigs)
+    tuple val(sample_id), val(platform), path(contigs), val(evidence_classes), val(read_group_ids), path(reads)
 
     output:
     tuple val(sample_id), path("${sample_id}.bam"), path("${sample_id}.bam.bai"), emit: bam
+    tuple val(sample_id), val(platform), val("overlap_merged_pair"), path("${sample_id}.overlap_merged_pair.mapback_unmapped.fastq.gz"), emit: overlap_unmapped_reads
+    tuple val(sample_id), val(platform), val("single_read"), path("${sample_id}.single_read.mapback_unmapped.fastq.gz"), emit: single_unmapped_reads
+    tuple val(sample_id), val(platform), val("overlap_merged_pair"), path("${sample_id}.overlap_merged_pair.mapback_unmapped_counts.tsv"), emit: overlap_unmapped_counts
+    tuple val(sample_id), val(platform), val("single_read"), path("${sample_id}.single_read.mapback_unmapped_counts.tsv"), emit: single_unmapped_counts
 
     script:
-    // Platform describes sequencing chemistry; SRA is only an input source.
-    def preset = platform == 'ont'
-        ? "map-ont"
-        : "sr"
     def should_dedup_pos = params.dedup || params.dedup_pos
-    def read_group = "@RG\\tID:unmerged_reads\\tSM:${sample_id}\\tDS:evidence_class=single_read"
-    if (should_dedup_pos) {
-        """
-        minimap2 -ax ${preset} -R '${read_group}' -t ${task.cpus} ${contigs} ${reads} \
-        | samtools view -b -F 4 \
-        | samtools collate -@ ${task.cpus} -O -u - \
-        | samtools fixmate -@ ${task.cpus} -m -u - - \
-        | samtools sort -@ ${task.cpus} -u - \
-        | samtools markdup -@ ${task.cpus} -s -r --duplicate-count - ${sample_id}.bam
-
-        samtools index ${sample_id}.bam
-        """
-    } else {
-        """
-        minimap2 -ax ${preset} -R '${read_group}' -t ${task.cpus} ${contigs} ${reads} \
-        | samtools view -b -F 4 \
-        | samtools sort -@ ${task.cpus} -o ${sample_id}.bam
-
-        samtools index ${sample_id}.bam
-        """
-    }
+    def fastq_input_args = [evidence_classes, read_group_ids, reads]
+        .transpose()
+        .collect { evidence_class, read_group_id, read_path ->
+            "--fastq-input '${evidence_class}' '${read_group_id}' ${read_path}"
+        }
+        .join(" ")
+    def dedup_flag = should_dedup_pos ? "--dedup-pos" : ""
+    """
+    map_paired_reads_to_contigs.py \
+        --sample-id '${sample_id}' \
+        --platform '${platform}' \
+        --contigs ${contigs} \
+        --threads ${task.cpus} \
+        --work-dir ${sample_id}.mapback_work \
+        ${dedup_flag} \
+        ${fastq_input_args}
+    """
 }
 
 process EXTRACT_UNMAPPED_READS {

@@ -5,7 +5,7 @@ include { DEACON_BUILD_INDEX_FROM_FASTA                   } from "../modules/dea
 include { DEACON_UNION_INDEXES                            } from "../modules/deacon"
 include { DEACON_ENRICH_TARGET_READS                     } from "../modules/deacon"
 include { DEACON_DEPLETE                                  } from "../modules/deacon"
-include { DEDUP_WITH_CLUMPIFY ; TRIM_ADAPTERS ; FILTER_READS ; REPAIR_PAIRS } from "../modules/bbmap"
+include { MERGE_PAIRS ; DEDUP_WITH_CLUMPIFY ; TRIM_ADAPTERS ; FILTER_READS ; REPAIR_PAIRS } from "../modules/bbmap"
 
 workflow PREPROCESS_READS {
     take:
@@ -132,8 +132,24 @@ workflow PREPROCESS_READS {
     ch_repaired = REPAIR_PAIRS(ch_branched_for_repair.interleaved)
     ch_preprocessed = ch_repaired.mix(ch_branched_for_repair.other)
 
+    if (params.merge_pairs) {
+        MERGE_PAIRS(ch_repaired)
+        ch_paired_reads_for_mapback = MERGE_PAIRS.out.merged.mix(MERGE_PAIRS.out.unmerged)
+    } else {
+        ch_paired_reads_for_mapback = ch_repaired.map { sample_id, platform, read_structure, reads ->
+            tuple(sample_id, platform, read_structure, "single_read", "unmerged_reads", reads)
+        }
+    }
+
+    ch_other_reads_for_mapback = ch_branched_for_repair.other.map { sample_id, platform, read_structure, reads ->
+        tuple(sample_id, platform, read_structure, "single_read", "single_read", reads)
+    }
+
+    ch_reads_for_mapback = ch_paired_reads_for_mapback.mix(ch_other_reads_for_mapback)
+
     emit:
     reads = ch_preprocessed
+    reads_for_mapback = ch_reads_for_mapback
     read_counts = ch_read_counts
     virus_enrichment_stats = DEACON_ENRICH_TARGET_READS.out.stats
     virus_index = ch_virus_index

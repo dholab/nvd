@@ -5,7 +5,7 @@ include { CONTIG_READ_MAPBACK } from "./contig_read_mapback"
 workflow PREPARE_BLAST_QUERIES {
     take:
     ch_contigs          // tuple(sample_id, platform, read_structure, fasta, lookup) from PROCESS_CONTIGS
-    ch_viral_reads      // tuple(sample_id, platform, read_structure, fastq) from PREPROCESS_READS
+    ch_viral_reads      // tuple(sample_id, platform, read_structure, evidence_class, read_group_id, fastq) from PREPROCESS_READS
     ch_virus_index      // path: pre-built or freshly-built virus deacon index
     ch_depletion_index  // tuple(use_depletion, path): resolved host/contaminant depletion index or sentinel
 
