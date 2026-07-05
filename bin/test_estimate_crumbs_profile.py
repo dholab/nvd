@@ -521,6 +521,164 @@ def test_conflicting_repeated_blast_assignments_fail_loudly(
         run_estimator(tmp_path, blast, coverage, taxonomy)
 
 
+def test_profile_assignment_uses_strongest_blast_row_when_tasks_disagree(
+    tmp_path: Path,
+) -> None:
+    blast = write_tsv(
+        tmp_path / "sample-1.blast.final.tsv",
+        [
+            "sample",
+            "qseqid",
+            "evalue",
+            "bitscore",
+            "adjusted_taxid",
+            "adjusted_taxid_name",
+            "adjusted_taxid_rank",
+            "adjustment_method",
+        ],
+        [
+            {
+                "sample": "sample-1",
+                "qseqid": "contig-a",
+                "evalue": "1.98e-9",
+                "bitscore": "58.4",
+                "adjusted_taxid": 10244,
+                "adjusted_taxid_name": "Monkeypox virus",
+                "adjusted_taxid_rank": "species",
+                "adjustment_method": "dominant",
+            },
+            {
+                "sample": "sample-1",
+                "qseqid": "contig-a",
+                "evalue": "8.09e-44",
+                "bitscore": "172.0",
+                "adjusted_taxid": 10258,
+                "adjusted_taxid_name": "Orf virus",
+                "adjusted_taxid_rank": "species",
+                "adjustment_method": "lca",
+            },
+        ],
+    )
+    coverage = write_tsv(
+        tmp_path / "sample-1.crumbs.coverage.tsv",
+        COVERAGE_FIELDS,
+        [
+            {
+                "sample_id": "sample-1",
+                "qseqid": "contig-a",
+                "contig_length": 100,
+                "covered_bases_1x": 100,
+                "breadth_1x": 1.0,
+                "raw_aligned_bases": 100,
+                "mean_depth_full": 1.0,
+                "median_depth_full": 1,
+                "median_depth_positive": 1,
+                "depth_p95": 1,
+                "depth_p99": 1,
+                "max_depth": 1,
+                "crumbs_p95": 100,
+                "crumbs_p99": 100,
+            },
+        ],
+    )
+    taxonomy = write_tsv(
+        tmp_path / "profile_taxonomy.tsv",
+        TAXONOMY_FIELDS,
+        [
+            {
+                "taxon_id": 10244,
+                "taxon_name": "Monkeypox virus",
+                "rank": "species",
+                "taxpath": "10239|10244",
+                "taxpathsn": "Viruses|Monkeypox virus",
+                "rankpath": "superkingdom|species",
+            },
+            {
+                "taxon_id": 10258,
+                "taxon_name": "Orf virus",
+                "rank": "species",
+                "taxpath": "10239|10258",
+                "taxpathsn": "Viruses|Orf virus",
+                "rankpath": "superkingdom|species",
+            },
+        ],
+    )
+
+    run_estimator(tmp_path, blast, coverage, taxonomy)
+
+    [contig] = read_tsv(tmp_path / "sample-1.crumbs.contigs.tsv")
+    assert contig["adjusted_taxid"] == "10258"
+    assert contig["adjusted_taxid_name"] == "Orf virus"
+    assert contig["adjustment_method"] == "lca"
+
+
+def test_equally_strong_conflicting_profile_assignments_fail_loudly(
+    tmp_path: Path,
+) -> None:
+    _blast, coverage, taxonomy = write_minimal_inputs(
+        tmp_path,
+        taxonomy_rows=[
+            {
+                "taxon_id": 9606,
+                "taxon_name": "Homo sapiens",
+                "rank": "species",
+                "taxpath": "131567|2759|9605|9606",
+                "taxpathsn": "cellular organisms|Eukaryota|Homo|Homo sapiens",
+                "rankpath": "no rank|superkingdom|genus|species",
+            },
+            {
+                "taxon_id": 9598,
+                "taxon_name": "Pan troglodytes",
+                "rank": "species",
+                "taxpath": "131567|2759|9596|9598",
+                "taxpathsn": "cellular organisms|Eukaryota|Pan|Pan troglodytes",
+                "rankpath": "no rank|superkingdom|genus|species",
+            },
+        ],
+    )
+    blast = write_tsv(
+        tmp_path / "sample-1.blast.final.tsv",
+        [
+            "sample",
+            "qseqid",
+            "evalue",
+            "bitscore",
+            "adjusted_taxid",
+            "adjusted_taxid_name",
+            "adjusted_taxid_rank",
+            "adjustment_method",
+        ],
+        [
+            {
+                "sample": "sample-1",
+                "qseqid": "contig-a",
+                "evalue": "1e-20",
+                "bitscore": "200.0",
+                "adjusted_taxid": 9606,
+                "adjusted_taxid_name": "Homo sapiens",
+                "adjusted_taxid_rank": "species",
+                "adjustment_method": "dominant",
+            },
+            {
+                "sample": "sample-1",
+                "qseqid": "contig-a",
+                "evalue": "1e-20",
+                "bitscore": "200.0",
+                "adjusted_taxid": 9598,
+                "adjusted_taxid_name": "Pan troglodytes",
+                "adjusted_taxid_rank": "species",
+                "adjustment_method": "dominant",
+            },
+        ],
+    )
+
+    with pytest.raises(
+        CrumbsProfileError,
+        match="conflicting assignments for contigs: contig-a",
+    ):
+        run_estimator(tmp_path, blast, coverage, taxonomy)
+
+
 def test_duplicate_coverage_rows_fail_loudly(
     tmp_path: Path,
 ) -> None:

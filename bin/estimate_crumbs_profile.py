@@ -29,6 +29,7 @@ ASSIGNMENT_COLUMNS = [
     "adjusted_taxid_rank",
     "adjustment_method",
 ]
+PROFILE_ASSIGNMENT_SCORE_COLUMNS = ["bitscore", "evalue"]
 COVERAGE_COLUMNS = [
     "sample_id",
     "qseqid",
@@ -104,6 +105,8 @@ FLOAT_TOLERANCE = 1e-9
 BLAST_SCHEMA_OVERRIDES = {
     "sample": pl.String,
     "qseqid": pl.String,
+    "evalue": pl.Float64,
+    "bitscore": pl.Float64,
     "adjusted_taxid": pl.String,
     "adjusted_taxid_name": pl.String,
     "adjusted_taxid_rank": pl.String,
@@ -208,8 +211,15 @@ def collapse_assignments(blast: pl.DataFrame, sample_id: str) -> pl.DataFrame:
     if "sample" in blast.columns:
         blast = blast.filter(pl.col("sample").cast(pl.String) == sample_id)
 
-    assignments = blast.select(ASSIGNMENT_COLUMNS).with_columns(
-        pl.all().cast(pl.String),
+    has_score_columns = all(
+        column in blast.columns for column in PROFILE_ASSIGNMENT_SCORE_COLUMNS
+    )
+    selected_columns = [
+        *ASSIGNMENT_COLUMNS,
+        *(PROFILE_ASSIGNMENT_SCORE_COLUMNS if has_score_columns else []),
+    ]
+    assignments = blast.select(selected_columns).with_columns(
+        *[pl.col(column).cast(pl.String) for column in ASSIGNMENT_COLUMNS],
     )
 
     if assignments.is_empty():
@@ -233,6 +243,35 @@ def collapse_assignments(blast: pl.DataFrame, sample_id: str) -> pl.DataFrame:
             + ", ".join(qseqids)
         )
         raise CrumbsProfileError(message)
+
+    if has_score_columns:
+        missing_score_values = assignments.filter(
+            pl.any_horizontal(
+                [
+                    pl.col(column).is_null()
+                    for column in PROFILE_ASSIGNMENT_SCORE_COLUMNS
+                ],
+            ),
+        )
+        if missing_score_values.height > 0:
+            qseqids = missing_score_values.get_column("qseqid").to_list()
+            message = (
+                "BLAST assignments contain null score values for contigs: "
+                + ", ".join(qseqids)
+            )
+            raise CrumbsProfileError(message)
+
+        assignments = (
+            assignments.with_columns(
+                pl.max("bitscore").over("qseqid").alias("_best_bitscore"),
+            )
+            .filter(pl.col("bitscore") == pl.col("_best_bitscore"))
+            .with_columns(
+                pl.min("evalue").over("qseqid").alias("_best_evalue"),
+            )
+            .filter(pl.col("evalue") == pl.col("_best_evalue"))
+            .select(ASSIGNMENT_COLUMNS)
+        )
 
     conflicts = assignments.unique(maintain_order=True).group_by("qseqid").len()
     conflicting_qseqids = conflicts.filter(pl.col("len") > 1).get_column("qseqid")
