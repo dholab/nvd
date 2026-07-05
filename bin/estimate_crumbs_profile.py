@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -498,13 +499,21 @@ def build_taxon_table(
             ),
         )
     )
-    total_taxon_crumbs = grouped.get_column("taxon_crumbs").sum()
+    taxon_crumb_rows = list(
+        grouped.select("taxon_id", "taxon_crumbs").iter_rows(named=True),
+    )
+    total_taxon_crumbs = math.fsum(row["taxon_crumbs"] for row in taxon_crumb_rows)
     if total_taxon_crumbs > 0:
-        grouped = grouped.with_columns(
-            (pl.col("taxon_crumbs") / total_taxon_crumbs * 100).alias(
-                "percentage_emitted",
-            ),
+        percentages = pl.DataFrame(
+            {
+                "taxon_id": [row["taxon_id"] for row in taxon_crumb_rows],
+                "percentage_emitted": [
+                    row["taxon_crumbs"] / total_taxon_crumbs * 100
+                    for row in taxon_crumb_rows
+                ],
+            },
         )
+        grouped = grouped.join(percentages, on="taxon_id", how="left")
     else:
         grouped = grouped.with_columns(pl.lit(0.0).alias("percentage_emitted"))
 
