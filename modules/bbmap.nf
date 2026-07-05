@@ -14,14 +14,15 @@ process MERGE_PAIRS {
 	tuple val(sample_id), val(platform), val(read_structure), path(reads)
 
 	output:
-	tuple val(sample_id), val(platform), path("${sample_id}.merged.fastq.gz"), path("${sample_id}.unmerged.fastq.gz"), emit: reads
+	tuple val(sample_id), val(platform), val("single"), val("overlap_merged_pair"), path("${sample_id}.overlap_merged_pair.fastq.gz"), emit: merged
+	tuple val(sample_id), val(platform), val("single"), val("single_read"), path("${sample_id}.single_read.fastq.gz"), emit: unmerged
 
 	script:
 	"""
 	bbmerge.sh \
 	in=${reads} \
-	out=${sample_id}.merged.fastq.gz \
-	outu=${sample_id}.unmerged.fastq.gz \
+	out=${sample_id}.overlap_merged_pair.fastq.gz \
+	outu=${sample_id}.single_read.fastq.gz \
 	interleaved=t \
 	threads=${task.cpus} \
 	-eoom
@@ -70,17 +71,17 @@ process DEDUP_WITH_CLUMPIFY {
 	cpus 4
 
 	input:
-	tuple val(sample_id), val(platform), val(read_structure), path(reads)
+	tuple val(sample_id), val(platform), val(read_structure), val(evidence_class), path(reads)
 
 	output:
-	tuple val(sample_id), val(platform), val(read_structure), path("${sample_id}.dedup.fastq.gz")
+	tuple val(sample_id), val(platform), val(read_structure), val(evidence_class), path("${sample_id}.${evidence_class}.dedup.fastq.gz")
 
 	script:
 	def int_flag = read_structure == "interleaved" ? "int=t" : ""
 	"""
 	clumpify.sh \\
 	in=${reads} \\
-	out="${sample_id}.dedup.fastq.gz" \\
+	out="${sample_id}.${evidence_class}.dedup.fastq.gz" \\
 	dedupe=2 \\
 	reorder=p \\
 	subs=2 \\
@@ -103,22 +104,23 @@ process TRIM_ADAPTERS {
 	cpus 4
 
 	input:
-	tuple val(sample_id), val(platform), val(read_structure), path(reads)
+	tuple val(sample_id), val(platform), val(read_structure), val(evidence_class), path(reads)
 
 	output:
-	tuple val(sample_id), val(platform), val(read_structure), path("${sample_id}.trimmed.fastq.gz")
+	tuple val(sample_id), val(platform), val(read_structure), val(evidence_class), path("${sample_id}.${evidence_class}.trimmed.fastq.gz")
 
 	script:
+	def pair_trim_args = read_structure == "interleaved" ? "tpe tbo" : ""
 	"""
 	bbduk.sh \\
 		in=${reads} \\
-		out=${sample_id}.trimmed.fastq.gz \\
+		out=${sample_id}.${evidence_class}.trimmed.fastq.gz \\
 		ref=adapters \\
 		ktrim=r \\
 		k=23 \\
 		mink=11 \\
 		hdist=1 \\
-		tpe tbo \\
+		${pair_trim_args} \\
 		threads=${task.cpus} \\
 		-eoom
 	"""
@@ -137,10 +139,10 @@ process FILTER_READS {
 	cpus 4
 
 	input:
-	tuple val(sample_id), val(platform), val(read_structure), path(reads), val(min_quality)
+	tuple val(sample_id), val(platform), val(read_structure), val(evidence_class), path(reads), val(min_quality)
 
 	output:
-	tuple val(sample_id), val(platform), val(read_structure), path("${sample_id}.filtered.fastq.gz")
+	tuple val(sample_id), val(platform), val(read_structure), val(evidence_class), path("${sample_id}.${evidence_class}.filtered.fastq.gz")
 
 	script:
 	def max_len_arg = params.max_read_length ? "maxlength=${params.max_read_length}" : ""
@@ -156,7 +158,7 @@ process FILTER_READS {
 	"""
 	bbduk.sh \\
 		in=${reads} \\
-		out=${sample_id}.filtered.fastq.gz \\
+		out=${sample_id}.${evidence_class}.filtered.fastq.gz \\
 		${pair_args} \\
 		${quality_args} \\
 		${entropy_args} \\
@@ -179,17 +181,17 @@ process REPAIR_PAIRS {
 	cpus 4
 
 	input:
-	tuple val(sample_id), val(platform), val(read_structure), path(reads)
+	tuple val(sample_id), val(platform), val(read_structure), val(evidence_class), path(reads)
 
 	output:
-	tuple val(sample_id), val(platform), val(read_structure), path("${sample_id}.repaired.fastq.gz")
+	tuple val(sample_id), val(platform), val(read_structure), val(evidence_class), path("${sample_id}.${evidence_class}.repaired.fastq.gz")
 
 	script:
 	"""
 	repair.sh \\
 		in=${reads} \\
-		out=${sample_id}.repaired.fastq.gz \\
-		outs=${sample_id}.singletons.fastq.gz \\
+		out=${sample_id}.${evidence_class}.repaired.fastq.gz \\
+		outs=${sample_id}.${evidence_class}.singletons.fastq.gz \\
 		interleaved=t \\
 		repair=t \\
 		threads=${task.cpus} \\

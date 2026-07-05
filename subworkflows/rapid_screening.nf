@@ -1,8 +1,9 @@
 include { SOURMASH_SKETCH_QUERY_METAGENOME ; SOURMASH_FETCH_REF_SKETCH ; SOURMASH_SKETCH_REF_FASTA ; SOURMASH_GATHER_QUERY_METAGENOME ; SOURMASH_FETCH_LINEAGES ; SOURMASH_STAGE_REFERENCE ; SOURMASH_TAX_METAGENOME } from "../modules/sourmash"
+include { CONCAT_READS_AS_FASTA } from "../modules/seqkit"
 
 workflow RAPID_SCREENING {
     take:
-    ch_preprocessed_reads  // tuple(sample_id, platform, read_structure, fastq)
+    ch_preprocessed_reads  // tuple(sample_id, platform, read_structure, evidence_class, fastq)
 
     main:
     def is_http_url = { value -> value && value ==~ /(?i)^https?:\/\/.+/ }
@@ -47,12 +48,19 @@ workflow RAPID_SCREENING {
     // Avoid scheduling sourmash for read files that cannot produce a query
     // sketch. Empty gzip FASTQ outputs are not zero-byte files, so this is a
     // cheap scheduling guard rather than a FASTQ record-count predicate.
-    ch_sketchable_reads = ch_preprocessed_reads.filter { _sample_id, _platform, _read_structure, reads ->
+    ch_sketchable_shards = ch_preprocessed_reads.filter { _sample_id, _platform, _read_structure, _evidence_class, reads ->
         def read_file = file(reads)
         read_file.name.endsWith(".gz") ? read_file.size() > 28 : read_file.size() > 0
     }
 
-    SOURMASH_SKETCH_QUERY_METAGENOME(ch_sketchable_reads)
+    ch_grouped_shards = ch_sketchable_shards
+        .groupTuple(by: [0, 1, 2])
+        .map { sample_id, platform, read_structure, _evidence_classes, reads ->
+            tuple(sample_id, platform, read_structure, reads)
+        }
+
+    CONCAT_READS_AS_FASTA(ch_grouped_shards)
+    SOURMASH_SKETCH_QUERY_METAGENOME(CONCAT_READS_AS_FASTA.out)
 
     ch_gather_inputs = SOURMASH_SKETCH_QUERY_METAGENOME.out.query_sketches
         .combine(SOURMASH_STAGE_REFERENCE.out.ref_sketch)

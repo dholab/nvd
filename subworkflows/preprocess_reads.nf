@@ -64,14 +64,35 @@ workflow PREPROCESS_READS {
             tuple(sample_id, summary.seqs_in.toString())
         }
 
+    ch_virus_reads_by_layout = ch_virus_reads.branch { _id, platform, read_structure, _reads ->
+        mergeable: platform == "illumina" && read_structure == "interleaved"
+        other: true
+    }
+
+    ch_reads_to_merge = params.merge_pairs
+        ? ch_virus_reads_by_layout.mergeable
+        : channel.empty()
+
+    MERGE_PAIRS(ch_reads_to_merge)
+
+    ch_read_shards = params.merge_pairs
+        ? MERGE_PAIRS.out.merged
+            .mix(MERGE_PAIRS.out.unmerged)
+            .mix(ch_virus_reads_by_layout.other.map { sample_id, platform, read_structure, reads ->
+                tuple(sample_id, platform, read_structure, "single_read", reads)
+            })
+        : ch_virus_reads.map { sample_id, platform, read_structure, reads ->
+            tuple(sample_id, platform, read_structure, "single_read", reads)
+        }
+
     // 2a. Dedup
     def should_dedup_seq = params.dedup || params.dedup_seq
     ch_after_dedup = should_dedup_seq
-        ? DEDUP_WITH_CLUMPIFY(ch_virus_reads)
-        : ch_virus_reads
+        ? DEDUP_WITH_CLUMPIFY(ch_read_shards)
+        : ch_read_shards
 
     // 2b. Adapter trim (Illumina only)
-    ch_branched_for_trim = ch_after_dedup.branch { _id, platform, _rs, _reads ->
+    ch_branched_for_trim = ch_after_dedup.branch { _id, platform, _rs, _ec, _reads ->
         illumina: platform == "illumina"
         other: true
     }
@@ -113,11 +134,11 @@ workflow PREPROCESS_READS {
     }
 
     // 2d. Independently optional quality/length and low-complexity filters
-    ch_with_quality = ch_after_scrub.map { sample_id, platform, read_structure, reads ->
+    ch_with_quality = ch_after_scrub.map { sample_id, platform, read_structure, evidence_class, reads ->
         def min_qual = platform == "illumina"
             ? params.min_read_quality_illumina
             : params.min_read_quality_nanopore
-        tuple(sample_id, platform, read_structure, reads, min_qual)
+        tuple(sample_id, platform, read_structure, evidence_class, reads, min_qual)
     }
     def should_filter_reads = params.filter_reads || params.filter_low_complexity_reads
     ch_after_filter = should_filter_reads
@@ -125,25 +146,50 @@ workflow PREPROCESS_READS {
         : ch_after_scrub
 
     // 2e. Repair pairs (interleaved only)
-    ch_branched_for_repair = ch_after_filter.branch { _id, _p, read_structure, _r ->
+    ch_branched_for_repair = ch_after_filter.branch { _id, _p, read_structure, _ec, _r ->
         interleaved: read_structure == "interleaved"
         other: true
     }
     ch_repaired = REPAIR_PAIRS(ch_branched_for_repair.interleaved)
-    ch_preprocessed = ch_repaired.mix(ch_branched_for_repair.other)
+    ch_preprocessed_shards = ch_repaired.mix(ch_branched_for_repair.other)
 
-    ch_paired_reads_for_mapback = params.merge_pairs
-        ? MERGE_PAIRS(ch_repaired).reads.map { sample_id, platform, merged_reads, unmerged_reads ->
-            tuple(sample_id, platform, [merged_reads, unmerged_reads])
-        }
-        : ch_repaired.map { sample_id, platform, _read_structure, reads ->
-            tuple(sample_id, platform, [reads])
+    ch_mapback_groups = ch_preprocessed_shards
+        .groupTuple(by: [0, 1])
+        .map { sample_id, platform, read_structures, evidence_classes, reads ->
+            def rows = [read_structures, evidence_classes, reads].transpose().collect { row ->
+                [read_structure: row[0], evidence_class: row[1], reads: row[2]]
+            }
+            tuple(sample_id, platform, rows)
         }
 
-    ch_single_reads_for_mapback = ch_branched_for_repair.other
+    ch_mapback_by_layout = ch_mapback_groups.branch { _sample_id, _platform, rows ->
+        paired: rows.any { row -> row.read_structure == "interleaved" || row.evidence_class == "overlap_merged_pair" }
+        single: true
+    }
+
+    ch_paired_reads_for_mapback = ch_mapback_by_layout.paired.map { sample_id, platform, rows ->
+        def nonempty_rows = rows.findAll { row -> file(row.reads).countFastq() > 0 }
+        def overlap_merged_pair_reads = nonempty_rows.findAll { row -> row.evidence_class == "overlap_merged_pair" }.collect { row -> row.reads }
+        def single_read_reads = nonempty_rows.findAll { row -> row.evidence_class == "single_read" }.collect { row -> row.reads }
+        tuple(
+            sample_id,
+            platform,
+            overlap_merged_pair_reads,
+            single_read_reads,
+        )
+    }.filter { _sample_id, _platform, overlap_merged_pair_reads, single_read_reads ->
+        overlap_merged_pair_reads.size() + single_read_reads.size() > 0
+    }
+
+    ch_single_reads_for_mapback = ch_mapback_by_layout.single.flatMap { sample_id, platform, rows ->
+        rows.collect { row -> tuple(sample_id, platform, row.read_structure, row.reads) }
+    }
 
     emit:
-    reads = ch_preprocessed
+    reads = ch_preprocessed_shards.map { sample_id, platform, read_structure, _evidence_class, reads ->
+        tuple(sample_id, platform, read_structure, reads)
+    }
+    read_shards = ch_preprocessed_shards
     paired_reads_for_mapback = ch_paired_reads_for_mapback
     single_reads_for_mapback = ch_single_reads_for_mapback
     read_counts = ch_read_counts

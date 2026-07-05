@@ -68,7 +68,7 @@ workflow NVD_MAIN {
   ch_sourmash_tax_reports = channel.empty()
 
   if (params.experimental == true) {
-    rapid_screening = RAPID_SCREENING(PREPROCESS_READS.out.reads)
+    rapid_screening = RAPID_SCREENING(PREPROCESS_READS.out.read_shards)
     SAMPLE_SIMILARITY_QC(rapid_screening.query_sketches)
     ch_sourmash_gather_csv = rapid_screening.gather_csv
     ch_sourmash_lineages = rapid_screening.lineages
@@ -79,17 +79,22 @@ workflow NVD_MAIN {
   // insufficient for de novo assembly and would otherwise fan out downstream.
   ch_reads_for_assembly = PREPROCESS_READS.out.reads
     .filter { _id, _platform, _read_structure, _fq -> !params.skip_assembly }
-    .map { id, platform, read_structure, fq -> tuple(id, platform, read_structure, fq, file(fq).countFastq()) }
-    .filter { _id, _platform, _read_structure, _fq, count -> count >= 100 }
-    .map { id, platform, read_structure, fq, _count -> tuple(id, platform, read_structure, file(fq)) }
 
   ch_reads_by_platform = ch_reads_for_assembly.branch { _id, platform, _read_structure, _fq ->
     illumina: platform == "illumina"
     long_read: true
   }
 
-  SHORT_READ_DENOVO_ASSEMBLY(ch_reads_by_platform.illumina)
-  LONG_READ_DENOVO_ENSEMBLY(ch_reads_by_platform.long_read)
+  ch_short_read_shards_for_assembly = PREPROCESS_READS.out.read_shards
+    .filter { _id, platform, _read_structure, _evidence_class, _fq -> !params.skip_assembly && platform == "illumina" }
+
+  ch_long_reads_for_assembly = ch_reads_by_platform.long_read
+    .map { id, platform, read_structure, fq -> tuple(id, platform, read_structure, fq, file(fq).countFastq()) }
+    .filter { _id, _platform, _read_structure, _fq, count -> count >= 100 }
+    .map { id, platform, read_structure, fq, _count -> tuple(id, platform, read_structure, file(fq)) }
+
+  SHORT_READ_DENOVO_ASSEMBLY(ch_short_read_shards_for_assembly)
+  LONG_READ_DENOVO_ENSEMBLY(ch_long_reads_for_assembly)
 
   ch_assembled_contigs = SHORT_READ_DENOVO_ASSEMBLY.out.contigs
     .mix(LONG_READ_DENOVO_ENSEMBLY.out.contigs)

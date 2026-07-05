@@ -57,7 +57,7 @@ params.max_read_length = null
 include {{ FILTER_READS }} from '{BBMAP_MODULE}'
 
 workflow {{
-    FILTER_READS(Channel.of(tuple('sample_A', 'illumina', '{read_structure}', file('{reads}'), 20)))
+    FILTER_READS(Channel.of(tuple('sample_A', 'illumina', '{read_structure}', 'single_read', file('{reads}'), 20)))
 }}
 """,
         encoding="utf-8",
@@ -77,7 +77,9 @@ workflow {{
 
     diagnostics = f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}"
     assert completed.returncode == 0, diagnostics
-    outputs = list((tmp_path / "work").glob("**/sample_A.filtered.fastq.gz"))
+    outputs = list(
+        (tmp_path / "work").glob("**/sample_A.single_read.filtered.fastq.gz")
+    )
     assert len(outputs) == 1, outputs
     with gzip.open(outputs[0], "rt", encoding="utf-8") as handle:
         return handle.read()
