@@ -235,6 +235,11 @@ class NvdParams(BaseModel):
         description="Enable all preprocessing steps",
         json_schema_extra={"category": "Preprocessing"},
     )
+    merge_pairs: bool = Field(
+        default=False,
+        description="Merge overlapping paired-end reads before contig mapback",
+        json_schema_extra={"category": "Preprocessing"},
+    )
     dedup: bool = Field(
         default=False,
         description="Deduplicate reads (umbrella: enables both dedup_seq and dedup_pos)",

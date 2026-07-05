@@ -11,18 +11,19 @@ process MERGE_PAIRS {
 	cpus 4
 
 	input:
-	tuple val(sample_id), val(platform), path(reads1), path(reads2)
+	tuple val(sample_id), val(platform), val(read_structure), path(reads)
 
 	output:
-	tuple val(sample_id), val(platform), val("merged"), path("${sample_id}.merged.fastq.gz")
+	tuple val(sample_id), val(platform), val("merged"), val("overlap_merged_pair"), val("overlap_merged_pair"), path("${sample_id}.merged.fastq.gz"), emit: merged
+	tuple val(sample_id), val(platform), val("interleaved"), val("single_read"), val("unmerged_reads"), path("${sample_id}.unmerged.fastq.gz"), emit: unmerged
 
 	script:
 	"""
 	bbmerge.sh \
-	in=`realpath ${reads1}` \
-	in2=`realpath ${reads2}` \
+	in=${reads} \
 	out=${sample_id}.merged.fastq.gz \
 	outu=${sample_id}.unmerged.fastq.gz \
+	interleaved=t \
 	threads=${task.cpus} \
 	-eoom
 	"""
