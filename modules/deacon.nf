@@ -247,19 +247,39 @@ process DEACON_FILTER_CONTIGS {
     maxRetries 2
 
     input:
-    tuple val(sample_id), val(platform), val(read_structure), path(fasta), path(deacon_idx)
+    tuple val(sample_id), val(platform), val(read_structure), path(fasta), path(deacon_idx), val(use_depletion), path(depletion_idx)
 
     output:
     tuple val(sample_id), path("${sample_id}.human_virus.fasta")
 
     script:
-    """
-    deacon filter \
-        --threads ${task.cpus} \
-        --abs-threshold ${params.virus_abs_threshold} \
-        --rel-threshold ${params.virus_rel_threshold} \
-        --output ${sample_id}.human_virus.fasta \
-        ${deacon_idx} \
-        ${fasta}
-    """
+    if (use_depletion)
+        """
+        set -euo pipefail
+
+        deacon filter \
+            --threads ${task.cpus} \
+            --abs-threshold ${params.virus_abs_threshold} \
+            --rel-threshold ${params.virus_rel_threshold} \
+            ${deacon_idx} \
+            ${fasta} \
+        | deacon filter \
+            --deplete \
+            --threads ${task.cpus} \
+            --abs-threshold ${params.host_abs_threshold} \
+            --rel-threshold ${params.host_rel_threshold} \
+            --output ${sample_id}.human_virus.fasta \
+            ${depletion_idx} \
+            -
+        """
+    else
+        """
+        deacon filter \
+            --threads ${task.cpus} \
+            --abs-threshold ${params.virus_abs_threshold} \
+            --rel-threshold ${params.virus_rel_threshold} \
+            --output ${sample_id}.human_virus.fasta \
+            ${deacon_idx} \
+            ${fasta}
+        """
 }

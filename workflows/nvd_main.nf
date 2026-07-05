@@ -74,6 +74,7 @@ workflow NVD_MAIN {
     PREPROCESS_CONTIGS.out.contigs,
     PREPROCESS_CONTIGS.out.viral_reads,
     PREPROCESS_READS.out.virus_index,
+    PREPROCESS_READS.out.depletion_index,
   )
 
   CLASSIFY_WITH_MEGABLAST(

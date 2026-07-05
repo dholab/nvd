@@ -70,32 +70,36 @@ workflow PREPROCESS_READS {
         ? TRIM_ADAPTERS(ch_branched_for_trim.illumina).mix(ch_branched_for_trim.other)
         : ch_after_dedup
 
-    // 2c. Host/contaminant depletion with deacon (optional)
-    def has_host_config = params.host_index || params.host_index_url || params.host_contaminants_fasta
-    if (has_host_config) {
-        ch_local_host_index = params.host_index
+    // 2c. Host/contaminant depletion with deacon (optional). The public
+    // parameter names remain host_* for compatibility, but this channel is the
+    // general depletion index used by both read and contig filtering.
+    def has_depletion_config = params.host_index || params.host_index_url || params.host_contaminants_fasta
+    if (has_depletion_config) {
+        ch_local_depletion_index = params.host_index
             ? Channel.fromPath(params.host_index)
             : Channel.empty()
-        ch_host_fetch_url = (!params.host_index && params.host_index_url)
+        ch_depletion_fetch_url = (!params.host_index && params.host_index_url)
             ? Channel.of(params.host_index_url)
             : Channel.empty()
-        ch_host_contaminants_fasta = params.host_contaminants_fasta
+        ch_depletion_contaminants_fasta = params.host_contaminants_fasta
             ? Channel.fromPath(params.host_contaminants_fasta)
             : Channel.empty()
 
-        DEACON_FETCH_HOST_INDEX(ch_host_fetch_url)
-        DEACON_BUILD_INDEX_FROM_FASTA(ch_host_contaminants_fasta)
+        DEACON_FETCH_HOST_INDEX(ch_depletion_fetch_url)
+        DEACON_BUILD_INDEX_FROM_FASTA(ch_depletion_contaminants_fasta)
 
-        ch_host_index_sources = ch_local_host_index
+        ch_depletion_index_sources = ch_local_depletion_index
             .mix(DEACON_FETCH_HOST_INDEX.out.index)
             .mix(DEACON_BUILD_INDEX_FROM_FASTA.out.index)
             .collect()
 
-        DEACON_UNION_INDEXES(ch_host_index_sources)
-        ch_host_index = DEACON_UNION_INDEXES.out.index
+        DEACON_UNION_INDEXES(ch_depletion_index_sources)
+        ch_depletion_index = DEACON_UNION_INDEXES.out.index
+        ch_depletion_index_option = ch_depletion_index.map { idx -> tuple(true, idx) }
 
-        ch_after_scrub = DEACON_DEPLETE(ch_after_trim.combine(ch_host_index)).reads
+        ch_after_scrub = DEACON_DEPLETE(ch_after_trim.combine(ch_depletion_index)).reads
     } else {
+        ch_depletion_index_option = Channel.value(tuple(false, file("${projectDir}/assets/README.md")))
         ch_after_scrub = ch_after_trim
     }
 
@@ -123,4 +127,5 @@ workflow PREPROCESS_READS {
     read_counts = ch_read_counts
     virus_enrichment_stats = DEACON_FILTER_HUMAN_VIRUS_READS.out.stats
     virus_index = ch_virus_index
+    depletion_index = ch_depletion_index_option
 }
