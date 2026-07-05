@@ -4,7 +4,7 @@ include { COUNT_MAPPED_READS } from "../modules/samtools"
 workflow CONTIG_READ_MAPBACK {
     take:
     ch_screened_contigs   // tuple(sample_id, platform, read_structure, fasta, lookup) from DEACON_FILTER_CONTIGS
-    ch_paired_reads       // tuple(sample_id, platform, paired_read_files) from PREPROCESS_READS
+    ch_paired_reads       // tuple(sample_id, platform, overlap_merged_pair_reads, single_read_reads) from PREPROCESS_READS
     ch_single_reads       // tuple(sample_id, platform, read_structure, fastq) from PREPROCESS_READS
 
     main:
@@ -16,7 +16,9 @@ workflow CONTIG_READ_MAPBACK {
             ch_contigs,
             by: [0, 1]
         )
-        .map { sample_id, platform, paired_read_files, contigs -> tuple(sample_id, platform, contigs, paired_read_files) }
+        .map { sample_id, platform, overlap_merged_pair_reads, single_read_reads, contigs ->
+            tuple(sample_id, platform, contigs, overlap_merged_pair_reads, single_read_reads)
+        }
 
     ch_single_reads_with_contigs = ch_single_reads
         .combine(

@@ -66,7 +66,7 @@ process MAP_PAIRED_READS {
     cpus 4
 
     input:
-    tuple val(sample_id), val(platform), path(contigs), path(reads)
+    tuple val(sample_id), val(platform), path(contigs), path(overlap_merged_pair_reads), path(single_read_reads)
 
     output:
     tuple val(sample_id), path("${sample_id}.bam"), path("${sample_id}.bam.bai"), emit: bam
@@ -77,10 +77,13 @@ process MAP_PAIRED_READS {
 
     script:
     def should_dedup_pos = params.dedup || params.dedup_pos
-    def fastq_input_args = reads.size() == 2
-        ? "--fastq-input 'overlap_merged_pair' 'overlap_merged_pairs' ${reads[0]} " +
-          "--fastq-input 'single_read' 'single_reads' ${reads[1]}"
-        : "--fastq-input 'single_read' 'single_reads' ${reads[0]}"
+    def fastq_input_args = []
+    fastq_input_args.addAll(overlap_merged_pair_reads.collect { read_file ->
+        "--fastq-input 'overlap_merged_pair' 'overlap_merged_pairs' ${read_file}"
+    })
+    fastq_input_args.addAll(single_read_reads.collect { read_file ->
+        "--fastq-input 'single_read' 'single_reads' ${read_file}"
+    })
     def dedup_flag = should_dedup_pos ? "--dedup-pos" : ""
     def unmapped_flag = params.experimental ? "--extract-unmapped" : ""
     """
@@ -91,7 +94,7 @@ process MAP_PAIRED_READS {
         --threads ${task.cpus} \
         ${dedup_flag} \
         ${unmapped_flag} \
-        ${fastq_input_args}
+        ${fastq_input_args.join(" ")}
     """
 }
 

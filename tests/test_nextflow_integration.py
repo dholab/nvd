@@ -429,6 +429,8 @@ def run_nextflow() -> tuple[subprocess.CompletedProcess[str], Path]:
             [
                 "--experimental",
                 "true",
+                "--merge_pairs",
+                "true",
                 "--sourmash_ref_fasta",
                 str(SOURMASH_REF_FASTA),
                 "--sourmash_lineages_path",
