@@ -11,7 +11,7 @@
  *
  * Output is always a coordinate-sorted, indexed BAM file.
  */
-process MAP_READS_TO_CONTIGS {
+process MAP_SINGLE_READS {
 
     tag "${sample_id}"
     label "medium"
@@ -25,7 +25,7 @@ process MAP_READS_TO_CONTIGS {
     tuple val(sample_id), val(platform), val(read_structure), path(reads), path(contigs)
 
     output:
-    tuple val(sample_id), path("${sample_id}.bam"), path("${sample_id}.bam.bai")
+    tuple val(sample_id), path("${sample_id}.bam"), path("${sample_id}.bam.bai"), emit: bam
 
     script:
     // Platform describes sequencing chemistry; SRA is only an input source.
@@ -48,6 +48,51 @@ process MAP_READS_TO_CONTIGS {
         """
         minimap2 -ax ${preset} -t ${task.cpus} ${contigs} ${reads} \\
         | samtools view -b -F 4 \\
+        | samtools sort -@ ${task.cpus} -o ${sample_id}.bam
+
+        samtools index ${sample_id}.bam
+        """
+    }
+}
+
+process MAP_PAIRED_READS {
+
+    tag "${sample_id}"
+    label "medium"
+
+    errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
+    maxRetries 2
+
+    cpus 4
+
+    input:
+    tuple val(sample_id), val(platform), val(read_structure), path(reads), path(contigs)
+
+    output:
+    tuple val(sample_id), path("${sample_id}.bam"), path("${sample_id}.bam.bai"), emit: bam
+
+    script:
+    // Platform describes sequencing chemistry; SRA is only an input source.
+    def preset = platform == 'ont'
+        ? "map-ont"
+        : "sr"
+    def should_dedup_pos = params.dedup || params.dedup_pos
+    def read_group = "@RG\\tID:unmerged_reads\\tSM:${sample_id}\\tDS:evidence_class=single_read"
+    if (should_dedup_pos) {
+        """
+        minimap2 -ax ${preset} -R '${read_group}' -t ${task.cpus} ${contigs} ${reads} \
+        | samtools view -b -F 4 \
+        | samtools collate -@ ${task.cpus} -O -u - \
+        | samtools fixmate -@ ${task.cpus} -m -u - - \
+        | samtools sort -@ ${task.cpus} -u - \
+        | samtools markdup -@ ${task.cpus} -s -r --duplicate-count - ${sample_id}.bam
+
+        samtools index ${sample_id}.bam
+        """
+    } else {
+        """
+        minimap2 -ax ${preset} -R '${read_group}' -t ${task.cpus} ${contigs} ${reads} \
+        | samtools view -b -F 4 \
         | samtools sort -@ ${task.cpus} -o ${sample_id}.bam
 
         samtools index ${sample_id}.bam

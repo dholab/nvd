@@ -1,7 +1,7 @@
-include { MAP_READS_TO_CONTIGS as ALIGN_READS_TO_CONTIGS ; EXTRACT_UNMAPPED_READS } from "../modules/minimap2"
-include { COUNT_MAPPED_READS   } from "../modules/samtools"
+include { MAP_PAIRED_READS ; MAP_SINGLE_READS ; EXTRACT_UNMAPPED_READS } from "../modules/minimap2"
+include { COUNT_MAPPED_READS } from "../modules/samtools"
 
-workflow MAP_READS_TO_CONTIGS {
+workflow CONTIG_READ_MAPBACK {
     take:
     ch_screened_contigs   // tuple(sample_id, platform, read_structure, fasta, lookup) from DEACON_FILTER_CONTIGS
     ch_viral_reads        // tuple(sample_id, platform, read_structure, fastq) from PREPROCESS_READS
@@ -15,9 +15,17 @@ workflow MAP_READS_TO_CONTIGS {
         )
         .map { sample_id, platform, read_structure, reads, contigs -> tuple(sample_id, platform, read_structure, reads, contigs) }
 
-    ALIGN_READS_TO_CONTIGS(ch_reads_with_contigs)
+    ch_reads_by_structure = ch_reads_with_contigs.branch { _sample_id, _platform, read_structure, _reads, _contigs ->
+        paired: read_structure == "interleaved"
+        single: true
+    }
 
-    COUNT_MAPPED_READS(ALIGN_READS_TO_CONTIGS.out)
+    MAP_PAIRED_READS(ch_reads_by_structure.paired)
+    MAP_SINGLE_READS(ch_reads_by_structure.single)
+
+    ch_mapback_bams = MAP_PAIRED_READS.out.bam.mix(MAP_SINGLE_READS.out.bam)
+
+    COUNT_MAPPED_READS(ch_mapback_bams)
 
     if (params.experimental == true) {
         EXTRACT_UNMAPPED_READS(ch_reads_with_contigs)
