@@ -11,16 +11,20 @@ from map_paired_reads_to_contigs import (
     FastqMappingInput,
     MapbackConfig,
     MapbackError,
+    MappedBamFifo,
+    UnmappedBamFifo,
     create_mapped_bam_fifos,
     fastq_mapping_inputs_from_args,
+    mapped_bam_fifo_path,
     minimap2_command,
     minimap2_read_group_arg,
-    remove_mapped_bam_fifos,
+    remove_fifos,
     sam_header_read_group_line,
     sample_bam_commands,
+    start_fastq_mapper,
     threads_per_mapper,
-    write_empty_unmapped_counts,
     write_empty_unmapped_outputs,
+    write_unmapped_counts,
 )
 
 ONE_INPUT_MAPPER_THREADS = 2
@@ -32,7 +36,6 @@ def config(tmp_path: Path) -> MapbackConfig:
         platform="illumina",
         contigs=tmp_path / "contigs.fasta",
         threads=4,
-        work_dir=tmp_path / "sample1.mapback_work",
         minimap2_bin="minimap2",
         samtools_bin="samtools",
     )
@@ -90,20 +93,23 @@ def test_fastq_input_args_reject_duplicate_evidence_classes(tmp_path: Path) -> N
         )
 
 
-def test_mapped_bam_fifos_are_task_local_and_removed(tmp_path: Path) -> None:
+def test_mapped_bam_fifos_are_task_local_hidden_files(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
     input_ = FastqMappingInput(
         evidence_class="single_read",
         read_group_id="unmerged_reads",
         fastq=Path("reads.fastq.gz"),
     )
-    work_dir = tmp_path / "sample1.mapback_work"
 
-    fifos = create_mapped_bam_fifos([input_], work_dir)
+    fifos = create_mapped_bam_fifos([input_])
     try:
-        assert fifos[0].path.parent == work_dir
+        assert fifos[0].path == Path(".mapback.unmerged_reads.mapped.bam.fifo")
         assert stat.S_ISFIFO(fifos[0].path.stat().st_mode)
     finally:
-        remove_mapped_bam_fifos(fifos)
+        remove_fifos(fifos)
 
     assert not fifos[0].path.exists()
 
@@ -115,23 +121,66 @@ def test_sample_bam_commands_name_the_shared_dedup_pass(tmp_path: Path) -> None:
         read_group_id="unmerged_reads",
         fastq=Path("reads.fastq.gz"),
     )
-    fifos = create_mapped_bam_fifos([input_], cfg.work_dir)
-    try:
-        commands = sample_bam_commands(
-            cfg,
-            fifos,
-            cfg.work_dir / "combined.header.sam",
-            dedup_pos=True,
-        )
-    finally:
-        remove_mapped_bam_fifos(fifos)
+    fifos = [MappedBamFifo(input=input_, path=mapped_bam_fifo_path("unmerged_reads"))]
+    commands = sample_bam_commands(
+        cfg,
+        fifos,
+        Path(".mapback.combined.header.sam"),
+        dedup_pos=True,
+    )
 
     flattened = [item for command in commands for item in command]
     assert "markdup" in flattened
-    assert str(cfg.work_dir / "unmerged_reads.mapped.bam.fifo") in flattened
+    assert ".mapback.unmerged_reads.mapped.bam.fifo" in flattened
 
 
-def test_empty_unmapped_outputs_keep_external_evidence_class_header(
+def test_mapper_command_can_split_unmapped_bam_with_samtools_u(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cfg = config(tmp_path)
+    input_ = FastqMappingInput(
+        evidence_class="single_read",
+        read_group_id="single_reads",
+        fastq=Path("reads.fastq.gz"),
+    )
+    mapped_fifo = MappedBamFifo(
+        input=input_,
+        path=Path(".mapback.single_reads.mapped.bam.fifo"),
+    )
+    unmapped_fifo = UnmappedBamFifo(
+        input=input_,
+        path=Path(".mapback.single_reads.unmapped.bam.fifo"),
+    )
+    started_commands = []
+
+    class FakePopen:
+        def __init__(self, command: list[str], **_kwargs: object) -> None:
+            self.command = command
+            self.stdout = None
+            started_commands.append(command)
+
+    monkeypatch.setattr("map_paired_reads_to_contigs.subprocess.Popen", FakePopen)
+
+    commands = start_fastq_mapper(cfg, mapped_fifo, unmapped_fifo, threads=2)
+
+    view_command = commands[1].command
+    assert view_command == [
+        "samtools",
+        "view",
+        "-u",
+        "-F",
+        "4",
+        "-o",
+        ".mapback.single_reads.mapped.bam.fifo",
+        "-U",
+        ".mapback.single_reads.unmapped.bam.fifo",
+        "-",
+    ]
+    assert started_commands[1] == view_command
+
+
+def test_unmapped_counts_are_written_per_external_evidence_class(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -139,20 +188,34 @@ def test_empty_unmapped_outputs_keep_external_evidence_class_header(
     cfg = config(tmp_path)
 
     write_empty_unmapped_outputs(cfg)
-    write_empty_unmapped_counts(cfg)
+    expected_counts = {"overlap_merged_pair": 2, "single_read": 1}
+    for evidence_class, record_count in expected_counts.items():
+        write_fastq_gz(
+            Path(f"sample1.{evidence_class}.mapback_unmapped.fastq.gz"),
+            record_count,
+        )
+    inputs = [
+        FastqMappingInput(
+            evidence_class="overlap_merged_pair",
+            read_group_id="overlap_merged_pairs",
+            fastq=Path("merged.fastq.gz"),
+        ),
+        FastqMappingInput(
+            evidence_class="single_read",
+            read_group_id="single_reads",
+            fastq=Path("single.fastq.gz"),
+        ),
+    ]
+    write_unmapped_counts(cfg, inputs)
 
-    for evidence_class in ("overlap_merged_pair", "single_read"):
+    assert not Path("sample1.mapback_unmapped_counts.tsv").exists()
+    for evidence_class, expected_count in expected_counts.items():
         assert Path(
             f"sample1.{evidence_class}.mapback_unmapped_counts.tsv",
         ).read_text(encoding="utf-8") == (
             "sample_id\tplatform\tevidence_class\tunmapped_reads\n"
-            f"sample1\tillumina\t{evidence_class}\t0\n"
+            f"sample1\tillumina\t{evidence_class}\t{expected_count}\n"
         )
-        with gzip.open(
-            Path(f"sample1.{evidence_class}.mapback_unmapped.fastq.gz"),
-            "rb",
-        ) as handle:
-            assert handle.read() == b""
 
 
 def test_threads_per_mapper_leaves_capacity_for_the_shared_bam_writer() -> None:

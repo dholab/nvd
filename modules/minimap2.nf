@@ -66,7 +66,7 @@ process MAP_PAIRED_READS {
     cpus 4
 
     input:
-    tuple val(sample_id), val(platform), path(contigs), val(evidence_classes), val(read_group_ids), path(reads)
+    tuple val(sample_id), val(platform), path(contigs), path(reads)
 
     output:
     tuple val(sample_id), path("${sample_id}.bam"), path("${sample_id}.bam.bai"), emit: bam
@@ -77,21 +77,20 @@ process MAP_PAIRED_READS {
 
     script:
     def should_dedup_pos = params.dedup || params.dedup_pos
-    def fastq_input_args = [evidence_classes, read_group_ids, reads]
-        .transpose()
-        .collect { evidence_class, read_group_id, read_path ->
-            "--fastq-input '${evidence_class}' '${read_group_id}' ${read_path}"
-        }
-        .join(" ")
+    def fastq_input_args = reads.size() == 2
+        ? "--fastq-input 'overlap_merged_pair' 'overlap_merged_pairs' ${reads[0]} " +
+          "--fastq-input 'single_read' 'single_reads' ${reads[1]}"
+        : "--fastq-input 'single_read' 'single_reads' ${reads[0]}"
     def dedup_flag = should_dedup_pos ? "--dedup-pos" : ""
+    def unmapped_flag = params.experimental ? "--extract-unmapped" : ""
     """
     map_paired_reads_to_contigs.py \
         --sample-id '${sample_id}' \
         --platform '${platform}' \
         --contigs ${contigs} \
         --threads ${task.cpus} \
-        --work-dir ${sample_id}.mapback_work \
         ${dedup_flag} \
+        ${unmapped_flag} \
         ${fastq_input_args}
     """
 }
