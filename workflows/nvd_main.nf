@@ -17,8 +17,9 @@ include { PREPROCESS_CONTIGS      } from "../subworkflows/preprocess_contigs"
 include { EXTRACT_HUMAN_VIRUSES   } from "../subworkflows/extract_human_virus_contigs"
 include { CLASSIFY_WITH_MEGABLAST } from "../subworkflows/classify_with_megablast"
 include { CLASSIFY_WITH_BLASTN    } from "../subworkflows/classify_with_blastn"
-include { METAGENOME_PROFILING    } from "../subworkflows/metagenome_profiling"
+include { RAPID_SCREENING         } from "../subworkflows/rapid_screening"
 include { SAMPLE_SIMILARITY_QC    } from "../subworkflows/sample_similarity_qc"
+include { RAPID_SCREENING_EVAL    } from "../subworkflows/rapid_screening_eval"
 include { REPORTING               } from "../subworkflows/reporting"
 include { COMPUTE_RUN_CONTEXT ; ENSURE_TAXONOMY } from "../modules/utils"
 
@@ -60,12 +61,16 @@ workflow NVD_MAIN {
 
   PREPROCESS_READS(GATHER_READS.out.reads)
 
+  ch_sourmash_gather_csv = channel.empty()
+  ch_sourmash_lineages = channel.empty()
   ch_sourmash_tax_reports = channel.empty()
 
   if (params.experimental == true) {
-    metagenome_profiling = METAGENOME_PROFILING(PREPROCESS_READS.out.reads)
-    SAMPLE_SIMILARITY_QC(metagenome_profiling.query_sketches)
-    ch_sourmash_tax_reports = metagenome_profiling.tax_reports
+    rapid_screening = RAPID_SCREENING(PREPROCESS_READS.out.reads)
+    SAMPLE_SIMILARITY_QC(rapid_screening.query_sketches)
+    ch_sourmash_gather_csv = rapid_screening.gather_csv
+    ch_sourmash_lineages = rapid_screening.lineages
+    ch_sourmash_tax_reports = rapid_screening.tax_reports
   }
 
   PREPROCESS_CONTIGS(PREPROCESS_READS.out.reads)
@@ -105,6 +110,19 @@ workflow NVD_MAIN {
     ch_sourmash_tax_reports,
     workflow.runName,
   )
+
+  if (params.experimental == true) {
+    RAPID_SCREENING_EVAL(
+      PREPROCESS_READS.out.read_counts,
+      ch_sourmash_gather_csv,
+      ch_sourmash_tax_reports,
+      ch_sourmash_lineages,
+      REPORTING.out.blast_results,
+      REPORTING.out.crumbs_taxa,
+      REPORTING.out.crumbs_contigs,
+      workflow.runName,
+    )
+  }
 
   emit:
   completion = REPORTING.out.blast_results.count().map { n -> "NVD main workflow complete: ${n} samples processed" }

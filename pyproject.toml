@@ -11,6 +11,7 @@ version = "3.1.0"
 dependencies = [
   "altair>=6.1.0",
   "biopython>=1.85",
+  "duckdb>=1.2.2",
   "jsonschema>=4.23.0",
   "labkey>=3.4.0",
   "loguru>=0.7.3",

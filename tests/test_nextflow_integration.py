@@ -583,7 +583,8 @@ def test_mini_sra_viral_pipeline_completes() -> None:
             assert organism in final_text
 
     if experimental:
-        sourmash_root = results_root / "experimental_sourmash"
+        rapid_screening_root = results_root / "experimental_rapid_screening"
+        sourmash_root = rapid_screening_root / "engines" / "sourmash"
         ref_dir = sourmash_root / "reference_profiling" / "reference"
         gather_dir = sourmash_root / "reference_profiling" / "gather"
         merged_taxburst_dir = (
@@ -631,4 +632,18 @@ def test_mini_sra_viral_pipeline_completes() -> None:
             )
             assert sankey_html.stat().st_size > 0, (
                 f"Empty sourmash Sankey report: {sankey_html}"
+            )
+
+        eval_root = rapid_screening_root / "eval"
+        for eval_artifact in (
+            eval_root / "database" / "rapid_screening_eval.duckdb",
+            eval_root / "exports" / "screening_signal_followup_by_sample_rank.tsv",
+            eval_root / "exports" / "screening_signals_without_same_rank_followup.tsv",
+            eval_root / "reports" / "rapid_screening_eval.html",
+        ):
+            assert eval_artifact.is_file(), (
+                f"Missing rapid-screening eval artifact: {eval_artifact}"
+            )
+            assert eval_artifact.stat().st_size > 0, (
+                f"Empty rapid-screening eval artifact: {eval_artifact}"
             )
