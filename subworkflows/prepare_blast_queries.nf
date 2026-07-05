@@ -1,6 +1,6 @@
 include { DEACON_FILTER_CONTIGS } from "../modules/deacon"
 include { SELECT_BLAST_QUERIES } from "../modules/blast_queries"
-include { MAP_READS_TO_CONTIGS } from "./map_reads_to_contigs"
+include { CONTIG_READ_MAPBACK } from "./contig_read_mapback"
 
 workflow PREPARE_BLAST_QUERIES {
     take:
@@ -16,7 +16,7 @@ workflow PREPARE_BLAST_QUERIES {
             .combine(ch_depletion_index)
     )
 
-    MAP_READS_TO_CONTIGS(
+    CONTIG_READ_MAPBACK(
         DEACON_FILTER_CONTIGS.out,
         ch_viral_reads,
     )
@@ -27,8 +27,8 @@ workflow PREPARE_BLAST_QUERIES {
 
     emit:
     queries = SELECT_BLAST_QUERIES.out.queries
-    contig_read_counts = MAP_READS_TO_CONTIGS.out.contig_read_counts
-    filtered_bam = MAP_READS_TO_CONTIGS.out.filtered_bam
-    unmapped_reads = MAP_READS_TO_CONTIGS.out.unmapped_reads
-    unmapped_read_counts = MAP_READS_TO_CONTIGS.out.unmapped_read_counts
+    contig_read_counts = CONTIG_READ_MAPBACK.out.contig_read_counts
+    filtered_bam = CONTIG_READ_MAPBACK.out.filtered_bam
+    unmapped_reads = CONTIG_READ_MAPBACK.out.unmapped_reads
+    unmapped_read_counts = CONTIG_READ_MAPBACK.out.unmapped_read_counts
 }
