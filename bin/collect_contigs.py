@@ -37,7 +37,7 @@ class CollectedContig:
     sample_id: str
     evidence_class: str
     producer: str
-    contig_id: str
+    source_id: str
     sequence: str
 
     @property
@@ -66,7 +66,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--sample-id", required=True)
     parser.add_argument("--input-fasta", required=True, type=Path)
     parser.add_argument("--output-fasta", required=True, type=Path)
-    parser.add_argument("--contig-lookup", required=True, type=Path)
+    parser.add_argument("--query-lookup", required=True, type=Path)
     parser.add_argument("--producer", required=True)
     parser.add_argument("--long-contig-min-length", required=True, type=int)
     return parser.parse_args(argv)
@@ -157,14 +157,14 @@ def collect_contigs(
         seen_contigs.add(record.identifier)
         contigs.append(
             CollectedContig(
-                qseqid=f"nvdContig1_{sample_id}_{index:06d}",
+                qseqid=f"nvdContigQuery_{sample_id}_{index:06d}",
                 sample_id=sample_id,
                 evidence_class=classify_assembly_contig(
                     len(record.sequence),
                     long_contig_min_length=long_contig_min_length,
                 ),
                 producer=producer,
-                contig_id=record.identifier,
+                source_id=record.identifier,
                 sequence=record.sequence,
             ),
         )
@@ -185,12 +185,12 @@ def write_fasta(path: Path, contigs: list[CollectedContig]) -> None:
                 f">{record.qseqid} "
                 f"evidence_class={record.evidence_class} "
                 f"producer={record.producer} "
-                f"contig_id={record.contig_id}\n",
+                f"source_id={record.source_id}\n",
             )
             handle.write(f"{wrapped(record.sequence)}\n")
 
 
-def write_contig_lookup(
+def write_query_lookup(
     path: Path,
     contigs: list[CollectedContig],
     *,
@@ -202,12 +202,12 @@ def write_contig_lookup(
     with sqlite3.connect(path) as connection:
         connection.execute(
             """
-            create table contigs (
+            create table query_sequences (
                 qseqid text primary key,
                 sample_id text not null,
                 evidence_class text not null,
                 producer text not null,
-                contig_id text not null,
+                source_id text not null,
                 length integer not null,
                 sha256 text not null
             )
@@ -229,12 +229,12 @@ def write_contig_lookup(
         )
         connection.executemany(
             """
-            insert into contigs (
+            insert into query_sequences (
                 qseqid,
                 sample_id,
                 evidence_class,
                 producer,
-                contig_id,
+                source_id,
                 length,
                 sha256
             ) values (?, ?, ?, ?, ?, ?, ?)
@@ -245,16 +245,15 @@ def write_contig_lookup(
                     record.sample_id,
                     record.evidence_class,
                     record.producer,
-                    record.contig_id,
+                    record.source_id,
                     record.length,
                     record.sha256,
                 )
                 for record in contigs
             ],
         )
-        connection.execute("create index contigs_sample_id on contigs(sample_id)")
         connection.execute(
-            "create unique index contigs_contig_id on contigs(contig_id)",
+            "create index query_sequences_sample_id on query_sequences(sample_id)",
         )
         connection.execute(
             """
@@ -295,8 +294,8 @@ def main(argv: list[str] | None = None) -> None:
         long_contig_min_length=args.long_contig_min_length,
     )
     write_fasta(args.output_fasta, contigs)
-    write_contig_lookup(
-        args.contig_lookup,
+    write_query_lookup(
+        args.query_lookup,
         contigs,
         producer_run=ContigProducerRun(
             sample_id=args.sample_id,

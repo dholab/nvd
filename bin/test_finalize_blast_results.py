@@ -46,7 +46,7 @@ def write_blast_tsv(path: Path) -> None:
             {
                 "task": "megablast",
                 "sample": "sample-1",
-                "qseqid": "nvdContig1_sample-1_000001",
+                "qseqid": "nvdContigQuery_sample-1_000001",
                 "qlen": "4",
                 "sseqid": "ref-1",
                 "stitle": "reference",
@@ -66,19 +66,19 @@ def write_blast_tsv(path: Path) -> None:
 
 
 def write_counts(path: Path) -> None:
-    path.write_text("nvdContig1_sample-1_000001\t7\n", encoding="utf-8")
+    path.write_text("nvdContigQuery_sample-1_000001\t7\n", encoding="utf-8")
 
 
-def write_contig_lookup(path: Path) -> None:
+def write_query_lookup(path: Path) -> None:
     with sqlite3.connect(path) as connection:
         connection.execute(
             """
-            create table contigs (
+            create table query_sequences (
                 qseqid text primary key,
                 sample_id text not null,
                 evidence_class text not null,
                 producer text not null,
-                contig_id text not null,
+                source_id text not null,
                 length integer not null,
                 sha256 text not null
             )
@@ -86,18 +86,18 @@ def write_contig_lookup(path: Path) -> None:
         )
         connection.execute(
             """
-            insert into contigs (
+            insert into query_sequences (
                 qseqid,
                 sample_id,
                 evidence_class,
                 producer,
-                contig_id,
+                source_id,
                 length,
                 sha256
             ) values (?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                "nvdContig1_sample-1_000001",
+                "nvdContigQuery_sample-1_000001",
                 "sample-1",
                 "short_assembly_contig",
                 "spades",
@@ -111,11 +111,11 @@ def write_contig_lookup(path: Path) -> None:
 def test_final_blast_rows_include_collected_contig_metadata(tmp_path: Path) -> None:
     blast_tsv = tmp_path / "blast.tsv"
     counts = tmp_path / "counts.tsv"
-    contig_lookup = tmp_path / "sample.contigs.sqlite"
+    query_lookup = tmp_path / "sample.query_sequences.sqlite"
     output = tmp_path / "final.tsv"
     write_blast_tsv(blast_tsv)
     write_counts(counts)
-    write_contig_lookup(contig_lookup)
+    write_query_lookup(query_lookup)
 
     main(
         [
@@ -123,8 +123,8 @@ def test_final_blast_rows_include_collected_contig_metadata(tmp_path: Path) -> N
             str(blast_tsv),
             "--contig-counts",
             str(counts),
-            "--contig-lookup",
-            str(contig_lookup),
+            "--query-lookup",
+            str(query_lookup),
             "--output",
             str(output),
             "--total-reads",
@@ -139,15 +139,15 @@ def test_final_blast_rows_include_collected_contig_metadata(tmp_path: Path) -> N
     )
 
     [row] = read_tsv(output)
-    assert row["qseqid"] == "nvdContig1_sample-1_000001"
+    assert row["qseqid"] == "nvdContigQuery_sample-1_000001"
     assert row["evidence_class"] == "short_assembly_contig"
     assert row["producer"] == "spades"
-    assert row["contig_id"] == "NODE_1_length_4_cov_1.0"
+    assert row["source_id"] == "NODE_1_length_4_cov_1.0"
     assert row["mapped_reads"] == "7"
     assert "evidence_length" not in row
 
 
-def test_finalizer_can_run_without_contig_lookup(tmp_path: Path) -> None:
+def test_finalizer_can_run_without_query_lookup(tmp_path: Path) -> None:
     blast_tsv = tmp_path / "blast.tsv"
     counts = tmp_path / "counts.tsv"
     output = tmp_path / "final.tsv"
@@ -176,4 +176,4 @@ def test_finalizer_can_run_without_contig_lookup(tmp_path: Path) -> None:
     [row] = read_tsv(output)
     assert row["evidence_class"] == ""
     assert row["producer"] == ""
-    assert row["contig_id"] == ""
+    assert row["source_id"] == ""

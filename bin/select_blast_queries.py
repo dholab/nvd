@@ -35,7 +35,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         description="Select FASTA records admitted to BLAST by class-aware rules.",
     )
     parser.add_argument("--input-fasta", required=True, type=Path)
-    parser.add_argument("--contig-lookup", required=True, type=Path)
+    parser.add_argument("--query-lookup", required=True, type=Path)
     parser.add_argument("--output-fasta", required=True, type=Path)
     return parser.parse_args(argv)
 
@@ -79,7 +79,7 @@ def load_classes_by_qseqid(path: Path) -> dict[str, str]:
         rows = connection.execute(
             """
             select qseqid, evidence_class
-            from contigs
+            from query_sequences
             """,
         ).fetchall()
     return dict(rows)
@@ -103,7 +103,7 @@ def select_blast_queries(
 
         evidence_class = classes_by_qseqid.get(record.qseqid)
         if evidence_class is None:
-            msg = f"FASTA qseqid {record.qseqid!r} is missing from the contig lookup."
+            msg = f"FASTA qseqid {record.qseqid!r} is missing from the query lookup."
             raise BlastQuerySelectionError(msg)
         if evidence_class not in ADMITTED_CLASSES:
             admitted = ", ".join(sorted(ADMITTED_CLASSES))
@@ -134,7 +134,7 @@ def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
     with args.input_fasta.open(encoding="utf-8") as handle:
         records = parse_fasta(handle)
-    classes_by_qseqid = load_classes_by_qseqid(args.contig_lookup)
+    classes_by_qseqid = load_classes_by_qseqid(args.query_lookup)
     selected = select_blast_queries(records, classes_by_qseqid=classes_by_qseqid)
     write_fasta(args.output_fasta, selected)
 

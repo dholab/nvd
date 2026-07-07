@@ -2,9 +2,9 @@
 """
 Enrich merged BLAST results with pipeline metadata columns.
 
-Appends per-contig mapped read counts (joined by qseqid), sample-level
-total reads, BLAST database version, and workflow run identifier to each
-row. The output TSV is the canonical final BLAST result — complete
+Appends per-query metadata, per-contig mapped read counts (joined by qseqid),
+sample-level total reads, BLAST database version, and workflow run identifier to
+each row. The output TSV is the canonical final BLAST result — complete
 regardless of whether LabKey is enabled.
 """
 
@@ -28,16 +28,16 @@ def load_contig_counts(contig_counts_path: Path) -> dict[str, str]:
     return contig_counts
 
 
-def load_contig_metadata(contig_lookup_path: Path | None) -> dict[str, dict[str, str]]:
-    """Load contig metadata keyed by stable BLAST query ID."""
-    if contig_lookup_path is None:
+def load_query_metadata(query_lookup_path: Path | None) -> dict[str, dict[str, str]]:
+    """Load query sequence metadata keyed by stable BLAST query ID."""
+    if query_lookup_path is None:
         return {}
-    with sqlite3.connect(contig_lookup_path) as connection:
+    with sqlite3.connect(query_lookup_path) as connection:
         connection.row_factory = sqlite3.Row
         rows = connection.execute(
             """
-            select qseqid, evidence_class, producer, contig_id
-            from contigs
+            select qseqid, evidence_class, producer, source_id
+            from query_sequences
             """,
         ).fetchall()
     return {row["qseqid"]: dict(row) for row in rows}
@@ -57,7 +57,7 @@ def main(argv: list[str] | None = None) -> None:
         "--contig-counts",
         type=Path,
         required=True,
-        help="Two-column TSV of contig_id and mapped read count",
+        help="Two-column TSV of qseqid and mapped read count",
     )
     parser.add_argument(
         "--output",
@@ -66,7 +66,7 @@ def main(argv: list[str] | None = None) -> None:
         help="Output enriched BLAST TSV",
     )
     parser.add_argument(
-        "--contig-lookup",
+        "--query-lookup",
         type=Path,
         default=None,
         help="Optional per-sample SQLite lookup keyed by qseqid",
@@ -94,12 +94,12 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
 
     contig_counts = load_contig_counts(args.contig_counts)
-    contigs_by_qseqid = load_contig_metadata(args.contig_lookup)
+    queries_by_qseqid = load_query_metadata(args.query_lookup)
 
     metadata_columns = [
         "evidence_class",
         "producer",
-        "contig_id",
+        "source_id",
         "mapped_reads",
         "total_reads",
         "blast_db_version",
@@ -117,10 +117,10 @@ def main(argv: list[str] | None = None) -> None:
         writer.writeheader()
         for row in reader:
             qseqid = row.get("qseqid", "")
-            contig = contigs_by_qseqid.get(qseqid, {})
-            row["evidence_class"] = contig.get("evidence_class", "")
-            row["producer"] = contig.get("producer", "")
-            row["contig_id"] = contig.get("contig_id", "")
+            query = queries_by_qseqid.get(qseqid, {})
+            row["evidence_class"] = query.get("evidence_class", "")
+            row["producer"] = query.get("producer", "")
+            row["source_id"] = query.get("source_id", "")
             row["mapped_reads"] = contig_counts.get(qseqid, "0")
             row["total_reads"] = args.total_reads
             row["blast_db_version"] = args.blast_db_version

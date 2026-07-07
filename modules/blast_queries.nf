@@ -17,7 +17,7 @@ process SELECT_BLAST_QUERIES {
     """
     select_blast_queries.py \
         --input-fasta ${fasta} \
-        --contig-lookup ${lookup} \
+        --query-lookup ${lookup} \
         --output-fasta ${sample_id}.blast_queries.fasta
     """
 }

@@ -16,12 +16,12 @@ def write_lookup(path: Path, rows: list[tuple[str, str]]) -> None:
     with sqlite3.connect(path) as connection:
         connection.execute(
             """
-            create table contigs (
+            create table query_sequences (
                 qseqid text primary key,
                 sample_id text not null,
                 evidence_class text not null,
                 producer text not null,
-                contig_id text not null,
+                source_id text not null,
                 length integer not null,
                 sha256 text not null
             )
@@ -29,12 +29,12 @@ def write_lookup(path: Path, rows: list[tuple[str, str]]) -> None:
         )
         connection.executemany(
             """
-            insert into contigs (
+            insert into query_sequences (
                 qseqid,
                 sample_id,
                 evidence_class,
                 producer,
-                contig_id,
+                source_id,
                 length,
                 sha256
             ) values (?, 'sample-1', ?, 'spades', 'NODE_1', 4, 'unused')
@@ -48,16 +48,16 @@ def test_selects_current_assembly_contig_classes_without_mutating_lookup(
 ) -> None:
     input_fasta = tmp_path / "screened.fasta"
     input_fasta.write_text(
-        ">nvdContig1_sample-1_000001 evidence_class=short_assembly_contig\nACGT\n"
-        ">nvdContig1_sample-1_000002 evidence_class=long_assembly_contig\nAACCGG\n",
+        ">nvdContigQuery_sample-1_000001 evidence_class=short_assembly_contig\nACGT\n"
+        ">nvdContigQuery_sample-1_000002 evidence_class=long_assembly_contig\nAACCGG\n",
         encoding="utf-8",
     )
-    lookup = tmp_path / "sample.contigs.sqlite"
+    lookup = tmp_path / "sample.query_sequences.sqlite"
     write_lookup(
         lookup,
         [
-            ("nvdContig1_sample-1_000001", "short_assembly_contig"),
-            ("nvdContig1_sample-1_000002", "long_assembly_contig"),
+            ("nvdContigQuery_sample-1_000001", "short_assembly_contig"),
+            ("nvdContigQuery_sample-1_000002", "long_assembly_contig"),
         ],
     )
     before = lookup.read_bytes()
@@ -67,7 +67,7 @@ def test_selects_current_assembly_contig_classes_without_mutating_lookup(
         [
             "--input-fasta",
             str(input_fasta),
-            "--contig-lookup",
+            "--query-lookup",
             str(lookup),
             "--output-fasta",
             str(output_fasta),
@@ -75,8 +75,8 @@ def test_selects_current_assembly_contig_classes_without_mutating_lookup(
     )
 
     assert output_fasta.read_text(encoding="utf-8") == (
-        ">nvdContig1_sample-1_000001 evidence_class=short_assembly_contig\nACGT\n"
-        ">nvdContig1_sample-1_000002 evidence_class=long_assembly_contig\nAACCGG\n"
+        ">nvdContigQuery_sample-1_000001 evidence_class=short_assembly_contig\nACGT\n"
+        ">nvdContigQuery_sample-1_000002 evidence_class=long_assembly_contig\nAACCGG\n"
     )
     assert lookup.read_bytes() == before
 
@@ -84,7 +84,7 @@ def test_selects_current_assembly_contig_classes_without_mutating_lookup(
 def test_empty_screened_fasta_produces_empty_selected_fasta(tmp_path: Path) -> None:
     input_fasta = tmp_path / "screened.fasta"
     input_fasta.write_text("", encoding="utf-8")
-    lookup = tmp_path / "sample.contigs.sqlite"
+    lookup = tmp_path / "sample.query_sequences.sqlite"
     write_lookup(lookup, [])
     output_fasta = tmp_path / "selected.fasta"
 
@@ -92,7 +92,7 @@ def test_empty_screened_fasta_produces_empty_selected_fasta(tmp_path: Path) -> N
         [
             "--input-fasta",
             str(input_fasta),
-            "--contig-lookup",
+            "--query-lookup",
             str(lookup),
             "--output-fasta",
             str(output_fasta),
@@ -104,20 +104,20 @@ def test_empty_screened_fasta_produces_empty_selected_fasta(tmp_path: Path) -> N
 
 def test_missing_lookup_row_fails_loudly(tmp_path: Path) -> None:
     input_fasta = tmp_path / "screened.fasta"
-    input_fasta.write_text(">nvdContig1_sample-1_000001\nACGT\n", encoding="utf-8")
-    lookup = tmp_path / "sample.contigs.sqlite"
+    input_fasta.write_text(">nvdContigQuery_sample-1_000001\nACGT\n", encoding="utf-8")
+    lookup = tmp_path / "sample.query_sequences.sqlite"
     write_lookup(lookup, [])
     output_fasta = tmp_path / "selected.fasta"
 
     with pytest.raises(
         BlastQuerySelectionError,
-        match="missing from the contig lookup",
+        match="missing from the query lookup",
     ):
         main(
             [
                 "--input-fasta",
                 str(input_fasta),
-                "--contig-lookup",
+                "--query-lookup",
                 str(lookup),
                 "--output-fasta",
                 str(output_fasta),
@@ -127,9 +127,9 @@ def test_missing_lookup_row_fails_loudly(tmp_path: Path) -> None:
 
 def test_unadmitted_class_fails_loudly(tmp_path: Path) -> None:
     input_fasta = tmp_path / "screened.fasta"
-    input_fasta.write_text(">nvdContig1_sample-1_000001\nACGT\n", encoding="utf-8")
-    lookup = tmp_path / "sample.contigs.sqlite"
-    write_lookup(lookup, [("nvdContig1_sample-1_000001", "overlap_merged_pair")])
+    input_fasta.write_text(">nvdContigQuery_sample-1_000001\nACGT\n", encoding="utf-8")
+    lookup = tmp_path / "sample.query_sequences.sqlite"
+    write_lookup(lookup, [("nvdContigQuery_sample-1_000001", "overlap_merged_pair")])
     output_fasta = tmp_path / "selected.fasta"
 
     with pytest.raises(BlastQuerySelectionError, match="admits only"):
@@ -137,7 +137,7 @@ def test_unadmitted_class_fails_loudly(tmp_path: Path) -> None:
             [
                 "--input-fasta",
                 str(input_fasta),
-                "--contig-lookup",
+                "--query-lookup",
                 str(lookup),
                 "--output-fasta",
                 str(output_fasta),
@@ -148,11 +148,11 @@ def test_unadmitted_class_fails_loudly(tmp_path: Path) -> None:
 def test_duplicate_qseqid_fails_loudly(tmp_path: Path) -> None:
     input_fasta = tmp_path / "screened.fasta"
     input_fasta.write_text(
-        ">nvdContig1_sample-1_000001\nACGT\n>nvdContig1_sample-1_000001 duplicate\nTGCA\n",
+        ">nvdContigQuery_sample-1_000001\nACGT\n>nvdContigQuery_sample-1_000001 duplicate\nTGCA\n",
         encoding="utf-8",
     )
-    lookup = tmp_path / "sample.contigs.sqlite"
-    write_lookup(lookup, [("nvdContig1_sample-1_000001", "short_assembly_contig")])
+    lookup = tmp_path / "sample.query_sequences.sqlite"
+    write_lookup(lookup, [("nvdContigQuery_sample-1_000001", "short_assembly_contig")])
     output_fasta = tmp_path / "selected.fasta"
 
     with pytest.raises(BlastQuerySelectionError, match="Duplicate FASTA qseqid"):
@@ -160,7 +160,7 @@ def test_duplicate_qseqid_fails_loudly(tmp_path: Path) -> None:
             [
                 "--input-fasta",
                 str(input_fasta),
-                "--contig-lookup",
+                "--query-lookup",
                 str(lookup),
                 "--output-fasta",
                 str(output_fasta),

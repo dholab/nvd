@@ -11,7 +11,7 @@ process COLLECT_CONTIGS {
     tuple val(sample_id), val(platform), val(read_structure), val(producer), path(fasta)
 
     output:
-    tuple val(sample_id), val(platform), val(read_structure), path("${sample_id}.contigs.fasta"), path("${sample_id}.contigs.sqlite"), emit: contigs
+    tuple val(sample_id), val(platform), val(read_structure), path("${sample_id}.contigs.fasta"), path("${sample_id}.query_sequences.sqlite"), emit: contigs
 
     script:
     """
@@ -19,7 +19,7 @@ process COLLECT_CONTIGS {
         --sample-id '${sample_id}' \
         --input-fasta ${fasta} \
         --output-fasta ${sample_id}.contigs.fasta \
-        --contig-lookup ${sample_id}.contigs.sqlite \
+        --query-lookup ${sample_id}.query_sequences.sqlite \
         --producer '${producer}' \
         --long-contig-min-length 10000
     """
