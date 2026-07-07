@@ -23,10 +23,10 @@ def lookup_rows(path: Path) -> list[dict[str, object]]:
                 sample_id,
                 evidence_class,
                 producer,
-                contig_id,
+                source_id,
                 length,
                 sha256
-            from contigs
+            from query_sequences
             order by qseqid
             """,
         ).fetchall()
@@ -64,7 +64,7 @@ def collect_args(
     *,
     input_fasta: Path,
     output_fasta: Path,
-    contig_lookup: Path,
+    query_lookup: Path,
     producer: str = "spades",
     long_contig_min_length: int = 10_000,
 ) -> list[str]:
@@ -75,8 +75,8 @@ def collect_args(
         str(input_fasta),
         "--output-fasta",
         str(output_fasta),
-        "--contig-lookup",
-        str(contig_lookup),
+        "--query-lookup",
+        str(query_lookup),
         "--producer",
         producer,
         "--long-contig-min-length",
@@ -94,36 +94,44 @@ def test_collects_assembly_contigs_with_stable_ids_and_lookup(
         encoding="utf-8",
     )
     output_fasta = tmp_path / "sample.contigs.fasta"
-    contig_lookup = tmp_path / "sample.contigs.sqlite"
+    query_lookup = tmp_path / "sample.query_sequences.sqlite"
 
     main(
         collect_args(
             input_fasta=input_fasta,
             output_fasta=output_fasta,
-            contig_lookup=contig_lookup,
+            query_lookup=query_lookup,
         ),
     )
 
     assert fasta_headers(output_fasta) == [
-        ">nvdContig1_sample-1_000001 evidence_class=short_assembly_contig producer=spades contig_id=NODE_1_length_4_cov_1.0",
-        ">nvdContig1_sample-1_000002 evidence_class=short_assembly_contig producer=spades contig_id=NODE_2_length_6_cov_2.0",
+        (
+            ">nvdContigQuery_sample-1_000001 "
+            "evidence_class=short_assembly_contig "
+            "producer=spades source_id=NODE_1_length_4_cov_1.0"
+        ),
+        (
+            ">nvdContigQuery_sample-1_000002 "
+            "evidence_class=short_assembly_contig "
+            "producer=spades source_id=NODE_2_length_6_cov_2.0"
+        ),
     ]
-    assert lookup_rows(contig_lookup) == [
+    assert lookup_rows(query_lookup) == [
         {
-            "qseqid": "nvdContig1_sample-1_000001",
+            "qseqid": "nvdContigQuery_sample-1_000001",
             "sample_id": "sample-1",
             "evidence_class": "short_assembly_contig",
             "producer": "spades",
-            "contig_id": "NODE_1_length_4_cov_1.0",
+            "source_id": "NODE_1_length_4_cov_1.0",
             "length": 4,
             "sha256": hashlib.sha256(b"ACGT").hexdigest(),
         },
         {
-            "qseqid": "nvdContig1_sample-1_000002",
+            "qseqid": "nvdContigQuery_sample-1_000002",
             "sample_id": "sample-1",
             "evidence_class": "short_assembly_contig",
             "producer": "spades",
-            "contig_id": "NODE_2_length_6_cov_2.0",
+            "source_id": "NODE_2_length_6_cov_2.0",
             "length": 6,
             "sha256": hashlib.sha256(b"AACCGG").hexdigest(),
         },
@@ -131,17 +139,17 @@ def test_collects_assembly_contigs_with_stable_ids_and_lookup(
 
 
 def test_qseqid_does_not_include_length_based_class(tmp_path: Path) -> None:
-    expected_qseqid = "nvdContig1_sample-1_000001"
+    expected_qseqid = "nvdContigQuery_sample-1_000001"
     input_fasta = tmp_path / "contigs.fasta"
     input_fasta.write_text(">NODE_1\nACGT\n", encoding="utf-8")
     output_fasta = tmp_path / "sample.contigs.fasta"
-    contig_lookup = tmp_path / "sample.contigs.sqlite"
+    query_lookup = tmp_path / "sample.query_sequences.sqlite"
 
     main(
         collect_args(
             input_fasta=input_fasta,
             output_fasta=output_fasta,
-            contig_lookup=contig_lookup,
+            query_lookup=query_lookup,
             long_contig_min_length=4,
         ),
     )
@@ -160,25 +168,25 @@ def test_splits_short_and_long_assembly_contigs_at_threshold(tmp_path: Path) -> 
         encoding="utf-8",
     )
     output_fasta = tmp_path / "sample.contigs.fasta"
-    contig_lookup = tmp_path / "sample.contigs.sqlite"
+    query_lookup = tmp_path / "sample.query_sequences.sqlite"
 
     main(
         collect_args(
             input_fasta=input_fasta,
             output_fasta=output_fasta,
-            contig_lookup=contig_lookup,
+            query_lookup=query_lookup,
             producer="flye",
             long_contig_min_length=4,
         ),
     )
 
-    rows = lookup_rows(contig_lookup)
+    rows = lookup_rows(query_lookup)
     assert [row["evidence_class"] for row in rows] == [
         "short_assembly_contig",
         "long_assembly_contig",
     ]
     assert {row["producer"] for row in rows} == {"flye"}
-    assert producer_run_rows(contig_lookup) == [
+    assert producer_run_rows(query_lookup) == [
         {
             "sample_id": "sample-1",
             "producer": "flye",
@@ -194,20 +202,20 @@ def test_records_when_producer_emits_no_contigs(tmp_path: Path) -> None:
     input_fasta = tmp_path / "empty.fasta"
     input_fasta.write_text("", encoding="utf-8")
     output_fasta = tmp_path / "sample.contigs.fasta"
-    contig_lookup = tmp_path / "sample.contigs.sqlite"
+    query_lookup = tmp_path / "sample.query_sequences.sqlite"
 
     main(
         collect_args(
             input_fasta=input_fasta,
             output_fasta=output_fasta,
-            contig_lookup=contig_lookup,
+            query_lookup=query_lookup,
             long_contig_min_length=10_000,
         ),
     )
 
     assert output_fasta.read_text(encoding="utf-8") == ""
-    assert lookup_rows(contig_lookup) == []
-    assert producer_run_rows(contig_lookup) == [
+    assert lookup_rows(query_lookup) == []
+    assert producer_run_rows(query_lookup) == [
         {
             "sample_id": "sample-1",
             "producer": "spades",
@@ -223,14 +231,14 @@ def test_rejects_duplicate_contig_ids(tmp_path: Path) -> None:
     input_fasta = tmp_path / "contigs.fasta"
     input_fasta.write_text(">NODE_1\nACGT\n>NODE_1\nTGCA\n", encoding="utf-8")
     output_fasta = tmp_path / "sample.contigs.fasta"
-    contig_lookup = tmp_path / "sample.contigs.sqlite"
+    query_lookup = tmp_path / "sample.query_sequences.sqlite"
 
     with pytest.raises(ContigCollectionError, match="Duplicate FASTA identifier"):
         main(
             collect_args(
                 input_fasta=input_fasta,
                 output_fasta=output_fasta,
-                contig_lookup=contig_lookup,
+                query_lookup=query_lookup,
             ),
         )
 
@@ -253,19 +261,23 @@ def test_lookup_is_queryable_by_qseqid(tmp_path: Path) -> None:
     input_fasta = tmp_path / "contigs.fasta"
     input_fasta.write_text(">NODE_1\nACGT\n", encoding="utf-8")
     output_fasta = tmp_path / "sample.contigs.fasta"
-    contig_lookup = tmp_path / "sample.contigs.sqlite"
+    query_lookup = tmp_path / "sample.query_sequences.sqlite"
 
     main(
         collect_args(
             input_fasta=input_fasta,
             output_fasta=output_fasta,
-            contig_lookup=contig_lookup,
+            query_lookup=query_lookup,
         ),
     )
 
-    with sqlite3.connect(contig_lookup) as connection:
+    with sqlite3.connect(query_lookup) as connection:
         row = connection.execute(
-            "select evidence_class, producer, contig_id from contigs where qseqid = ?",
-            ("nvdContig1_sample-1_000001",),
+            """
+            select evidence_class, producer, source_id
+            from query_sequences
+            where qseqid = ?
+            """,
+            ("nvdContigQuery_sample-1_000001",),
         ).fetchone()
     assert row == ("short_assembly_contig", "spades", "NODE_1")

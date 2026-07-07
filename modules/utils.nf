@@ -106,7 +106,7 @@ process ANNOTATE_LEAST_COMMON_ANCESTORS {
 process ADD_READ_COUNTS_TO_BLAST {
   /*
    * Enrich merged BLAST results with pipeline metadata columns:
-   *   evidence_class / producer / contig_id — collected contig metadata
+   *   evidence_class / producer / source_id — collected query sequence metadata
    *   mapped_reads  — per-contig read count (joined by qseqid)
    *   total_reads   — sample-level total input reads
    *   blast_db_version — BLAST database version
@@ -122,7 +122,7 @@ process ADD_READ_COUNTS_TO_BLAST {
   label "low"
 
   input:
-  tuple val(sample_id), path(blast_tsv), val(total_reads), path(contig_counts), path(contig_lookup)
+  tuple val(sample_id), path(blast_tsv), val(total_reads), path(contig_counts), path(query_lookup)
   val run_id
 
   output:
@@ -134,7 +134,7 @@ process ADD_READ_COUNTS_TO_BLAST {
   finalize_blast_results.py \\
       --blast-tsv ${blast_tsv} \\
       --contig-counts ${contig_counts} \\
-      --contig-lookup ${contig_lookup} \\
+      --query-lookup ${query_lookup} \\
       --output ${sample_id}_blast.final.tsv \\
       --total-reads ${total_reads} \\
       --blast-db-version '${params.blast_db_version}' \\
