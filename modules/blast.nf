@@ -54,6 +54,57 @@ process NORMALIZE_READ_BLAST_QUERIES {
   """
 }
 
+process SUMMARIZE_BLAST_QUERY_BATCHES {
+  /* Summarize experimental BLAST query batches, including absent query classes. */
+
+  tag "${sample_id}"
+  label "low"
+
+  input:
+  tuple val(sample_id), val(platform), val(query_classes), path(query_fastas, stageAs: "query_fastas??????/*"), path(query_lookups, stageAs: "query_lookups??????/*")
+
+  output:
+  tuple val(sample_id), path("${sample_id}.blast_query_batches.tsv")
+
+  script:
+  def classes = query_classes instanceof List ? query_classes : [query_classes]
+  def fastas = query_fastas instanceof List ? query_fastas : [query_fastas]
+  def lookups = query_lookups instanceof List ? query_lookups : [query_lookups]
+  assert classes.size() == fastas.size()
+  assert classes.size() == lookups.size()
+  def batch_args = classes.withIndex().collect { query_class, index ->
+    "--batch '${query_class}' ${fastas[index]} ${lookups[index]}"
+  }.join(" ")
+  """
+  summarize_blast_query_batches.py \
+      --sample-id '${sample_id}' \
+      --platform '${platform}' \
+      ${batch_args} \
+      --output ${sample_id}.blast_query_batches.tsv
+  """
+}
+
+process SUMMARIZE_EMPTY_BLAST_QUERY_BATCHES {
+  /* Emit the same four-row decision table for samples with no query batches. */
+
+  tag "${sample_id}"
+  label "low"
+
+  input:
+  tuple val(sample_id), val(platform)
+
+  output:
+  tuple val(sample_id), path("${sample_id}.blast_query_batches.tsv")
+
+  script:
+  """
+  summarize_blast_query_batches.py \
+    --sample-id '${sample_id}' \
+    --platform '${platform}' \
+    --output ${sample_id}.blast_query_batches.tsv
+  """
+}
+
 /*
 Perform rapid sequence similarity search using MEGABLAST.
 
