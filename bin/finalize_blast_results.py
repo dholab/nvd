@@ -28,19 +28,24 @@ def load_contig_counts(contig_counts_path: Path) -> dict[str, str]:
     return contig_counts
 
 
-def load_query_metadata(query_lookup_path: Path | None) -> dict[str, dict[str, str]]:
+def load_query_metadata(query_lookup_paths: list[Path]) -> dict[str, dict[str, str]]:
     """Load query sequence metadata keyed by stable BLAST query ID."""
-    if query_lookup_path is None:
-        return {}
-    with sqlite3.connect(query_lookup_path) as connection:
-        connection.row_factory = sqlite3.Row
-        rows = connection.execute(
-            """
-            select qseqid, evidence_class, producer, source_id, support_record_count
-            from query_sequences
-            """,
-        ).fetchall()
-    return {row["qseqid"]: dict(row) for row in rows}
+    queries: dict[str, dict[str, str]] = {}
+    for query_lookup_path in query_lookup_paths:
+        with sqlite3.connect(query_lookup_path) as connection:
+            connection.row_factory = sqlite3.Row
+            rows = connection.execute(
+                """
+                select qseqid, evidence_class, producer, source_id, support_record_count
+                from query_sequences
+                """,
+            ).fetchall()
+        for row in rows:
+            if row["qseqid"] in queries:
+                message = f"duplicate qseqid across query lookups: {row['qseqid']!r}"
+                raise ValueError(message)
+            queries[row["qseqid"]] = dict(row)
+    return queries
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -68,8 +73,9 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument(
         "--query-lookup",
         type=Path,
-        default=None,
-        help="Optional per-sample SQLite lookup keyed by qseqid",
+        action="append",
+        default=[],
+        help="Per-sample SQLite lookup keyed by qseqid. Repeat for multiple query batches.",
     )
     parser.add_argument(
         "--total-reads",

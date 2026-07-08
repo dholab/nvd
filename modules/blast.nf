@@ -23,6 +23,37 @@ process SELECT_BLAST_QUERIES {
   """
 }
 
+process NORMALIZE_READ_BLAST_QUERIES {
+  /* Normalize mapback-unmapped reads into exact-deduplicated BLAST query batches. */
+
+  tag "${sample_id}, ${evidence_class}"
+  label "medium"
+
+  errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
+  maxRetries 2
+
+  input:
+  tuple val(sample_id), val(platform), val(evidence_class), path(reads)
+
+  output:
+  tuple val(sample_id), val(platform), val(evidence_class), path("*.blast_queries.fasta", optional: true), path("*.query_sequences.sqlite", optional: true), emit: queries
+
+  script:
+  def producer = evidence_class == "overlap_merged_pair" ? "bbmerge" : "source_read"
+  def support_count_policy = params.dedup || params.dedup_seq ? "one" : "abundance"
+  def read_files = reads instanceof List ? reads : [reads]
+  def fastq_args = read_files.collect { read_file -> "--fastq ${read_file}" }.join(" ")
+  """
+  normalize_read_blast_queries.py \
+      --sample-id '${sample_id}' \
+      --evidence-class '${evidence_class}' \
+      --producer '${producer}' \
+      ${fastq_args} \
+      --support-count-policy '${support_count_policy}' \
+      --output-dir .
+  """
+}
+
 /*
 Perform rapid sequence similarity search using MEGABLAST.
 

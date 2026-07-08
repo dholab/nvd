@@ -113,8 +113,8 @@ process EXTRACT_UNMAPPED_READS {
     tuple val(sample_id), val(platform), val(read_structure), path(reads), path(contigs)
 
     output:
-    tuple val(sample_id), val(platform), val(read_structure), path("${sample_id}.mapback_unmapped.fastq.gz"), emit: reads
-    tuple val(sample_id), val(platform), val(read_structure), path("${sample_id}.mapback_unmapped_counts.tsv"), emit: counts
+    tuple val(sample_id), val(platform), val("single_read"), path("${sample_id}.single_read.mapback_unmapped.fastq.gz"), emit: reads
+    tuple val(sample_id), val(platform), val("single_read"), path("${sample_id}.single_read.mapback_unmapped_counts.tsv"), emit: counts
 
     script:
     // Platform describes sequencing chemistry; SRA is only an input source.
@@ -127,10 +127,10 @@ process EXTRACT_UNMAPPED_READS {
 
     unmapped_reads=\$(samtools view -c -f 4 ${sample_id}.mapback_all.bam)
     samtools fastq -f 4 ${sample_id}.mapback_all.bam \
-    | gzip -c > ${sample_id}.mapback_unmapped.fastq.gz
+    | gzip -c > ${sample_id}.single_read.mapback_unmapped.fastq.gz
 
-    printf 'sample_id\tplatform\tread_structure\tunmapped_reads\n' > ${sample_id}.mapback_unmapped_counts.tsv
-    printf '${sample_id}\t${platform}\t${read_structure}\t%s\n' "\${unmapped_reads}" >> ${sample_id}.mapback_unmapped_counts.tsv
-    printf 'nvd.mapback_unmapped_reads sample_id=${sample_id} platform=${platform} read_structure=${read_structure} unmapped_reads=%s\n' "\${unmapped_reads}" >&2
+    printf 'sample_id\tplatform\tevidence_class\tunmapped_reads\n' > ${sample_id}.single_read.mapback_unmapped_counts.tsv
+    printf '${sample_id}\t${platform}\tsingle_read\t%s\n' "\${unmapped_reads}" >> ${sample_id}.single_read.mapback_unmapped_counts.tsv
+    printf 'nvd.mapback_unmapped_reads sample_id=${sample_id} platform=${platform} evidence_class=single_read unmapped_reads=%s\n' "\${unmapped_reads}" >&2
     """
 }

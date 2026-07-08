@@ -9,6 +9,7 @@ workflow REPORTING {
     ch_blast_results
     ch_read_counts
     ch_contig_sequences  // tuple(sample_id, platform, read_structure, fasta, lookup)
+    ch_query_lookups
     ch_contig_read_counts
     ch_filtered_bam
     ch_virus_enrichment_stats
@@ -23,9 +24,8 @@ workflow REPORTING {
         NvdUtils.validateLabkeyBlast(params)
     }
 
-    ch_contig_sequence_parts = ch_contig_sequences.multiMap { sample_id, _platform, _read_structure, fasta, lookup ->
+    ch_contig_sequence_parts = ch_contig_sequences.multiMap { sample_id, _platform, _read_structure, fasta, _lookup ->
         for_lims: tuple(sample_id, fasta)
-        for_lookup: tuple(sample_id, lookup)
     }
 
     // Enrich BLAST results with all pipeline metadata (mapped_reads, total_reads,
@@ -34,7 +34,7 @@ workflow REPORTING {
     ch_blast_finalize = ch_blast_results
         .join(ch_read_counts, by: 0)
         .join(ch_contig_read_counts, by: 0)
-        .join(ch_contig_sequence_parts.for_lookup, by: 0)
+        .join(ch_query_lookups, by: 0)
 
     ADD_READ_COUNTS_TO_BLAST(ch_blast_finalize, run_id)
 
