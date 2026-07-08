@@ -35,7 +35,7 @@ class CollectedContig:
 
     qseqid: str
     sample_id: str
-    evidence_class: str
+    query_class: str
     producer: str
     source_id: str
     sequence: str
@@ -126,7 +126,7 @@ def validate_inputs(
 
 
 def classify_assembly_contig(length: int, *, long_contig_min_length: int) -> str:
-    """Return the length-based assembly-contig evidence class."""
+    """Return the length-based assembly-contig query class."""
     if length >= long_contig_min_length:
         return LONG_ASSEMBLY_CONTIG
     return SHORT_ASSEMBLY_CONTIG
@@ -159,7 +159,7 @@ def collect_contigs(
             CollectedContig(
                 qseqid=f"nvdContigQuery_{sample_id}_{index:06d}",
                 sample_id=sample_id,
-                evidence_class=classify_assembly_contig(
+                query_class=classify_assembly_contig(
                     len(record.sequence),
                     long_contig_min_length=long_contig_min_length,
                 ),
@@ -183,7 +183,7 @@ def write_fasta(path: Path, contigs: list[CollectedContig]) -> None:
         for record in contigs:
             handle.write(
                 f">{record.qseqid} "
-                f"evidence_class={record.evidence_class} "
+                f"query_class={record.query_class} "
                 f"producer={record.producer} "
                 f"source_id={record.source_id}\n",
             )
@@ -205,7 +205,7 @@ def write_query_lookup(
             create table query_sequences (
                 qseqid text primary key,
                 sample_id text not null,
-                evidence_class text not null,
+                query_class text not null,
                 producer text not null,
                 source_id text not null,
                 support_record_count integer not null,
@@ -233,7 +233,7 @@ def write_query_lookup(
             insert into query_sequences (
                 qseqid,
                 sample_id,
-                evidence_class,
+                query_class,
                 producer,
                 source_id,
                 support_record_count,
@@ -245,7 +245,7 @@ def write_query_lookup(
                 (
                     record.qseqid,
                     record.sample_id,
-                    record.evidence_class,
+                    record.query_class,
                     record.producer,
                     record.source_id,
                     1,
@@ -276,10 +276,10 @@ def write_query_lookup(
                 str(producer_run.input_fasta),
                 len(contigs),
                 sum(
-                    record.evidence_class == SHORT_ASSEMBLY_CONTIG for record in contigs
+                    record.query_class == SHORT_ASSEMBLY_CONTIG for record in contigs
                 ),
                 sum(
-                    record.evidence_class == LONG_ASSEMBLY_CONTIG for record in contigs
+                    record.query_class == LONG_ASSEMBLY_CONTIG for record in contigs
                 ),
                 producer_run.long_contig_min_length,
             ),

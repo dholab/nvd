@@ -134,11 +134,11 @@ workflow PREPROCESS_READS {
     }
 
     // 2d. Independently optional quality/length and low-complexity filters
-    ch_with_quality = ch_after_scrub.map { sample_id, platform, read_structure, evidence_class, reads ->
+    ch_with_quality = ch_after_scrub.map { sample_id, platform, read_structure, query_class, reads ->
         def min_qual = platform == "illumina"
             ? params.min_read_quality_illumina
             : params.min_read_quality_nanopore
-        tuple(sample_id, platform, read_structure, evidence_class, reads, min_qual)
+        tuple(sample_id, platform, read_structure, query_class, reads, min_qual)
     }
     def should_filter_reads = params.filter_reads || params.filter_low_complexity_reads
     ch_after_filter = should_filter_reads
@@ -155,22 +155,22 @@ workflow PREPROCESS_READS {
 
     ch_mapback_groups = ch_preprocessed_shards
         .groupTuple(by: [0, 1])
-        .map { sample_id, platform, read_structures, evidence_classes, reads ->
-            def rows = [read_structures, evidence_classes, reads].transpose().collect { row ->
-                [read_structure: row[0], evidence_class: row[1], reads: row[2]]
+        .map { sample_id, platform, read_structures, query_classes, reads ->
+            def rows = [read_structures, query_classes, reads].transpose().collect { row ->
+                [read_structure: row[0], query_class: row[1], reads: row[2]]
             }
             tuple(sample_id, platform, rows)
         }
 
     ch_mapback_by_layout = ch_mapback_groups.branch { _sample_id, _platform, rows ->
-        paired: rows.any { row -> row.read_structure == "interleaved" || row.evidence_class == "overlap_merged_pair" }
+        paired: rows.any { row -> row.read_structure == "interleaved" || row.query_class == "overlap_merged_pair" }
         single: true
     }
 
     ch_paired_reads_for_mapback = ch_mapback_by_layout.paired.map { sample_id, platform, rows ->
         def nonempty_rows = rows.findAll { row -> file(row.reads).countFastq() > 0 }
-        def overlap_merged_pair_reads = nonempty_rows.findAll { row -> row.evidence_class == "overlap_merged_pair" }.collect { row -> row.reads }
-        def single_read_reads = nonempty_rows.findAll { row -> row.evidence_class == "single_read" }.collect { row -> row.reads }
+        def overlap_merged_pair_reads = nonempty_rows.findAll { row -> row.query_class == "overlap_merged_pair" }.collect { row -> row.reads }
+        def single_read_reads = nonempty_rows.findAll { row -> row.query_class == "single_read" }.collect { row -> row.reads }
         tuple(
             sample_id,
             platform,
@@ -186,7 +186,7 @@ workflow PREPROCESS_READS {
     }
 
     emit:
-    reads = ch_preprocessed_shards.map { sample_id, platform, read_structure, _evidence_class, reads ->
+    reads = ch_preprocessed_shards.map { sample_id, platform, read_structure, _query_class, reads ->
         tuple(sample_id, platform, read_structure, reads)
     }
     read_shards = ch_preprocessed_shards

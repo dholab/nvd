@@ -98,10 +98,10 @@ process DEACON_DEPLETE {
     maxRetries 2
 
     input:
-    tuple val(sample_id), val(platform), val(read_structure), val(evidence_class), path(reads), path(index)
+    tuple val(sample_id), val(platform), val(read_structure), val(query_class), path(reads), path(index)
 
     output:
-    tuple val(sample_id), val(platform), val(read_structure), val(evidence_class), path("${sample_id}.${evidence_class}.depleted.fastq.gz"), emit: reads
+    tuple val(sample_id), val(platform), val(read_structure), val(query_class), path("${sample_id}.${query_class}.depleted.fastq.gz"), emit: reads
     tuple val(sample_id), path("${sample_id}.deacon.json"), emit: stats
 
     script:
@@ -112,7 +112,7 @@ process DEACON_DEPLETE {
         --abs-threshold ${params.host_abs_threshold} \
         --rel-threshold ${params.host_rel_threshold} \
         --summary ${sample_id}.deacon.json \
-        --output ${sample_id}.${evidence_class}.depleted.fastq.gz \
+        --output ${sample_id}.${query_class}.depleted.fastq.gz \
         ${index} \
         ${reads}
     """

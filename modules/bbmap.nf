@@ -71,17 +71,17 @@ process DEDUP_WITH_CLUMPIFY {
 	cpus 4
 
 	input:
-	tuple val(sample_id), val(platform), val(read_structure), val(evidence_class), path(reads)
+	tuple val(sample_id), val(platform), val(read_structure), val(query_class), path(reads)
 
 	output:
-	tuple val(sample_id), val(platform), val(read_structure), val(evidence_class), path("${sample_id}.${evidence_class}.dedup.fastq.gz")
+	tuple val(sample_id), val(platform), val(read_structure), val(query_class), path("${sample_id}.${query_class}.dedup.fastq.gz")
 
 	script:
 	def int_flag = read_structure == "interleaved" ? "int=t" : ""
 	"""
 	clumpify.sh \\
 	in=${reads} \\
-	out="${sample_id}.${evidence_class}.dedup.fastq.gz" \\
+	out="${sample_id}.${query_class}.dedup.fastq.gz" \\
 	dedupe=2 \\
 	reorder=p \\
 	subs=2 \\
@@ -104,17 +104,17 @@ process TRIM_ADAPTERS {
 	cpus 4
 
 	input:
-	tuple val(sample_id), val(platform), val(read_structure), val(evidence_class), path(reads)
+	tuple val(sample_id), val(platform), val(read_structure), val(query_class), path(reads)
 
 	output:
-	tuple val(sample_id), val(platform), val(read_structure), val(evidence_class), path("${sample_id}.${evidence_class}.trimmed.fastq.gz")
+	tuple val(sample_id), val(platform), val(read_structure), val(query_class), path("${sample_id}.${query_class}.trimmed.fastq.gz")
 
 	script:
 	def pair_trim_args = read_structure == "interleaved" ? "tpe tbo" : ""
 	"""
 	bbduk.sh \\
 		in=${reads} \\
-		out=${sample_id}.${evidence_class}.trimmed.fastq.gz \\
+		out=${sample_id}.${query_class}.trimmed.fastq.gz \\
 		ref=adapters \\
 		ktrim=r \\
 		k=23 \\
@@ -139,10 +139,10 @@ process FILTER_READS {
 	cpus 4
 
 	input:
-	tuple val(sample_id), val(platform), val(read_structure), val(evidence_class), path(reads), val(min_quality)
+	tuple val(sample_id), val(platform), val(read_structure), val(query_class), path(reads), val(min_quality)
 
 	output:
-	tuple val(sample_id), val(platform), val(read_structure), val(evidence_class), path("${sample_id}.${evidence_class}.filtered.fastq.gz")
+	tuple val(sample_id), val(platform), val(read_structure), val(query_class), path("${sample_id}.${query_class}.filtered.fastq.gz")
 
 	script:
 	def max_len_arg = params.max_read_length ? "maxlength=${params.max_read_length}" : ""
@@ -158,7 +158,7 @@ process FILTER_READS {
 	"""
 	bbduk.sh \\
 		in=${reads} \\
-		out=${sample_id}.${evidence_class}.filtered.fastq.gz \\
+		out=${sample_id}.${query_class}.filtered.fastq.gz \\
 		${pair_args} \\
 		${quality_args} \\
 		${entropy_args} \\
@@ -181,17 +181,17 @@ process REPAIR_PAIRS {
 	cpus 4
 
 	input:
-	tuple val(sample_id), val(platform), val(read_structure), val(evidence_class), path(reads)
+	tuple val(sample_id), val(platform), val(read_structure), val(query_class), path(reads)
 
 	output:
-	tuple val(sample_id), val(platform), val(read_structure), val(evidence_class), path("${sample_id}.${evidence_class}.repaired.fastq.gz")
+	tuple val(sample_id), val(platform), val(read_structure), val(query_class), path("${sample_id}.${query_class}.repaired.fastq.gz")
 
 	script:
 	"""
 	repair.sh \\
 		in=${reads} \\
-		out=${sample_id}.${evidence_class}.repaired.fastq.gz \\
-		outs=${sample_id}.${evidence_class}.singletons.fastq.gz \\
+		out=${sample_id}.${query_class}.repaired.fastq.gz \\
+		outs=${sample_id}.${query_class}.singletons.fastq.gz \\
 		interleaved=t \\
 		repair=t \\
 		threads=${task.cpus} \\

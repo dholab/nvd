@@ -502,7 +502,7 @@ def test_read_query_assignments_use_support_count_without_coverage_row(
             "adjusted_taxid_name",
             "adjusted_taxid_rank",
             "adjustment_method",
-            "evidence_class",
+            "query_class",
             "support_record_count",
         ],
         [
@@ -514,7 +514,7 @@ def test_read_query_assignments_use_support_count_without_coverage_row(
                 "adjusted_taxid_name": "Homo sapiens",
                 "adjusted_taxid_rank": "species",
                 "adjustment_method": "dominant",
-                "evidence_class": "short_assembly_contig",
+                "query_class": "short_assembly_contig",
                 "support_record_count": 1,
             },
             {
@@ -525,7 +525,7 @@ def test_read_query_assignments_use_support_count_without_coverage_row(
                 "adjusted_taxid_name": "Homo sapiens",
                 "adjusted_taxid_rank": "species",
                 "adjustment_method": "dominant",
-                "evidence_class": "overlap_merged_pair",
+                "query_class": "overlap_merged_pair",
                 "support_record_count": 7,
             },
         ],

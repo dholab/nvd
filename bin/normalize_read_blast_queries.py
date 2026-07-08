@@ -54,7 +54,7 @@ class NormalizedReadQuery:
 
     qseqid: str
     sample_id: str
-    evidence_class: str
+    query_class: str
     producer: str
     source_id: str
     support_record_count: int
@@ -75,7 +75,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--sample-id", required=True)
     parser.add_argument(
-        "--evidence-class",
+        "--query-class",
         required=True,
         choices=sorted(READ_QUERY_PREFIXES),
     )
@@ -230,20 +230,20 @@ def normalize_unique_reads(
     uniques: list[VsearchUnique],
     *,
     sample_id: str,
-    evidence_class: str,
+    query_class: str,
     producer: str,
     support_count_policy: str,
 ) -> list[NormalizedReadQuery]:
     validate_safe_token("sample_id", sample_id)
     validate_safe_token("producer", producer)
-    if evidence_class not in READ_QUERY_PREFIXES:
-        message = f"unsupported evidence_class: {evidence_class!r}"
+    if query_class not in READ_QUERY_PREFIXES:
+        message = f"unsupported query_class: {query_class!r}"
         raise ReadQueryNormalizationError(message)
     if support_count_policy not in SUPPORT_COUNT_POLICIES:
         message = f"unsupported support_count_policy: {support_count_policy!r}"
         raise ReadQueryNormalizationError(message)
 
-    prefix = READ_QUERY_PREFIXES[evidence_class]
+    prefix = READ_QUERY_PREFIXES[query_class]
     normalized: list[NormalizedReadQuery] = []
     seen_source_ids: set[str] = set()
     for index, unique in enumerate(uniques, start=1):
@@ -260,7 +260,7 @@ def normalize_unique_reads(
             NormalizedReadQuery(
                 qseqid=f"{prefix}_{sample_id}_{index:06d}",
                 sample_id=sample_id,
-                evidence_class=evidence_class,
+                query_class=query_class,
                 producer=producer,
                 source_id=unique.source_id,
                 support_record_count=support_record_count,
@@ -282,7 +282,7 @@ def write_fasta(path: Path, queries: list[NormalizedReadQuery]) -> None:
         for query in queries:
             handle.write(
                 f">{query.qseqid} "
-                f"evidence_class={query.evidence_class} "
+                f"query_class={query.query_class} "
                 f"producer={query.producer} "
                 f"source_id={query.source_id}\n",
             )
@@ -298,7 +298,7 @@ def write_query_lookup(path: Path, queries: list[NormalizedReadQuery]) -> None:
             create table query_sequences (
                 qseqid text primary key,
                 sample_id text not null,
-                evidence_class text not null,
+                query_class text not null,
                 producer text not null,
                 source_id text not null,
                 support_record_count integer not null,
@@ -312,7 +312,7 @@ def write_query_lookup(path: Path, queries: list[NormalizedReadQuery]) -> None:
             insert into query_sequences (
                 qseqid,
                 sample_id,
-                evidence_class,
+                query_class,
                 producer,
                 source_id,
                 support_record_count,
@@ -324,7 +324,7 @@ def write_query_lookup(path: Path, queries: list[NormalizedReadQuery]) -> None:
                 (
                     query.qseqid,
                     query.sample_id,
-                    query.evidence_class,
+                    query.query_class,
                     query.producer,
                     query.source_id,
                     query.support_record_count,
@@ -343,11 +343,11 @@ def output_paths(
     output_dir: Path,
     *,
     sample_id: str,
-    evidence_class: str,
+    query_class: str,
 ) -> tuple[Path, Path]:
     return (
-        output_dir / f"{sample_id}.{evidence_class}.blast_queries.fasta",
-        output_dir / f"{sample_id}.{evidence_class}.query_sequences.sqlite",
+        output_dir / f"{sample_id}.{query_class}.blast_queries.fasta",
+        output_dir / f"{sample_id}.{query_class}.query_sequences.sqlite",
     )
 
 
@@ -356,8 +356,7 @@ def main(argv: list[str] | None = None) -> None:
     validate_safe_token("sample_id", args.sample_id)
     args.output_dir.mkdir(parents=True, exist_ok=True)
     vsearch_fasta = (
-        args.output_dir
-        / f"{args.sample_id}.{args.evidence_class}.vsearch.uniques.fasta"
+        args.output_dir / f"{args.sample_id}.{args.query_class}.vsearch.uniques.fasta"
     )
     run_vsearch_fastx_uniques(
         args.fastq,
@@ -369,7 +368,7 @@ def main(argv: list[str] | None = None) -> None:
     queries = normalize_unique_reads(
         uniques,
         sample_id=args.sample_id,
-        evidence_class=args.evidence_class,
+        query_class=args.query_class,
         producer=args.producer,
         support_count_policy=args.support_count_policy,
     )
@@ -378,7 +377,7 @@ def main(argv: list[str] | None = None) -> None:
     fasta_path, lookup_path = output_paths(
         args.output_dir,
         sample_id=args.sample_id,
-        evidence_class=args.evidence_class,
+        query_class=args.query_class,
     )
     write_fasta(fasta_path, queries)
     write_query_lookup(lookup_path, queries)

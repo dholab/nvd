@@ -24,7 +24,7 @@ def lookup_rows(path: Path) -> list[dict[str, object]]:
             select
                 qseqid,
                 sample_id,
-                evidence_class,
+                query_class,
                 producer,
                 source_id,
                 support_record_count,
@@ -48,7 +48,7 @@ def lookup_rows(path: Path) -> list[dict[str, object]]:
         ("one", [1, 1, 1, 1, 1], 1),
     ],
 )
-def test_normalizes_distinct_casava_mates_without_losing_the_evidence_class(
+def test_normalizes_distinct_casava_mates_without_losing_the_query_class(
     tmp_path: Path,
     support_count_policy: str,
     expected_support_counts: list[int],
@@ -92,7 +92,7 @@ IIII
         [
             "--sample-id",
             "Water_20260707",
-            "--evidence-class",
+            "--query-class",
             "single_read",
             "--producer",
             "source_read",
@@ -227,7 +227,7 @@ IIII
             [
                 "--sample-id",
                 "sample-1",
-                "--evidence-class",
+                "--query-class",
                 "single_read",
                 "--producer",
                 "source_read",
@@ -254,7 +254,7 @@ def test_rejects_unsafe_sample_id_before_creating_output_dir(tmp_path: Path) -> 
             [
                 "--sample-id",
                 "../escaped",
-                "--evidence-class",
+                "--query-class",
                 "single_read",
                 "--producer",
                 "source_read",
@@ -283,7 +283,7 @@ def test_rejects_repeated_representative_source_ids() -> None:
                 VsearchUnique(source_id="readA/1", abundance=1, sequence="TGCA"),
             ],
             sample_id="sample-1",
-            evidence_class="single_read",
+            query_class="single_read",
             producer="source_read",
             support_count_policy="abundance",
         )
@@ -312,7 +312,7 @@ def test_writes_single_read_queries_with_abundance_support(tmp_path: Path) -> No
             VsearchUnique(source_id="readC/1", abundance=1, sequence="TTTTAAAA"),
         ],
         sample_id="sample-1",
-        evidence_class="single_read",
+        query_class="single_read",
         producer="source_read",
         support_count_policy="abundance",
     )
@@ -323,16 +323,16 @@ def test_writes_single_read_queries_with_abundance_support(tmp_path: Path) -> No
     write_query_lookup(lookup, queries)
 
     assert fasta.read_text(encoding="utf-8") == (
-        ">nvdReadQuery_sample-1_000001 evidence_class=single_read producer=source_read source_id=readA/1\n"
+        ">nvdReadQuery_sample-1_000001 query_class=single_read producer=source_read source_id=readA/1\n"
         "ACGTACGT\n"
-        ">nvdReadQuery_sample-1_000002 evidence_class=single_read producer=source_read source_id=readC/1\n"
+        ">nvdReadQuery_sample-1_000002 query_class=single_read producer=source_read source_id=readC/1\n"
         "TTTTAAAA\n"
     )
     assert lookup_rows(lookup) == [
         {
             "qseqid": "nvdReadQuery_sample-1_000001",
             "sample_id": "sample-1",
-            "evidence_class": "single_read",
+            "query_class": "single_read",
             "producer": "source_read",
             "source_id": "readA/1",
             "support_record_count": 3,
@@ -342,7 +342,7 @@ def test_writes_single_read_queries_with_abundance_support(tmp_path: Path) -> No
         {
             "qseqid": "nvdReadQuery_sample-1_000002",
             "sample_id": "sample-1",
-            "evidence_class": "single_read",
+            "query_class": "single_read",
             "producer": "source_read",
             "source_id": "readC/1",
             "support_record_count": 1,
@@ -356,7 +356,7 @@ def test_deduplicated_support_policy_uses_one_per_unique_query() -> None:
     queries = normalize_unique_reads(
         [VsearchUnique(source_id="readA/1", abundance=9, sequence="ACGT")],
         sample_id="sample-1",
-        evidence_class="overlap_merged_pair",
+        query_class="overlap_merged_pair",
         producer="bbmerge",
         support_count_policy="one",
     )

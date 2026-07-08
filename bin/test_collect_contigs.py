@@ -21,7 +21,7 @@ def lookup_rows(path: Path) -> list[dict[str, object]]:
             select
                 qseqid,
                 sample_id,
-                evidence_class,
+                query_class,
                 producer,
                 source_id,
                 support_record_count,
@@ -108,12 +108,12 @@ def test_collects_assembly_contigs_with_stable_ids_and_lookup(
     assert fasta_headers(output_fasta) == [
         (
             ">nvdContigQuery_sample-1_000001 "
-            "evidence_class=short_assembly_contig "
+            "query_class=short_assembly_contig "
             "producer=spades source_id=NODE_1_length_4_cov_1.0"
         ),
         (
             ">nvdContigQuery_sample-1_000002 "
-            "evidence_class=short_assembly_contig "
+            "query_class=short_assembly_contig "
             "producer=spades source_id=NODE_2_length_6_cov_2.0"
         ),
     ]
@@ -121,7 +121,7 @@ def test_collects_assembly_contigs_with_stable_ids_and_lookup(
         {
             "qseqid": "nvdContigQuery_sample-1_000001",
             "sample_id": "sample-1",
-            "evidence_class": "short_assembly_contig",
+            "query_class": "short_assembly_contig",
             "producer": "spades",
             "source_id": "NODE_1_length_4_cov_1.0",
             "support_record_count": 1,
@@ -131,7 +131,7 @@ def test_collects_assembly_contigs_with_stable_ids_and_lookup(
         {
             "qseqid": "nvdContigQuery_sample-1_000002",
             "sample_id": "sample-1",
-            "evidence_class": "short_assembly_contig",
+            "query_class": "short_assembly_contig",
             "producer": "spades",
             "source_id": "NODE_2_length_6_cov_2.0",
             "support_record_count": 1,
@@ -161,7 +161,7 @@ def test_qseqid_does_not_include_length_based_class(tmp_path: Path) -> None:
     first_token = header[1:].split(maxsplit=1)[0]
     assert first_token == expected_qseqid
     assert "long_assembly_contig" not in first_token
-    assert "evidence_class=long_assembly_contig" in header
+    assert "query_class=long_assembly_contig" in header
 
 
 def test_splits_short_and_long_assembly_contigs_at_threshold(tmp_path: Path) -> None:
@@ -184,7 +184,7 @@ def test_splits_short_and_long_assembly_contigs_at_threshold(tmp_path: Path) -> 
     )
 
     rows = lookup_rows(query_lookup)
-    assert [row["evidence_class"] for row in rows] == [
+    assert [row["query_class"] for row in rows] == [
         "short_assembly_contig",
         "long_assembly_contig",
     ]
@@ -277,7 +277,7 @@ def test_lookup_is_queryable_by_qseqid(tmp_path: Path) -> None:
     with sqlite3.connect(query_lookup) as connection:
         row = connection.execute(
             """
-            select evidence_class, producer, source_id, support_record_count
+            select query_class, producer, source_id, support_record_count
             from query_sequences
             where qseqid = ?
             """,

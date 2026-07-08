@@ -3,13 +3,13 @@ include { CONCAT_READS_AS_FASTA } from "../modules/seqkit"
 
 workflow SHORT_READ_DENOVO_ASSEMBLY {
     take:
-    ch_short_read_shards  // tuple(sample_id, platform, read_structure, evidence_class, fastq)
+    ch_short_read_shards  // tuple(sample_id, platform, read_structure, query_class, fastq)
 
     main:
 
     ch_grouped_shards = ch_short_read_shards
         .groupTuple(by: [0, 1, 2])
-        .map { sample_id, platform, read_structure, _evidence_classes, reads ->
+        .map { sample_id, platform, read_structure, _query_classes, reads ->
             def count = reads.collect { read_file -> file(read_file).countFastq() }.sum()
             tuple(sample_id, platform, read_structure, reads, count)
         }
