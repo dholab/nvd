@@ -1,5 +1,5 @@
 include { DEACON_FILTER_CONTIGS } from "../modules/deacon"
-include { SELECT_BLAST_QUERIES } from "../modules/blast"
+include { SELECT_BLAST_QUERIES ; NORMALIZE_READ_BLAST_QUERIES } from "../modules/blast"
 include { CONTIG_READ_MAPBACK } from "./contig_read_mapback"
 
 workflow PREPARE_BLAST_QUERIES {
@@ -40,8 +40,31 @@ workflow PREPARE_BLAST_QUERIES {
             }
         }
 
+    ch_contig_query_lookups = DEACON_FILTER_CONTIGS.out
+        .map { sample_id, _platform, _read_structure, _fasta, lookup -> tuple(sample_id, lookup) }
+
+    if (params.experimental == true) {
+        NORMALIZE_READ_BLAST_QUERIES(CONTIG_READ_MAPBACK.out.unmapped_reads)
+        ch_read_query_batches = NORMALIZE_READ_BLAST_QUERIES.out.queries
+            .flatMap { sample_id, platform, evidence_class, fastas, lookups ->
+                def batch_fastas = fastas ? (fastas instanceof List ? fastas : [fastas]) : []
+                def query_lookups = lookups ? (lookups instanceof List ? lookups : [lookups]) : []
+                assert batch_fastas.size() == query_lookups.size()
+                batch_fastas.withIndex().collect { batch_fasta, index ->
+                    tuple(sample_id, platform, evidence_class, batch_fasta, query_lookups[index])
+                }
+            }
+        ch_query_batches = ch_query_batches.mix(ch_read_query_batches)
+        ch_query_lookups = ch_contig_query_lookups
+            .mix(ch_read_query_batches.map { sample_id, _platform, _evidence_class, _fasta, lookup -> tuple(sample_id, lookup) })
+            .groupTuple()
+    } else {
+        ch_query_lookups = ch_contig_query_lookups.groupTuple()
+    }
+
     emit:
     queries = ch_query_batches
+    query_lookups = ch_query_lookups
     contig_sequences = DEACON_FILTER_CONTIGS.out
     contig_read_counts = CONTIG_READ_MAPBACK.out.contig_read_counts
     filtered_bam = CONTIG_READ_MAPBACK.out.filtered_bam

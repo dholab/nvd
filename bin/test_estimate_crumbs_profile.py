@@ -489,6 +489,102 @@ def test_assigned_contig_missing_coverage_fails_loudly(
         run_estimator(tmp_path, blast, coverage, taxonomy)
 
 
+def test_read_query_assignments_use_support_count_without_coverage_row(
+    tmp_path: Path,
+) -> None:
+    blast = write_tsv(
+        tmp_path / "sample-1.blast.final.tsv",
+        [
+            "sample",
+            "qseqid",
+            "qlen",
+            "adjusted_taxid",
+            "adjusted_taxid_name",
+            "adjusted_taxid_rank",
+            "adjustment_method",
+            "evidence_class",
+            "support_record_count",
+        ],
+        [
+            {
+                "sample": "sample-1",
+                "qseqid": "contig-a",
+                "qlen": 100,
+                "adjusted_taxid": 9606,
+                "adjusted_taxid_name": "Homo sapiens",
+                "adjusted_taxid_rank": "species",
+                "adjustment_method": "dominant",
+                "evidence_class": "short_assembly_contig",
+                "support_record_count": 1,
+            },
+            {
+                "sample": "sample-1",
+                "qseqid": "nvdMergeReadQuery_sample-1_000001",
+                "qlen": 50,
+                "adjusted_taxid": 9606,
+                "adjusted_taxid_name": "Homo sapiens",
+                "adjusted_taxid_rank": "species",
+                "adjustment_method": "dominant",
+                "evidence_class": "overlap_merged_pair",
+                "support_record_count": 7,
+            },
+        ],
+    )
+    coverage = write_tsv(
+        tmp_path / "sample-1.crumbs.coverage.tsv",
+        COVERAGE_FIELDS,
+        [
+            {
+                "sample_id": "sample-1",
+                "qseqid": "contig-a",
+                "contig_length": 100,
+                "covered_bases_1x": 100,
+                "breadth_1x": 1.0,
+                "raw_aligned_bases": 100,
+                "mean_depth_full": 1.0,
+                "median_depth_full": 1,
+                "median_depth_positive": 1,
+                "depth_p95": 1,
+                "depth_p99": 1,
+                "max_depth": 1,
+                "crumbs_p95": 100,
+                "crumbs_p99": 100,
+            },
+        ],
+    )
+    taxonomy = write_tsv(
+        tmp_path / "profile_taxonomy.tsv",
+        TAXONOMY_FIELDS,
+        [
+            {
+                "taxon_id": 9606,
+                "taxon_name": "Homo sapiens",
+                "rank": "species",
+                "taxpath": "131567|2759|9605|9606",
+                "taxpathsn": "cellular organisms|Eukaryota|Homo|Homo sapiens",
+                "rankpath": "no rank|superkingdom|genus|species",
+            },
+        ],
+    )
+
+    run_estimator(tmp_path, blast, coverage, taxonomy)
+
+    contigs = read_tsv(tmp_path / "sample-1.crumbs.contigs.tsv")
+    read_query = next(
+        row for row in contigs if row["qseqid"] == "nvdMergeReadQuery_sample-1_000001"
+    )
+    assert read_query["contig_length"] == "50"
+    assert read_query["covered_bases_1x"] == "0"
+    assert read_query["breadth_1x"] == "0.0"
+    assert read_query["raw_aligned_bases"] == "7.0"
+    assert read_query["crumbs_score"] == "7.0"
+    assert read_query["winsorization_percentile"] == "read_query_support"
+
+    [taxon] = read_tsv(tmp_path / "sample-1.crumbs.taxa.tsv")
+    assert taxon["n_contigs"] == "2"
+    assert float(taxon["total_crumbs_score"]) == 107.0
+
+
 def test_conflicting_repeated_blast_assignments_fail_loudly(
     tmp_path: Path,
 ) -> None:

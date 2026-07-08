@@ -122,7 +122,7 @@ process ADD_READ_COUNTS_TO_BLAST {
   label "low"
 
   input:
-  tuple val(sample_id), path(blast_tsv), val(total_reads), path(contig_counts), path(query_lookup)
+  tuple val(sample_id), path(blast_tsv), val(total_reads), path(contig_counts), path(query_lookups)
   val run_id
 
   output:
@@ -130,11 +130,13 @@ process ADD_READ_COUNTS_TO_BLAST {
 
   script:
   def virus_index_version = NvdUtils.targetEnrichmentEnabled(params) ? params.virus_index_version : "not_used"
+  def lookup_files = query_lookups instanceof List ? query_lookups : [query_lookups]
+  def lookup_args = lookup_files.collect { lookup -> "--query-lookup ${lookup}" }.join(" ")
   """
   finalize_blast_results.py \\
       --blast-tsv ${blast_tsv} \\
       --contig-counts ${contig_counts} \\
-      --query-lookup ${query_lookup} \\
+      ${lookup_args} \\
       --output ${sample_id}_blast.final.tsv \\
       --total-reads ${total_reads} \\
       --blast-db-version '${params.blast_db_version}' \\

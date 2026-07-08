@@ -31,6 +31,9 @@ ASSIGNMENT_COLUMNS = [
     "adjustment_method",
 ]
 PROFILE_ASSIGNMENT_SCORE_COLUMNS = ["bitscore", "evalue"]
+READ_QUERY_EVIDENCE_CLASSES = {"overlap_merged_pair", "single_read"}
+READ_QUERY_PREFIXES = ("nvdMergeReadQuery_", "nvdReadQuery_")
+READ_QUERY_METADATA_COLUMNS = ["evidence_class", "support_record_count", "qlen"]
 COVERAGE_COLUMNS = [
     "sample_id",
     "qseqid",
@@ -112,6 +115,9 @@ BLAST_SCHEMA_OVERRIDES = {
     "adjusted_taxid_name": pl.String,
     "adjusted_taxid_rank": pl.String,
     "adjustment_method": pl.String,
+    "evidence_class": pl.String,
+    "support_record_count": pl.Int64,
+    "qlen": pl.Int64,
 }
 COVERAGE_SCHEMA_OVERRIDES = {
     "sample_id": pl.String,
@@ -218,6 +224,7 @@ def collapse_assignments(blast: pl.DataFrame, sample_id: str) -> pl.DataFrame:
     selected_columns = [
         *ASSIGNMENT_COLUMNS,
         *(PROFILE_ASSIGNMENT_SCORE_COLUMNS if has_score_columns else []),
+        *[column for column in READ_QUERY_METADATA_COLUMNS if column in blast.columns],
     ]
     assignments = blast.select(selected_columns).with_columns(
         *[pl.col(column).cast(pl.String) for column in ASSIGNMENT_COLUMNS],
@@ -268,7 +275,12 @@ def collapse_assignments(blast: pl.DataFrame, sample_id: str) -> pl.DataFrame:
                 pl.min("evalue").over("qseqid").alias("_best_evalue"),
             )
             .filter(pl.col("evalue") == pl.col("_best_evalue"))
-            .select(ASSIGNMENT_COLUMNS)
+            .select(
+                [
+                    *ASSIGNMENT_COLUMNS,
+                    *[column for column in READ_QUERY_METADATA_COLUMNS if column in assignments.columns],
+                ],
+            )
         )
 
     conflicts = assignments.unique(maintain_order=True).group_by("qseqid").len()
@@ -417,7 +429,8 @@ def validate_assignment_coverage_alignment(
     coverage: pl.DataFrame,
 ) -> None:
     """Fail when an assigned contig has no coverage summary row."""
-    missing_coverage = assignments.join(
+    contig_assignments = contig_query_assignments(assignments)
+    missing_coverage = contig_assignments.join(
         coverage.select("qseqid"),
         on="qseqid",
         how="anti",
@@ -426,6 +439,84 @@ def validate_assignment_coverage_alignment(
         qseqids = missing_coverage.get_column("qseqid").to_list()
         message = "coverage TSV is missing assigned contigs: " + ", ".join(qseqids)
         raise CrumbsProfileError(message)
+
+
+def read_query_assignment_mask(assignments: pl.DataFrame) -> pl.Expr:
+    """Return an expression selecting read-derived query assignments."""
+    prefix_expr = pl.any_horizontal(
+        [pl.col("qseqid").str.starts_with(prefix) for prefix in READ_QUERY_PREFIXES],
+    )
+    if "evidence_class" not in assignments.columns:
+        return prefix_expr
+    return pl.col("evidence_class").is_in(READ_QUERY_EVIDENCE_CLASSES) | prefix_expr
+
+
+def read_query_assignments(assignments: pl.DataFrame) -> pl.DataFrame:
+    """Select BLAST assignments for read-derived query records."""
+    return assignments.filter(read_query_assignment_mask(assignments))
+
+
+def contig_query_assignments(assignments: pl.DataFrame) -> pl.DataFrame:
+    """Select BLAST assignments that still require contig coverage rows."""
+    return assignments.filter(~read_query_assignment_mask(assignments))
+
+
+def build_read_query_table(
+    *,
+    sample_id: str,
+    assignments: pl.DataFrame,
+) -> pl.DataFrame:
+    """Convert read-derived query assignments into CRUMBS evidence rows."""
+    if assignments.is_empty():
+        return pl.DataFrame(schema={column: pl.Null for column in CONTIG_OUTPUT_COLUMNS})
+    missing_columns = [
+        column
+        for column in ("support_record_count", "qlen")
+        if column not in assignments.columns
+    ]
+    if missing_columns:
+        message = (
+            "read-derived BLAST assignments missing required columns: "
+            + ", ".join(missing_columns)
+        )
+        raise CrumbsProfileError(message)
+
+    typed = assignments.with_columns(
+        pl.col("support_record_count").cast(pl.Int64),
+        pl.col("qlen").cast(pl.Int64),
+    )
+    invalid = typed.filter(
+        pl.col("support_record_count").is_null()
+        | (pl.col("support_record_count") <= 0)
+        | pl.col("qlen").is_null()
+        | (pl.col("qlen") <= 0),
+    )
+    if invalid.height > 0:
+        qseqids = invalid.get_column("qseqid").to_list()
+        message = (
+            "read-derived BLAST assignments contain invalid support or qlen values: "
+            + ", ".join(qseqids)
+        )
+        raise CrumbsProfileError(message)
+
+    return typed.with_columns(
+        pl.lit(sample_id).alias("sample_id"),
+        pl.col("qlen").alias("contig_length"),
+        pl.lit(0).alias("covered_bases_1x"),
+        pl.lit(0.0).alias("breadth_1x"),
+        pl.col("support_record_count").cast(pl.Float64).alias("raw_aligned_bases"),
+        (pl.col("support_record_count") / pl.col("qlen")).cast(pl.Float64).alias("mean_depth_full"),
+        pl.lit(0.0).alias("median_depth_full"),
+        pl.lit(0.0).alias("median_depth_positive"),
+        pl.lit(0.0).alias("depth_p95"),
+        pl.lit(0.0).alias("depth_p99"),
+        pl.lit(0.0).alias("max_depth"),
+        pl.col("support_record_count").cast(pl.Float64).alias("crumbs_p95"),
+        pl.col("support_record_count").cast(pl.Float64).alias("crumbs_p99"),
+        pl.lit("read_query_support").alias("winsorization_percentile"),
+        pl.col("support_record_count").cast(pl.Float64).alias("winsorization_cap"),
+        pl.col("support_record_count").cast(pl.Float64).alias("crumbs_score"),
+    ).select(CONTIG_OUTPUT_COLUMNS)
 
 
 def build_contig_table(
@@ -437,8 +528,9 @@ def build_contig_table(
 ) -> pl.DataFrame:
     """Join assignments, coverage, and explicit taxonomy into contig evidence."""
     validate_assignment_coverage_alignment(assignments, coverage)
+    contig_assignments = contig_query_assignments(assignments)
     contigs = (
-        assignments.join(coverage, on="qseqid", how="inner")
+        contig_assignments.join(coverage, on="qseqid", how="inner")
         .join(
             profile_taxonomy.select(
                 "taxon_id",
@@ -455,15 +547,27 @@ def build_contig_table(
             pl.col("crumbs_p99").alias("crumbs_score"),
         )
     )
-    missing_taxonomy = contigs.filter(pl.col("adjusted_taxid").is_not_null()).filter(
-        pl.col("has_profile_taxonomy").is_null(),
+    read_queries = build_read_query_table(
+        sample_id=sample_id,
+        assignments=read_query_assignments(assignments),
+    )
+    if read_queries.height > 0:
+        contigs = pl.concat(
+            [contigs.select(CONTIG_OUTPUT_COLUMNS), read_queries],
+            how="vertical_relaxed",
+        )
+    contigs = contigs.select(CONTIG_OUTPUT_COLUMNS)
+    missing_taxonomy = contigs.select("adjusted_taxid").unique().join(
+        profile_taxonomy.select(pl.col("taxon_id").alias("adjusted_taxid")),
+        on="adjusted_taxid",
+        how="anti",
     )
     if missing_taxonomy.height > 0:
         missing = missing_taxonomy.get_column("adjusted_taxid").unique().to_list()
         message = "profile taxonomy is missing adjusted taxids: " + ", ".join(missing)
         raise CrumbsProfileError(message)
 
-    return contigs.select(CONTIG_OUTPUT_COLUMNS)
+    return contigs
 
 
 def build_taxon_table(
