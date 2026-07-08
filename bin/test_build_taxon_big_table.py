@@ -58,7 +58,7 @@ EXPECTED_LEFT_TO_RIGHT_COLUMNS = [
     "taxon_rank",
     "support_tier",
     "taxon_crumbs",
-    "percentage_emitted",
+    "relative_crumbs_percent",
     "supporting_query_count",
     "taxid",
     "total_query_span",
@@ -175,7 +175,7 @@ def test_taxon_big_table_aggregates_query_support_and_crumbs(tmp_path: Path) -> 
     assert row["total_query_span"] == "3000"
     assert row["total_crumbs_score"] == "300"
     assert row["taxon_crumbs"] == "0.1"
-    assert row["percentage_emitted"] == "100"
+    assert row["relative_crumbs_percent"] == "100"
     assert row["support_note"] == (
         "2 strong query assignments support Alpha virus (species)."
     )

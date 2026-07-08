@@ -359,7 +359,7 @@ def test_rapid_screening_eval_wiring_and_publish_hierarchy() -> None:
         "workflows/nvd_main.nf": (
             'include { RAPID_SCREENING         } from "../subworkflows/rapid_screening"',
             'include { RAPID_SCREENING_EVAL    } from "../subworkflows/rapid_screening_eval"',
-            "rapid_screening = RAPID_SCREENING(PREPROCESS_READS.out.reads)",
+            "rapid_screening = RAPID_SCREENING(",
             "RAPID_SCREENING_EVAL(",
         ),
         "subworkflows/rapid_screening.nf": ("workflow RAPID_SCREENING",),
@@ -377,10 +377,11 @@ def test_rapid_screening_eval_wiring_and_publish_hierarchy() -> None:
             'path "rapid_screening_eval.html"',
         ),
         "conf/results.config": (
-            'experimental_rapid_screening = params.nvd_results + "/experimental_rapid_screening"',
-            'sourmash_screening_engine = params.experimental_rapid_screening + "/engines/sourmash"',
-            'path: { params.experimental_rapid_screening + "/eval" }',
-            'path: { params.experimental_rapid_screening + "/eval/reports" }',
+            'rapid_screening = params.experiment_summary + "/rapid_screening"',
+            'sourmash_screening_engine = params.rapid_screening + "/engines/sourmash"',
+            'rapid_screening_eval = params.rapid_screening + "/eval"',
+            "path: { params.rapid_screening_eval }",
+            'path: { params.rapid_screening_eval + "/reports" }',
         ),
     }
     missing = [

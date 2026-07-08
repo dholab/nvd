@@ -562,7 +562,7 @@ def test_mini_sra_viral_pipeline_completes() -> None:
             assert organism in final_text
 
     if experimental:
-        rapid_screening_root = results_root / "experimental_rapid_screening"
+        rapid_screening_root = results_root / "08_experiment_summary" / "rapid_screening"
         sourmash_root = rapid_screening_root / "engines" / "sourmash"
         ref_dir = sourmash_root / "reference_profiling" / "reference"
         gather_dir = sourmash_root / "reference_profiling" / "gather"
