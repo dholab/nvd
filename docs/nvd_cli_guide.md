@@ -27,7 +27,7 @@ The CLI is not meant to hide the pipeline from you. It is meant to keep importan
 ```bash
 nvd setup # run on install; does not need to be run for each nvd run
 
-nvd samplesheet generate --from-dir ./fastqs --platform illumina --output samplesheet.csv
+nvd samplesheet generate --from-dir ./fastqs --platform illumina --sanitize --output samplesheet.csv
 nvd params init run.yaml # then edit run.yaml in an editor with YAML language support
 nvd params check run.yaml
 nvd run --params-file run.yaml
@@ -149,6 +149,14 @@ Generate a samplesheet from a directory of FASTQ files:
 nvd samplesheet generate --from-dir ./fastqs --platform illumina --output samplesheet.csv
 ```
 
+For Illumina/CASAVA filenames, add `--sanitize` when generated sample IDs should drop the sample-number and lane suffixes. For example, `patient-001_S7_L003_R1_001.fastq.gz` and `patient-001_S7_L003_R2_001.fastq.gz` become sample ID `patient-001` instead of `patient-001_S7_L003`:
+
+```bash
+nvd samplesheet generate --from-dir ./fastqs --platform illumina --sanitize --output samplesheet.csv
+```
+
+`--sanitize` only changes generated sample IDs. It does not concatenate multiple lanes; multi-lane Illumina samples still produce one row per discovered read pair.
+
 For Nanopore/ONT reads:
 
 ```bash
@@ -189,6 +197,9 @@ NVD uses NCBI taxonomy for BLAST annotation and LCA resolution. For local work, 
 ```bash
 nvd taxonomy ensure --taxonomy-dir /path/to/taxdump
 ```
+
+Existing taxonomy data is reused even when old, while missing required files still trigger download/build. This is the safest behavior for shared HPC references because worker jobs do not mutate a shared taxonomy directory merely because `nodes.dmp` is older than a freshness window.
+
 
 Inspect the current state:
 

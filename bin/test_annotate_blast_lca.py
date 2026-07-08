@@ -8,6 +8,7 @@ Focus on:
 - End-to-end output format
 """
 
+import csv
 import sys
 from pathlib import Path
 
@@ -15,6 +16,7 @@ import polars as pl
 import polars.exceptions
 import pytest
 from annotate_blast_lca import (
+    OUTPUT_COLUMNS,
     LcaParams,
     _find_lca_list,
     filter_blast_hits,
@@ -474,7 +476,7 @@ megablast\tsample1\tcontig_multi\t500\tref|NC_001\tPrimate gene\t450\t99.5\t1e-1
         mock_taxonomy_open,
         tmp_path: Path,
     ):
-        """Empty input file creates empty output file without error."""
+        """Empty input file creates a header-only output without error."""
         # Create empty input file
         blast_file = tmp_path / "empty.txt"
         blast_file.touch()
@@ -494,6 +496,41 @@ megablast\tsample1\tcontig_multi\t500\tref|NC_001\tPrimate gene\t450\t99.5\t1e-1
         finally:
             sys.argv = original_argv
 
-        # Output file should exist and be empty
         assert output_file.exists()
-        assert output_file.stat().st_size == 0
+        with output_file.open(newline="") as handle:
+            rows = list(csv.reader(handle, delimiter="\t"))
+
+        assert rows == [OUTPUT_COLUMNS]
+
+    def test_header_only_input_creates_header_only_output(
+        self,
+        test_taxonomy_sqlite: Path,
+        mock_taxonomy_open,
+        tmp_path: Path,
+    ):
+        """Header-only merged BLAST tables are valid no-hit sentinels."""
+        blast_file = tmp_path / "header_only.txt"
+        blast_file.write_text(
+            "task\tsample\tqseqid\tqlen\tsseqid\tstitle\tlength\tpident\tevalue\tbitscore\tsscinames\tstaxids\trank\n",
+        )
+
+        output_file = tmp_path / "output.txt"
+
+        original_argv = sys.argv
+        try:
+            sys.argv = [
+                "annotate_blast_lca.py",
+                "-i",
+                str(blast_file),
+                "-o",
+                str(output_file),
+            ]
+            main()
+        finally:
+            sys.argv = original_argv
+
+        assert output_file.exists()
+        with output_file.open(newline="") as handle:
+            rows = list(csv.reader(handle, delimiter="\t"))
+
+        assert rows == [OUTPUT_COLUMNS]

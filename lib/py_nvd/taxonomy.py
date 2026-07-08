@@ -48,17 +48,35 @@ if TYPE_CHECKING:
 # NCBI taxdump URL and configuration
 TAXDUMP_URL = "https://ftp.ncbi.nlm.nih.gov/pub/taxonomy/taxdump.tar.gz"
 REQUIRED_DMP_FILES = {"nodes.dmp", "names.dmp", "merged.dmp"}
-MAX_AGE = timedelta(days=30)
+DEFAULT_TAXONOMY_MAX_AGE_DAYS = 90
+MAX_AGE = timedelta(days=DEFAULT_TAXONOMY_MAX_AGE_DAYS)
 
 
-def _is_taxdump_stale(taxdump_dir: Path) -> bool:
-    """Check if taxdump needs refresh (missing or >30 days old)."""
+def _missing_required_dmp_files(taxdump_dir: Path) -> list[Path]:
+    """Return required NCBI taxdump files absent from a taxonomy directory."""
+    return sorted(
+        (
+            taxdump_dir / filename
+            for filename in REQUIRED_DMP_FILES
+            if not (taxdump_dir / filename).exists()
+        ),
+        key=lambda path: path.name,
+    )
+
+
+def _required_dmp_files_missing(taxdump_dir: Path) -> bool:
+    """Whether any required NCBI taxdump source files are missing."""
+    return bool(_missing_required_dmp_files(taxdump_dir))
+
+
+def _is_taxdump_stale(taxdump_dir: Path, max_age: timedelta = MAX_AGE) -> bool:
+    """Check if taxdump is missing or older than the configured freshness window."""
     nodes_dmp = taxdump_dir / "nodes.dmp"
     if not nodes_dmp.exists():
         return True
     mtime = datetime.fromtimestamp(nodes_dmp.stat().st_mtime, tz=UTC)
     age = datetime.now(tz=UTC) - mtime
-    return age > MAX_AGE
+    return age > max_age
 
 
 def _download_and_extract_taxdump(taxdump_dir: Path) -> None:
@@ -269,7 +287,7 @@ def _ensure_taxdump(
     taxonomy_dir: Path | str | None = None,
 ) -> Path:
     """
-    Ensure taxdump is downloaded, extracted, and SQLite is built.
+    Ensure taxdump is downloaded, extracted, and SQLite is built when missing.
 
     Args:
         taxonomy_dir: Optional explicit taxonomy directory.
@@ -280,10 +298,13 @@ def _ensure_taxdump(
     taxdump_dir = get_taxdump_dir(taxonomy_dir=taxonomy_dir)
     sqlite_path = taxdump_dir / "taxonomy.sqlite"
 
-    if _is_taxdump_stale(taxdump_dir):
+    missing_dmp_files = _required_dmp_files_missing(taxdump_dir)
+    sqlite_missing = not sqlite_path.exists()
+
+    if missing_dmp_files:
         _download_and_extract_taxdump(taxdump_dir)
         _build_sqlite_from_dmp(taxdump_dir)
-    elif not sqlite_path.exists():
+    elif sqlite_missing:
         # .dmp files exist but SQLite needs rebuilding
         _build_sqlite_from_dmp(taxdump_dir)
 
@@ -296,8 +317,9 @@ def ensure_taxonomy_available(
     """
     Ensure taxonomy database is downloaded and ready for use.
 
-    Downloads NCBI taxdump if not present or stale (>30 days old),
-    extracts required .dmp files, and builds the SQLite database.
+    Downloads NCBI taxdump only when required taxonomy files are missing.
+    Existing taxonomy data is reused regardless of age for pipeline
+    reproducibility.
 
     This is the public API for pre-downloading taxonomy data before
     distributed workers need it. Call this once on the submit node
@@ -642,13 +664,14 @@ class TaxonomyUnavailableError(ResourceUnavailableError):
         return self.resource_path
 
 
-def format_taxonomy_warning(
+def format_taxonomy_warning(  # noqa: PLR0913
     *,
     operation: str,
     context: str,
     error: Exception | None,
     taxdump_dir: Path | str,
     will_download: bool = True,
+    will_continue: bool = False,
 ) -> str:
     """
     Format a detailed warning message for taxonomy database issues.
@@ -662,6 +685,7 @@ def format_taxonomy_warning(
         error: The exception that occurred (if any)
         taxdump_dir: Path to the taxdump directory
         will_download: Whether a fresh download will be attempted
+        will_continue: Whether NVD will continue with existing taxonomy data.
 
     Returns:
         Formatted multi-line warning string suitable for logging
@@ -707,7 +731,16 @@ Issue:
   The pre-cached taxonomy database was not found or is stale.
 """
 
-    if will_download:
+    if will_continue:
+        consequence = """
+Consequence:
+  Continuing with the existing taxonomy database.
+  WARNING: taxonomy may be older than the configured freshness window, so
+  taxids, merged identifiers, and names may differ from current NCBI taxonomy.
+  For reproducible pipeline runs, this is usually preferable to mutating a
+  shared taxonomy directory during analysis.
+"""
+    elif will_download:
         consequence = """
 Consequence:
   Attempting to download fresh taxonomy data from NCBI.
@@ -753,8 +786,10 @@ def open(  # noqa: A001, C901, PLR0912, PLR0915
     """
     Context manager for taxonomy database access.
 
-    Downloads taxdump from NCBI if missing or stale (>30 days).
-    Builds SQLite from .dmp files for fast lookups.
+    By default, downloads taxdump from NCBI only when required taxonomy files
+    are missing. Existing taxonomy data is reused even when older than the
+    freshness warning window so pipeline runs do not mutate shared references.
+    Builds SQLite from .dmp files for fast lookups when needed.
     Provides access to taxopy for LCA calculations.
 
     Args:
@@ -764,7 +799,8 @@ def open(  # noqa: A001, C901, PLR0912, PLR0915
         taxonomy_dir: Optional explicit taxonomy directory.
         sync: If True, require pre-cached taxonomy and fail if unavailable.
               If False (default), attempt lazy download with a warning if
-              pre-cached taxonomy is missing or stale.
+              required taxonomy files are missing. Stale-but-complete taxonomy
+              is reused for reproducibility.
         warn_callback: Optional callback function to receive warning messages.
                        If None, warnings are printed to stderr. The callback
                        should accept a single string argument.
@@ -806,19 +842,22 @@ def open(  # noqa: A001, C901, PLR0912, PLR0915
         else:
             print(msg, file=sys.stderr)  # noqa: T201  # fallback warning output to stderr
 
-    # Resolve offline mode from env var if not explicitly set
+    # Resolve offline mode from env var if not explicitly set.
     if offline is None:
         offline = os.environ.get("NVD_TAXONOMY_OFFLINE", "").lower() in ("1", "true")
 
     taxdump_dir = get_taxdump_dir(taxonomy_dir=taxonomy_dir)
     sqlite_path = taxdump_dir / "taxonomy.sqlite"
+    missing_dmp_files = _missing_required_dmp_files(taxdump_dir)
+    sqlite_missing = not sqlite_path.exists()
+    stale = _is_taxdump_stale(taxdump_dir)
 
     if offline:
-        if not sqlite_path.exists():
-            # In offline mode, require pre-built taxonomy.sqlite.
-            # Don't attempt to build from .dmp files - distributed workers on
-            # read-only filesystems can't write, and attempting to do so causes
-            # "unable to write to readonly database" errors.
+        if sqlite_missing:
+            # In offline mode, require pre-built taxonomy.sqlite. Don't attempt
+            # to build from .dmp files: distributed workers on read-only
+            # filesystems can't write, and attempting to do so causes "unable
+            # to write to readonly database" errors.
             msg = (
                 f"Taxonomy database not found at {sqlite_path} and offline mode is enabled. "
                 f"Run 'nvd taxonomy ensure' or ensure ENSURE_TAXONOMY runs locally before "
@@ -826,15 +865,14 @@ def open(  # noqa: A001, C901, PLR0912, PLR0915
             )
             raise TaxonomyOfflineError(msg)
     else:
-        # Check if we need to download/rebuild
-        needs_download = _is_taxdump_stale(taxdump_dir)
-        needs_rebuild = not sqlite_path.exists()
+        needs_download = bool(missing_dmp_files)
+        needs_rebuild = sqlite_missing and not needs_download
 
         if needs_download or needs_rebuild:
             if sync:
                 # Sync mode: fail if taxonomy not ready
                 if needs_download:
-                    reason = "Taxonomy data is missing or stale (>30 days old)"
+                    reason = "Required taxonomy source files are missing"
                 else:
                     reason = "taxonomy.sqlite not found (needs rebuild from .dmp files)"
                 raise TaxonomyUnavailableError(
@@ -845,7 +883,7 @@ def open(  # noqa: A001, C901, PLR0912, PLR0915
             else:
                 # Graceful mode: warn and attempt download
                 if needs_download:
-                    context = "Pre-cached taxonomy is missing or stale"
+                    context = "Required taxonomy files are missing"
                 else:
                     context = "taxonomy.sqlite needs to be rebuilt from .dmp files"
 
@@ -857,6 +895,21 @@ def open(  # noqa: A001, C901, PLR0912, PLR0915
                     will_download=True,
                 )
                 emit_warning(warning)
+
+        elif stale:
+            warning = format_taxonomy_warning(
+                operation="Loading taxonomy database",
+                context=(
+                    f"Taxonomy is older than the configured freshness window "
+                    f"({DEFAULT_TAXONOMY_MAX_AGE_DAYS} days); continuing with "
+                    "the existing database"
+                ),
+                error=None,
+                taxdump_dir=taxdump_dir,
+                will_download=False,
+                will_continue=True,
+            )
+            emit_warning(warning)
 
         # Attempt to ensure taxonomy is available (download if needed)
         try:

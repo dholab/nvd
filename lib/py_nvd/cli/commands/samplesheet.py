@@ -49,9 +49,13 @@ READ_INDICATOR_PATTERN = re.compile(
 
 # Pattern to extract the sample stem (everything before the read indicator)
 STEM_PATTERN = re.compile(
-    r"^(.+?)[._](?:R)?[12](?:_\d+)?(?:\.fastq|\.fq)?(?:\.gz)?$",
+    r"^(.+)[._](?:R)?[12](?:_\d+)?(?:\.fastq|\.fq)?(?:\.gz)?$",
     re.IGNORECASE,
 )
+
+# Illumina/CASAVA sample/lane suffixes left after read indicators are removed.
+# Example: sample_S1_L001_R1_001.fastq.gz -> sample_S1_L001 -> sample
+CASAVA_SAMPLE_LANE_SUFFIX_PATTERN = re.compile(r"_S\d+(?:_L\d{3})?$", re.IGNORECASE)
 
 
 @dataclass
@@ -214,7 +218,12 @@ def _get_fastq_files(directory: Path) -> list[Path]:
     return sorted(set(fastq_files))
 
 
-def _extract_stem(filename: str) -> str | None:
+def _strip_terminal_casava_sample_lane_suffix(stem: str) -> str:
+    """Strip Illumina/CASAVA sample and lane suffixes from a sample stem."""
+    return CASAVA_SAMPLE_LANE_SUFFIX_PATTERN.sub("", stem)
+
+
+def _extract_stem(filename: str, *, sanitize: bool = False) -> str | None:
     """
     Extract the sample stem from a FASTQ filename.
 
@@ -236,7 +245,8 @@ def _extract_stem(filename: str) -> str | None:
     """
     match = STEM_PATTERN.match(filename)
     if match:
-        return match.group(1)
+        stem = match.group(1)
+        return _strip_terminal_casava_sample_lane_suffix(stem) if sanitize else stem
 
     # Fallback: strip known extensions for single-end files
     name = filename
@@ -244,6 +254,9 @@ def _extract_stem(filename: str) -> str | None:
         if name.lower().endswith(ext):  # ty:ignore[invalid-argument-type]
             name = name[: -len(ext)]
             break
+
+    if sanitize:
+        name = _strip_terminal_casava_sample_lane_suffix(name)
 
     return name or None
 
@@ -264,7 +277,11 @@ def _get_read_number(filename: str) -> int | None:
     return None
 
 
-def scan_fastq_directory(directory: Path) -> tuple[list[SampleEntry], list[str]]:
+def scan_fastq_directory(
+    directory: Path,
+    *,
+    sanitize: bool = False,
+) -> tuple[list[SampleEntry], list[str]]:
     """
     Scan a directory for FASTQ files and pair them by sample.
 
@@ -273,6 +290,7 @@ def scan_fastq_directory(directory: Path) -> tuple[list[SampleEntry], list[str]]
 
     Args:
         directory: Directory containing FASTQ files
+        sanitize: Strip Illumina/CASAVA suffixes from generated sample IDs
 
     Returns:
         Tuple of (list of SampleEntry, list of warning messages)
@@ -299,11 +317,14 @@ def scan_fastq_directory(directory: Path) -> tuple[list[SampleEntry], list[str]]
     samples: list[SampleEntry] = []
 
     for stem, files in sorted(stem_to_files.items()):
+        sample_id = (
+            _strip_terminal_casava_sample_lane_suffix(stem) if sanitize else stem
+        )
         if len(files) == 1:
             # Single-end
             samples.append(
                 SampleEntry(
-                    sample_id=stem,
+                    sample_id=sample_id,
                     fastq1=str(files[0]),
                 ),
             )
@@ -320,7 +341,7 @@ def scan_fastq_directory(directory: Path) -> tuple[list[SampleEntry], list[str]]
             if r1 and r2:
                 samples.append(
                     SampleEntry(
-                        sample_id=stem,
+                        sample_id=sample_id,
                         fastq1=str(r1),
                         fastq2=str(r2),
                     ),
@@ -333,7 +354,7 @@ def scan_fastq_directory(directory: Path) -> tuple[list[SampleEntry], list[str]]
                 sorted_files = sorted(files, key=lambda p: p.name)
                 samples.append(
                     SampleEntry(
-                        sample_id=stem,
+                        sample_id=sample_id,
                         fastq1=str(sorted_files[0]),
                         fastq2=str(sorted_files[1]),
                     ),
@@ -514,6 +535,11 @@ def generate(
         "-f",
         help="Overwrite output file without confirmation",
     ),
+    sanitize: bool = typer.Option(
+        False,
+        "--sanitize",
+        help="Strip Illumina/CASAVA suffixes from generated sample IDs",
+    ),
 ) -> None:
     """
     Generate a samplesheet CSV from FASTQ files or SRA accessions.
@@ -535,6 +561,9 @@ def generate(
 
         # Preview without writing
         nvd samplesheet generate -d ./fastqs --dry-run
+
+        # Strip Illumina/CASAVA suffixes from sample IDs
+        nvd samplesheet generate -d ./fastqs -p illumina --sanitize
     """
     console.print()
 
@@ -582,7 +611,7 @@ def generate(
     # Scan for samples
     if from_dir is not None:
         info(f"Scanning directory: {from_dir}")
-        samples, scan_warnings = scan_fastq_directory(from_dir)
+        samples, scan_warnings = scan_fastq_directory(from_dir, sanitize=sanitize)
     else:
         assert from_sra is not None  # for type checker
         info(f"Reading SRA accessions: {from_sra}")

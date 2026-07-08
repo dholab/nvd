@@ -97,5 +97,8 @@
 
 # testing data
 !/tests
+!/tests/*.py
 !/tests/data
 !/tests/data/*
+!/tests/scripts
+!/tests/scripts/*.py

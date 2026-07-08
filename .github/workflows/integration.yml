@@ -1,0 +1,93 @@
+name: Integration
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - "main.nf"
+      - "nextflow.config"
+      - "conf/**"
+      - "bin/**"
+      - "lib/**"
+      - "modules/**/*.nf"
+      - "subworkflows/**/*.nf"
+      - "workflows/**/*.nf"
+      - "tests/**"
+      - "pyproject.toml"
+      - "pixi.lock"
+      - "uv.lock"
+      - ".github/workflows/integration.yml"
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - "main.nf"
+      - "nextflow.config"
+      - "conf/**"
+      - "bin/**"
+      - "lib/**"
+      - "modules/**/*.nf"
+      - "subworkflows/**/*.nf"
+      - "workflows/**/*.nf"
+      - "tests/**"
+      - "pyproject.toml"
+      - "pixi.lock"
+      - "uv.lock"
+      - ".github/workflows/integration.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mini-sra-nextflow:
+    name: Mini SRA Nextflow integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "17"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v2
+
+      - name: Set up Pixi environment
+        uses: prefix-dev/setup-pixi@v0.9.6
+        with:
+          pixi-version: v0.68.0
+          cache: true
+
+      - name: Check Pixi-provided Nextflow
+        run: pixi run nextflow -version
+
+      - name: Run mini SRA integration test
+        env:
+          NVD_INTEGRATION_PROFILE: test
+        run: pixi run e2e-test-ci
+
+      - name: Upload integration diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-diagnostics
+          retention-days: 1
+          if-no-files-found: ignore
+          path: |
+            .nextflow.log*
+            .e2e/latest.txt
+            .e2e/runs/*/nextflow.stdout.log
+            .e2e/runs/*/nextflow.stderr.log
+            .e2e/runs/*/results/report.html
+            .e2e/runs/*/results/nvd/07_merged_blast_results/final/*.tsv
+            .e2e/runs/*/results/nvd/08_experiment_summary/**/*.tsv
+            .e2e/runs/*/work/**/.command.err
+            .e2e/runs/*/work/**/.command.out
+            .e2e/runs/*/work/**/.command.log
+            .e2e/runs/*/work/**/.command.sh
+            .e2e/runs/*/work/**/.exitcode
