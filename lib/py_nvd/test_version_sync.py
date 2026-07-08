@@ -27,13 +27,13 @@ def test_python_and_nextflow_versions_match_project_version() -> None:
     assert manifest_match.group(1) == project_version
 
 
-def test_latest_params_schema_points_to_v3_2() -> None:
-    """The rolling schema link should expose the v3.2 parameter contract."""
+def test_latest_params_schema_points_to_v3_3() -> None:
+    """The rolling schema link should expose the v3.3 parameter contract."""
     latest_schema = ROOT / "schemas" / "nvd-params.latest.schema.json"
 
     assert latest_schema.is_symlink()
-    assert latest_schema.readlink() == Path("nvd-params.v3.2.0.schema.json")
-    assert SCHEMA_URL.endswith("/nvd-params.v3.2.0.schema.json")
+    assert latest_schema.readlink() == Path("nvd-params.v3.3.0.schema.json")
+    assert SCHEMA_URL.endswith("/nvd-params.v3.3.0.schema.json")
 
 
 def test_v3_2_schema_accepts_disabled_optional_read_limits() -> None:

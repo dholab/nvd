@@ -7,7 +7,7 @@ authors = [
   { name = "William Gardner", email = "wkgardner@wisc.edu" },
 ]
 requires-python = ">= 3.11, < 3.14"
-version = "3.2.0"
+version = "3.3.0"
 dependencies = [
   "altair>=6.1.0",
   "biopython>=1.85",
