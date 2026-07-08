@@ -1,4 +1,4 @@
-include { ADD_READ_COUNTS_TO_BLAST; BUILD_QUERY_BIG_TABLE; CONCATENATE_QUERY_BIG_TABLE; CONCATENATE_EXPERIMENT_BLAST; VIRUS_ENRICHMENT_REPORT } from "../modules/utils"
+include { ADD_READ_COUNTS_TO_BLAST; BUILD_QUERY_BIG_TABLE; BUILD_TAXON_BIG_TABLE; CONCATENATE_QUERY_BIG_TABLE; CONCATENATE_TAXON_BIG_TABLE; CONCATENATE_EXPERIMENT_BLAST; VIRUS_ENRICHMENT_REPORT } from "../modules/utils"
 include { NOTIFY_SLACK } from "../modules/utils"
 include { RENDER_MERGED_TAXON_ABUNDANCE_SUNBURST; RENDER_TAXON_ABUNDANCE_SUNBURST; RENDER_SOURMASH_SANKEY } from "../modules/reporting"
 include { CRUMBS_PROFILING } from "./crumbs_profiling"
@@ -47,10 +47,6 @@ workflow REPORTING {
             for_emit: tuple(sample_id, blast_tsv)
         }
 
-    if (params.experimental == true) {
-        BUILD_QUERY_BIG_TABLE(ch_split_blast_results.for_big_table)
-    }
-
     // Concatenate all per-sample final BLAST results into a single experiment-level TSV.
     // Runs unconditionally so every run produces an experiment summary, not just LabKey runs.
     CONCATENATE_EXPERIMENT_BLAST(
@@ -58,8 +54,30 @@ workflow REPORTING {
     )
 
     if (params.experimental == true) {
+        CRUMBS_PROFILING(
+            ch_split_blast_results.for_emit,
+            ch_filtered_bam,
+            ch_taxonomy_dir,
+        )
+
+        ch_query_big_table_inputs = ch_split_blast_results.for_big_table
+            .join(CRUMBS_PROFILING.out.contigs, by: 0)
+            .map { sample_id, blast_tsv, crumbs_tsv -> tuple(sample_id, blast_tsv, crumbs_tsv) }
+
+        BUILD_QUERY_BIG_TABLE(ch_query_big_table_inputs)
+
         CONCATENATE_QUERY_BIG_TABLE(
             BUILD_QUERY_BIG_TABLE.out.map { _sample_id, tsv -> tsv }.collect()
+        )
+
+        ch_taxon_big_table_inputs = BUILD_QUERY_BIG_TABLE.out
+            .join(CRUMBS_PROFILING.out.taxa, by: 0)
+            .map { sample_id, query_big_table, crumbs_taxa_tsv -> tuple(sample_id, query_big_table, crumbs_taxa_tsv) }
+
+        BUILD_TAXON_BIG_TABLE(ch_taxon_big_table_inputs)
+
+        CONCATENATE_TAXON_BIG_TABLE(
+            BUILD_TAXON_BIG_TABLE.out.map { _sample_id, tsv -> tsv }.collect()
         )
     }
 
@@ -86,11 +104,6 @@ workflow REPORTING {
 
         RENDER_MERGED_TAXON_ABUNDANCE_SUNBURST(ch_merged_taxburst_input)
 
-        CRUMBS_PROFILING(
-            ch_split_blast_results.for_emit,
-            ch_filtered_bam,
-            ch_taxonomy_dir,
-        )
     }
 
     LIMS_INTEGRATION(
@@ -119,6 +132,8 @@ workflow REPORTING {
     blast_results = ch_split_blast_results.for_emit
     query_big_tables = params.experimental ? BUILD_QUERY_BIG_TABLE.out : channel.empty()
     query_big_table = params.experimental ? CONCATENATE_QUERY_BIG_TABLE.out.concatenated_tsv : channel.empty()
+    taxon_big_tables = params.experimental ? BUILD_TAXON_BIG_TABLE.out : channel.empty()
+    taxon_big_table = params.experimental ? CONCATENATE_TAXON_BIG_TABLE.out.concatenated_tsv : channel.empty()
     experiment_blast = CONCATENATE_EXPERIMENT_BLAST.out.concatenated_tsv
     virus_enrichment_report = VIRUS_ENRICHMENT_REPORT.out.summary_tsv
     taxon_abundance_sunbursts = params.experimental ? RENDER_TAXON_ABUNDANCE_SUNBURST.out.reports : channel.empty()
