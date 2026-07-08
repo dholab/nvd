@@ -1,5 +1,5 @@
 include { DEACON_FILTER_CONTIGS } from "../modules/deacon"
-include { SELECT_BLAST_QUERIES ; NORMALIZE_READ_BLAST_QUERIES } from "../modules/blast"
+include { SELECT_BLAST_QUERIES ; NORMALIZE_READ_BLAST_QUERIES ; SUMMARIZE_BLAST_QUERY_BATCHES ; SUMMARIZE_EMPTY_BLAST_QUERY_BATCHES } from "../modules/blast"
 include { CONTIG_READ_MAPBACK } from "./contig_read_mapback"
 
 workflow PREPARE_BLAST_QUERIES {
@@ -58,6 +58,22 @@ workflow PREPARE_BLAST_QUERIES {
         ch_query_lookups = ch_contig_query_lookups
             .mix(ch_read_query_batches.map { sample_id, _platform, _query_class, _fasta, lookup -> tuple(sample_id, lookup) })
             .groupTuple()
+        SUMMARIZE_BLAST_QUERY_BATCHES(
+            ch_query_batches.groupTuple(by: [0, 1])
+        )
+        ch_samples_without_query_batches = DEACON_FILTER_CONTIGS.out
+            .map { sample_id, platform, _read_structure, _fasta, _lookup -> tuple(sample_id, platform, "sample") }
+            .unique()
+            .join(
+                ch_query_batches
+                    .map { sample_id, platform, _query_class, _fasta, _lookup -> tuple(sample_id, platform, "batch") }
+                    .unique(),
+                by: [0, 1],
+                remainder: true,
+            )
+            .filter { row -> row.size() == 3 }
+            .map { sample_id, platform, _sample_marker -> tuple(sample_id, platform) }
+        SUMMARIZE_EMPTY_BLAST_QUERY_BATCHES(ch_samples_without_query_batches)
     } else {
         ch_query_lookups = ch_contig_query_lookups.groupTuple()
     }
