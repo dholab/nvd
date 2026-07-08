@@ -154,7 +154,7 @@ process BUILD_QUERY_BIG_TABLE {
   label "low"
 
   input:
-  tuple val(sample_id), path(blast_tsv)
+  tuple val(sample_id), path(blast_tsv), path(crumbs_tsv)
 
   output:
   tuple val(sample_id), path("${sample_id}.query_big_table.tsv")
@@ -163,7 +163,31 @@ process BUILD_QUERY_BIG_TABLE {
   """
   build_query_big_table.py \
       --blast-tsv ${blast_tsv} \
+      --crumbs-tsv ${crumbs_tsv} \
       --output ${sample_id}.query_big_table.tsv
+  """
+}
+
+process BUILD_TAXON_BIG_TABLE {
+  /*
+   * Build the per-sample one-row-per-taxon Big Table artifact from query Big Tables.
+   */
+
+  tag "${sample_id}"
+  label "low"
+
+  input:
+  tuple val(sample_id), path(query_big_table), path(crumbs_taxa_tsv)
+
+  output:
+  tuple val(sample_id), path("${sample_id}.taxon_big_table.tsv")
+
+  script:
+  """
+  build_taxon_big_table.py \
+      --query-big-table ${query_big_table} \
+      --crumbs-taxa-tsv ${crumbs_taxa_tsv} \
+      --output ${sample_id}.taxon_big_table.tsv
   """
 }
 
@@ -224,25 +248,30 @@ process CONCATENATE_QUERY_BIG_TABLE {
 
   script:
   """
-  #!/usr/bin/env python3
-  from pathlib import Path
+  stack_big_tables.py \
+      --input-dir sample_big_tables \
+      --output query_big_table.tsv
+  """
+}
 
-  files = sorted(Path("sample_big_tables").glob("*.tsv"))
+process CONCATENATE_TAXON_BIG_TABLE {
+  /*
+   * Concatenate per-sample taxon Big Tables into the featured all-sample artifact.
+   */
 
-  if not files:
-      Path("query_big_table.tsv").write_text("")
-  else:
-      with open("query_big_table.tsv", "w") as out:
-          with open(files[0]) as f:
-              header = f.readline()
-              out.write(header)
-              for line in f:
-                  out.write(line)
-          for tsv in files[1:]:
-              with open(tsv) as f:
-                  f.readline()
-                  for line in f:
-                      out.write(line)
+  label "low"
+
+  input:
+  path "sample_big_tables/*"
+
+  output:
+  path "taxon_big_table.tsv", emit: concatenated_tsv
+
+  script:
+  """
+  stack_big_tables.py \
+      --input-dir sample_big_tables \
+      --output taxon_big_table.tsv
   """
 }
 
