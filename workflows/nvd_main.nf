@@ -128,7 +128,7 @@ workflow NVD_MAIN {
   REPORTING(
     CLASSIFY_WITH_BLASTN.out.merged_results,
     PREPROCESS_READS.out.read_counts,
-    PREPARE_BLAST_QUERIES.out.queries,
+    PREPARE_BLAST_QUERIES.out.contig_sequences,
     PREPARE_BLAST_QUERIES.out.contig_read_counts,
     PREPARE_BLAST_QUERIES.out.filtered_bam,
     PREPROCESS_READS.out.virus_enrichment_stats,

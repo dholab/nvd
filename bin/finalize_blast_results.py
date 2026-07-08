@@ -36,7 +36,7 @@ def load_query_metadata(query_lookup_path: Path | None) -> dict[str, dict[str, s
         connection.row_factory = sqlite3.Row
         rows = connection.execute(
             """
-            select qseqid, evidence_class, producer, source_id
+            select qseqid, evidence_class, producer, source_id, support_record_count
             from query_sequences
             """,
         ).fetchall()
@@ -100,6 +100,7 @@ def main(argv: list[str] | None = None) -> None:
         "evidence_class",
         "producer",
         "source_id",
+        "support_record_count",
         "mapped_reads",
         "total_reads",
         "blast_db_version",
@@ -121,6 +122,7 @@ def main(argv: list[str] | None = None) -> None:
             row["evidence_class"] = query.get("evidence_class", "")
             row["producer"] = query.get("producer", "")
             row["source_id"] = query.get("source_id", "")
+            row["support_record_count"] = query.get("support_record_count", "")
             row["mapped_reads"] = contig_counts.get(qseqid, "0")
             row["total_reads"] = args.total_reads
             row["blast_db_version"] = args.blast_db_version

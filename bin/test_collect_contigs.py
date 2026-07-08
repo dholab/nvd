@@ -24,6 +24,7 @@ def lookup_rows(path: Path) -> list[dict[str, object]]:
                 evidence_class,
                 producer,
                 source_id,
+                support_record_count,
                 length,
                 sha256
             from query_sequences
@@ -123,6 +124,7 @@ def test_collects_assembly_contigs_with_stable_ids_and_lookup(
             "evidence_class": "short_assembly_contig",
             "producer": "spades",
             "source_id": "NODE_1_length_4_cov_1.0",
+            "support_record_count": 1,
             "length": 4,
             "sha256": hashlib.sha256(b"ACGT").hexdigest(),
         },
@@ -132,6 +134,7 @@ def test_collects_assembly_contigs_with_stable_ids_and_lookup(
             "evidence_class": "short_assembly_contig",
             "producer": "spades",
             "source_id": "NODE_2_length_6_cov_2.0",
+            "support_record_count": 1,
             "length": 6,
             "sha256": hashlib.sha256(b"AACCGG").hexdigest(),
         },
@@ -274,10 +277,10 @@ def test_lookup_is_queryable_by_qseqid(tmp_path: Path) -> None:
     with sqlite3.connect(query_lookup) as connection:
         row = connection.execute(
             """
-            select evidence_class, producer, source_id
+            select evidence_class, producer, source_id, support_record_count
             from query_sequences
             where qseqid = ?
             """,
             ("nvdContigQuery_sample-1_000001",),
         ).fetchone()
-    assert row == ("short_assembly_contig", "spades", "NODE_1")
+    assert row == ("short_assembly_contig", "spades", "NODE_1", 1)

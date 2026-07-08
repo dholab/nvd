@@ -79,6 +79,7 @@ def write_query_lookup(path: Path) -> None:
                 evidence_class text not null,
                 producer text not null,
                 source_id text not null,
+                support_record_count integer not null,
                 length integer not null,
                 sha256 text not null
             )
@@ -92,9 +93,10 @@ def write_query_lookup(path: Path) -> None:
                 evidence_class,
                 producer,
                 source_id,
+                support_record_count,
                 length,
                 sha256
-            ) values (?, ?, ?, ?, ?, ?, ?)
+            ) values (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 "nvdContigQuery_sample-1_000001",
@@ -102,6 +104,7 @@ def write_query_lookup(path: Path) -> None:
                 "short_assembly_contig",
                 "spades",
                 "NODE_1_length_4_cov_1.0",
+                1,
                 4,
                 "sha",
             ),
@@ -143,6 +146,7 @@ def test_final_blast_rows_include_collected_contig_metadata(tmp_path: Path) -> N
     assert row["evidence_class"] == "short_assembly_contig"
     assert row["producer"] == "spades"
     assert row["source_id"] == "NODE_1_length_4_cov_1.0"
+    assert row["support_record_count"] == "1"
     assert row["mapped_reads"] == "7"
     assert "evidence_length" not in row
 
@@ -177,3 +181,4 @@ def test_finalizer_can_run_without_query_lookup(tmp_path: Path) -> None:
     assert row["evidence_class"] == ""
     assert row["producer"] == ""
     assert row["source_id"] == ""
+    assert row["support_record_count"] == ""
