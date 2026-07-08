@@ -13,7 +13,7 @@ ncbi-viruses-2025.01-plus-wvdb-v1.0.dna.k31.scaled50.sig.zip
 ncbi-viruses-2025.01-plus-wvdb-v1.0.lineages.csv
 ```
 
-The build briefly writes an external sourmash manifest under `.work/combined/` so the recipe can validate that WVDB signatures are covered by the combined lineages. NVD does not need this manifest at runtime, and it is not a publishable artifact; the sourmash zip database already carries its own manifest.
+The build briefly writes an external sourmash manifest under `.work/combined/` so the recipe can validate the combined lineage artifact. NVD does not need this manifest at runtime, and it is not a publishable artifact; the sourmash zip database already carries its own manifest. A `.sha256` ready marker records both runtime artifacts and is written only after the candidate pair passes structural validation and sourmash preparation.
 
 ## A quick note on organization
 
@@ -34,14 +34,14 @@ Our first stab at projecting WVDB contigs into sourmash’s standard lineage col
 | --- | --- |
 | `ident` | `WVDB|{contig}` |
 | `superkingdom` | `Viruses` |
-| `phylum` | `Phylum_RdRp`, then `Phylum_gNd` |
-| `class` | `Class_RdRp`, then `Class_gNd` |
-| `order` | `Order_consensus`, then `Order_RdRp`, then `Order_gNd` |
-| `family` | `Family_consensus`, then `Family_RdRp`, then `Family_gNd`, then `Family_ICTV` |
+| `phylum` | selected coherent RdRp or gNd ancestry |
+| `class` | selected coherent RdRp or gNd ancestry |
+| `order` | `Order_consensus`, then the selected ancestry |
+| `family` | `Family_consensus`, then the selected ancestry, then `Family_ICTV` |
 | `genus` | `Genus_RdRp` when present |
 | `species` | `Species_RdRp` when present |
 
-Trailing missing ranks are left blank. Unknown-value sentinels such as `Unclassified`, `Unknown`, and `NA` are skipped when a later source column provides a more informative classification. When WVDB provides only an explicit placeholder for a rank, or when a lower rank is present but an intermediate rank is blank, the builder fills the rank with a contextual placeholder such as `unclassified family [under Picornavirales]`. These placeholders make the lineage path structurally valid for tree consumers while preserving the fact that WVDB did not provide a classified value at that rank. The context is part of the reference release policy, so placeholder names are stable across NVD runs and do not depend on which samples happened to be processed together.
+The builder compares complete RdRp and gNd ancestry candidates and selects the source reaching the deepest classified rank, using classified-rank count and then RdRp preference only to break equivalent-depth ties. This prevents an isolated rank from one source being spliced onto an incompatible ancestry from another. Trailing missing ranks are left blank. Unknown-value sentinels such as `Unclassified`, `Unknown`, and `NA` do not mask informative values. When WVDB provides only an explicit placeholder for a rank, or when a lower rank is present but an intermediate rank is blank, the builder fills the rank with a contextual placeholder such as `unclassified family [under Picornavirales]`. These placeholders make the lineage path structurally valid for tree consumers while preserving the fact that WVDB did not provide a classified value at that rank. The context is part of the reference release policy, so placeholder names are stable across NVD runs and do not depend on which samples happened to be processed together.
 
 The FASTA identifiers are normalized with the same `WVDB|` prefix before sketching, so the sourmash signature names and lineage identifiers match.
 
@@ -49,11 +49,9 @@ The FASTA identifiers are normalized with the same `WVDB|` prefix before sketchi
 
 The combined build validates complete sourmash sketch identities before concatenation. A sketch identity comprises its digest, k-mer size, molecule type, `num`, `scaled`, and abundance-tracking setting. Duplicate identities are a hard build error because selecting a signature by input order would hide a data conflict.
 
-Distinct signatures can still assign the same normalized taxon name to incompatible parents. The curation command makes that policy explicit through `--taxonomy-conflict-policy`, with `error`, `most-specified`, `ncbi-wins`, and `wvdb-wins` options. The checked-in recipe uses `most-specified`: empty, unknown, and unclassified ranks do not contribute to specificity; a unique most-specified lineage is applied to every affected signature; and equally specified incompatible lineages remain a hard error. Source-specific policies first prefer their named source, then apply the same specificity and tie rules within that source.
+Distinct signatures can still assign the same normalized taxon name to incompatible parents. This custom database build uses one fixed, loss-preserving resolution sequence. Empty, unknown, and unclassified ranks do not contribute to specificity. Equivalent placeholder spellings are compared as the same unknown node; a unique most-specific path becomes canonical; and an equally specific path corroborated by an informative NCBI placement becomes canonical. When incompatible WVDB placements remain, the builder preserves every placement and gives each one a stable contextual name such as `Beihai picorna-like virus 80 [under Picornaviridae]` rather than forcing signatures onto an unsupported parent.
 
-Every automatic or unresolved decision is written to `ncbi-viruses-2025.01-plus-wvdb-v2.taxonomy-conflicts.tsv`. Resolved conflicts also emit warnings during the build. The published lineage CSV contains only identifiers present in the input manifests.
-
-Maintainers can select another explicit policy with the recipe's third argument, for example `just build-sourmash-ncbi-wvdb yes build/sourmash/ncbi-virus-wvdb-v2 ncbi-wins`.
+Every automatic decision is written to `ncbi-viruses-2025.01-plus-wvdb-v1.0.taxonomy-conflicts.tsv`. Resolved conflicts also emit a warning during the build. The published lineage CSV contains only identifiers present in the input manifests. Duplicate complete signature identities and cross-rank name reuse remain structural build errors.
 
 ## Build command
 
@@ -75,10 +73,11 @@ The build root is intentionally treated like a small release directory. The prom
 build/sourmash/ncbi-virus-wvdb-v1.0/
 ├── ncbi-viruses-2025.01-plus-wvdb-v1.0.dna.k31.scaled50.sig.zip
 ├── ncbi-viruses-2025.01-plus-wvdb-v1.0.lineages.csv
+├── ncbi-viruses-2025.01-plus-wvdb-v1.0.sha256
 └── .work/
 ```
 
-Downloaded inputs and intermediate NCBI/WVDB products live under `.work/`. If an uncompressed directory with a final-looking `.sig` suffix appears at the build root, do not publish or use it as the NVD reference. The sourmash artifact NVD expects is the `.sig.zip` database.
+Downloaded inputs and intermediate NCBI/WVDB products live under `.work/`. If an uncompressed directory with a final-looking `.sig` suffix appears at the build root, do not publish or use it as the NVD reference. The sourmash artifact NVD expects is the `.sig.zip` database. Do not publish the runtime pair unless the `.sha256` marker exists and verifies both files.
 
 Use a different build directory when needed:
 
@@ -98,7 +97,7 @@ just build-sourmash-ncbi-wvdb yes
 
 The top-level `build-sourmash-ncbi-wvdb` recipe uses Just dependencies to run the NCBI and WVDB recipes before combining their outputs. The NCBI recipe downloads the NCBI Virus sourmash sketch and matching lineage CSV into `.work/ncbi/`, then validates them with sourmash before any WVDB work. The WVDB recipe downloads WVDB FASTA and annotations into `.work/wvdb/`, removes derived WVDB outputs from any previous partial build, runs `scripts/prepare_wvdb_sourmash_inputs.py` to write a normalized WVDB FASTA and WVDB lineage CSV, sketches WVDB with `dna,k=31,scaled=50`, writes a sourmash manifest, checks WVDB manifest coverage, and validates the WVDB taxonomy with `sourmash tax prepare`.
 
-The combined recipe removes stale combined outputs from the build root, including final-looking uncompressed `.sig` directories, concatenates the NCBI and WVDB sketches, prepares the combined lineage CSV, writes a temporary external sourmash manifest under `.work/combined/` for the coverage check, checks WVDB manifest coverage against the combined lineages, and summarizes the combined sketch.
+The combined recipe builds candidates under `.work/combined/`, validates exact manifest coverage and positional taxonomy IDs, runs sourmash taxonomy preparation, and summarizes the candidate sketch before promotion. A previous verified pair remains in place while candidates are built. During promotion the old checksum marker is removed first, both runtime files are replaced, and a new checksum marker is written last.
 
 NVD’s justfile contains URLs where it expects to find the prebuild NCBI Virus signature and lineage at UCSD’s data farm. If the farm URLs are temporarily unavailable, use a mirror by overriding the Just variables rather than editing the recipe:
 

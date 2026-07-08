@@ -7,6 +7,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+from hypothesis import HealthCheck, given, settings
+from hypothesis import strategies as st
+
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "prepare_wvdb_sourmash_inputs.py"
 MANIFEST_HEADER = (
@@ -145,7 +148,6 @@ def run_curation(
     *,
     manifests: tuple[Path, Path],
     lineages: tuple[Path, Path],
-    policy: str,
 ) -> tuple[subprocess.CompletedProcess[str], Path, Path]:
     """Run lineage curation and return the process and output paths."""
     output = tmp_path / "combined.lineages.csv"
@@ -160,8 +162,6 @@ def run_curation(
         lineages[0],
         "--wvdb-lineages-csv",
         lineages[1],
-        "--taxonomy-conflict-policy",
-        policy,
         "--lineages-csv",
         output,
         "--diagnostics-tsv",
@@ -386,6 +386,64 @@ def test_prepare_inputs_contextualizes_wvdb_placeholder_taxa(tmp_path: Path) -> 
     )
 
 
+def test_prepare_inputs_selects_one_coherent_ancestry_source(tmp_path: Path) -> None:
+    """A deeper gNd path must not inherit an incompatible isolated RdRp phylum."""
+    fasta = tmp_path / "wvdb.fasta"
+    fasta.write_text(">contig_1\nACGT\n", encoding="utf-8")
+    annotations = tmp_path / "annotations.tsv"
+    write_tsv_rows(
+        annotations,
+        [
+            [
+                "contig",
+                "Phylum_RdRp",
+                "Class_RdRp",
+                "Order_RdRp",
+                "Family_RdRp",
+                "Phylum_gNd",
+                "Class_gNd",
+                "Order_gNd",
+                "Family_gNd",
+                "Order_consensus",
+                "Family_consensus",
+            ],
+            [
+                "contig_1",
+                "Pisuviricota",
+                "",
+                "",
+                "",
+                "Kitrinoviricota",
+                "Alsuviricetes",
+                "Tymovirales",
+                "Betaflexiviridae",
+                "Tymovirales",
+                "Betaflexiviridae",
+            ],
+        ],
+    )
+    lineages = tmp_path / "lineages.csv"
+
+    result = run_script(
+        "prepare-inputs",
+        "--fasta",
+        fasta,
+        "--annotations-tsv",
+        annotations,
+        "--normalized-fasta",
+        tmp_path / "normalized.fasta",
+        "--lineages-csv",
+        lineages,
+    )
+
+    assert result.returncode == 0, result.stderr
+    row = read_csv_rows(lineages)[0]
+    assert row["phylum"] == "Kitrinoviricota"
+    assert row["class"] == "Alsuviricetes"
+    assert row["order"] == "Tymovirales"
+    assert row["family"] == "Betaflexiviridae"
+
+
 def test_prepare_inputs_reuses_reference_taxpaths_for_exact_prefixes(
     tmp_path: Path,
 ) -> None:
@@ -557,7 +615,7 @@ def test_prepare_inputs_placeholder_names_do_not_depend_on_row_order(
 def test_prepare_inputs_falls_through_sentinel_source_values(
     tmp_path: Path,
 ) -> None:
-    """Source sentinels should not mask later informative fallback columns."""
+    """Sentinels fall through without combining incompatible source paths."""
     fasta = tmp_path / "WVDB_v1.0.fasta"
     annotations = tmp_path / "WVDB_v1.0_annotations.tsv"
     fasta.write_text(
@@ -620,7 +678,7 @@ def test_prepare_inputs_falls_through_sentinel_source_values(
     assert row["phylum"] == "Pisuviricota"
     assert row["class"] == "Pisoniviricetes"
     assert row["order"] == "Picornavirales"
-    assert row["family"] == "Picornaviridae"
+    assert row["family"] == "Fallbackfamily"
 
 
 def test_prepare_inputs_contextualizes_sentinel_variants(tmp_path: Path) -> None:
@@ -826,6 +884,334 @@ def test_manifest_coverage_accepts_prepared_sourmash_taxonomy(
     assert result.returncode == 0, result.stderr
 
 
+def test_validate_lineages_rejects_named_strain_without_positional_taxid(
+    tmp_path: Path,
+) -> None:
+    """Production validation reports the historical BioBoxes crash shape."""
+    manifest = write_manifest(
+        tmp_path / "combined.manifest.csv",
+        [("GCA_002816655.1", "a" * 32)],
+    )
+    lineages = tmp_path / "combined.lineages.csv"
+    lineages.write_text(
+        f"{LINEAGE_HEADER},taxpath\n"
+        "GCA_002816655.1,Viruses,Pisuviricota,Pisoniviricetes,Picornavirales,"
+        "Picornaviridae,Enterovirus,Enterovirus A,Coxsackievirus A16,"
+        "10239|2732408|2732506|464095|12058|12059|138948\n",
+        encoding="utf-8",
+    )
+
+    result = run_script(
+        "validate-lineages",
+        "--manifest-csv",
+        manifest,
+        "--lineages-csv",
+        lineages,
+    )
+
+    assert result.returncode == 1
+    assert "short taxpaths: 1" in result.stderr
+    assert "populated ranks with missing taxids: 1" in result.stderr
+    assert "GCA_002816655.1" in result.stderr
+
+
+def test_validate_lineages_requires_all_declared_rank_columns(tmp_path: Path) -> None:
+    """Production validation rejects a lineage schema missing the strain rank."""
+    manifest = write_manifest(
+        tmp_path / "combined.manifest.csv",
+        [("NCBI_1", "a" * 32)],
+    )
+    lineages = tmp_path / "combined.lineages.csv"
+    lineages.write_text(
+        "ident,superkingdom,phylum,class,order,family,genus,species,taxpath\n"
+        "NCBI_1,Viruses,,,,,,,10239|||||||\n",
+        encoding="utf-8",
+    )
+
+    result = run_script(
+        "validate-lineages",
+        "--manifest-csv",
+        manifest,
+        "--lineages-csv",
+        lineages,
+    )
+
+    assert result.returncode == 1
+    assert "missing required lineage columns: strain" in result.stderr
+
+
+def test_validate_lineages_rejects_blank_identifier(tmp_path: Path) -> None:
+    """Production validation reports lineage rows without an identifier."""
+    manifest = write_manifest(
+        tmp_path / "combined.manifest.csv",
+        [("NCBI_1", "a" * 32)],
+    )
+    lineages = tmp_path / "combined.lineages.csv"
+    lineages.write_text(
+        f"{LINEAGE_HEADER},taxpath\n,Viruses,,,,,,,,10239|||||||\n",
+        encoding="utf-8",
+    )
+
+    result = run_script(
+        "validate-lineages",
+        "--manifest-csv",
+        manifest,
+        "--lineages-csv",
+        lineages,
+    )
+
+    assert result.returncode == 1
+    assert "blank identifiers: 1" in result.stderr
+
+
+def test_validate_lineages_rejects_taxpaths_longer_than_declared_ranks(
+    tmp_path: Path,
+) -> None:
+    """Production validation requires exactly one taxpath position per rank."""
+    manifest = write_manifest(
+        tmp_path / "combined.manifest.csv",
+        [("NCBI_1", "a" * 32)],
+    )
+    lineages = tmp_path / "combined.lineages.csv"
+    lineages.write_text(
+        f"{LINEAGE_HEADER},taxpath\nNCBI_1,Viruses,,,,,,,,10239||||||||extra\n",
+        encoding="utf-8",
+    )
+
+    result = run_script(
+        "validate-lineages",
+        "--manifest-csv",
+        manifest,
+        "--lineages-csv",
+        lineages,
+    )
+
+    assert result.returncode == 1
+    assert "long taxpaths: 1" in result.stderr
+    assert "NCBI_1" in result.stderr
+
+
+def test_validate_lineages_rejects_taxid_without_rank_name(tmp_path: Path) -> None:
+    """Production validation rejects positional taxids for absent rank names."""
+    manifest = write_manifest(
+        tmp_path / "combined.manifest.csv",
+        [("NCBI_1", "a" * 32)],
+    )
+    lineages = tmp_path / "combined.lineages.csv"
+    lineages.write_text(
+        f"{LINEAGE_HEADER},taxpath\n"
+        "NCBI_1,Viruses,Pisuviricota,,,,,,,10239|2732408|999|||||\n",
+        encoding="utf-8",
+    )
+
+    result = run_script(
+        "validate-lineages",
+        "--manifest-csv",
+        manifest,
+        "--lineages-csv",
+        lineages,
+    )
+
+    assert result.returncode == 1
+    assert "taxids without populated ranks: 1" in result.stderr
+    assert "NCBI_1:class" in result.stderr
+
+
+def test_validate_lineages_rejects_non_numeric_taxid(tmp_path: Path) -> None:
+    """Production validation rejects taxids outside the decimal BioBoxes form."""
+    manifest = write_manifest(
+        tmp_path / "combined.manifest.csv",
+        [("NCBI_1", "a" * 32)],
+    )
+    lineages = tmp_path / "combined.lineages.csv"
+    lineages.write_text(
+        f"{LINEAGE_HEADER},taxpath\n"
+        "NCBI_1,Viruses,Pisuviricota,,,,,,,10239|not-a-taxid||||||\n",
+        encoding="utf-8",
+    )
+
+    result = run_script(
+        "validate-lineages",
+        "--manifest-csv",
+        manifest,
+        "--lineages-csv",
+        lineages,
+    )
+
+    assert result.returncode == 1
+    assert "non-numeric taxids: 1" in result.stderr
+    assert "NCBI_1:phylum=not-a-taxid" in result.stderr
+
+
+def test_validate_lineages_rejects_duplicate_identifiers(tmp_path: Path) -> None:
+    """Production validation reports every repeated lineage identifier."""
+    manifest = write_manifest(
+        tmp_path / "combined.manifest.csv",
+        [("NCBI_1", "a" * 32)],
+    )
+    lineages = tmp_path / "combined.lineages.csv"
+    row = "NCBI_1,Viruses,,,,,,,,10239|||||||\n"
+    lineages.write_text(f"{LINEAGE_HEADER},taxpath\n{row}{row}", encoding="utf-8")
+
+    result = run_script(
+        "validate-lineages",
+        "--manifest-csv",
+        manifest,
+        "--lineages-csv",
+        lineages,
+    )
+
+    assert result.returncode == 1
+    assert "duplicate identifiers: 1" in result.stderr
+    assert "NCBI_1" in result.stderr
+
+
+def test_validate_lineages_rejects_duplicate_manifest_identifiers(
+    tmp_path: Path,
+) -> None:
+    """Production validation rejects repeated names in the final manifest."""
+    manifest = write_manifest(
+        tmp_path / "combined.manifest.csv",
+        [("NCBI_1", "a" * 32), ("NCBI_1", "b" * 32)],
+    )
+    lineages = tmp_path / "combined.lineages.csv"
+    lineages.write_text(
+        f"{LINEAGE_HEADER},taxpath\nNCBI_1,Viruses,,,,,,,,10239|||||||\n",
+        encoding="utf-8",
+    )
+
+    result = run_script(
+        "validate-lineages",
+        "--manifest-csv",
+        manifest,
+        "--lineages-csv",
+        lineages,
+    )
+
+    assert result.returncode == 1
+    assert "duplicate manifest identifiers: 1" in result.stderr
+    assert "NCBI_1" in result.stderr
+
+
+def test_validate_lineages_requires_exact_manifest_identifier_coverage(
+    tmp_path: Path,
+) -> None:
+    """Production lineages contain exactly the identifiers in the manifest."""
+    manifest = write_manifest(
+        tmp_path / "combined.manifest.csv",
+        [("NCBI_expected", "a" * 32), ("WVDB|missing", "b" * 32)],
+    )
+    lineages = tmp_path / "combined.lineages.csv"
+    lineages.write_text(
+        f"{LINEAGE_HEADER},taxpath\n"
+        "NCBI_expected,Viruses,,,,,,,,10239|||||||\n"
+        "NCBI_stale,Viruses,,,,,,,,10239|||||||\n",
+        encoding="utf-8",
+    )
+
+    result = run_script(
+        "validate-lineages",
+        "--manifest-csv",
+        manifest,
+        "--lineages-csv",
+        lineages,
+    )
+
+    assert result.returncode == 1
+    assert "manifest identifiers without lineages: 1" in result.stderr
+    assert "WVDB|missing" in result.stderr
+    assert "lineage identifiers absent from manifest: 1" in result.stderr
+    assert "NCBI_stale" in result.stderr
+
+
+def test_validate_lineages_rejects_conflicting_prefix_taxid_mappings(
+    tmp_path: Path,
+) -> None:
+    """Production validation requires a bijection between nodes and taxids."""
+    manifest = write_manifest(
+        tmp_path / "combined.manifest.csv",
+        [
+            ("NCBI_A", "a" * 32),
+            ("NCBI_B", "b" * 32),
+            ("NCBI_C", "c" * 32),
+        ],
+    )
+    lineages = tmp_path / "combined.lineages.csv"
+    lineages.write_text(
+        f"{LINEAGE_HEADER},taxpath\n"
+        "NCBI_A,Viruses,Pisuviricota,Pisoniviricetes,Picornavirales,"
+        "Picornaviridae,Enterovirus,Enterovirus A,,10239|1|2|3|4|5|6|\n"
+        "NCBI_B,Viruses,Pisuviricota,Pisoniviricetes,Picornavirales,"
+        "Picornaviridae,Enterovirus,Enterovirus A,,10239|1|2|3|4|5|7|\n"
+        "NCBI_C,Viruses,Pisuviricota,Pisoniviricetes,Picornavirales,"
+        "Picornaviridae,Enterovirus,Enterovirus B,,10239|1|2|3|4|5|6|\n",
+        encoding="utf-8",
+    )
+
+    result = run_script(
+        "validate-lineages",
+        "--manifest-csv",
+        manifest,
+        "--lineages-csv",
+        lineages,
+    )
+
+    assert result.returncode == 1
+    assert "lineage prefixes with conflicting taxids: 1" in result.stderr
+    assert "taxids with conflicting lineage prefixes: 1" in result.stderr
+
+
+def test_validate_lineages_rejects_semantic_name_conflicts(tmp_path: Path) -> None:
+    """The final publication gate repeats taxonomy-name safety checks."""
+    manifest = write_manifest(
+        tmp_path / "combined.manifest.csv",
+        [("REF_1", "a" * 32), ("REF_2", "b" * 32)],
+    )
+    lineages = tmp_path / "combined.lineages.csv"
+    lineages.write_text(
+        f"{LINEAGE_HEADER},taxpath\n"
+        "REF_1,Viruses,P1,C1,O1,F1,G1,Shared species,,1|2|3|4|5|6|7|\n"
+        "REF_2,Viruses,P1,C1,O1,F2,G2,Shared species,,1|2|3|4|8|9|10|\n",
+        encoding="utf-8",
+    )
+
+    result = run_script(
+        "validate-lineages",
+        "--manifest-csv",
+        manifest,
+        "--lineages-csv",
+        lineages,
+    )
+
+    assert result.returncode == 1
+    assert "same-rank taxonomy conflicts: 1" in result.stderr
+
+
+def test_write_checksums_records_complete_artifact_pair(tmp_path: Path) -> None:
+    """The ready marker records both runtime artifacts with SHA-256 digests."""
+    signature = tmp_path / "reference.sig.zip"
+    lineages = tmp_path / "reference.lineages.csv"
+    signature.write_bytes(b"a")
+    lineages.write_bytes(b"b")
+    checksums = tmp_path / "reference.sha256"
+
+    result = run_script(
+        "write-checksums",
+        "--output",
+        checksums,
+        signature,
+        lineages,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert checksums.read_text(encoding="utf-8") == (
+        "ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb  "
+        "reference.sig.zip\n"
+        "3e23e8160039594a33894f6564e1b1348bbd7a0088d42c4acb73eeaed59c009d  "
+        "reference.lineages.csv\n"
+    )
+
+
 def test_manifest_coverage_fails_on_missing_wvdb_lineage(tmp_path: Path) -> None:
     """check-manifest-coverage fails when a WVDB signature lacks a lineage."""
     manifest = tmp_path / "manifest.csv"
@@ -905,7 +1291,6 @@ def test_curate_lineages_most_specified_rewrites_conflicting_parents(
         tmp_path,
         manifests=(reference_manifest, wvdb_manifest),
         lineages=(reference_lineages, wvdb_lineages),
-        policy="most-specified",
     )
 
     assert result.returncode == 0, result.stderr
@@ -916,6 +1301,7 @@ def test_curate_lineages_most_specified_rewrites_conflicting_parents(
     assert rows["NCBI_1"]["species"] == "Shared_virus"
     assert rows["NCBI_1"]["strain"] == "ncbi-strain"
     assert rows["WVDB|1"]["strain"] == "wvdb-strain"
+    assert "WARNING" in result.stderr
     assert "resolved 1 taxonomy conflict" in result.stderr
     diagnostic_rows = read_tsv_rows(diagnostics)
     assert {row["normalized_name"] for row in diagnostic_rows} == {"shared virus"}
@@ -952,17 +1338,18 @@ def test_curate_lineages_rewrites_taxpath_with_taxonomy_prefix(tmp_path: Path) -
         tmp_path,
         manifests=(reference_manifest, wvdb_manifest),
         lineages=(reference_lineages, wvdb_lineages),
-        policy="most-specified",
     )
 
     assert result.returncode == 0, result.stderr
     rows = read_csv_rows_by_ident(output)
-    assert rows["NCBI_1"]["taxpath"] == "10239|11|12|13|14||16|7"
-    assert rows["WVDB|1"]["taxpath"] == "10239|11|12|13|14||16|17"
+    assert rows["NCBI_1"]["taxpath"] == "10239|11|12|13|14||6|7"
+    assert rows["WVDB|1"]["taxpath"] == "10239|11|12|13|14||6|17"
 
 
-def test_curate_lineages_source_policy_overrides_specificity(tmp_path: Path) -> None:
-    """An explicit NCBI policy should win even when WVDB is more specified."""
+def test_curate_lineages_assigns_taxid_to_named_strain_after_prefix_rewrite(
+    tmp_path: Path,
+) -> None:
+    """A named strain remains addressable after its taxonomy prefix is rewritten."""
     reference_manifest = write_manifest(
         tmp_path / "reference.manifest.csv",
         [("NCBI_1", "a" * 32)],
@@ -971,18 +1358,390 @@ def test_curate_lineages_source_policy_overrides_specificity(tmp_path: Path) -> 
         tmp_path / "wvdb.manifest.csv",
         [("WVDB|1", "b" * 32)],
     )
+    header = f"{LINEAGE_HEADER},taxid,taxpath\n"
+    reference_lineages = tmp_path / "reference.lineages.csv"
+    reference_lineages.write_text(
+        header + "NCBI_1,Viruses,unclassified phylum,unclassified class,"
+        "unclassified order,unclassified family,unclassified genus,"
+        "Shared virus,Named strain,33757,10239|1|2|3|4|5|6|\n",
+        encoding="utf-8",
+    )
+    wvdb_lineages = tmp_path / "wvdb.lineages.csv"
+    wvdb_lineages.write_text(
+        header + "WVDB|1,Viruses,Pisuviricota,Pisoniviricetes,Picornavirales,"
+        "Picornaviridae,,Shared_virus,,,10239|11|12|13|14||16|\n",
+        encoding="utf-8",
+    )
+
+    result, output, _diagnostics = run_curation(
+        tmp_path,
+        manifests=(reference_manifest, wvdb_manifest),
+        lineages=(reference_lineages, wvdb_lineages),
+    )
+
+    assert result.returncode == 0, result.stderr
+    row = read_csv_rows_by_ident(output)["NCBI_1"]
+    taxids = row["taxpath"].split("|")
+    assert len(taxids) == len(LINEAGE_HEADER.split(",")) - 1
+    assert row["strain"] == "Named strain"
+    assert taxids[-1] == "33757"
+
+
+def test_curate_lineages_uses_one_taxid_for_equivalent_lineage_prefixes(
+    tmp_path: Path,
+) -> None:
+    """Equivalent finalized lineage prefixes receive one shared taxid path."""
+    reference_manifest = write_manifest(
+        tmp_path / "reference.manifest.csv",
+        [("NCBI_1", "a" * 32)],
+    )
+    wvdb_manifest = write_manifest(
+        tmp_path / "wvdb.manifest.csv",
+        [("WVDB|1", "b" * 32)],
+    )
+    header = f"{LINEAGE_HEADER},taxpath\n"
+    reference_lineages = tmp_path / "reference.lineages.csv"
+    reference_lineages.write_text(
+        header + "NCBI_1,Viruses,Pisuviricota,Pisoniviricetes,Picornavirales,"
+        "Picornaviridae,Enterovirus,Enterovirus A,,10239|1|2|3|4|5|6|\n",
+        encoding="utf-8",
+    )
+    wvdb_lineages = tmp_path / "wvdb.lineages.csv"
+    wvdb_lineages.write_text(
+        header + "WVDB|1,Viruses,Pisuviricota,Pisoniviricetes,Picornavirales,"
+        "Picornaviridae,Enterovirus,Enterovirus A,,10239|11|12|13|14|15|16|\n",
+        encoding="utf-8",
+    )
+
+    result, output, _diagnostics = run_curation(
+        tmp_path,
+        manifests=(reference_manifest, wvdb_manifest),
+        lineages=(reference_lineages, wvdb_lineages),
+    )
+
+    assert result.returncode == 0, result.stderr
+    rows = read_csv_rows_by_ident(output)
+    assert rows["NCBI_1"]["taxpath"] == rows["WVDB|1"]["taxpath"]
+
+
+def test_curate_lineages_synthesizes_conflicting_ncbi_taxids_for_one_prefix(
+    tmp_path: Path,
+) -> None:
+    """Contradictory native IDs produce one explicit synthetic canonical node."""
+    reference_manifest = write_manifest(
+        tmp_path / "reference.manifest.csv",
+        [("NCBI_1", "a" * 32), ("NCBI_2", "b" * 32)],
+    )
+    wvdb_manifest = write_manifest(tmp_path / "wvdb.manifest.csv", [])
+    header = f"{LINEAGE_HEADER},taxpath\n"
+    reference_lineages = tmp_path / "reference.lineages.csv"
+    reference_lineages.write_text(
+        header + "NCBI_1,Viruses,Pisuviricota,Pisoniviricetes,Picornavirales,"
+        "Picornaviridae,Enterovirus,Enterovirus A,,10239|1|2|3|4|5|6|\n"
+        "NCBI_2,Viruses,Pisuviricota,Pisoniviricetes,Picornavirales,"
+        "Picornaviridae,Enterovirus,Enterovirus A,,10239|1|2|3|4|5|7|\n",
+        encoding="utf-8",
+    )
+    wvdb_lineages = write_lineages(tmp_path / "wvdb.lineages.csv", [])
+
+    result, output, diagnostics = run_curation(
+        tmp_path,
+        manifests=(reference_manifest, wvdb_manifest),
+        lineages=(reference_lineages, wvdb_lineages),
+    )
+
+    assert result.returncode == 0, result.stderr
+    rows = read_csv_rows_by_ident(output)
+    assert rows["NCBI_1"]["taxpath"] == rows["NCBI_2"]["taxpath"]
+    assert rows["NCBI_1"]["taxpath"].split("|")[6] not in {"6", "7"}
+    diagnostic_rows = read_tsv_rows(diagnostics)
+    assert diagnostic_rows[-1]["resolution"] == (
+        "synthesized-conflicting-native-taxids"
+    )
+
+
+def test_curate_lineages_rejects_one_taxid_for_conflicting_lineage_prefixes(
+    tmp_path: Path,
+) -> None:
+    """One taxid cannot identify two distinct finalized taxonomy nodes."""
+    reference_manifest = write_manifest(
+        tmp_path / "reference.manifest.csv",
+        [("NCBI_1", "a" * 32)],
+    )
+    wvdb_manifest = write_manifest(
+        tmp_path / "wvdb.manifest.csv",
+        [("WVDB|1", "b" * 32)],
+    )
+    header = f"{LINEAGE_HEADER},taxpath\n"
+    reference_lineages = tmp_path / "reference.lineages.csv"
+    reference_lineages.write_text(
+        header + "NCBI_1,Viruses,Pisuviricota,Pisoniviricetes,Picornavirales,"
+        "Picornaviridae,Enterovirus,Enterovirus A,,10239|1|2|3|4|5|999|\n",
+        encoding="utf-8",
+    )
+    wvdb_lineages = tmp_path / "wvdb.lineages.csv"
+    wvdb_lineages.write_text(
+        header + "WVDB|1,Viruses,Pisuviricota,Pisoniviricetes,Picornavirales,"
+        "Picornaviridae,Enterovirus,Enterovirus B,,10239|1|2|3|4|5|999|\n",
+        encoding="utf-8",
+    )
+
+    result, output, _diagnostics = run_curation(
+        tmp_path,
+        manifests=(reference_manifest, wvdb_manifest),
+        lineages=(reference_lineages, wvdb_lineages),
+    )
+
+    assert result.returncode == 1
+    assert "taxid 999 represents conflicting lineage prefixes" in result.stderr
+    assert not output.exists()
+
+
+def test_curate_lineages_hashes_delimiter_bearing_prefixes_unambiguously(
+    tmp_path: Path,
+) -> None:
+    """Taxonomy label delimiters cannot alias distinct synthetic-ID prefixes."""
+    reference_manifest = write_manifest(tmp_path / "reference.manifest.csv", [])
+    wvdb_manifest = write_manifest(
+        tmp_path / "wvdb.manifest.csv",
+        [("WVDB|1", "a" * 32), ("WVDB|2", "b" * 32)],
+    )
+    reference_lineages = write_lineages(tmp_path / "reference.lineages.csv", [])
+    wvdb_lineages = write_lineages(
+        tmp_path / "wvdb.lineages.csv",
+        [
+            ("WVDB|1", "Viruses", "A|class=B", "", "", "", "", "", ""),
+            ("WVDB|2", "Viruses", "A", "B", "", "", "", "", ""),
+        ],
+    )
+
+    result, output, _diagnostics = run_curation(
+        tmp_path,
+        manifests=(reference_manifest, wvdb_manifest),
+        lineages=(reference_lineages, wvdb_lineages),
+    )
+
+    assert result.returncode == 0, result.stderr
+    rows = read_csv_rows_by_ident(output)
+    first_taxids = rows["WVDB|1"]["taxpath"].split("|")
+    second_taxids = rows["WVDB|2"]["taxpath"].split("|")
+    assert first_taxids[1] != second_taxids[2]
+
+
+@settings(
+    deadline=None,
+    max_examples=30,
+    suppress_health_check=[HealthCheck.function_scoped_fixture],
+)
+@given(
+    optional_labels=st.lists(
+        st.one_of(
+            st.none(),
+            st.text(
+                alphabet=st.characters(
+                    blacklist_categories=("Cs",),
+                    blacklist_characters="\x00\r\n",
+                ),
+                min_size=1,
+                max_size=20,
+            ),
+        ),
+        min_size=7,
+        max_size=7,
+    ),
+)
+def test_curate_lineages_materializes_bioboxes_positions_for_sparse_taxonomy(
+    tmp_path: Path,
+    optional_labels: list[str | None],
+) -> None:
+    """Every generated rank has one numeric taxid in the declared position."""
+    ranks = LINEAGE_HEADER.split(",")[1:]
+    names = [
+        f"{rank} {label}" if label is not None else ""
+        for rank, label in zip(ranks[1:], optional_labels, strict=True)
+    ]
+    reference_manifest = write_manifest(
+        tmp_path / "reference.manifest.csv",
+        [("NCBI_1", "a" * 32)],
+    )
+    wvdb_manifest = write_manifest(tmp_path / "wvdb.manifest.csv", [])
+    reference_lineages = tmp_path / "reference.lineages.csv"
+    with reference_lineages.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.writer(handle, lineterminator="\n")
+        writer.writerow([*LINEAGE_HEADER.split(","), "taxpath"])
+        writer.writerow(["NCBI_1", "Viruses", *names, "10239|||||||"])
+    wvdb_lineages = write_lineages(tmp_path / "wvdb.lineages.csv", [])
+
+    result, output, _diagnostics = run_curation(
+        tmp_path,
+        manifests=(reference_manifest, wvdb_manifest),
+        lineages=(reference_lineages, wvdb_lineages),
+    )
+
+    assert result.returncode == 0, result.stderr
+    row = read_csv_rows_by_ident(output)["NCBI_1"]
+    taxids = row["taxpath"].split("|")
+    assert len(taxids) == len(ranks)
+    for rank, taxid in zip(ranks, taxids, strict=True):
+        assert bool(row[rank]) == bool(taxid)
+        assert not taxid or taxid.isdecimal()
+
+
+@settings(
+    deadline=None,
+    max_examples=20,
+    suppress_health_check=[HealthCheck.function_scoped_fixture],
+)
+@given(
+    labels=st.lists(
+        st.text(
+            alphabet=st.characters(
+                blacklist_categories=("Cs",),
+                blacklist_characters="\x00\r\n",
+            ),
+            min_size=1,
+            max_size=20,
+        ),
+        min_size=2,
+        max_size=2,
+    ),
+)
+def test_curated_taxids_are_stable_across_input_order(
+    tmp_path: Path,
+    labels: list[str],
+) -> None:
+    """Row order cannot change shared or synthetic lineage-node taxids."""
+    rows = [
+        (
+            "WVDB|1",
+            "Viruses",
+            "Pisuviricota",
+            "Pisoniviricetes",
+            "Picornavirales",
+            "Picornaviridae",
+            "Enterovirus",
+            f"Species 1 {labels[0]}",
+            "",
+        ),
+        (
+            "WVDB|2",
+            "Viruses",
+            "Pisuviricota",
+            "Pisoniviricetes",
+            "Picornavirales",
+            "Picornaviridae",
+            "Enterovirus",
+            f"Species 2 {labels[1]}",
+            "",
+        ),
+    ]
+    outputs: list[dict[str, dict[str, str]]] = []
+    for name, ordered_rows in (("forward", rows), ("reverse", list(reversed(rows)))):
+        case_dir = tmp_path / name
+        case_dir.mkdir(exist_ok=True)
+        reference_manifest = write_manifest(case_dir / "reference.manifest.csv", [])
+        wvdb_manifest = write_manifest(
+            case_dir / "wvdb.manifest.csv",
+            [
+                (row[0], digest * 32)
+                for row, digest in zip(ordered_rows, ("a", "b"), strict=True)
+            ],
+        )
+        reference_lineages = write_lineages(case_dir / "reference.lineages.csv", [])
+        wvdb_lineages = write_lineages(
+            case_dir / "wvdb.lineages.csv",
+            ordered_rows,
+        )
+        result, output, _diagnostics = run_curation(
+            case_dir,
+            manifests=(reference_manifest, wvdb_manifest),
+            lineages=(reference_lineages, wvdb_lineages),
+        )
+        assert result.returncode == 0, result.stderr
+        outputs.append(read_csv_rows_by_ident(output))
+
+    assert outputs[0] == outputs[1]
+    first_taxids = outputs[0]["WVDB|1"]["taxpath"].split("|")
+    second_taxids = outputs[0]["WVDB|2"]["taxpath"].split("|")
+    assert first_taxids[:6] == second_taxids[:6]
+
+
+def test_curate_lineages_rejects_non_numeric_taxids(tmp_path: Path) -> None:
+    """Published BioBoxes taxids must be decimal strings."""
+    reference_manifest = write_manifest(
+        tmp_path / "reference.manifest.csv",
+        [("NCBI_1", "a" * 32)],
+    )
+    wvdb_manifest = write_manifest(tmp_path / "wvdb.manifest.csv", [])
+    header = f"{LINEAGE_HEADER},taxpath\n"
+    reference_lineages = tmp_path / "reference.lineages.csv"
+    reference_lineages.write_text(
+        header + "NCBI_1,Viruses,Pisuviricota,,,,,,,10239|not-a-taxid||||||\n",
+        encoding="utf-8",
+    )
+    wvdb_lineages = write_lineages(tmp_path / "wvdb.lineages.csv", [])
+
+    result, output, _diagnostics = run_curation(
+        tmp_path,
+        manifests=(reference_manifest, wvdb_manifest),
+        lineages=(reference_lineages, wvdb_lineages),
+    )
+
+    assert result.returncode == 1
+    assert "non-numeric taxid: not-a-taxid" in result.stderr
+    assert not output.exists()
+
+
+def test_curate_lineages_rejects_source_taxpath_beyond_declared_ranks(
+    tmp_path: Path,
+) -> None:
+    """Curation cannot silently discard source taxpath positions."""
+    reference_manifest = write_manifest(
+        tmp_path / "reference.manifest.csv",
+        [("NCBI_1", "a" * 32)],
+    )
+    wvdb_manifest = write_manifest(tmp_path / "wvdb.manifest.csv", [])
+    header = f"{LINEAGE_HEADER},taxpath\n"
+    reference_lineages = tmp_path / "reference.lineages.csv"
+    reference_lineages.write_text(
+        header + "NCBI_1,Viruses,,,,,,,,10239||||||||999\n",
+        encoding="utf-8",
+    )
+    wvdb_lineages = write_lineages(tmp_path / "wvdb.lineages.csv", [])
+
+    result, output, _diagnostics = run_curation(
+        tmp_path,
+        manifests=(reference_manifest, wvdb_manifest),
+        lineages=(reference_lineages, wvdb_lineages),
+    )
+
+    assert result.returncode == 1
+    assert "source taxpath has 9 positions; expected at most 8" in result.stderr
+    assert not output.exists()
+
+
+def test_curate_lineages_uses_informative_ncbi_corroboration(tmp_path: Path) -> None:
+    """NCBI resolves a tied placement only when it supports an informative path."""
+    reference_manifest = write_manifest(
+        tmp_path / "reference.manifest.csv",
+        [("NCBI_1", "a" * 32)],
+    )
+    wvdb_manifest = write_manifest(
+        tmp_path / "wvdb.manifest.csv",
+        [("WVDB|1", "b" * 32), ("WVDB|2", "c" * 32)],
+    )
     reference_lineages = write_lineages(
         tmp_path / "reference.lineages.csv",
         [
             (
                 "NCBI_1",
                 "Viruses",
-                "unclassified Viruses phylum",
+                "Lenarviricota",
+                "Leviviricetes",
+                "Norzivirales",
+                "Fiersviridae",
                 "",
                 "",
-                "",
-                "",
-                "Shared virus",
                 "",
             ),
         ],
@@ -993,38 +1752,49 @@ def test_curate_lineages_source_policy_overrides_specificity(tmp_path: Path) -> 
             (
                 "WVDB|1",
                 "Viruses",
-                "Pisuviricota",
-                "Pisoniviricetes",
-                "Picornavirales",
-                "Picornaviridae",
+                "Lenarviricota",
+                "Leviviricetes",
+                "Norzivirales",
+                "Fiersviridae",
                 "",
-                "Shared_virus",
+                "",
+                "",
+            ),
+            (
+                "WVDB|2",
+                "Viruses",
+                "Lenarviricota",
+                "Leviviricetes",
+                "Timlovirales",
+                "Fiersviridae",
+                "",
+                "",
                 "",
             ),
         ],
     )
 
-    for policy, expected_phylum, expected_species in (
-        ("ncbi-wins", "unclassified Viruses phylum", "Shared virus"),
-        ("wvdb-wins", "Pisuviricota", "Shared_virus"),
-    ):
-        result, output, _diagnostics = run_curation(
-            tmp_path,
-            manifests=(reference_manifest, wvdb_manifest),
-            lineages=(reference_lineages, wvdb_lineages),
-            policy=policy,
-        )
+    result, output, diagnostics = run_curation(
+        tmp_path,
+        manifests=(reference_manifest, wvdb_manifest),
+        lineages=(reference_lineages, wvdb_lineages),
+    )
 
-        assert result.returncode == 0, result.stderr
-        rows = {row["ident"]: row for row in read_csv_rows(output)}
-        assert rows["WVDB|1"]["phylum"] == expected_phylum
-        assert rows["WVDB|1"]["species"] == expected_species
+    assert result.returncode == 0, result.stderr
+    rows = read_csv_rows_by_ident(output)
+    assert {row["order"] for row in rows.values()} == {"Norzivirales"}
+    assert {row["family"] for row in rows.values()} == {"Fiersviridae"}
+    diagnostic_rows = read_tsv_rows(diagnostics)
+    assert {row["resolution"] for row in diagnostic_rows} == {
+        "selected-informative-ncbi",
+    }
+    assert {row["decision"] for row in diagnostic_rows} == {"winner", "rewritten"}
 
 
-def test_curate_lineages_fails_on_equally_specified_conflicts(
+def test_curate_lineages_contextualizes_equally_specified_conflicts(
     tmp_path: Path,
 ) -> None:
-    """Most-specified must not break incompatible ties by input order or frequency."""
+    """Incompatible tied placements retain distinct contextual taxon names."""
     reference_manifest = write_manifest(tmp_path / "reference.manifest.csv", [])
     wvdb_manifest = write_manifest(
         tmp_path / "wvdb.manifest.csv",
@@ -1059,18 +1829,136 @@ def test_curate_lineages_fails_on_equally_specified_conflicts(
         ],
     )
 
-    result, _output, diagnostics = run_curation(
+    result, output, diagnostics = run_curation(
         tmp_path,
         manifests=(reference_manifest, wvdb_manifest),
         lineages=(reference_lineages, wvdb_lineages),
-        policy="most-specified",
     )
 
-    assert result.returncode == 1
-    assert "ambiguous taxonomy conflict" in result.stderr
+    assert result.returncode == 0, result.stderr
+    rows = read_csv_rows_by_ident(output)
+    assert rows["WVDB|1"]["species"] == "Shared_virus [under Picornaviridae]"
+    assert rows["WVDB|2"]["species"] == "Shared_virus [under Dicistroviridae]"
     diagnostic_rows = read_tsv_rows(diagnostics)
     assert {row["conflict_type"] for row in diagnostic_rows} == {"taxonomy_name"}
-    assert {row["decision"] for row in diagnostic_rows} == {"ambiguous"}
+    assert {row["resolution"] for row in diagnostic_rows} == {
+        "contextualized-ambiguity",
+    }
+    assert {row["decision"] for row in diagnostic_rows} == {"contextualized"}
+
+
+def test_curate_lineages_treats_placeholder_spellings_as_equivalent(
+    tmp_path: Path,
+) -> None:
+    """Placeholder presentation differences do not create distinct parents."""
+    reference_manifest = write_manifest(
+        tmp_path / "reference.manifest.csv",
+        [("NCBI_1", "a" * 32)],
+    )
+    wvdb_manifest = write_manifest(
+        tmp_path / "wvdb.manifest.csv",
+        [("WVDB|1", "b" * 32)],
+    )
+    reference_lineages = write_lineages(
+        tmp_path / "reference.lineages.csv",
+        [
+            (
+                "NCBI_1",
+                "Viruses",
+                "Kitrinoviricota",
+                "Flasuviricetes",
+                "Amarillovirales",
+                "Flaviviridae",
+                "unclassified Flaviviridae genus",
+                "Apis flavivirus",
+                "",
+            ),
+        ],
+    )
+    wvdb_lineages = write_lineages(
+        tmp_path / "wvdb.lineages.csv",
+        [
+            (
+                "WVDB|1",
+                "Viruses",
+                "Kitrinoviricota",
+                "Flasuviricetes",
+                "Amarillovirales",
+                "Flaviviridae",
+                "unclassified genus [under Flaviviridae]",
+                "Apis_flavivirus",
+                "",
+            ),
+        ],
+    )
+
+    result, output, diagnostics = run_curation(
+        tmp_path,
+        manifests=(reference_manifest, wvdb_manifest),
+        lineages=(reference_lineages, wvdb_lineages),
+    )
+
+    assert result.returncode == 0, result.stderr
+    rows = read_csv_rows_by_ident(output)
+    assert rows["NCBI_1"]["species"] == "Apis flavivirus"
+    assert rows["WVDB|1"]["species"] == "Apis flavivirus"
+    assert rows["WVDB|1"]["genus"] == "unclassified Flaviviridae genus"
+    diagnostic_rows = read_tsv_rows(diagnostics)
+    assert {row["resolution"] for row in diagnostic_rows} == {
+        "canonicalized-placeholder",
+    }
+    assert {row["decision"] for row in diagnostic_rows} == {"winner", "rewritten"}
+
+
+def test_curate_lineages_reuses_ncbi_taxid_for_normalized_equivalent_name(
+    tmp_path: Path,
+) -> None:
+    """Underscore spelling differences retain the canonical NCBI node ID."""
+    reference_manifest = write_manifest(
+        tmp_path / "reference.manifest.csv",
+        [("NCBI_1", "a" * 32)],
+    )
+    wvdb_manifest = write_manifest(
+        tmp_path / "wvdb.manifest.csv",
+        [("WVDB|1", "b" * 32)],
+    )
+    header = f"{LINEAGE_HEADER},taxpath\n"
+    reference_lineages = tmp_path / "reference.lineages.csv"
+    reference_lineages.write_text(
+        header + "NCBI_1,Viruses,Pisuviricota,Pisoniviricetes,Picornavirales,"
+        "Picornaviridae,Enterovirus,Example virus,,10239|1|2|3|4|5|6|\n",
+        encoding="utf-8",
+    )
+    wvdb_lineages = tmp_path / "wvdb.lineages.csv"
+    wvdb_lineages.write_text(
+        header + "WVDB|1,Viruses,Pisuviricota,Pisoniviricetes,Picornavirales,"
+        "Picornaviridae,Enterovirus,Example_virus,,10239|11|12|13|14|15|16|\n",
+        encoding="utf-8",
+    )
+
+    result, output, _diagnostics = run_curation(
+        tmp_path,
+        manifests=(reference_manifest, wvdb_manifest),
+        lineages=(reference_lineages, wvdb_lineages),
+    )
+
+    assert result.returncode == 0, result.stderr
+    rows = read_csv_rows_by_ident(output)
+    assert rows["WVDB|1"]["species"] == "Example virus"
+    assert rows["WVDB|1"]["taxpath"] == rows["NCBI_1"]["taxpath"]
+    assert rows["WVDB|1"]["taxpath"].split("|")[6] == "6"
+    combined_manifest = write_manifest(
+        tmp_path / "combined.manifest.csv",
+        [("NCBI_1", "a" * 32), ("WVDB|1", "b" * 32)],
+    )
+    validation = run_script(
+        "validate-lineages",
+        "--manifest-csv",
+        combined_manifest,
+        "--lineages-csv",
+        output,
+    )
+    assert validation.returncode == 0, validation.stderr
 
 
 def test_curate_lineages_fails_on_duplicate_signature_identity(
@@ -1099,7 +1987,6 @@ def test_curate_lineages_fails_on_duplicate_signature_identity(
         tmp_path,
         manifests=(reference_manifest, wvdb_manifest),
         lineages=(reference_lineages, wvdb_lineages),
-        policy="most-specified",
     )
 
     assert result.returncode == 1
@@ -1109,6 +1996,30 @@ def test_curate_lineages_fails_on_duplicate_signature_identity(
     diagnostic_rows = read_tsv_rows(diagnostics)
     assert [row["ident"] for row in diagnostic_rows] == ["NCBI_1", "WVDB|1"]
     assert {row["conflict_type"] for row in diagnostic_rows} == {"signature_identity"}
+
+
+def test_curate_lineages_rejects_duplicate_manifest_identifiers(tmp_path: Path) -> None:
+    """Each retained signature identifier must produce exactly one lineage row."""
+    reference_manifest = write_manifest(
+        tmp_path / "reference.manifest.csv",
+        [("NCBI_1", "a" * 32), ("NCBI_1", "b" * 32)],
+    )
+    wvdb_manifest = write_manifest(tmp_path / "wvdb.manifest.csv", [])
+    reference_lineages = write_lineages(
+        tmp_path / "reference.lineages.csv",
+        [("NCBI_1", "Viruses", "Pisuviricota", "", "", "", "", "", "")],
+    )
+    wvdb_lineages = write_lineages(tmp_path / "wvdb.lineages.csv", [])
+
+    result, output, _diagnostics = run_curation(
+        tmp_path,
+        manifests=(reference_manifest, wvdb_manifest),
+        lineages=(reference_lineages, wvdb_lineages),
+    )
+
+    assert result.returncode == 1
+    assert "Duplicate manifest identifier: NCBI_1" in result.stderr
+    assert not output.exists()
 
 
 def test_curate_lineages_removes_rows_absent_from_manifests(tmp_path: Path) -> None:
@@ -1131,7 +2042,6 @@ def test_curate_lineages_removes_rows_absent_from_manifests(tmp_path: Path) -> N
         tmp_path,
         manifests=(reference_manifest, wvdb_manifest),
         lineages=(reference_lineages, wvdb_lineages),
-        policy="most-specified",
     )
 
     assert result.returncode == 0, result.stderr
@@ -1164,7 +2074,6 @@ def test_signature_identity_includes_sketch_parameters(tmp_path: Path) -> None:
         tmp_path,
         manifests=(reference_manifest, wvdb_manifest),
         lineages=(reference_lineages, wvdb_lineages),
-        policy="most-specified",
     )
 
     assert result.returncode == 0, result.stderr
@@ -1197,7 +2106,6 @@ def test_curate_lineages_rejects_duplicate_identifiers(tmp_path: Path) -> None:
         tmp_path,
         manifests=(reference_manifest, wvdb_manifest),
         lineages=(reference_lineages, wvdb_lineages),
-        policy="most-specified",
     )
 
     assert result.returncode == 1
@@ -1251,10 +2159,9 @@ def test_curate_lineages_rejects_cross_rank_name_reuse(tmp_path: Path) -> None:
         tmp_path,
         manifests=(reference_manifest, wvdb_manifest),
         lineages=(reference_lineages, wvdb_lineages),
-        policy="most-specified",
     )
 
     assert result.returncode == 1
-    assert "ambiguous taxonomy conflict" in result.stderr
+    assert "cross-rank taxonomy name conflict" in result.stderr
     diagnostic_rows = read_tsv_rows(diagnostics)
     assert {row["conflict_type"] for row in diagnostic_rows} == {"taxonomy_rank"}
