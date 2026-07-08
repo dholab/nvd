@@ -14,6 +14,16 @@ MANIFEST_HEADER = (
     "with_abundance,name,filename"
 )
 LINEAGE_HEADER = "ident,superkingdom,phylum,class,order,family,genus,species,strain"
+WVDB_LINEAGE_COLUMNS = (
+    "ident",
+    "superkingdom",
+    "phylum",
+    "class",
+    "order",
+    "family",
+    "genus",
+    "species",
+)
 
 
 def run_script(*args: str | Path) -> subprocess.CompletedProcess[str]:
@@ -42,6 +52,60 @@ def read_tsv_rows(path: Path) -> list[dict[str, str]]:
 def read_csv_rows_by_ident(path: Path) -> dict[str, dict[str, str]]:
     """Read CSV rows keyed by sourmash lineage identifier."""
     return {row["ident"]: row for row in read_csv_rows(path)}
+
+
+def wvdb_lineage_columns(row: dict[str, str]) -> dict[str, str]:
+    """Return lineage-name columns, excluding BioBoxes taxpath metadata."""
+    return {column: row[column] for column in WVDB_LINEAGE_COLUMNS}
+
+
+def write_reference_lineages(path: Path) -> Path:
+    """Write a tiny reference lineage CSV with sourmash taxpaths."""
+    rows = [
+        [
+            "ident",
+            "taxid",
+            "taxpath",
+            "superkingdom",
+            "phylum",
+            "class",
+            "order",
+            "family",
+            "genus",
+            "species",
+            "strain",
+        ],
+        [
+            "REF_PICORNA",
+            "1234567",
+            "10239|2732408|2732506|464095|12345|23456|34567|",
+            "Viruses",
+            "Pisuviricota",
+            "Pisoniviricetes",
+            "Picornavirales",
+            "Picornaviridae",
+            "Referencegenus",
+            "Reference species",
+            "",
+        ],
+        [
+            "REF_KNOWN",
+            "8888888",
+            "10239|111111|222222|333333|444444|555555|666666|",
+            "Viruses",
+            "RdRpphylum",
+            "RdRpclass",
+            "Consensusorder",
+            "Consensusfamily",
+            "Knownvirus",
+            "Knownvirus species",
+            "",
+        ],
+    ]
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.writer(handle, lineterminator="\n")
+        writer.writerows(rows)
+    return path
 
 
 def write_tsv_rows(path: Path, rows: list[list[str]]) -> None:
@@ -239,7 +303,7 @@ def test_prepare_inputs_normalizes_fasta_and_maps_lineages(tmp_path: Path) -> No
     )
 
     rows = read_csv_rows(lineages_csv)
-    assert rows == [
+    assert [wvdb_lineage_columns(row) for row in rows] == [
         {
             "ident": "WVDB|contig_with_species",
             "superkingdom": "Viruses",
@@ -281,6 +345,7 @@ def test_prepare_inputs_normalizes_fasta_and_maps_lineages(tmp_path: Path) -> No
             "species": "",
         },
     ]
+    assert all(row["taxpath"].startswith("10239|") for row in rows)
 
 
 def test_prepare_inputs_contextualizes_wvdb_placeholder_taxa(tmp_path: Path) -> None:
@@ -319,6 +384,122 @@ def test_prepare_inputs_contextualizes_wvdb_placeholder_taxa(tmp_path: Path) -> 
     assert rows["WVDB|contig_order_without_phylum_or_class"]["family"] == (
         "unclassified family [under unclassified class > Picornavirales]"
     )
+
+
+def test_prepare_inputs_reuses_reference_taxpaths_for_exact_prefixes(
+    tmp_path: Path,
+) -> None:
+    """WVDB lineages should reuse exact reference taxids where possible."""
+    fasta, annotations = write_wvdb_fixtures(tmp_path)
+    reference_lineages = write_reference_lineages(tmp_path / "reference.lineages.csv")
+    lineages_csv = tmp_path / "wvdb-v1.0.sourmash.lineages.csv"
+
+    result = run_script(
+        "prepare-inputs",
+        "--fasta",
+        fasta,
+        "--annotations-tsv",
+        annotations,
+        "--reference-lineages-csv",
+        reference_lineages,
+        "--normalized-fasta",
+        tmp_path / "WVDB_v1.0.normalized.fasta",
+        "--lineages-csv",
+        lineages_csv,
+    )
+
+    assert result.returncode == 0, result.stderr
+    rows = read_csv_rows_by_ident(lineages_csv)
+    knownvirus_taxpath = rows["WVDB|contig_with_species"]["taxpath"].split("|")
+    assert knownvirus_taxpath == [
+        "10239",
+        "111111",
+        "222222",
+        "333333",
+        "444444",
+        "555555",
+        "666666",
+    ]
+
+
+def test_prepare_inputs_backfills_unique_reference_ancestors(
+    tmp_path: Path,
+) -> None:
+    """Known descendants should backfill missing ancestors from reference lineages."""
+    fasta, annotations = write_wvdb_fixtures(tmp_path)
+    reference_lineages = write_reference_lineages(tmp_path / "reference.lineages.csv")
+    lineages_csv = tmp_path / "wvdb-v1.0.sourmash.lineages.csv"
+
+    result = run_script(
+        "prepare-inputs",
+        "--fasta",
+        fasta,
+        "--annotations-tsv",
+        annotations,
+        "--reference-lineages-csv",
+        reference_lineages,
+        "--normalized-fasta",
+        tmp_path / "WVDB_v1.0.normalized.fasta",
+        "--lineages-csv",
+        lineages_csv,
+    )
+
+    assert result.returncode == 0, result.stderr
+    row = read_csv_rows_by_ident(lineages_csv)[
+        "WVDB|contig_order_without_phylum_or_class"
+    ]
+    assert row["phylum"] == "Pisuviricota"
+    assert row["class"] == "Pisoniviricetes"
+    assert row["order"] == "Picornavirales"
+    assert row["taxpath"].split("|")[:3] == ["10239", "2732408", "2732506"]
+
+
+def test_prepare_inputs_backfills_from_shallower_known_rank_for_novel_descendant(
+    tmp_path: Path,
+) -> None:
+    """A novel low rank should not block ancestor backfill from a known order."""
+    fasta = tmp_path / "WVDB_v1.0.fasta"
+    annotations = tmp_path / "WVDB_v1.0_annotations.tsv"
+    fasta.write_text(
+        ">novel_picorna_like\nACGTACGT\n",
+        encoding="utf-8",
+    )
+    write_tsv_rows(
+        annotations,
+        [
+            ["contig", "Order_gNd", "Species_RdRp"],
+            ["novel_picorna_like", "Picornavirales", "Novel picorna-like virus"],
+        ],
+    )
+    reference_lineages = write_reference_lineages(tmp_path / "reference.lineages.csv")
+    lineages_csv = tmp_path / "wvdb-v1.0.sourmash.lineages.csv"
+
+    result = run_script(
+        "prepare-inputs",
+        "--fasta",
+        fasta,
+        "--annotations-tsv",
+        annotations,
+        "--reference-lineages-csv",
+        reference_lineages,
+        "--normalized-fasta",
+        tmp_path / "WVDB_v1.0.normalized.fasta",
+        "--lineages-csv",
+        lineages_csv,
+    )
+
+    assert result.returncode == 0, result.stderr
+    row = read_csv_rows_by_ident(lineages_csv)["WVDB|novel_picorna_like"]
+    assert row["phylum"] == "Pisuviricota"
+    assert row["class"] == "Pisoniviricetes"
+    assert row["order"] == "Picornavirales"
+    assert row["species"] == "Novel picorna-like virus"
+    assert row["taxpath"].split("|")[:4] == [
+        "10239",
+        "2732408",
+        "2732506",
+        "464095",
+    ]
 
 
 def test_prepare_inputs_placeholder_names_do_not_depend_on_row_order(
@@ -557,6 +738,35 @@ def test_prepare_inputs_avoids_placeholder_label_collisions(
     )
 
 
+def test_combine_lineages_preserves_taxpath_column(tmp_path: Path) -> None:
+    """combine-lineages writes a publishable taxonomy without stripping taxpaths."""
+    reference_lineages = write_reference_lineages(tmp_path / "reference.lineages.csv")
+    wvdb_lineages = tmp_path / "wvdb.lineages.csv"
+    combined_lineages = tmp_path / "combined.lineages.csv"
+    wvdb_lineages.write_text(
+        "ident,superkingdom,phylum,class,order,family,genus,species,taxpath\n"
+        "WVDB|contig_1,Viruses,Pisuviricota,Pisoniviricetes,Picornavirales,,,,10239|2732408|2732506|464095\n",
+        encoding="utf-8",
+    )
+
+    result = run_script(
+        "combine-lineages",
+        "--reference-lineages-csv",
+        reference_lineages,
+        "--wvdb-lineages-csv",
+        wvdb_lineages,
+        "--lineages-csv",
+        combined_lineages,
+    )
+
+    assert result.returncode == 0, result.stderr
+    rows = read_csv_rows(combined_lineages)
+    assert rows[0]["ident"] == "REF_PICORNA"
+    assert rows[-1]["ident"] == "WVDB|contig_1"
+    assert rows[-1]["strain"] == ""
+    assert rows[-1]["taxpath"] == "10239|2732408|2732506|464095"
+
+
 def test_manifest_coverage_ignores_non_wvdb_references(tmp_path: Path) -> None:
     """check-manifest-coverage succeeds when WVDB rows are covered."""
     manifest = tmp_path / "manifest.csv"
@@ -710,6 +920,45 @@ def test_curate_lineages_most_specified_rewrites_conflicting_parents(
     diagnostic_rows = read_tsv_rows(diagnostics)
     assert {row["normalized_name"] for row in diagnostic_rows} == {"shared virus"}
     assert {row["decision"] for row in diagnostic_rows} == {"winner", "rewritten"}
+
+
+def test_curate_lineages_rewrites_taxpath_with_taxonomy_prefix(tmp_path: Path) -> None:
+    """A rewritten taxonomy prefix must retain aligned BioBoxes taxids."""
+    reference_manifest = write_manifest(
+        tmp_path / "reference.manifest.csv",
+        [("NCBI_1", "a" * 32)],
+    )
+    wvdb_manifest = write_manifest(
+        tmp_path / "wvdb.manifest.csv",
+        [("WVDB|1", "b" * 32)],
+    )
+    header = f"{LINEAGE_HEADER},taxpath\n"
+    reference_lineages = tmp_path / "reference.lineages.csv"
+    reference_lineages.write_text(
+        header + "NCBI_1,Viruses,unclassified phylum,unclassified class,"
+        "unclassified order,unclassified family,unclassified genus,"
+        "Shared virus,ncbi-strain,10239|1|2|3|4|5|6|7\n",
+        encoding="utf-8",
+    )
+    wvdb_lineages = tmp_path / "wvdb.lineages.csv"
+    wvdb_lineages.write_text(
+        header + "WVDB|1,Viruses,Pisuviricota,Pisoniviricetes,Picornavirales,"
+        "Picornaviridae,,Shared_virus,wvdb-strain,"
+        "10239|11|12|13|14||16|17\n",
+        encoding="utf-8",
+    )
+
+    result, output, _diagnostics = run_curation(
+        tmp_path,
+        manifests=(reference_manifest, wvdb_manifest),
+        lineages=(reference_lineages, wvdb_lineages),
+        policy="most-specified",
+    )
+
+    assert result.returncode == 0, result.stderr
+    rows = read_csv_rows_by_ident(output)
+    assert rows["NCBI_1"]["taxpath"] == "10239|11|12|13|14||16|7"
+    assert rows["WVDB|1"]["taxpath"] == "10239|11|12|13|14||16|17"
 
 
 def test_curate_lineages_source_policy_overrides_specificity(tmp_path: Path) -> None:
