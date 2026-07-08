@@ -1,4 +1,4 @@
-include { ADD_READ_COUNTS_TO_BLAST; CONCATENATE_EXPERIMENT_BLAST; VIRUS_ENRICHMENT_REPORT } from "../modules/utils"
+include { ADD_READ_COUNTS_TO_BLAST; BUILD_QUERY_BIG_TABLE; CONCATENATE_QUERY_BIG_TABLE; CONCATENATE_EXPERIMENT_BLAST; VIRUS_ENRICHMENT_REPORT } from "../modules/utils"
 include { NOTIFY_SLACK } from "../modules/utils"
 include { RENDER_MERGED_TAXON_ABUNDANCE_SUNBURST; RENDER_TAXON_ABUNDANCE_SUNBURST; RENDER_SOURMASH_SANKEY } from "../modules/reporting"
 include { CRUMBS_PROFILING } from "./crumbs_profiling"
@@ -41,16 +41,27 @@ workflow REPORTING {
     ch_split_blast_results = ADD_READ_COUNTS_TO_BLAST.out
         .multiMap { sample_id, blast_tsv ->
             for_summary: tuple(sample_id, blast_tsv)
+            for_big_table: tuple(sample_id, blast_tsv)
             for_labkey_trigger: tuple(sample_id, blast_tsv)
             for_labkey_upload: tuple(sample_id, blast_tsv)
             for_emit: tuple(sample_id, blast_tsv)
         }
+
+    if (params.experimental == true) {
+        BUILD_QUERY_BIG_TABLE(ch_split_blast_results.for_big_table)
+    }
 
     // Concatenate all per-sample final BLAST results into a single experiment-level TSV.
     // Runs unconditionally so every run produces an experiment summary, not just LabKey runs.
     CONCATENATE_EXPERIMENT_BLAST(
         ch_split_blast_results.for_summary.map { _sample_id, tsv -> tsv }.collect()
     )
+
+    if (params.experimental == true) {
+        CONCATENATE_QUERY_BIG_TABLE(
+            BUILD_QUERY_BIG_TABLE.out.map { _sample_id, tsv -> tsv }.collect()
+        )
+    }
 
     VIRUS_ENRICHMENT_REPORT(
         ch_virus_enrichment_stats.map { _sample_id, json -> json }.collect()
@@ -106,6 +117,8 @@ workflow REPORTING {
 
     emit:
     blast_results = ch_split_blast_results.for_emit
+    query_big_tables = params.experimental ? BUILD_QUERY_BIG_TABLE.out : channel.empty()
+    query_big_table = params.experimental ? CONCATENATE_QUERY_BIG_TABLE.out.concatenated_tsv : channel.empty()
     experiment_blast = CONCATENATE_EXPERIMENT_BLAST.out.concatenated_tsv
     virus_enrichment_report = VIRUS_ENRICHMENT_REPORT.out.summary_tsv
     taxon_abundance_sunbursts = params.experimental ? RENDER_TAXON_ABUNDANCE_SUNBURST.out.reports : channel.empty()

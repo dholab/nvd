@@ -145,6 +145,28 @@ process ADD_READ_COUNTS_TO_BLAST {
   """
 }
 
+process BUILD_QUERY_BIG_TABLE {
+  /*
+   * Build the featured one-row-per-query Big Table artifact from final BLAST rows.
+   */
+
+  tag "${sample_id}"
+  label "low"
+
+  input:
+  tuple val(sample_id), path(blast_tsv)
+
+  output:
+  tuple val(sample_id), path("${sample_id}.query_big_table.tsv")
+
+  script:
+  """
+  build_query_big_table.py \
+      --blast-tsv ${blast_tsv} \
+      --output ${sample_id}.query_big_table.tsv
+  """
+}
+
 process CONCATENATE_EXPERIMENT_BLAST {
   /*
    * Concatenate all per-sample _blast.final.tsv files into a single
@@ -182,6 +204,43 @@ process CONCATENATE_EXPERIMENT_BLAST {
           for tsv in files[1:]:
               with open(tsv) as f:
                   f.readline()  # skip header
+                  for line in f:
+                      out.write(line)
+  """
+}
+
+process CONCATENATE_QUERY_BIG_TABLE {
+  /*
+   * Concatenate per-sample query Big Tables into the featured all-sample artifact.
+   */
+
+  label "low"
+
+  input:
+  path "sample_big_tables/*"
+
+  output:
+  path "query_big_table.tsv", emit: concatenated_tsv
+
+  script:
+  """
+  #!/usr/bin/env python3
+  from pathlib import Path
+
+  files = sorted(Path("sample_big_tables").glob("*.tsv"))
+
+  if not files:
+      Path("query_big_table.tsv").write_text("")
+  else:
+      with open("query_big_table.tsv", "w") as out:
+          with open(files[0]) as f:
+              header = f.readline()
+              out.write(header)
+              for line in f:
+                  out.write(line)
+          for tsv in files[1:]:
+              with open(tsv) as f:
+                  f.readline()
                   for line in f:
                       out.write(line)
   """
