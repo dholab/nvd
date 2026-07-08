@@ -1,4 +1,10 @@
 #!/usr/bin/env python3
+# /// script
+# requires-python = ">=3.11,<3.14"
+# dependencies = [
+#   "polars>=1.27.1",
+# ]
+# ///
 """Build the taxon-level NVD Big Table from query-level Big Tables."""
 
 # ruff: noqa: COM812
@@ -31,7 +37,7 @@ OUTPUT_COLUMNS = [
     "taxon_rank",
     "support_tier",
     "taxon_crumbs",
-    "percentage_emitted",
+    "relative_crumbs_percent",
     "supporting_query_count",
     "taxid",
     "total_query_span",
@@ -223,7 +229,7 @@ def with_taxon_crumbs(frame: pl.LazyFrame) -> pl.LazyFrame:
             "total_crumbs_score",
         ),
         pl.coalesce("taxon_crumbs", "query_taxon_crumbs").alias("taxon_crumbs"),
-        pl.coalesce("percentage_emitted", pl.lit("")).alias("percentage_emitted"),
+        pl.coalesce("percentage_emitted", pl.lit("")).alias("relative_crumbs_percent"),
     )
 
 

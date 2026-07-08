@@ -1,3 +1,10 @@
+#!/usr/bin/env python3
+# /// script
+# requires-python = ">=3.11,<3.14"
+# dependencies = [
+#   "polars>=1.27.1",
+# ]
+# ///
 """Stack per-sample Big Table TSVs after validating their schemas."""
 
 from __future__ import annotations

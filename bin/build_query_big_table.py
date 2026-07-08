@@ -1,3 +1,10 @@
+#!/usr/bin/env python3
+# /// script
+# requires-python = ">=3.11,<3.14"
+# dependencies = [
+#   "polars>=1.27.1",
+# ]
+# ///
 """Build the query-level NVD Big Table from retained BLAST evidence."""
 
 # ruff: noqa: COM812
