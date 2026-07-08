@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Select FASTA records admitted to BLAST by class-aware rules."""
+"""Select BLAST query FASTA batches by evidence class."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from typing import TextIO
 from urllib.parse import quote
 
 WRAP_WIDTH = 80
-ADMITTED_CLASSES = frozenset({"short_assembly_contig", "long_assembly_contig"})
+QUERIED_CLASSES = frozenset({"short_assembly_contig", "long_assembly_contig"})
 
 
 class BlastQuerySelectionError(Exception):
@@ -32,11 +32,12 @@ class FastaRecord:
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Select FASTA records admitted to BLAST by class-aware rules.",
+        description="Select BLAST query FASTA batches by evidence class.",
     )
+    parser.add_argument("--sample-id", required=True)
     parser.add_argument("--input-fasta", required=True, type=Path)
     parser.add_argument("--query-lookup", required=True, type=Path)
-    parser.add_argument("--output-fasta", required=True, type=Path)
+    parser.add_argument("--output-dir", required=True, type=Path)
     return parser.parse_args(argv)
 
 
@@ -89,8 +90,8 @@ def select_blast_queries(
     records: list[FastaRecord],
     *,
     classes_by_qseqid: dict[str, str],
-) -> list[FastaRecord]:
-    selected: list[FastaRecord] = []
+) -> dict[str, list[FastaRecord]]:
+    selected: dict[str, list[FastaRecord]] = {}
     seen_qseqids: set[str] = set()
     for record in records:
         if not record.sequence:
@@ -105,14 +106,14 @@ def select_blast_queries(
         if evidence_class is None:
             msg = f"FASTA qseqid {record.qseqid!r} is missing from the query lookup."
             raise BlastQuerySelectionError(msg)
-        if evidence_class not in ADMITTED_CLASSES:
-            admitted = ", ".join(sorted(ADMITTED_CLASSES))
+        if evidence_class not in QUERIED_CLASSES:
+            queried = ", ".join(sorted(QUERIED_CLASSES))
             msg = (
                 f"FASTA qseqid {record.qseqid!r} has class {evidence_class!r}; "
-                f"this selector currently admits only: {admitted}."
+                f"this selector currently queries only: {queried}."
             )
             raise BlastQuerySelectionError(msg)
-        selected.append(record)
+        selected.setdefault(evidence_class, []).append(record)
     return selected
 
 
@@ -130,13 +131,25 @@ def write_fasta(path: Path, records: list[FastaRecord]) -> None:
             handle.write(f"{wrapped(record.sequence)}\n")
 
 
+def write_batch_fastas(
+    output_dir: Path,
+    *,
+    sample_id: str,
+    records_by_class: dict[str, list[FastaRecord]],
+) -> None:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    for evidence_class, records in sorted(records_by_class.items()):
+        output_path = output_dir / f"{sample_id}.{evidence_class}.blast_queries.fasta"
+        write_fasta(output_path, records)
+
+
 def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
     with args.input_fasta.open(encoding="utf-8") as handle:
         records = parse_fasta(handle)
     classes_by_qseqid = load_classes_by_qseqid(args.query_lookup)
     selected = select_blast_queries(records, classes_by_qseqid=classes_by_qseqid)
-    write_fasta(args.output_fasta, selected)
+    write_batch_fastas(args.output_dir, sample_id=args.sample_id, records_by_class=selected)
 
 
 if __name__ == "__main__":

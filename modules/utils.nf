@@ -81,25 +81,25 @@ process ENSURE_TAXONOMY {
 
 process ANNOTATE_LEAST_COMMON_ANCESTORS {
 
-  tag "${sample_id}"
+  tag "${sample_id}, ${evidence_class}"
   label "low"
 
   errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
   maxRetries 2
 
   input:
-  tuple val(sample_id), path(all_blast_hits)
+  tuple val(sample_id), val(evidence_class), path(all_blast_hits)
   val taxonomy_dir
 
   output:
-  tuple val(sample_id), path("${sample_id}_blast.merged_with_lca.tsv")
+  tuple val(sample_id), val(evidence_class), path("${sample_id}.${evidence_class}.blast.merged_with_lca.tsv")
 
   script:
   def taxonomy_dir_arg = taxonomy_dir ? "--taxonomy-dir '${taxonomy_dir}'" : ""
   def taxonomy_mode_arg = params.taxonomy_mode ? "--taxonomy-mode '${params.taxonomy_mode}'" : ""
   def taxonomy_max_age_arg = params.taxonomy_max_age_days ? "--taxonomy-max-age-days ${params.taxonomy_max_age_days}" : ""
   """
-  annotate_blast_lca.py -i ${all_blast_hits} -o ${sample_id}_blast.merged_with_lca.tsv ${taxonomy_dir_arg} ${taxonomy_mode_arg} ${taxonomy_max_age_arg}
+  annotate_blast_lca.py -i ${all_blast_hits} -o ${sample_id}.${evidence_class}.blast.merged_with_lca.tsv ${taxonomy_dir_arg} ${taxonomy_mode_arg} ${taxonomy_max_age_arg}
   """
 }
 

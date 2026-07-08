@@ -208,6 +208,7 @@ def write_query_lookup(
                 evidence_class text not null,
                 producer text not null,
                 source_id text not null,
+                support_record_count integer not null,
                 length integer not null,
                 sha256 text not null
             )
@@ -235,9 +236,10 @@ def write_query_lookup(
                 evidence_class,
                 producer,
                 source_id,
+                support_record_count,
                 length,
                 sha256
-            ) values (?, ?, ?, ?, ?, ?, ?)
+            ) values (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 (
@@ -246,6 +248,7 @@ def write_query_lookup(
                     record.evidence_class,
                     record.producer,
                     record.source_id,
+                    1,
                     record.length,
                     record.sha256,
                 )
