@@ -107,7 +107,7 @@ def write_query_lookup(path: Path) -> None:
             create table query_sequences (
                 qseqid text primary key,
                 sample_id text not null,
-                evidence_class text not null,
+                query_class text not null,
                 producer text not null,
                 source_id text not null,
                 support_record_count integer not null,
@@ -121,7 +121,7 @@ def write_query_lookup(path: Path) -> None:
             insert into query_sequences (
                 qseqid,
                 sample_id,
-                evidence_class,
+                query_class,
                 producer,
                 source_id,
                 support_record_count,
@@ -149,7 +149,7 @@ def write_read_query_lookup(path: Path) -> None:
             create table query_sequences (
                 qseqid text primary key,
                 sample_id text not null,
-                evidence_class text not null,
+                query_class text not null,
                 producer text not null,
                 source_id text not null,
                 support_record_count integer not null,
@@ -163,7 +163,7 @@ def write_read_query_lookup(path: Path) -> None:
             insert into query_sequences (
                 qseqid,
                 sample_id,
-                evidence_class,
+                query_class,
                 producer,
                 source_id,
                 support_record_count,
@@ -214,7 +214,7 @@ def test_final_blast_rows_include_collected_contig_metadata(tmp_path: Path) -> N
 
     [row] = read_tsv(output)
     assert row["qseqid"] == "nvdContigQuery_sample-1_000001"
-    assert row["evidence_class"] == "short_assembly_contig"
+    assert row["query_class"] == "short_assembly_contig"
     assert row["producer"] == "spades"
     assert row["source_id"] == "NODE_1_length_4_cov_1.0"
     assert row["support_record_count"] == "1"
@@ -249,7 +249,7 @@ def test_finalizer_can_run_without_query_lookup(tmp_path: Path) -> None:
     )
 
     [row] = read_tsv(output)
-    assert row["evidence_class"] == ""
+    assert row["query_class"] == ""
     assert row["producer"] == ""
     assert row["source_id"] == ""
     assert row["support_record_count"] == ""
@@ -291,7 +291,7 @@ def test_finalizer_loads_metadata_from_multiple_query_lookups(tmp_path: Path) ->
 
     rows = read_tsv(output)
     read_row = next(row for row in rows if row["qseqid"].startswith("nvdReadQuery_"))
-    assert read_row["evidence_class"] == "single_read"
+    assert read_row["query_class"] == "single_read"
     assert read_row["producer"] == "source_read"
     assert read_row["source_id"] == "readA/1"
     assert read_row["support_record_count"] == "3"

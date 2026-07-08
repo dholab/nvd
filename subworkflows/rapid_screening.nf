@@ -3,7 +3,7 @@ include { CONCAT_READS_AS_FASTA } from "../modules/seqkit"
 
 workflow RAPID_SCREENING {
     take:
-    ch_preprocessed_reads  // tuple(sample_id, platform, read_structure, evidence_class, fastq)
+    ch_preprocessed_read_shards  // tuple(sample_id, platform, read_structure, query_class, fastq)
 
     main:
     def is_http_url = { value -> value && value ==~ /(?i)^https?:\/\/.+/ }
@@ -46,21 +46,21 @@ workflow RAPID_SCREENING {
     SOURMASH_STAGE_REFERENCE(ch_ref_sketch.combine(ch_lineages))
 
     // Avoid scheduling sourmash for read files that cannot produce a query
-    // sketch. Empty gzip FASTQ outputs are not zero-byte files, so this is a
-    // cheap scheduling guard rather than a FASTQ record-count predicate.
-    ch_sketchable_shards = ch_preprocessed_reads.filter { _sample_id, _platform, _read_structure, _evidence_class, reads ->
-        def read_file = file(reads)
-        read_file.name.endsWith(".gz") ? read_file.size() > 28 : read_file.size() > 0
-    }
-
-    ch_grouped_shards = ch_sketchable_shards
+    // sketch. Gzipped empty sequence files are still non-empty files, so this
+    // must count records rather than bytes.
+    ch_grouped_read_shards = ch_preprocessed_read_shards
         .groupTuple(by: [0, 1, 2])
-        .map { sample_id, platform, read_structure, _evidence_classes, reads ->
+        .map { sample_id, platform, read_structure, _query_classes, reads ->
             tuple(sample_id, platform, read_structure, reads)
         }
 
-    CONCAT_READS_AS_FASTA(ch_grouped_shards)
-    SOURMASH_SKETCH_QUERY_METAGENOME(CONCAT_READS_AS_FASTA.out)
+    CONCAT_READS_AS_FASTA(ch_grouped_read_shards)
+
+    ch_sketchable_reads = CONCAT_READS_AS_FASTA.out.filter { _sample_id, _platform, _read_structure, reads ->
+        file(reads).countFasta() > 0
+    }
+
+    SOURMASH_SKETCH_QUERY_METAGENOME(ch_sketchable_reads)
 
     ch_gather_inputs = SOURMASH_SKETCH_QUERY_METAGENOME.out.query_sketches
         .combine(SOURMASH_STAGE_REFERENCE.out.ref_sketch)

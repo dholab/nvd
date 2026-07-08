@@ -8,7 +8,7 @@ include {
 
 workflow CLASSIFY_WITH_MEGABLAST {
     take:
-    ch_virus_contigs  // tuple(sample_id, platform, evidence_class, fasta, lookup)
+    ch_virus_contigs  // tuple(sample_id, platform, query_class, fasta, lookup)
     ch_blast_db_files
     ch_taxonomy_dir   // value channel: taxonomy directory path for taxonomy lookups
 
@@ -16,15 +16,15 @@ workflow CLASSIFY_WITH_MEGABLAST {
     // These FASTA files are uncompressed pipeline outputs. Upstream empty FASTA
     // producers create zero-byte files, so a byte-size check is a cheap scheduling
     // guard. Do not use this predicate for gzipped FASTA inputs.
-    ch_megablast_candidates = ch_virus_contigs.filter { _sample_id, _platform, _evidence_class, _contigs, _lookup ->
+    ch_megablast_candidates = ch_virus_contigs.filter { _sample_id, _platform, _query_class, _contigs, _lookup ->
           !params.skip_blast
       }
-      .filter { _sample_id, _platform, _evidence_class, contigs, _lookup ->
+      .filter { _sample_id, _platform, _query_class, contigs, _lookup ->
           file(contigs).size() > 0
       }
-      .multiMap { sample_id, _platform, evidence_class, contigs, _lookup ->
-          for_search: tuple(sample_id, evidence_class, contigs)
-          for_prune:  tuple(sample_id, evidence_class, contigs)
+      .multiMap { sample_id, _platform, query_class, contigs, _lookup ->
+          for_search: tuple(sample_id, query_class, contigs)
+          for_prune:  tuple(sample_id, query_class, contigs)
       }
 
     MEGABLAST(

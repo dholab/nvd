@@ -35,8 +35,8 @@ workflow PREPARE_BLAST_QUERIES {
                 def suffix = ".blast_queries.fasta"
                 def filename = batch_fasta.name
                 assert filename.startsWith(prefix) && filename.endsWith(suffix)
-                def evidence_class = filename.substring(prefix.length(), filename.length() - suffix.length())
-                tuple(sample_id, platform, evidence_class, batch_fasta, lookup)
+                def query_class = filename.substring(prefix.length(), filename.length() - suffix.length())
+                tuple(sample_id, platform, query_class, batch_fasta, lookup)
             }
         }
 
@@ -46,17 +46,17 @@ workflow PREPARE_BLAST_QUERIES {
     if (params.experimental == true) {
         NORMALIZE_READ_BLAST_QUERIES(CONTIG_READ_MAPBACK.out.unmapped_reads)
         ch_read_query_batches = NORMALIZE_READ_BLAST_QUERIES.out.queries
-            .flatMap { sample_id, platform, evidence_class, fastas, lookups ->
+            .flatMap { sample_id, platform, query_class, fastas, lookups ->
                 def batch_fastas = fastas ? (fastas instanceof List ? fastas : [fastas]) : []
                 def query_lookups = lookups ? (lookups instanceof List ? lookups : [lookups]) : []
                 assert batch_fastas.size() == query_lookups.size()
                 batch_fastas.withIndex().collect { batch_fasta, index ->
-                    tuple(sample_id, platform, evidence_class, batch_fasta, query_lookups[index])
+                    tuple(sample_id, platform, query_class, batch_fasta, query_lookups[index])
                 }
             }
         ch_query_batches = ch_query_batches.mix(ch_read_query_batches)
         ch_query_lookups = ch_contig_query_lookups
-            .mix(ch_read_query_batches.map { sample_id, _platform, _evidence_class, _fasta, lookup -> tuple(sample_id, lookup) })
+            .mix(ch_read_query_batches.map { sample_id, _platform, _query_class, _fasta, lookup -> tuple(sample_id, lookup) })
             .groupTuple()
     } else {
         ch_query_lookups = ch_contig_query_lookups.groupTuple()

@@ -19,7 +19,7 @@ def write_lookup(path: Path, rows: list[tuple[str, str]]) -> None:
             create table query_sequences (
                 qseqid text primary key,
                 sample_id text not null,
-                evidence_class text not null,
+                query_class text not null,
                 producer text not null,
                 source_id text not null,
                 support_record_count integer not null,
@@ -33,7 +33,7 @@ def write_lookup(path: Path, rows: list[tuple[str, str]]) -> None:
             insert into query_sequences (
                 qseqid,
                 sample_id,
-                evidence_class,
+                query_class,
                 producer,
                 source_id,
                 support_record_count,
@@ -50,8 +50,8 @@ def test_writes_current_assembly_contig_classes_as_separate_batches(
 ) -> None:
     input_fasta = tmp_path / "screened.fasta"
     input_fasta.write_text(
-        ">nvdContigQuery_sample-1_000001 evidence_class=short_assembly_contig\nACGT\n"
-        ">nvdContigQuery_sample-1_000002 evidence_class=long_assembly_contig\nAACCGG\n",
+        ">nvdContigQuery_sample-1_000001 query_class=short_assembly_contig\nACGT\n"
+        ">nvdContigQuery_sample-1_000002 query_class=long_assembly_contig\nAACCGG\n",
         encoding="utf-8",
     )
     lookup = tmp_path / "sample.query_sequences.sqlite"
@@ -81,10 +81,10 @@ def test_writes_current_assembly_contig_classes_as_separate_batches(
     short_fasta = output_dir / "sample-1.short_assembly_contig.blast_queries.fasta"
     long_fasta = output_dir / "sample-1.long_assembly_contig.blast_queries.fasta"
     assert short_fasta.read_text(encoding="utf-8") == (
-        ">nvdContigQuery_sample-1_000001 evidence_class=short_assembly_contig\nACGT\n"
+        ">nvdContigQuery_sample-1_000001 query_class=short_assembly_contig\nACGT\n"
     )
     assert long_fasta.read_text(encoding="utf-8") == (
-        ">nvdContigQuery_sample-1_000002 evidence_class=long_assembly_contig\nAACCGG\n"
+        ">nvdContigQuery_sample-1_000002 query_class=long_assembly_contig\nAACCGG\n"
     )
     assert lookup.read_bytes() == before
 

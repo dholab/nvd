@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
 
-EVIDENCE_CLASSES = ("overlap_merged_pair", "single_read")
+QUERY_CLASSES = ("overlap_merged_pair", "single_read")
 SAFE_TOKEN = re.compile(r"^[A-Za-z0-9_.-]+$")
 
 
@@ -39,7 +39,7 @@ class MapbackConfig:
 class FastqMappingInput:
     """One manifest row: a FASTQ plus its mapback provenance."""
 
-    evidence_class: str
+    query_class: str
     read_group_id: str
     fastq: Path
 
@@ -80,7 +80,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "--fastq-input",
         action="append",
         nargs=3,
-        metavar=("EVIDENCE_CLASS", "READ_GROUP_ID", "FASTQ"),
+        metavar=("QUERY_CLASS", "READ_GROUP_ID", "FASTQ"),
         required=True,
         help="One FASTQ input for mapback. Repeat for merged and unmerged paired-derived reads.",
     )
@@ -119,11 +119,11 @@ def fastq_mapping_inputs_from_args(
 ) -> tuple[FastqMappingInput, ...]:
     inputs = tuple(
         FastqMappingInput(
-            evidence_class=validate_safe_token("evidence_class", evidence_class),
+            query_class=validate_safe_token("query_class", query_class),
             read_group_id=validate_safe_token("read_group_id", read_group_id),
             fastq=Path(fastq),
         )
-        for evidence_class, read_group_id, fastq in fastq_inputs
+        for query_class, read_group_id, fastq in fastq_inputs
     )
     validate_fastq_mapping_inputs(inputs)
     return inputs
@@ -139,18 +139,18 @@ def validate_fastq_mapping_inputs(inputs: Sequence[FastqMappingInput]) -> None:
             duplicate_read_groups,
         )
         raise MapbackError(message)
-    duplicate_classes = duplicates(input_.evidence_class for input_ in inputs)
+    duplicate_classes = duplicates(input_.query_class for input_ in inputs)
     if duplicate_classes:
         message = (
-            "evidence_class values must be unique because unmapped FASTQs are class-split: "
+            "query_class values must be unique because unmapped FASTQs are class-split: "
             + ", ".join(duplicate_classes)
         )
         raise MapbackError(message)
     unknown_classes = sorted(
-        {input_.evidence_class for input_ in inputs} - set(EVIDENCE_CLASSES),
+        {input_.query_class for input_ in inputs} - set(QUERY_CLASSES),
     )
     if unknown_classes:
-        message = "unsupported evidence_class values: " + ", ".join(unknown_classes)
+        message = "unsupported query_class values: " + ", ".join(unknown_classes)
         raise MapbackError(message)
     missing_fastqs = [input_.fastq for input_ in inputs if not input_.fastq.is_file()]
     if missing_fastqs:
@@ -259,9 +259,9 @@ def remove_fifos(fifos: Sequence[MappedBamFifo | UnmappedBamFifo]) -> None:
 
 
 def write_empty_unmapped_outputs(config: MapbackConfig) -> None:
-    for evidence_class in EVIDENCE_CLASSES:
+    for query_class in QUERY_CLASSES:
         with gzip.open(
-            unmapped_fastq_path(config.sample_id, evidence_class),
+            unmapped_fastq_path(config.sample_id, query_class),
             "wb",
         ) as handle:
             handle.write(b"")
@@ -271,16 +271,16 @@ def write_unmapped_counts(
     config: MapbackConfig,
     inputs: Sequence[FastqMappingInput],
 ) -> None:
-    header = "sample_id\tplatform\tevidence_class\tunmapped_reads\n"
+    header = "sample_id\tplatform\tquery_class\tunmapped_reads\n"
     for input_ in inputs:
         unmapped_reads = count_fastq_records(
-            unmapped_fastq_path(config.sample_id, input_.evidence_class),
+            unmapped_fastq_path(config.sample_id, input_.query_class),
         )
         row = (
-            f"{config.sample_id}\t{config.platform}\t{input_.evidence_class}"
+            f"{config.sample_id}\t{config.platform}\t{input_.query_class}"
             f"\t{unmapped_reads}\n"
         )
-        unmapped_counts_path(config.sample_id, input_.evidence_class).write_text(
+        unmapped_counts_path(config.sample_id, input_.query_class).write_text(
             header + row,
             encoding="utf-8",
         )
@@ -415,7 +415,7 @@ def start_unmapped_fastq_writer(
 ) -> list[StartedCommand]:
     fastq_command = [config.samtools_bin, "fastq", str(fifo.path)]
     gzip_command = ["gzip", "-c"]
-    gzip_output = unmapped_fastq_path(config.sample_id, fifo.input.evidence_class)
+    gzip_output = unmapped_fastq_path(config.sample_id, fifo.input.query_class)
 
     fastq = subprocess.Popen(  # noqa: S603
         fastq_command,
@@ -514,15 +514,15 @@ def minimap2_read_group_arg(sample_id: str, input_: FastqMappingInput) -> str:
         + input_.read_group_id
         + r"\tSM:"
         + sample_id
-        + r"\tDS:evidence_class="
-        + input_.evidence_class
+        + r"\tDS:query_class="
+        + input_.query_class
     )
 
 
 def sam_header_read_group_line(sample_id: str, input_: FastqMappingInput) -> str:
     return (
         f"@RG\tID:{input_.read_group_id}\tSM:{sample_id}"
-        f"\tDS:evidence_class={input_.evidence_class}\n"
+        f"\tDS:query_class={input_.query_class}\n"
     )
 
 
@@ -556,12 +556,12 @@ def sample_bam_path(config: MapbackConfig) -> Path:
     return Path(f"{config.sample_id}.bam")
 
 
-def unmapped_fastq_path(sample_id: str, evidence_class: str) -> Path:
-    return Path(f"{sample_id}.{evidence_class}.mapback_unmapped.fastq.gz")
+def unmapped_fastq_path(sample_id: str, query_class: str) -> Path:
+    return Path(f"{sample_id}.{query_class}.mapback_unmapped.fastq.gz")
 
 
-def unmapped_counts_path(sample_id: str, evidence_class: str) -> Path:
-    return Path(f"{sample_id}.{evidence_class}.mapback_unmapped_counts.tsv")
+def unmapped_counts_path(sample_id: str, query_class: str) -> Path:
+    return Path(f"{sample_id}.{query_class}.mapback_unmapped_counts.tsv")
 
 
 def index_bam(config: MapbackConfig) -> None:

@@ -129,8 +129,8 @@ process EXTRACT_UNMAPPED_READS {
     samtools fastq -f 4 ${sample_id}.mapback_all.bam \
     | gzip -c > ${sample_id}.single_read.mapback_unmapped.fastq.gz
 
-    printf 'sample_id\tplatform\tevidence_class\tunmapped_reads\n' > ${sample_id}.single_read.mapback_unmapped_counts.tsv
+    printf 'sample_id\tplatform\tquery_class\tunmapped_reads\n' > ${sample_id}.single_read.mapback_unmapped_counts.tsv
     printf '${sample_id}\t${platform}\tsingle_read\t%s\n' "\${unmapped_reads}" >> ${sample_id}.single_read.mapback_unmapped_counts.tsv
-    printf 'nvd.mapback_unmapped_reads sample_id=${sample_id} platform=${platform} evidence_class=single_read unmapped_reads=%s\n' "\${unmapped_reads}" >&2
+    printf 'nvd.mapback_unmapped_reads sample_id=${sample_id} platform=${platform} query_class=single_read unmapped_reads=%s\n' "\${unmapped_reads}" >&2
     """
 }

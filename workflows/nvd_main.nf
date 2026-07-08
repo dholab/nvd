@@ -86,7 +86,7 @@ workflow NVD_MAIN {
   }
 
   ch_short_read_shards_for_assembly = PREPROCESS_READS.out.read_shards
-    .filter { _id, platform, _read_structure, _evidence_class, _fq -> !params.skip_assembly && platform == "illumina" }
+    .filter { _id, platform, _read_structure, _query_class, _fq -> !params.skip_assembly && platform == "illumina" }
 
   ch_long_reads_for_assembly = ch_reads_by_platform.long_read
     .map { id, platform, read_structure, fq -> tuple(id, platform, read_structure, fq, file(fq).countFastq()) }

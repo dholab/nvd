@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Select BLAST query FASTA batches by evidence class."""
+"""Select BLAST query FASTA batches by query class."""
 
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ class FastaRecord:
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Select BLAST query FASTA batches by evidence class.",
+        description="Select BLAST query FASTA batches by query class.",
     )
     parser.add_argument("--sample-id", required=True)
     parser.add_argument("--input-fasta", required=True, type=Path)
@@ -79,7 +79,7 @@ def load_classes_by_qseqid(path: Path) -> dict[str, str]:
     with sqlite3.connect(sqlite_readonly_uri(path), uri=True) as connection:
         rows = connection.execute(
             """
-            select qseqid, evidence_class
+            select qseqid, query_class
             from query_sequences
             """,
         ).fetchall()
@@ -102,18 +102,18 @@ def select_blast_queries(
             raise BlastQuerySelectionError(msg)
         seen_qseqids.add(record.qseqid)
 
-        evidence_class = classes_by_qseqid.get(record.qseqid)
-        if evidence_class is None:
+        query_class = classes_by_qseqid.get(record.qseqid)
+        if query_class is None:
             msg = f"FASTA qseqid {record.qseqid!r} is missing from the query lookup."
             raise BlastQuerySelectionError(msg)
-        if evidence_class not in QUERIED_CLASSES:
+        if query_class not in QUERIED_CLASSES:
             queried = ", ".join(sorted(QUERIED_CLASSES))
             msg = (
-                f"FASTA qseqid {record.qseqid!r} has class {evidence_class!r}; "
+                f"FASTA qseqid {record.qseqid!r} has class {query_class!r}; "
                 f"this selector currently queries only: {queried}."
             )
             raise BlastQuerySelectionError(msg)
-        selected.setdefault(evidence_class, []).append(record)
+        selected.setdefault(query_class, []).append(record)
     return selected
 
 
@@ -138,8 +138,8 @@ def write_batch_fastas(
     records_by_class: dict[str, list[FastaRecord]],
 ) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
-    for evidence_class, records in sorted(records_by_class.items()):
-        output_path = output_dir / f"{sample_id}.{evidence_class}.blast_queries.fasta"
+    for query_class, records in sorted(records_by_class.items()):
+        output_path = output_dir / f"{sample_id}.{query_class}.blast_queries.fasta"
         write_fasta(output_path, records)
 
 

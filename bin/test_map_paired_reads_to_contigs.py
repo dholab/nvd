@@ -50,23 +50,23 @@ def write_fastq_gz(path: Path, record_count: int) -> Path:
 
 def test_read_group_strings_use_minimap2_escaped_tabs_and_header_real_tabs() -> None:
     input_ = FastqMappingInput(
-        evidence_class="single_read",
+        query_class="single_read",
         read_group_id="unmerged_reads",
         fastq=Path("reads.fastq.gz"),
     )
 
     assert minimap2_read_group_arg("sample1", input_) == (
-        r"@RG\tID:unmerged_reads\tSM:sample1\tDS:evidence_class=single_read"
+        r"@RG\tID:unmerged_reads\tSM:sample1\tDS:query_class=single_read"
     )
     assert sam_header_read_group_line("sample1", input_) == (
-        "@RG\tID:unmerged_reads\tSM:sample1\tDS:evidence_class=single_read\n"
+        "@RG\tID:unmerged_reads\tSM:sample1\tDS:query_class=single_read\n"
     )
 
 
 def test_minimap2_command_keeps_read_group_as_one_argument(tmp_path: Path) -> None:
     cfg = config(tmp_path)
     input_ = FastqMappingInput(
-        evidence_class="overlap_merged_pair",
+        query_class="overlap_merged_pair",
         read_group_id="overlap_merged_pair",
         fastq=Path("merged.fastq.gz"),
     )
@@ -75,16 +75,16 @@ def test_minimap2_command_keeps_read_group_as_one_argument(tmp_path: Path) -> No
 
     read_group_arg = command[command.index("-R") + 1]
     assert read_group_arg == (
-        r"@RG\tID:overlap_merged_pair\tSM:sample1\tDS:evidence_class=overlap_merged_pair"
+        r"@RG\tID:overlap_merged_pair\tSM:sample1\tDS:query_class=overlap_merged_pair"
     )
     assert "\t" not in read_group_arg
 
 
-def test_fastq_input_args_reject_duplicate_evidence_classes(tmp_path: Path) -> None:
+def test_fastq_input_args_reject_duplicate_query_classes(tmp_path: Path) -> None:
     first = write_fastq_gz(tmp_path / "first.fastq.gz", 1)
     second = write_fastq_gz(tmp_path / "second.fastq.gz", 1)
 
-    with pytest.raises(MapbackError, match="evidence_class values must be unique"):
+    with pytest.raises(MapbackError, match="query_class values must be unique"):
         fastq_mapping_inputs_from_args(
             [
                 ["single_read", "unmerged_reads", str(first)],
@@ -99,7 +99,7 @@ def test_mapped_bam_fifos_are_task_local_hidden_files(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     input_ = FastqMappingInput(
-        evidence_class="single_read",
+        query_class="single_read",
         read_group_id="unmerged_reads",
         fastq=Path("reads.fastq.gz"),
     )
@@ -117,7 +117,7 @@ def test_mapped_bam_fifos_are_task_local_hidden_files(
 def test_sample_bam_commands_name_the_shared_dedup_pass(tmp_path: Path) -> None:
     cfg = config(tmp_path)
     input_ = FastqMappingInput(
-        evidence_class="single_read",
+        query_class="single_read",
         read_group_id="unmerged_reads",
         fastq=Path("reads.fastq.gz"),
     )
@@ -140,7 +140,7 @@ def test_mapper_command_can_split_unmapped_bam_with_samtools_u(
 ) -> None:
     cfg = config(tmp_path)
     input_ = FastqMappingInput(
-        evidence_class="single_read",
+        query_class="single_read",
         read_group_id="single_reads",
         fastq=Path("reads.fastq.gz"),
     )
@@ -180,7 +180,7 @@ def test_mapper_command_can_split_unmapped_bam_with_samtools_u(
     assert started_commands[1] == view_command
 
 
-def test_unmapped_counts_are_written_per_external_evidence_class(
+def test_unmapped_counts_are_written_per_external_query_class(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -189,19 +189,19 @@ def test_unmapped_counts_are_written_per_external_evidence_class(
 
     write_empty_unmapped_outputs(cfg)
     expected_counts = {"overlap_merged_pair": 2, "single_read": 1}
-    for evidence_class, record_count in expected_counts.items():
+    for query_class, record_count in expected_counts.items():
         write_fastq_gz(
-            Path(f"sample1.{evidence_class}.mapback_unmapped.fastq.gz"),
+            Path(f"sample1.{query_class}.mapback_unmapped.fastq.gz"),
             record_count,
         )
     inputs = [
         FastqMappingInput(
-            evidence_class="overlap_merged_pair",
+            query_class="overlap_merged_pair",
             read_group_id="overlap_merged_pairs",
             fastq=Path("merged.fastq.gz"),
         ),
         FastqMappingInput(
-            evidence_class="single_read",
+            query_class="single_read",
             read_group_id="single_reads",
             fastq=Path("single.fastq.gz"),
         ),
@@ -209,12 +209,12 @@ def test_unmapped_counts_are_written_per_external_evidence_class(
     write_unmapped_counts(cfg, inputs)
 
     assert not Path("sample1.mapback_unmapped_counts.tsv").exists()
-    for evidence_class, expected_count in expected_counts.items():
+    for query_class, expected_count in expected_counts.items():
         assert Path(
-            f"sample1.{evidence_class}.mapback_unmapped_counts.tsv",
+            f"sample1.{query_class}.mapback_unmapped_counts.tsv",
         ).read_text(encoding="utf-8") == (
-            "sample_id\tplatform\tevidence_class\tunmapped_reads\n"
-            f"sample1\tillumina\t{evidence_class}\t{expected_count}\n"
+            "sample_id\tplatform\tquery_class\tunmapped_reads\n"
+            f"sample1\tillumina\t{query_class}\t{expected_count}\n"
         )
 
 

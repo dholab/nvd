@@ -36,7 +36,7 @@ def load_query_metadata(query_lookup_paths: list[Path]) -> dict[str, dict[str, s
             connection.row_factory = sqlite3.Row
             rows = connection.execute(
                 """
-                select qseqid, evidence_class, producer, source_id, support_record_count
+                select qseqid, query_class, producer, source_id, support_record_count
                 from query_sequences
                 """,
             ).fetchall()
@@ -103,7 +103,7 @@ def main(argv: list[str] | None = None) -> None:
     queries_by_qseqid = load_query_metadata(args.query_lookup)
 
     metadata_columns = [
-        "evidence_class",
+        "query_class",
         "producer",
         "source_id",
         "support_record_count",
@@ -125,7 +125,7 @@ def main(argv: list[str] | None = None) -> None:
         for row in reader:
             qseqid = row.get("qseqid", "")
             query = queries_by_qseqid.get(qseqid, {})
-            row["evidence_class"] = query.get("evidence_class", "")
+            row["query_class"] = query.get("query_class", "")
             row["producer"] = query.get("producer", "")
             row["source_id"] = query.get("source_id", "")
             row["support_record_count"] = query.get("support_record_count", "")

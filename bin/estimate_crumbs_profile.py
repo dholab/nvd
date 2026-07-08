@@ -31,9 +31,9 @@ ASSIGNMENT_COLUMNS = [
     "adjustment_method",
 ]
 PROFILE_ASSIGNMENT_SCORE_COLUMNS = ["bitscore", "evalue"]
-READ_QUERY_EVIDENCE_CLASSES = {"overlap_merged_pair", "single_read"}
+READ_QUERY_CLASSES = {"overlap_merged_pair", "single_read"}
 READ_QUERY_PREFIXES = ("nvdMergeReadQuery_", "nvdReadQuery_")
-READ_QUERY_METADATA_COLUMNS = ["evidence_class", "support_record_count", "qlen"]
+READ_QUERY_METADATA_COLUMNS = ["query_class", "support_record_count", "qlen"]
 COVERAGE_COLUMNS = [
     "sample_id",
     "qseqid",
@@ -115,7 +115,7 @@ BLAST_SCHEMA_OVERRIDES = {
     "adjusted_taxid_name": pl.String,
     "adjusted_taxid_rank": pl.String,
     "adjustment_method": pl.String,
-    "evidence_class": pl.String,
+    "query_class": pl.String,
     "support_record_count": pl.Int64,
     "qlen": pl.Int64,
 }
@@ -446,9 +446,9 @@ def read_query_assignment_mask(assignments: pl.DataFrame) -> pl.Expr:
     prefix_expr = pl.any_horizontal(
         [pl.col("qseqid").str.starts_with(prefix) for prefix in READ_QUERY_PREFIXES],
     )
-    if "evidence_class" not in assignments.columns:
+    if "query_class" not in assignments.columns:
         return prefix_expr
-    return pl.col("evidence_class").is_in(READ_QUERY_EVIDENCE_CLASSES) | prefix_expr
+    return pl.col("query_class").is_in(READ_QUERY_CLASSES) | prefix_expr
 
 
 def read_query_assignments(assignments: pl.DataFrame) -> pl.DataFrame:
