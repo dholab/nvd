@@ -6,7 +6,7 @@ include { DEACON_UNION_INDEXES                            } from "../modules/dea
 include { DEACON_ENRICH_TARGET_READS                     } from "../modules/deacon"
 include { DEACON_DEPLETE                                  } from "../modules/deacon"
 include { MERGE_PAIRS ; DEDUP_WITH_CLUMPIFY ; TRIM_ADAPTERS ; FILTER_READS ; REPAIR_PAIRS } from "../modules/bbmap"
-include { PROFILE_FASTX as PROFILE_READS } from "../modules/fastx"
+include { PROFILE_FASTX as PROFILE_READS ; PLOT_FASTX_LENGTH_PROFILE as PLOT_READ_LENGTH_PROFILES ; PLOT_FASTX_QUALITY_PROFILE as PLOT_READ_QUALITY_PROFILES } from "../modules/fastx"
 
 workflow PREPROCESS_READS {
     take:
@@ -230,6 +230,31 @@ workflow PREPROCESS_READS {
     }
 
     PROFILE_READS(ch_preprocessed_batches_for_profile)
+
+    ch_nonempty_read_profiles_by_key = PROFILE_READS.out.profiled
+        .filter { _meta, _profile_json, _length_histogram, sequence_count -> sequence_count.text.trim() as long > 0 }
+        .map { meta, profile_json, length_histogram, _sequence_count ->
+            tuple(meta.profile_key, meta, profile_json, length_histogram)
+        }
+
+    PLOT_READ_LENGTH_PROFILES(
+        ch_nonempty_read_profiles_by_key.map { _profile_key, meta, profile_json, length_histogram ->
+            tuple(meta, profile_json, length_histogram)
+        }
+    )
+
+    ch_read_quality_histograms_by_key = PROFILE_READS.out.quality_histogram.map { meta, quality_histogram ->
+        tuple(meta.profile_key, quality_histogram)
+    }
+
+    PLOT_READ_QUALITY_PROFILES(
+        ch_nonempty_read_profiles_by_key
+            .map { profile_key, meta, profile_json, _length_histogram -> tuple(profile_key, meta, profile_json) }
+            .join(ch_read_quality_histograms_by_key, by: 0)
+            .map { _profile_key, meta, profile_json, quality_histogram ->
+                tuple(meta, profile_json, quality_histogram)
+            }
+    )
 
     ch_preprocessed_batches_by_profile_key = ch_preprocessed_batches_for_profile.map { meta, reads ->
         tuple(meta.profile_key, reads)

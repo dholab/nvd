@@ -35,3 +35,43 @@ process PROFILE_FASTX {
     fi
     """
 }
+
+process PLOT_FASTX_LENGTH_PROFILE {
+
+    tag { meta.query_class ? "${meta.id}, ${meta.query_class}" : "${meta.id}" }
+    label "low"
+    errorStrategy 'ignore'
+
+    input:
+    tuple val(meta), path(profile_json), path(length_histogram)
+
+    output:
+    tuple val(meta), path("*.length_histogram.png"), emit: plot
+
+    script:
+    """
+    plot_fastx_profile.py \
+        --profile-json ${profile_json} \
+        --length-histogram ${length_histogram}
+    """
+}
+
+process PLOT_FASTX_QUALITY_PROFILE {
+
+    tag { meta.query_class ? "${meta.id}, ${meta.query_class}" : "${meta.id}" }
+    label "low"
+    errorStrategy 'ignore'
+
+    input:
+    tuple val(meta), path(profile_json), path(quality_histogram)
+
+    output:
+    tuple val(meta), path("*.quality_histogram.png"), emit: plot
+
+    script:
+    """
+    plot_fastx_profile.py \
+        --profile-json ${profile_json} \
+        --quality-histogram ${quality_histogram}
+    """
+}
