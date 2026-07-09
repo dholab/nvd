@@ -17,12 +17,6 @@ workflow PROCESS_CONTIGS {
         MASK_LOW_COMPLEXITY.out
     )
 
-    ch_filtered_contigs = FILTER_SHORT_CONTIGS.out
-        .filter { _id, _platform, _read_structure, fasta, _lookup ->
-            def recordCount = fasta.countFasta()
-            recordCount > 0
-        }
-
     emit:
-    contigs = ch_filtered_contigs  // tuple(sample_id, platform, read_structure, fasta, lookup)
+    contigs = FILTER_SHORT_CONTIGS.out  // tuple(sample_id, platform, read_structure, fasta, lookup)
 }

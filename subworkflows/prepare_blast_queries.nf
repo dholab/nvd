@@ -1,5 +1,6 @@
 include { DEACON_FILTER_CONTIGS } from "../modules/deacon"
 include { SELECT_BLAST_QUERIES ; NORMALIZE_READ_BLAST_QUERIES ; SUMMARIZE_BLAST_QUERY_BATCHES ; SUMMARIZE_EMPTY_BLAST_QUERY_BATCHES } from "../modules/blast"
+include { PROFILE_FASTX as PROFILE_FILTERED_CONTIGS } from "../modules/fastx"
 include { CONTIG_READ_MAPBACK } from "./contig_read_mapback"
 
 workflow PREPARE_BLAST_QUERIES {
