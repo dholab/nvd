@@ -39,8 +39,15 @@ process ASSEMBLE_WITH_METAMDBG {
     tuple val(sample_id), val(platform), val(read_structure), val("metamdbg"), path("${sample_id}.metamdbg.contigs.fasta"), emit: contigs
 
     script:
+    // Match metaMDBG's correction overlap floor to the downstream minimum
+    // contiguous contig length so short-fragment samples are not excluded by
+    // the assembler's more conservative default.
     """
-    metaMDBG asm --out-dir output --in-ont ${reads} --threads ${task.cpus}
+    metaMDBG asm \
+        --out-dir output \
+        --in-ont ${reads} \
+        --threads ${task.cpus} \
+        --min-read-overlap ${params.min_consecutive_bases}
 
     if [ -s output/contigs.fasta.gz ]; then
         gzip -cd output/contigs.fasta.gz > ${sample_id}.metamdbg.contigs.fasta
