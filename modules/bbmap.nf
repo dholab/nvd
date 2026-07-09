@@ -81,9 +81,11 @@ process DEDUP_WITH_CLUMPIFY {
 	clumpify.sh \\
 	in=${reads} \\
 	out="${sample_id}.dedup.fastq.gz" \\
-	dedupe=2 \\
-	reorder=p \\
-	subs=2 \\
+	dedupe=t \\
+	optical=f \\
+	reorder=f \\
+	subs=0 \\
+	allowns=f \\
 	${int_flag} \\
 	threads=${task.cpus} -eoom
 	"""
