@@ -16,7 +16,7 @@ workflow LONG_READ_DENOVO_ENSEMBLY {
         ch_assembler_contigs = ASSEMBLE_WITH_MYLOASM.out.contigs
             .mix(ASSEMBLE_WITH_METAMDBG.out.contigs)
             .mix(ASSEMBLE_WITH_METAFLYE.out.contigs)
-            .groupTuple(by: [0, 1, 2], size: 3)
+            .groupTuple(by: [0, 1, 2], size: 3, remainder: true)
 
         NORMALIZE_CONTIGS(ch_assembler_contigs)
         FIND_CONTAINMENT_DUPLICATES(NORMALIZE_CONTIGS.out.prepared)
