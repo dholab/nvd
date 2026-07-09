@@ -29,35 +29,6 @@ process MERGE_PAIRS {
 	"""
 }
 
-process INTERLEAVE_PAIRS {
-
-	/* Interleave paired-end reads into a single file */
-
-	tag "${sample_id}"
-	label "medium"
-
-	errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
-	maxRetries 2
-
-	cpus 4
-
-	input:
-	tuple val(sample_id), val(platform), path(reads1), path(reads2)
-
-	output:
-	tuple val(sample_id), val(platform), val("interleaved"), path("${sample_id}.interleaved.fastq.gz")
-
-	script:
-	"""
-	reformat.sh \
-	in=${reads1} \
-	in2=${reads2} \
-	out=${sample_id}.interleaved.fastq.gz \
-	threads=${task.cpus} \
-	-eoom
-	"""
-}
-
 process DEDUP_WITH_CLUMPIFY {
 
     /* Deduplicate reads using clumpify */
@@ -82,9 +53,11 @@ process DEDUP_WITH_CLUMPIFY {
 	clumpify.sh \\
 	in=${reads} \\
 	out="${meta.id}.${meta.query_class}.dedup.fastq.gz" \\
-	dedupe=2 \\
-	reorder=p \\
-	subs=2 \\
+	dedupe=t \\
+	optical=t \\
+	reorder=f \\
+	subs=0 \\
+	allowns=f \\
 	${int_flag} \\
 	threads=${task.cpus} -eoom
 	"""
