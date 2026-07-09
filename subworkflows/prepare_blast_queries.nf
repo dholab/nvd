@@ -1,6 +1,6 @@
 include { DEACON_FILTER_CONTIGS } from "../modules/deacon"
 include { SELECT_BLAST_QUERIES ; NORMALIZE_READ_BLAST_QUERIES ; SUMMARIZE_BLAST_QUERY_BATCHES ; SUMMARIZE_EMPTY_BLAST_QUERY_BATCHES } from "../modules/blast"
-include { PROFILE_FASTX as PROFILE_FILTERED_CONTIGS } from "../modules/fastx"
+include { PROFILE_FASTX as PROFILE_FILTERED_CONTIGS ; PLOT_FASTX_LENGTH_PROFILE as PLOT_FILTERED_CONTIG_LENGTH_PROFILES } from "../modules/fastx"
 include { CONTIG_READ_MAPBACK } from "./contig_read_mapback"
 
 workflow PREPARE_BLAST_QUERIES {
@@ -16,6 +16,33 @@ workflow PREPARE_BLAST_QUERIES {
         ch_contigs
             .combine(ch_virus_index)
             .combine(ch_depletion_index)
+    )
+
+    PROFILE_FILTERED_CONTIGS(
+        DEACON_FILTER_CONTIGS.out.map { sample_id, platform, read_structure, fasta, _lookup ->
+            tuple(
+                [
+                    id: sample_id,
+                    platform: platform,
+                    read_structure: read_structure,
+                    profile_stage: "filtered_contigs",
+                    profile_key: "${sample_id}:${platform}:${read_structure}:filtered_contigs",
+                    profile_prefix: "${sample_id}.filtered_contigs",
+                    thresholds: [
+                        [name: "min_consecutive_bases", axis: "length", value: params.min_consecutive_bases],
+                    ],
+                ],
+                fasta,
+            )
+        }
+    )
+
+    PLOT_FILTERED_CONTIG_LENGTH_PROFILES(
+        PROFILE_FILTERED_CONTIGS.out.profiled
+            .filter { _meta, _profile_json, _length_histogram, sequence_count -> sequence_count.text.trim() as long > 0 }
+            .map { meta, profile_json, length_histogram, _sequence_count ->
+                tuple(meta, profile_json, length_histogram)
+            }
     )
 
     CONTIG_READ_MAPBACK(
