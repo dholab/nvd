@@ -68,7 +68,7 @@ workflow NVD_MAIN {
   ch_sourmash_tax_reports = channel.empty()
 
   if (params.experimental == true) {
-    rapid_screening = RAPID_SCREENING(PREPROCESS_READS.out.read_shards)
+    rapid_screening = RAPID_SCREENING(PREPROCESS_READS.out.profiled_read_shards)
     SAMPLE_SIMILARITY_QC(rapid_screening.query_sketches)
     ch_sourmash_gather_csv = rapid_screening.gather_csv
     ch_sourmash_lineages = rapid_screening.lineages
@@ -77,21 +77,20 @@ workflow NVD_MAIN {
 
   // Filter out samples with fewer than 100 reads before assembly; they are
   // insufficient for de novo assembly and would otherwise fan out downstream.
-  ch_reads_for_assembly = PREPROCESS_READS.out.reads
-    .filter { _id, _platform, _read_structure, _fq -> !params.skip_assembly }
+  ch_reads_for_assembly = PREPROCESS_READS.out.profiled_reads
+    .filter { _meta, _reads, _profile_json, _length_histogram -> !params.skip_assembly }
 
-  ch_reads_by_platform = ch_reads_for_assembly.branch { _id, platform, _read_structure, _fq ->
-    illumina: platform == "illumina"
+  ch_reads_by_platform = ch_reads_for_assembly.branch { meta, _reads, _profile_json, _length_histogram ->
+    illumina: meta.platform == "illumina"
     long_read: true
   }
 
-  ch_short_read_shards_for_assembly = PREPROCESS_READS.out.read_shards
-    .filter { _id, platform, _read_structure, _query_class, _fq -> !params.skip_assembly && platform == "illumina" }
+  ch_short_read_shards_for_assembly = PREPROCESS_READS.out.profiled_read_shards
+    .filter { meta, _reads, _profile_json, _length_histogram -> !params.skip_assembly && meta.platform == "illumina" }
 
   ch_long_reads_for_assembly = ch_reads_by_platform.long_read
-    .map { id, platform, read_structure, fq -> tuple(id, platform, read_structure, fq, file(fq).countFastq()) }
-    .filter { _id, _platform, _read_structure, _fq, count -> count >= 100 }
-    .map { id, platform, read_structure, fq, _count -> tuple(id, platform, read_structure, file(fq)) }
+    .filter { meta, _reads, _profile_json, _length_histogram -> meta.sequence_count >= 100 }
+    .map { meta, reads, _profile_json, _length_histogram -> tuple(meta.id, meta.platform, meta.read_structure, file(reads)) }
 
   SHORT_READ_DENOVO_ASSEMBLY(ch_short_read_shards_for_assembly)
   LONG_READ_DENOVO_ENSEMBLY(ch_long_reads_for_assembly)

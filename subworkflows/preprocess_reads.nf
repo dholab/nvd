@@ -6,6 +6,7 @@ include { DEACON_UNION_INDEXES                            } from "../modules/dea
 include { DEACON_ENRICH_TARGET_READS                     } from "../modules/deacon"
 include { DEACON_DEPLETE                                  } from "../modules/deacon"
 include { MERGE_PAIRS ; DEDUP_WITH_CLUMPIFY ; TRIM_ADAPTERS ; FILTER_READS ; REPAIR_PAIRS } from "../modules/bbmap"
+include { PROFILE_FASTX as PROFILE_READS } from "../modules/fastx"
 
 workflow PREPROCESS_READS {
     take:
@@ -153,27 +154,74 @@ workflow PREPROCESS_READS {
     ch_repaired = REPAIR_PAIRS(ch_branched_for_repair.interleaved)
     ch_preprocessed_shards = ch_repaired.mix(ch_branched_for_repair.other)
 
-    ch_mapback_groups = ch_preprocessed_shards
-        .groupTuple(by: [0, 1])
-        .map { sample_id, platform, read_structures, query_classes, reads ->
-            def rows = [read_structures, query_classes, reads].transpose().collect { row ->
-                [read_structure: row[0], query_class: row[1], reads: row[2]]
-            }
-            tuple(sample_id, platform, rows)
+    ch_preprocessed_shards_for_profile = ch_preprocessed_shards.map { sample_id, platform, read_structure, query_class, reads ->
+        def min_qual = platform == "illumina"
+            ? params.min_read_quality_illumina
+            : params.min_read_quality_nanopore
+        tuple(
+            [
+                id: sample_id,
+                platform: platform,
+                read_structure: read_structure,
+                query_class: query_class,
+                profile_stage: query_class,
+                profile_key: "${sample_id}:${read_structure}:${query_class}",
+                thresholds: [
+                    [name: "min_read_length", axis: "length", value: params.min_read_length],
+                    [name: "min_read_quality", axis: "quality", value: min_qual],
+                ],
+            ],
+            reads,
+        )
+    }
+
+    PROFILE_READS(ch_preprocessed_shards_for_profile)
+
+    ch_preprocessed_shards_by_profile_key = ch_preprocessed_shards_for_profile.map { meta, reads ->
+        tuple(meta.profile_key, reads)
+    }
+
+    ch_profiles_by_key = PROFILE_READS.out.profiled.map { meta, profile_json, length_histogram, sequence_count ->
+        tuple(
+            meta.profile_key,
+            meta + [sequence_count: sequence_count.text.trim() as long],
+            profile_json,
+            length_histogram,
+        )
+    }
+
+    ch_profiled_preprocessed_shards = ch_preprocessed_shards_by_profile_key
+        .join(ch_profiles_by_key, by: 0)
+        .map { _profile_key, reads, profiled_meta, profile_json, length_histogram ->
+            tuple(
+                profiled_meta,
+                reads,
+                profile_json,
+                length_histogram,
+            )
         }
 
-    ch_mapback_by_layout = ch_mapback_groups.branch { _sample_id, _platform, rows ->
-        paired: rows.any { row -> row.read_structure == "interleaved" || row.query_class == "overlap_merged_pair" }
+    ch_mapback_groups = ch_profiled_preprocessed_shards
+        .map { meta, reads, _profile_json, _length_histogram ->
+            tuple(meta.id, meta.platform, [meta: meta, reads: reads])
+        }
+        .groupTuple(by: [0, 1])
+        .map { sample_id, platform, rows ->
+            tuple([id: sample_id, platform: platform], rows)
+        }
+
+    ch_mapback_by_layout = ch_mapback_groups.branch { _meta, rows ->
+        paired: rows.any { row -> row.meta.read_structure == "interleaved" || row.meta.query_class == "overlap_merged_pair" }
         single: true
     }
 
-    ch_paired_reads_for_mapback = ch_mapback_by_layout.paired.map { sample_id, platform, rows ->
-        def nonempty_rows = rows.findAll { row -> file(row.reads).countFastq() > 0 }
-        def overlap_merged_pair_reads = nonempty_rows.findAll { row -> row.query_class == "overlap_merged_pair" }.collect { row -> row.reads }
-        def single_read_reads = nonempty_rows.findAll { row -> row.query_class == "single_read" }.collect { row -> row.reads }
+    ch_paired_reads_for_mapback = ch_mapback_by_layout.paired.map { meta, rows ->
+        def nonempty_rows = rows.findAll { row -> row.meta.sequence_count > 0 }
+        def overlap_merged_pair_reads = nonempty_rows.findAll { row -> row.meta.query_class == "overlap_merged_pair" }.collect { row -> row.reads }
+        def single_read_reads = nonempty_rows.findAll { row -> row.meta.query_class == "single_read" }.collect { row -> row.reads }
         tuple(
-            sample_id,
-            platform,
+            meta.id,
+            meta.platform,
             overlap_merged_pair_reads,
             single_read_reads,
         )
@@ -181,8 +229,8 @@ workflow PREPROCESS_READS {
         overlap_merged_pair_reads.size() + single_read_reads.size() > 0
     }
 
-    ch_single_reads_for_mapback = ch_mapback_by_layout.single.flatMap { sample_id, platform, rows ->
-        rows.collect { row -> tuple(sample_id, platform, row.read_structure, row.reads) }
+    ch_single_reads_for_mapback = ch_mapback_by_layout.single.flatMap { meta, rows ->
+        rows.collect { row -> tuple(meta.id, meta.platform, row.meta.read_structure, row.reads) }
     }
 
     emit:
@@ -190,6 +238,14 @@ workflow PREPROCESS_READS {
         tuple(sample_id, platform, read_structure, reads)
     }
     read_shards = ch_preprocessed_shards
+    // tuple(meta, reads, profile_json, length_histogram)
+    // meta: id, platform, read_structure, query_class, profile_stage, sequence_count
+    profiled_reads = ch_profiled_preprocessed_shards.map { meta, reads, profile_json, length_histogram ->
+        tuple(meta, reads, profile_json, length_histogram)
+    }
+    // tuple(meta, reads, profile_json, length_histogram)
+    // meta: id, platform, read_structure, query_class, profile_stage, sequence_count
+    profiled_read_shards = ch_profiled_preprocessed_shards
     paired_reads_for_mapback = ch_paired_reads_for_mapback
     single_reads_for_mapback = ch_single_reads_for_mapback
     read_counts = ch_read_counts

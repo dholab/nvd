@@ -272,9 +272,13 @@ jobs:
           echo "$config_processes"
           echo
 
-          # Extract process definitions from .nf files
-          workflow_processes=$(grep -hE "^process\s+\w+" modules/*.nf subworkflows/*.nf workflows/*.nf 2>/dev/null | \
-                               awk '{print $2}' | sort -u)
+          # Extract process definitions and include aliases from .nf files.
+          # results.config may target aliases introduced by Nextflow include
+          # statements, e.g. `include { PROFILE_FASTX as PROFILE_READS }`.
+          workflow_processes=$({
+            grep -hE "^process\s+\w+" modules/*.nf subworkflows/*.nf workflows/*.nf 2>/dev/null | awk '{print $2}'
+            grep -hoP "\bas\s+\K\w+" modules/*.nf subworkflows/*.nf workflows/*.nf 2>/dev/null || true
+          } | sort -u)
 
           echo "Process names in workflow files:"
           echo "$workflow_processes"
