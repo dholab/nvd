@@ -1,4 +1,4 @@
-include { ADD_READ_COUNTS_TO_BLAST; BUILD_QUERY_BIG_TABLE; BUILD_TAXON_BIG_TABLE; CONCATENATE_QUERY_BIG_TABLE; CONCATENATE_TAXON_BIG_TABLE; CONCATENATE_EXPERIMENT_BLAST; VIRUS_ENRICHMENT_REPORT } from "../modules/utils"
+include { ADD_READ_COUNTS_TO_BLAST; BUILD_QUERY_BIG_TABLE; BUILD_TAXON_BIG_TABLE; CONCATENATE_QUERY_BIG_TABLE; CONCATENATE_TAXON_BIG_TABLE; CONCATENATE_EXPERIMENT_BLAST; TARGET_ENRICHMENT_REPORT } from "../modules/utils"
 include { NOTIFY_SLACK } from "../modules/utils"
 include { RENDER_MERGED_TAXON_ABUNDANCE_SUNBURST; RENDER_TAXON_ABUNDANCE_SUNBURST; RENDER_SOURMASH_SANKEY } from "../modules/reporting"
 include { CRUMBS_PROFILING } from "./crumbs_profiling"
@@ -12,7 +12,7 @@ workflow REPORTING {
     ch_query_lookups
     ch_contig_read_counts
     ch_filtered_bam
-    ch_virus_enrichment_stats
+    ch_target_enrichment_stats
     ch_taxonomy_dir
     ch_run_ready
     ch_run_context
@@ -61,7 +61,7 @@ workflow REPORTING {
         )
 
         ch_query_big_table_inputs = ch_split_blast_results.for_big_table
-            .join(CRUMBS_PROFILING.out.contigs, by: 0)
+            .join(CRUMBS_PROFILING.out.queries, by: 0)
             .map { sample_id, blast_tsv, crumbs_tsv -> tuple(sample_id, blast_tsv, crumbs_tsv) }
 
         BUILD_QUERY_BIG_TABLE(ch_query_big_table_inputs)
@@ -81,8 +81,8 @@ workflow REPORTING {
         )
     }
 
-    VIRUS_ENRICHMENT_REPORT(
-        ch_virus_enrichment_stats.map { _sample_id, json -> json }.collect()
+    TARGET_ENRICHMENT_REPORT(
+        ch_target_enrichment_stats.map { _sample_id, json -> json }.collect()
     )
 
     if (params.experimental == true) {
@@ -135,14 +135,14 @@ workflow REPORTING {
     taxon_big_tables = params.experimental ? BUILD_TAXON_BIG_TABLE.out : channel.empty()
     taxon_big_table = params.experimental ? CONCATENATE_TAXON_BIG_TABLE.out.concatenated_tsv : channel.empty()
     experiment_blast = CONCATENATE_EXPERIMENT_BLAST.out.concatenated_tsv
-    virus_enrichment_report = VIRUS_ENRICHMENT_REPORT.out.summary_tsv
+    target_enrichment_report = TARGET_ENRICHMENT_REPORT.out.summary_tsv
     taxon_abundance_sunbursts = params.experimental ? RENDER_TAXON_ABUNDANCE_SUNBURST.out.reports : channel.empty()
     merged_taxon_abundance_sunburst = params.experimental ? RENDER_MERGED_TAXON_ABUNDANCE_SUNBURST.out.report : channel.empty()
     sourmash_sankey_reports = params.experimental ? RENDER_SOURMASH_SANKEY.out.report : channel.empty()
     labkey_log = LIMS_INTEGRATION.out.upload_log
     final_labkey_log = LIMS_INTEGRATION.out.final_labkey_log
     labkey_registered = LIMS_INTEGRATION.out.registered
-    crumbs_contigs = params.experimental ? CRUMBS_PROFILING.out.contigs : channel.empty()
+    crumbs_queries = params.experimental ? CRUMBS_PROFILING.out.queries : channel.empty()
     crumbs_taxa = params.experimental ? CRUMBS_PROFILING.out.taxa : channel.empty()
     crumbs_bioboxes_profile = params.experimental ? CRUMBS_PROFILING.out.bioboxes_profile : channel.empty()
     crumbs_qc = params.experimental ? CRUMBS_PROFILING.out.qc : channel.empty()

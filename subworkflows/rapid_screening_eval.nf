@@ -8,7 +8,7 @@ workflow RAPID_SCREENING_EVAL {
     ch_sourmash_lineages
     ch_blast_final_tsv
     ch_crumbs_taxa
-    ch_crumbs_contigs
+    ch_crumbs_queries
     run_id
 
     main:
@@ -37,8 +37,8 @@ workflow RAPID_SCREENING_EVAL {
         .map { _sample_id, taxa_tsv -> taxa_tsv }
         .collect()
 
-    ch_crumbs_contig_paths = ch_crumbs_contigs
-        .map { _sample_id, contigs_tsv -> contigs_tsv }
+    ch_crumbs_query_paths = ch_crumbs_queries
+        .map { _sample_id, queries_tsv -> queries_tsv }
         .collect()
 
     BUILD_RAPID_SCREENING_EVAL_DB(
@@ -48,7 +48,7 @@ workflow RAPID_SCREENING_EVAL {
         ch_sourmash_lineages,
         ch_blast_paths,
         ch_crumbs_taxa_paths,
-        ch_crumbs_contig_paths,
+        ch_crumbs_query_paths,
         run_id,
     )
 

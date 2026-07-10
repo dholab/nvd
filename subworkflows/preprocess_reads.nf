@@ -1,6 +1,6 @@
-include { DEACON_FETCH_INDEX as DEACON_FETCH_VIRUS_INDEX  } from "../modules/deacon"
+include { DEACON_FETCH_INDEX as DEACON_FETCH_TARGET_INDEX } from "../modules/deacon"
 include { DEACON_FETCH_INDEX as DEACON_FETCH_HOST_INDEX   } from "../modules/deacon"
-include { DEACON_BUILD_VIRUS_INDEX_FROM_FASTA             } from "../modules/deacon"
+include { DEACON_BUILD_TARGET_INDEX_FROM_FASTA            } from "../modules/deacon"
 include { DEACON_BUILD_INDEX_FROM_FASTA                   } from "../modules/deacon"
 include { DEACON_UNION_INDEXES                            } from "../modules/deacon"
 include { DEACON_ENRICH_TARGET_READS                     } from "../modules/deacon"
@@ -23,37 +23,37 @@ workflow PREPROCESS_READS {
     // while preserving the existing one-FASTQ downstream contract.
     def target_enrichment_enabled = NvdUtils.targetEnrichmentEnabled(params)
     ch_target_enrichment_enabled = Channel.value(target_enrichment_enabled)
-    ch_local_virus_index = target_enrichment_enabled && params.virus_index
+    ch_local_target_index = target_enrichment_enabled && params.virus_index
         ? Channel.fromPath(params.virus_index)
         : Channel.empty()
-    ch_virus_fetch_url = (target_enrichment_enabled && !params.virus_index && params.virus_index_url)
+    ch_target_fetch_url = (target_enrichment_enabled && !params.virus_index && params.virus_index_url)
         ? Channel.of(params.virus_index_url)
         : Channel.empty()
-    ch_virus_ref_fasta = (target_enrichment_enabled && !params.virus_index && !params.virus_index_url && params.virus_reference_fasta)
+    ch_target_ref_fasta = (target_enrichment_enabled && !params.virus_index && !params.virus_index_url && params.virus_reference_fasta)
         ? Channel.fromPath(params.virus_reference_fasta)
         : Channel.empty()
-    ch_empty_virus_index = target_enrichment_enabled
+    ch_empty_target_index = target_enrichment_enabled
         ? Channel.empty()
         : Channel.fromPath("${projectDir}/assets/empty_deacon.k31w1.idx")
 
-    DEACON_FETCH_VIRUS_INDEX(ch_virus_fetch_url)
-    DEACON_BUILD_VIRUS_INDEX_FROM_FASTA(ch_virus_ref_fasta)
+    DEACON_FETCH_TARGET_INDEX(ch_target_fetch_url)
+    DEACON_BUILD_TARGET_INDEX_FROM_FASTA(ch_target_ref_fasta)
 
-    ch_virus_index = ch_local_virus_index
-        .mix(DEACON_FETCH_VIRUS_INDEX.out.index)
-        .mix(DEACON_BUILD_VIRUS_INDEX_FROM_FASTA.out.index)
-        .mix(ch_empty_virus_index)
+    ch_target_index = ch_local_target_index
+        .mix(DEACON_FETCH_TARGET_INDEX.out.index)
+        .mix(DEACON_BUILD_TARGET_INDEX_FROM_FASTA.out.index)
+        .mix(ch_empty_target_index)
 
     // Extract target reads — runs BEFORE any preprocessing. For paired reads,
     // deacon takes R1/R2 and outputs interleaved FASTQ in one step. When target
     // enrichment is disabled, the empty-index deplete mode retains all reads.
     DEACON_ENRICH_TARGET_READS(
-        ch_read_bundles.combine(ch_virus_index)
+        ch_read_bundles.combine(ch_target_index)
             .combine(ch_target_enrichment_enabled)
     )
 
     // -------------------------------------------------------------------------
-    // Step 2: Inlined preprocessing on virus-only reads
+    // Step 2: Inlined preprocessing on target-enriched reads
     // -------------------------------------------------------------------------
     // Extract input and retained counts from Deacon's summary. A malformed
     // summary is a process failure, never an empty-sample completion.
@@ -70,30 +70,30 @@ workflow PREPROCESS_READS {
     ch_read_counts = ch_enrichment_counts
         .map { sample_id, input_count, _retained_count -> tuple(sample_id, input_count) }
 
-    ch_virus_reads_by_retention = DEACON_ENRICH_TARGET_READS.out.reads
+    ch_target_reads_by_retention = DEACON_ENRICH_TARGET_READS.out.reads
         .join(ch_enrichment_counts, by: 0)
         .branch { _sample_id, _platform, _read_structure, _reads, _input_count, retained_count ->
             retained: retained_count > 0
             complete_empty: true
         }
 
-    ch_virus_reads = ch_virus_reads_by_retention.retained
+    ch_target_reads = ch_target_reads_by_retention.retained
         .map { sample_id, platform, read_structure, reads, _input_count, _retained_count ->
             tuple(sample_id, platform, read_structure, reads)
         }
 
-    ch_complete_empty_samples = ch_virus_reads_by_retention.complete_empty
+    ch_complete_empty_samples = ch_target_reads_by_retention.complete_empty
         .map { sample_id, platform, _read_structure, _reads, _input_count, _retained_count ->
             tuple(sample_id, platform)
         }
 
-    ch_virus_reads_by_layout = ch_virus_reads.branch { _id, platform, read_structure, _reads ->
+    ch_target_reads_by_layout = ch_target_reads.branch { _id, platform, read_structure, _reads ->
         mergeable: platform == "illumina" && read_structure == "interleaved"
         other: true
     }
 
     ch_reads_to_merge = params.merge_pairs
-        ? ch_virus_reads_by_layout.mergeable
+        ? ch_target_reads_by_layout.mergeable
         : channel.empty()
 
     MERGE_PAIRS(ch_reads_to_merge)
@@ -131,7 +131,7 @@ workflow PREPROCESS_READS {
         )
     }
     // Inputs that do not enter MERGE_PAIRS remain one single_read batch.
-    ch_nonmergeable_read_batches = ch_virus_reads_by_layout.other.map { sample_id, platform, read_structure, reads ->
+    ch_nonmergeable_read_batches = ch_target_reads_by_layout.other.map { sample_id, platform, read_structure, reads ->
         tuple(
             [
                 id: sample_id,
@@ -149,7 +149,7 @@ workflow PREPROCESS_READS {
         ? ch_merged_read_batches
             .mix(ch_unmerged_read_batches)
             .mix(ch_nonmergeable_read_batches)
-        : ch_virus_reads.map { sample_id, platform, read_structure, reads ->
+        : ch_target_reads.map { sample_id, platform, read_structure, reads ->
             tuple(
                 [
                     id: sample_id,
@@ -399,7 +399,7 @@ workflow PREPROCESS_READS {
     single_reads_for_mapback = ch_single_reads_for_mapback
     read_counts = ch_read_counts
     complete_empty_samples = ch_complete_empty_samples
-    virus_enrichment_stats = DEACON_ENRICH_TARGET_READS.out.stats
-    virus_index = ch_virus_index
+    target_enrichment_stats = DEACON_ENRICH_TARGET_READS.out.stats
+    target_index = ch_target_index
     depletion_index = ch_depletion_index_option
 }

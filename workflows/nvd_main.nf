@@ -1,12 +1,12 @@
 /*
  * NVD main workflow
  *
- * Human virus detection pipeline: deacon-based virus read extraction,
+ * Human virus detection pipeline: deacon-based target read enrichment,
  * preprocessing, SPAdes assembly, and two-phase BLAST verification.
  *
- * Architecture: deacon virus extraction runs first on raw R1/R2 reads
+ * Architecture: deacon target enrichment runs first on raw R1/R2 reads
  * (outputting interleaved), then preprocessing (dedup, trim, optional host depletion, filter)
- * operates on the tiny virus subset, then SPAdes and BLAST.
+ * operates on the enriched subset, then SPAdes and BLAST.
  */
 
 nextflow.enable.dsl = 2
@@ -98,7 +98,7 @@ workflow NVD_MAIN {
     PROCESS_CONTIGS.out.contigs,
     PREPROCESS_READS.out.paired_reads_for_mapback,
     PREPROCESS_READS.out.single_reads_for_mapback,
-    PREPROCESS_READS.out.virus_index,
+    PREPROCESS_READS.out.target_index,
     PREPROCESS_READS.out.depletion_index,
   )
 
@@ -110,7 +110,7 @@ workflow NVD_MAIN {
 
   CLASSIFY_WITH_BLASTN(
     CLASSIFY_WITH_MEGABLAST.out.filtered_megablast,
-    CLASSIFY_WITH_MEGABLAST.out.megablast_contigs,
+    CLASSIFY_WITH_MEGABLAST.out.megablast_query_partition,
     ch_blast_db_files,
     ch_taxonomy_dir,
   )
@@ -122,7 +122,7 @@ workflow NVD_MAIN {
     PREPARE_BLAST_QUERIES.out.query_lookups,
     PREPARE_BLAST_QUERIES.out.contig_read_counts,
     PREPARE_BLAST_QUERIES.out.filtered_bam,
-    PREPROCESS_READS.out.virus_enrichment_stats,
+    PREPROCESS_READS.out.target_enrichment_stats,
     ch_taxonomy_dir,
     COMPUTE_RUN_CONTEXT.out.ready,
     ch_run_context,
@@ -138,7 +138,7 @@ workflow NVD_MAIN {
       ch_sourmash_lineages,
       REPORTING.out.blast_results,
       REPORTING.out.crumbs_taxa,
-      REPORTING.out.crumbs_contigs,
+      REPORTING.out.crumbs_queries,
       workflow.runName,
     )
   }

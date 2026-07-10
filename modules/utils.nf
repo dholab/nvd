@@ -275,42 +275,42 @@ process CONCATENATE_TAXON_BIG_TABLE {
   """
 }
 
-process VIRUS_ENRICHMENT_REPORT {
+process TARGET_ENRICHMENT_REPORT {
   /*
-   * Build run-level visualizations from per-sample human-virus enrichment
+   * Build run-level visualizations from per-sample target enrichment
    * summaries emitted by deacon filter on the raw input reads.
    */
 
   label "low"
 
   input:
-  path "virus_enrichment_summaries/*"
+  path "target_enrichment_summaries/*"
 
   output:
-  path "virus_enrichment_summary.tsv", emit: summary_tsv
-  path "virus_enriched_bases_ranked.png", emit: enriched_bases_ranked_png
-  path "virus_enriched_bases_ranked.html", emit: enriched_bases_ranked_html
-  path "virus_retained_vs_filtered_stacked.png", emit: retained_vs_filtered_stacked_png
-  path "virus_retained_vs_filtered_stacked.html", emit: retained_vs_filtered_stacked_html
-  path "virus_reads_vs_bases_scatter.png", emit: reads_vs_bases_scatter_png
-  path "virus_reads_vs_bases_scatter.html", emit: reads_vs_bases_scatter_html
+  path "target_enrichment_summary.tsv", emit: summary_tsv
+  path "target_enriched_bases_ranked.png", emit: enriched_bases_ranked_png
+  path "target_enriched_bases_ranked.html", emit: enriched_bases_ranked_html
+  path "target_retained_vs_filtered_stacked.png", emit: retained_vs_filtered_stacked_png
+  path "target_retained_vs_filtered_stacked.html", emit: retained_vs_filtered_stacked_html
+  path "target_reads_vs_bases_scatter.png", emit: reads_vs_bases_scatter_png
+  path "target_reads_vs_bases_scatter.html", emit: reads_vs_bases_scatter_html
 
   script:
   """
-  plot_virus_enrichment_summaries.py \\
-      --summaries virus_enrichment_summaries/*.json \\
+  plot_target_enrichment_summaries.py \\
+      --summaries target_enrichment_summaries/*.json \\
       --outdir .
   """
 
   stub:
   """
-  touch virus_enrichment_summary.tsv
-  touch virus_enriched_bases_ranked.png
-  touch virus_enriched_bases_ranked.html
-  touch virus_retained_vs_filtered_stacked.png
-  touch virus_retained_vs_filtered_stacked.html
-  touch virus_reads_vs_bases_scatter.png
-  touch virus_reads_vs_bases_scatter.html
+  touch target_enrichment_summary.tsv
+  touch target_enriched_bases_ranked.png
+  touch target_enriched_bases_ranked.html
+  touch target_retained_vs_filtered_stacked.png
+  touch target_retained_vs_filtered_stacked.html
+  touch target_reads_vs_bases_scatter.png
+  touch target_reads_vs_bases_scatter.html
   """
 }
 

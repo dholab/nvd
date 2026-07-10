@@ -124,8 +124,8 @@ workflow {{
 
     diagnostics = f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}"
     assert completed.returncode == 0, diagnostics
-    published = results / "nvd" / "01_virus_enriched_reads"
-    assert (published / "sample_A.human_virus.fastq.gz").is_file()
+    published = results / "nvd" / "01_target_enriched_reads"
+    assert (published / "sample_A.target_enriched.fastq.gz").is_file()
     assert (published / "sample_A.deacon_filter.json").is_file()
 
 

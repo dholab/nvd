@@ -2,13 +2,13 @@ include {
     MEGABLAST ;
     ANNOTATE_MEGABLAST_RESULTS ;
     FILTER_NON_VIRUS_MEGABLAST_NODES ;
-    REMOVE_MEGABLAST_MAPPED_CONTIGS ;
+    PARTITION_MEGABLAST_QUERIES ;
     SELECT_TOP_BLAST_HITS
 } from "../modules/blast"
 
 workflow CLASSIFY_WITH_MEGABLAST {
     take:
-    ch_virus_contigs  // tuple(sample_id, platform, query_class, fasta, lookup)
+    ch_query_batches  // tuple(sample_id, platform, query_class, fasta, lookup)
     ch_blast_db_files
     ch_taxonomy_dir   // value channel: taxonomy directory path for taxonomy lookups
 
@@ -16,15 +16,15 @@ workflow CLASSIFY_WITH_MEGABLAST {
     // These FASTA files are uncompressed pipeline outputs. Upstream empty FASTA
     // producers create zero-byte files, so a byte-size check is a cheap scheduling
     // guard. Do not use this predicate for gzipped FASTA inputs.
-    ch_megablast_candidates = ch_virus_contigs.filter { _sample_id, _platform, _query_class, _contigs, _lookup ->
+    ch_megablast_candidates = ch_query_batches.filter { _sample_id, _platform, _query_class, _query_fasta, _lookup ->
           !params.skip_blast
       }
-      .filter { _sample_id, _platform, _query_class, contigs, _lookup ->
-          file(contigs).size() > 0
+      .filter { _sample_id, _platform, _query_class, query_fasta, _lookup ->
+          file(query_fasta).size() > 0
       }
-      .multiMap { sample_id, _platform, query_class, contigs, _lookup ->
-          for_search: tuple(sample_id, query_class, contigs)
-          for_prune:  tuple(sample_id, query_class, contigs)
+      .multiMap { sample_id, _platform, query_class, query_fasta, _lookup ->
+          for_search: tuple(sample_id, query_class, query_fasta)
+          for_partition: tuple(sample_id, query_class, query_fasta)
       }
 
     MEGABLAST(
@@ -43,12 +43,12 @@ workflow CLASSIFY_WITH_MEGABLAST {
         ANNOTATE_MEGABLAST_RESULTS.out.hits
     )
 
-    REMOVE_MEGABLAST_MAPPED_CONTIGS(
-        MEGABLAST.out.join(ch_megablast_candidates.for_prune, by: [0, 1])
+    PARTITION_MEGABLAST_QUERIES(
+        MEGABLAST.out.join(ch_megablast_candidates.for_partition, by: [0, 1])
     )
 
     emit:
-    filtered_megablast = FILTER_NON_VIRUS_MEGABLAST_NODES.out
-    megablast_contigs  = REMOVE_MEGABLAST_MAPPED_CONTIGS.out
+    filtered_megablast = FILTER_NON_VIRUS_MEGABLAST_NODES.out.hits
+    megablast_query_partition = PARTITION_MEGABLAST_QUERIES.out
     megablast          = SELECT_TOP_BLAST_HITS.out
 }

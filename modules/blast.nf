@@ -108,7 +108,7 @@ process SUMMARIZE_EMPTY_BLAST_QUERY_BATCHES {
 /*
 Perform rapid sequence similarity search using MEGABLAST.
 
-This rule aligns the assembled contigs against a comprehensive nucleotide database
+This rule aligns query sequences against a comprehensive nucleotide database
 to identify similar known sequences. It's crucial for initial, broad_scale
 identification of viral sequences.
 */
@@ -120,7 +120,7 @@ process MEGABLAST {
   maxRetries 2
 
   input:
-  tuple val(sample_id), val(query_class), path(human_virus_contigs), path(blast_db)
+  tuple val(sample_id), val(query_class), path(query_fasta), path(blast_db)
 
   output:
   tuple val(sample_id), val(query_class), path("${sample_id}.${query_class}.megablast.txt")
@@ -134,7 +134,7 @@ process MEGABLAST {
   export BLASTDB=${blast_db}
   blastn -task ${blast_task} \
   -db ${blast_db}/${params.blast_db_prefix} \
-  -query ${human_virus_contigs} \
+  -query ${query_fasta} \
   -num_threads ${task.cpus} \
   -outfmt "${outfmt}" \
   -max_target_seqs ${params.max_blast_targets} \
@@ -199,7 +199,7 @@ process SELECT_TOP_BLAST_HITS {
 }
 /*
 
-Remove any contigs that do not have at least one hit corresponding to viruses.
+Remove any query groups that do not have at least one hit corresponding to viruses.
 
 This rule handles cases where the input file is empty and filters out
 blast query read groups where none of the entries are from superkingdom: Viruses
@@ -218,24 +218,32 @@ process FILTER_NON_VIRUS_MEGABLAST_NODES {
   tuple val(sample_id), val(query_class), path(annotated_blast)
 
   output:
-  tuple val(sample_id), val(query_class), path("${sample_id}.${query_class}.mb_virus_only.txt")
+  tuple val(sample_id), val(query_class), path("${sample_id}.${query_class}.mb_virus_only.txt"), emit: hits
+  tuple val(sample_id), val(query_class), path("${sample_id}.${query_class}.megablast_query_filtering.tsv"), emit: decisions
 
   script:
   """
     filter_non_virus_blast_nodes.py ${annotated_blast} ${sample_id}.${query_class}.mb_virus_only.txt
+    summarize_blast_filtering.py \
+      --sample-id '${sample_id}' \
+      --query-class '${query_class}' \
+      --stage megablast_virus_filter \
+      --input ${annotated_blast} \
+      --output ${sample_id}.${query_class}.mb_virus_only.txt \
+      --summary ${sample_id}.${query_class}.megablast_query_filtering.tsv
     """
 }
 
 /*
-Create a list of contigs that are not classified by megablast.
+Partition queries according to whether MEGABLAST produced any hit.
 
 This rule generates two outputs:
-1. A list of classified contigs
-2. A pruned FASTA file containing only unclassified contigs
+1. Query IDs accounted for by MEGABLAST
+2. A FASTA containing residual queries that are candidates for BLASTN
 
-The pruned file is used as input for more sensitive blastn searching.
+The candidate FASTA is used as input for more sensitive BLASTN searching.
 */
-process REMOVE_MEGABLAST_MAPPED_CONTIGS {
+process PARTITION_MEGABLAST_QUERIES {
 
   tag "${sample_id}, ${query_class}"
   label "low"
@@ -244,25 +252,28 @@ process REMOVE_MEGABLAST_MAPPED_CONTIGS {
   maxRetries 2
 
   input:
-  tuple val(sample_id), val(query_class), path(filtered_megablast_nodes), path(human_virus_contigs)
+  tuple val(sample_id), val(query_class), path(megablast_results), path(query_fasta)
 
   output:
-  tuple val(sample_id), val(query_class), path("${sample_id}.${query_class}.classified.txt"), path("${sample_id}.${query_class}.pruned.fasta")
+  tuple val(sample_id), val(query_class), path("${sample_id}.${query_class}.megablast_accounted_query_ids.txt"), path("${sample_id}.${query_class}.blastn_candidate_queries.fasta"), path("${sample_id}.${query_class}.megablast_query_partition.tsv")
 
   script:
   """
-    remove_megablast_mapped_contigs.py \
-    --megablast_results ${filtered_megablast_nodes} \
-    --contigs_fasta ${human_virus_contigs} \
-    --pruned_contigs ${sample_id}.${query_class}.pruned.fasta \
-    --classified_contigs ${sample_id}.${query_class}.classified.txt
+    partition_megablast_queries.py \
+    --megablast-results ${megablast_results} \
+    --query-fasta ${query_fasta} \
+    --sample-id '${sample_id}' \
+    --query-class '${query_class}' \
+    --accounted-query-ids ${sample_id}.${query_class}.megablast_accounted_query_ids.txt \
+    --blastn-candidate-fasta ${sample_id}.${query_class}.blastn_candidate_queries.fasta \
+    --summary-tsv ${sample_id}.${query_class}.megablast_query_partition.tsv
     """
 }
 
 /*
 Perform sequence similarity search using BLASTN.
 
-This rule aligns the assembled contigs against a comprehensive nucleotide database
+This rule aligns residual query sequences against a comprehensive nucleotide database
 to identify similar known sequences with BLASTN
 */
 process BLASTN_CLASSIFY {
@@ -273,7 +284,7 @@ process BLASTN_CLASSIFY {
   maxRetries 2
 
   input:
-  tuple val(sample_id), val(query_class), path(classified), path(pruned_contigs), path(blast_db)
+  tuple val(sample_id), val(query_class), path(accounted_query_ids), path(blastn_candidate_fasta), path(blast_db)
 
   output:
   tuple val(sample_id), val(query_class), path("${sample_id}.${query_class}.blastn.txt")
@@ -285,7 +296,7 @@ process BLASTN_CLASSIFY {
     export BLASTDb=${blast_db}/
     blastn -task ${blast_task} \
     -db ${blast_db}/${params.blast_db_prefix} \
-    -query ${pruned_contigs} \
+    -query ${blastn_candidate_fasta} \
     -num_threads ${task.cpus} \
     -outfmt "${outfmt}" \
     -max_target_seqs ${params.max_blast_targets} \
@@ -326,7 +337,7 @@ process ANNOTATE_BLASTN_RESULTS {
 }
 
 /*
-Remove any contigs that do not have at least one hit corresponding to viruses.
+Remove any query groups that do not have at least one hit corresponding to viruses.
 
 This rule handles cases where the input file is empty and filters out
 groups where none of the entries are from superkingdom: Viruses
@@ -344,11 +355,19 @@ process FILTER_NON_VIRUS_BLASTN_NODES {
   tuple val(sample_id), val(query_class), path(annotated_blast)
 
   output:
-  tuple val(sample_id), val(query_class), path("${sample_id}.${query_class}.nt_virus_only.txt")
+  tuple val(sample_id), val(query_class), path("${sample_id}.${query_class}.nt_virus_only.txt"), emit: hits
+  tuple val(sample_id), val(query_class), path("${sample_id}.${query_class}.blastn_query_filtering.tsv"), emit: decisions
 
   script:
   """
   filter_non_virus_blast_nodes.py ${annotated_blast} ${sample_id}.${query_class}.nt_virus_only.txt
+  summarize_blast_filtering.py \
+    --sample-id '${sample_id}' \
+    --query-class '${query_class}' \
+    --stage blastn_virus_filter \
+    --input ${annotated_blast} \
+    --output ${sample_id}.${query_class}.nt_virus_only.txt \
+    --summary ${sample_id}.${query_class}.blastn_query_filtering.tsv
   """
 }
 

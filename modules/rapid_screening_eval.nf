@@ -9,7 +9,7 @@ process BUILD_RAPID_SCREENING_EVAL_DB {
     path lineages_csv
     path blast_tsvs
     path crumbs_taxa_tsvs
-    path crumbs_contigs_tsvs
+    path crumbs_queries_tsvs
     val run_id
 
     output:
@@ -26,7 +26,7 @@ process BUILD_RAPID_SCREENING_EVAL_DB {
     def sourmashTaxArgs = pathArgs("--sourmash-tax-summary", sourmash_tax_summaries)
     def blastArgs = pathArgs("--blast-tsv", blast_tsvs)
     def crumbsTaxaArgs = pathArgs("--crumbs-taxa-tsv", crumbs_taxa_tsvs)
-    def crumbsContigsArgs = pathArgs("--crumbs-contigs-tsv", crumbs_contigs_tsvs)
+    def crumbsQueriesArgs = pathArgs("--crumbs-queries-tsv", crumbs_queries_tsvs)
     """
     evaluate_rapid_screening.py \
         --sample-read-counts ${sample_read_counts_tsv} \
@@ -35,7 +35,7 @@ process BUILD_RAPID_SCREENING_EVAL_DB {
         ${sourmashTaxArgs} \
         ${blastArgs} \
         ${crumbsTaxaArgs} \
-        ${crumbsContigsArgs} \
+        ${crumbsQueriesArgs} \
         --output-database rapid_screening_eval.duckdb \
         --output-dir .
     """
