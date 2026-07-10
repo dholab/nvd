@@ -38,6 +38,13 @@ class Threshold:
 
 
 @dataclass(frozen=True, slots=True)
+class ThresholdSummary:
+    threshold: Threshold
+    sequence_count_at_or_above: int
+    bases_at_or_above: int | None
+
+
+@dataclass(frozen=True, slots=True)
 class RawProfile:
     length_counts: Counter[int]
     quality_counts: Counter[int]
@@ -69,7 +76,7 @@ class FastxProfile:
     quality_histogram: Counter[int]
     length_bin_size: int
     quality_bin_size: int
-    thresholds: tuple[Threshold, ...]
+    thresholds: tuple[ThresholdSummary, ...]
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -202,6 +209,28 @@ def weighted_mean(counts: Counter[int]) -> float | None:
     return sum(value * count for value, count in counts.items()) / total_count
 
 
+def summarize_threshold(
+    threshold: Threshold,
+    *,
+    length_counts: Counter[int],
+    quality_counts: Counter[int],
+) -> ThresholdSummary:
+    counts = length_counts if threshold.axis == "length" else quality_counts
+    sequence_count = 0
+    bases = 0
+    for value, count in counts.items():
+        if value < threshold.value:
+            continue
+        sequence_count += count
+        if threshold.axis == "length":
+            bases += value * count
+    return ThresholdSummary(
+        threshold=threshold,
+        sequence_count_at_or_above=sequence_count,
+        bases_at_or_above=bases if threshold.axis == "length" else None,
+    )
+
+
 def profile_fastx(request: ProfileRequest) -> FastxProfile:
     with tempfile.TemporaryDirectory(prefix="nvd-fastx-profile-") as tmpdir_name:
         raw = merge_profiles(
@@ -226,7 +255,14 @@ def profile_fastx(request: ProfileRequest) -> FastxProfile:
         quality_histogram=rebin_counts(raw.quality_counts, request.quality_bin_size),
         length_bin_size=request.length_bin_size,
         quality_bin_size=request.quality_bin_size,
-        thresholds=request.thresholds,
+        thresholds=tuple(
+            summarize_threshold(
+                threshold,
+                length_counts=raw.length_counts,
+                quality_counts=raw.quality_counts,
+            )
+            for threshold in request.thresholds
+        ),
     )
 
 
@@ -284,8 +320,14 @@ def profile_json(profile: FastxProfile) -> dict[str, Any]:
             else None,
         },
         "thresholds": [
-            {"name": threshold.name, "axis": threshold.axis, "value": threshold.value}
-            for threshold in profile.thresholds
+            {
+                "name": summary.threshold.name,
+                "axis": summary.threshold.axis,
+                "value": summary.threshold.value,
+                "sequence_count_at_or_above": summary.sequence_count_at_or_above,
+                "bases_at_or_above": summary.bases_at_or_above,
+            }
+            for summary in profile.thresholds
         ],
     }
 

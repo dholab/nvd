@@ -299,6 +299,39 @@ def read_tsv_rows(path: Path) -> list[dict[str, str]]:
     return read_delimited_rows(path, delimiter="\t")
 
 
+def assert_long_read_assembly_outputs(
+    results_root: Path,
+    selected_sra_runs: list[dict[str, Any]],
+) -> None:
+    assembly_root = results_root / "03_assembled_contigs"
+    eligibility_report = assembly_root / "long_read_assembly_eligibility.tsv"
+    assert eligibility_report.is_file(), (
+        f"Missing long-read assembly eligibility report: {eligibility_report}"
+    )
+    eligibility_rows = read_tsv_rows(eligibility_report)
+    expected_long_read_samples = {
+        run_info["sample_id"]
+        for run_info in selected_sra_runs
+        if run_info["platform"] != "illumina"
+    }
+    assert {row["sample_id"] for row in eligibility_rows} == (
+        expected_long_read_samples
+    )
+    for row in eligibility_rows:
+        for assembler in ("metamdbg", "myloasm", "metaflye"):
+            decision = row[f"{assembler}_decision"]
+            qualifying_reads = int(row[f"{assembler}_qualifying_reads"])
+            assert decision in {"run", "skip"}
+            assert (decision == "run") == (qualifying_reads > 0)
+
+    assert not (assembly_root / "long_read_assemblers").exists()
+    for assembler in ("metamdbg", "myloasm", "metaflye"):
+        assembler_dir = assembly_root / assembler
+        assert assembler_dir.is_dir(), (
+            f"Missing {assembler} output directory: {assembler_dir}"
+        )
+
+
 def make_e2e_run_dir() -> Path:
     output_root = Path(os.environ.get("NVD_E2E_OUTPUT_DIR", E2E_OUTPUT_DIR))
     run_id = datetime.now(tz=UTC).strftime("%Y%m%dT%H%M%SZ") + f"-pid{os.getpid()}"
@@ -562,6 +595,9 @@ def test_mini_sra_viral_pipeline_completes() -> None:
             assert organism in final_text
 
     if experimental:
+        if not skip_assembly:
+            assert_long_read_assembly_outputs(results_root, selected_sra_runs)
+
         rapid_screening_root = results_root / "08_experiment_summary" / "rapid_screening"
         sourmash_root = rapid_screening_root / "engines" / "sourmash"
         ref_dir = sourmash_root / "reference_profiling" / "reference"
