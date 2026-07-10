@@ -75,18 +75,16 @@ workflow NVD_MAIN {
     ch_sourmash_tax_reports = rapid_screening.tax_reports
   }
 
-  // Filter out samples with fewer than 100 reads before assembly; they are
-  // insufficient for de novo assembly and would otherwise fan out downstream.
+  // Short reads retain their minimum-count gate; experimental long-read
+  // assemblers use tool-specific length evidence from each cached profile.
   ch_short_read_batches_by_sample_for_assembly = PREPROCESS_READS.out.profiled_batches_by_sample
     .filter { meta, _batches -> !params.skip_assembly && meta.platform == "illumina" }
 
-  ch_long_reads_for_assembly = PREPROCESS_READS.out.profiled_read_batches
+  ch_long_read_profiles_for_assembly = PREPROCESS_READS.out.profiled_read_batches
     .filter { meta, _reads, _profile_json, _length_histogram -> !params.skip_assembly && meta.platform != "illumina" }
-    .filter { meta, _reads, _profile_json, _length_histogram -> meta.sequence_count >= 100 }
-    .map { meta, reads, _profile_json, _length_histogram -> tuple(meta.id, meta.platform, meta.read_structure, file(reads)) }
 
   SHORT_READ_DENOVO_ASSEMBLY(ch_short_read_batches_by_sample_for_assembly)
-  LONG_READ_DENOVO_ENSEMBLY(ch_long_reads_for_assembly)
+  LONG_READ_DENOVO_ENSEMBLY(ch_long_read_profiles_for_assembly)
 
   ch_assembled_contigs = SHORT_READ_DENOVO_ASSEMBLY.out.contigs
     .mix(LONG_READ_DENOVO_ENSEMBLY.out.contigs)

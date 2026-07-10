@@ -206,14 +206,24 @@ workflow PREPROCESS_READS {
         def min_qual = meta.platform == "illumina"
             ? params.min_read_quality_illumina
             : params.min_read_quality_nanopore
+        def thresholds = [
+            [name: "min_read_length", axis: "length", value: params.min_read_length],
+            [name: "min_read_quality", axis: "quality", value: min_qual],
+        ]
+        if (meta.platform != "illumina") {
+            thresholds += [
+                [name: "metamdbg_min_read_overlap", axis: "length", value: params.min_consecutive_bases],
+                [name: "myloasm_min_read_length", axis: "length", value: 1000],
+                // Flye 2.9.6 requires read length strictly greater than its
+                // supported 1 kb minimum-overlap floor.
+                [name: "metaflye_min_read_length", axis: "length", value: 1001],
+            ]
+        }
         tuple(
             meta + [
                 profile_stage: meta.query_class,
                 profile_key: "${meta.id}:${meta.read_structure}:${meta.query_class}",
-                thresholds: [
-                    [name: "min_read_length", axis: "length", value: params.min_read_length],
-                    [name: "min_read_quality", axis: "quality", value: min_qual],
-                ],
+                thresholds: thresholds,
             ],
             reads,
         )

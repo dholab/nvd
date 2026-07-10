@@ -172,8 +172,20 @@ def test_profile_fastx_counts_gzipped_fastq_and_writes_histograms(
         "encoding": "phred33_integer_average",
     }
     assert profile["thresholds"] == [
-        {"name": "min_read_length", "axis": "length", "value": 50.0},
-        {"name": "min_read_quality", "axis": "quality", "value": 20.0},
+        {
+            "name": "min_read_length",
+            "axis": "length",
+            "value": 50.0,
+            "sequence_count_at_or_above": 0,
+            "bases_at_or_above": 0,
+        },
+        {
+            "name": "min_read_quality",
+            "axis": "quality",
+            "value": 20.0,
+            "sequence_count_at_or_above": 3,
+            "bases_at_or_above": None,
+        },
     ]
     assert (
         Path(f"{output_prefix}.sequence_count.txt").read_text(encoding="utf-8") == "3\n"
@@ -215,6 +227,66 @@ def test_profile_fastx_counts_gzipped_fastq_and_writes_histograms(
             "bin_start": "40",
             "bin_end": "49",
             "sequence_count": "1",
+        },
+    ]
+
+
+def test_profile_fastx_counts_sequences_and_bases_above_length_thresholds(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fastq = tmp_path / "reads.fastq.gz"
+    output_prefix = tmp_path / "sample-1.preprocessed_single_read"
+    write_fastq_gz(fastq, [("read-1", "AC", "II")])
+    monkeypatch.setattr(
+        "profile_fastx.run_reformat",
+        lambda _input_file, **_kwargs: RawProfile(
+            length_counts=Counter({199: 1, 200: 2, 999: 1, 1000: 3, 1200: 1}),
+            quality_counts=Counter({40: 8}),
+        ),
+    )
+
+    main(
+        [
+            "--sample-id",
+            "sample-1",
+            "--stage",
+            "preprocessed_single_read",
+            "--input",
+            str(fastq),
+            "--output-prefix",
+            str(output_prefix),
+            "--threshold",
+            "metamdbg_min_read_overlap:length:200",
+            "--threshold",
+            "myloasm_min_read_length:length:1000",
+            "--threshold",
+            "metaflye_min_read_length:length:1001",
+        ],
+    )
+
+    profile = read_json(Path(f"{output_prefix}.fastx_profile.json"))
+    assert profile["thresholds"] == [
+        {
+            "name": "metamdbg_min_read_overlap",
+            "axis": "length",
+            "value": 200.0,
+            "sequence_count_at_or_above": 7,
+            "bases_at_or_above": 5599,
+        },
+        {
+            "name": "myloasm_min_read_length",
+            "axis": "length",
+            "value": 1000.0,
+            "sequence_count_at_or_above": 4,
+            "bases_at_or_above": 4200,
+        },
+        {
+            "name": "metaflye_min_read_length",
+            "axis": "length",
+            "value": 1001.0,
+            "sequence_count_at_or_above": 1,
+            "bases_at_or_above": 1200,
         },
     ]
 
