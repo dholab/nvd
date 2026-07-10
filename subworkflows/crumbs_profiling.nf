@@ -50,7 +50,7 @@ workflow CRUMBS_PROFILING {
     RENDER_MERGED_CRUMBS_TAXBURST(ch_merged_taxburst_input)
 
     emit:
-    contigs = ESTIMATE_CRUMBS_PROFILE.out.contigs
+    queries = ESTIMATE_CRUMBS_PROFILE.out.queries
     taxa = ESTIMATE_CRUMBS_PROFILE.out.taxa
     bioboxes_profile = ESTIMATE_CRUMBS_PROFILE.out.bioboxes_profile
     qc = ESTIMATE_CRUMBS_PROFILE.out.qc

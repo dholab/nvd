@@ -33,6 +33,10 @@ ASSIGNMENT_COLUMNS = [
 PROFILE_ASSIGNMENT_SCORE_COLUMNS = ["bitscore", "evalue"]
 READ_QUERY_CLASSES = {"overlap_merged_pair", "single_read"}
 READ_QUERY_PREFIXES = ("nvdMergeReadQuery_", "nvdReadQuery_")
+READ_QUERY_DEPTH_MULTIPLIERS = {
+    "overlap_merged_pair": 2,
+    "single_read": 1,
+}
 READ_QUERY_METADATA_COLUMNS = ["query_class", "support_record_count", "qlen"]
 COVERAGE_COLUMNS = [
     "sample_id",
@@ -58,14 +62,14 @@ PROFILE_TAXONOMY_COLUMNS = [
     "taxpathsn",
     "rankpath",
 ]
-CONTIG_OUTPUT_COLUMNS = [
+QUERY_OUTPUT_COLUMNS = [
     "sample_id",
     "qseqid",
     "adjusted_taxid",
     "adjusted_taxid_name",
     "adjusted_taxid_rank",
     "adjustment_method",
-    "contig_length",
+    "query_length",
     "covered_bases_1x",
     "breadth_1x",
     "raw_aligned_bases",
@@ -89,19 +93,19 @@ TAXON_OUTPUT_COLUMNS = [
     "taxpath",
     "taxpathsn",
     "rankpath",
-    "n_contigs",
-    "total_contig_length",
+    "n_queries",
+    "total_query_length",
     "total_covered_bases_1x",
     "total_raw_aligned_bases",
     "total_crumbs_score",
     "taxon_crumbs",
     "percentage_emitted",
-    "n_zero_crumbs_contigs",
-    "median_contig_breadth_1x",
-    "min_contig_breadth_1x",
-    "max_contig_breadth_1x",
-    "fraction_crumbs_from_top_contig",
-    "fraction_crumbs_from_low_breadth_contigs",
+    "n_zero_crumbs_queries",
+    "median_query_breadth_1x",
+    "min_query_breadth_1x",
+    "max_query_breadth_1x",
+    "fraction_crumbs_from_top_query",
+    "fraction_crumbs_from_low_breadth_queries",
 ]
 BIOBOXES_COLUMNS = ["@@TAXID", "RANK", "TAXPATH", "TAXPATHSN", "PERCENTAGE"]
 LOW_BREADTH_THRESHOLD = 0.1
@@ -151,7 +155,7 @@ class CrumbsProfileError(ValueError):
 
 @dataclass(frozen=True)
 class OutputPaths:
-    contigs: Path
+    queries: Path
     taxa: Path
     bioboxes_profile: Path
     qc_json: Path
@@ -160,7 +164,7 @@ class OutputPaths:
 def output_paths(sample_id: str, output_dir: Path) -> OutputPaths:
     """Return standard CRUMBS output paths for a sample."""
     return OutputPaths(
-        contigs=output_dir / f"{sample_id}.crumbs.contigs.tsv",
+        queries=output_dir / f"{sample_id}.crumbs.queries.tsv",
         taxa=output_dir / f"{sample_id}.crumbs.taxa.tsv",
         bioboxes_profile=output_dir / f"{sample_id}.crumbs.bioboxes.profile.tsv",
         qc_json=output_dir / f"{sample_id}.crumbs.qc.json",
@@ -214,7 +218,7 @@ def read_inputs(
 
 
 def collapse_assignments(blast: pl.DataFrame, sample_id: str) -> pl.DataFrame:
-    """Collapse repeated BLAST hit rows to one assignment per contig."""
+    """Collapse repeated BLAST hit rows to one assignment per query."""
     if "sample" in blast.columns:
         blast = blast.filter(pl.col("sample").cast(pl.String) == sample_id)
 
@@ -247,7 +251,7 @@ def collapse_assignments(blast: pl.DataFrame, sample_id: str) -> pl.DataFrame:
             missing_required_values.get_column("qseqid").fill_null("<null>").to_list()
         )
         message = (
-            "BLAST assignments contain null or blank required values for contigs: "
+            "BLAST assignments contain null or blank required values for queries: "
             + ", ".join(qseqids)
         )
         raise CrumbsProfileError(message)
@@ -255,13 +259,16 @@ def collapse_assignments(blast: pl.DataFrame, sample_id: str) -> pl.DataFrame:
     if has_score_columns:
         missing_score_values = assignments.filter(
             pl.any_horizontal(
-                [pl.col(column).is_null() for column in PROFILE_ASSIGNMENT_SCORE_COLUMNS],
+                [
+                    pl.col(column).is_null()
+                    for column in PROFILE_ASSIGNMENT_SCORE_COLUMNS
+                ],
             ),
         )
         if missing_score_values.height > 0:
             qseqids = missing_score_values.get_column("qseqid").to_list()
             message = (
-                "BLAST assignments contain null score values for contigs: "
+                "BLAST assignments contain null score values for queries: "
                 + ", ".join(qseqids)
             )
             raise CrumbsProfileError(message)
@@ -278,7 +285,11 @@ def collapse_assignments(blast: pl.DataFrame, sample_id: str) -> pl.DataFrame:
             .select(
                 [
                     *ASSIGNMENT_COLUMNS,
-                    *[column for column in READ_QUERY_METADATA_COLUMNS if column in assignments.columns],
+                    *[
+                        column
+                        for column in READ_QUERY_METADATA_COLUMNS
+                        if column in assignments.columns
+                    ],
                 ],
             )
         )
@@ -286,7 +297,7 @@ def collapse_assignments(blast: pl.DataFrame, sample_id: str) -> pl.DataFrame:
     conflicts = assignments.unique(maintain_order=True).group_by("qseqid").len()
     conflicting_qseqids = conflicts.filter(pl.col("len") > 1).get_column("qseqid")
     if not conflicting_qseqids.is_empty():
-        message = "conflicting assignments for contigs: " + ", ".join(
+        message = "conflicting assignments for queries: " + ", ".join(
             conflicting_qseqids.cast(pl.String).to_list(),
         )
         raise CrumbsProfileError(message)
@@ -419,7 +430,9 @@ def prepare_profile_taxonomy(profile_taxonomy: pl.DataFrame) -> pl.DataFrame:
     )
     if rankpath_terminal_mismatches.height > 0:
         taxon_id = rankpath_terminal_mismatches.get_column("taxon_id").item(0)
-        message = f"profile taxonomy rankpath for taxon_id {taxon_id} does not end with rank"
+        message = (
+            f"profile taxonomy rankpath for taxon_id {taxon_id} does not end with rank"
+        )
         raise CrumbsProfileError(message)
     return typed
 
@@ -468,10 +481,10 @@ def build_read_query_table(
 ) -> pl.DataFrame:
     """Convert read-derived query assignments into CRUMBS evidence rows."""
     if assignments.is_empty():
-        return pl.DataFrame(schema={column: pl.Null for column in CONTIG_OUTPUT_COLUMNS})
+        return pl.DataFrame(schema=dict.fromkeys(QUERY_OUTPUT_COLUMNS, pl.Null))
     missing_columns = [
         column
-        for column in ("support_record_count", "qlen")
+        for column in ("query_class", "support_record_count", "qlen")
         if column not in assignments.columns
     ]
     if missing_columns:
@@ -484,9 +497,21 @@ def build_read_query_table(
     typed = assignments.with_columns(
         pl.col("support_record_count").cast(pl.Int64),
         pl.col("qlen").cast(pl.Int64),
+        pl.when(pl.col("query_class") == "overlap_merged_pair")
+        .then(pl.lit(READ_QUERY_DEPTH_MULTIPLIERS["overlap_merged_pair"]))
+        .when(pl.col("query_class") == "single_read")
+        .then(pl.lit(READ_QUERY_DEPTH_MULTIPLIERS["single_read"]))
+        .otherwise(None)
+        .cast(pl.Int64)
+        .alias("_depth_multiplier"),
+    ).with_columns(
+        (pl.col("support_record_count") * pl.col("_depth_multiplier"))
+        .cast(pl.Float64)
+        .alias("_effective_depth"),
     )
     invalid = typed.filter(
-        pl.col("support_record_count").is_null()
+        pl.col("_depth_multiplier").is_null()
+        | pl.col("support_record_count").is_null()
         | (pl.col("support_record_count") <= 0)
         | pl.col("qlen").is_null()
         | (pl.col("qlen") <= 0),
@@ -501,35 +526,35 @@ def build_read_query_table(
 
     return typed.with_columns(
         pl.lit(sample_id).alias("sample_id"),
-        pl.col("qlen").alias("contig_length"),
-        pl.lit(0).alias("covered_bases_1x"),
-        pl.lit(0.0).alias("breadth_1x"),
-        pl.col("support_record_count").cast(pl.Float64).alias("raw_aligned_bases"),
-        (pl.col("support_record_count") / pl.col("qlen")).cast(pl.Float64).alias("mean_depth_full"),
-        pl.lit(0.0).alias("median_depth_full"),
-        pl.lit(0.0).alias("median_depth_positive"),
-        pl.lit(0.0).alias("depth_p95"),
-        pl.lit(0.0).alias("depth_p99"),
-        pl.lit(0.0).alias("max_depth"),
-        pl.col("support_record_count").cast(pl.Float64).alias("crumbs_p95"),
-        pl.col("support_record_count").cast(pl.Float64).alias("crumbs_p99"),
-        pl.lit("read_query_support").alias("winsorization_percentile"),
-        pl.col("support_record_count").cast(pl.Float64).alias("winsorization_cap"),
-        pl.col("support_record_count").cast(pl.Float64).alias("crumbs_score"),
-    ).select(CONTIG_OUTPUT_COLUMNS)
+        pl.col("qlen").alias("query_length"),
+        pl.col("qlen").alias("covered_bases_1x"),
+        pl.lit(1.0).alias("breadth_1x"),
+        (pl.col("qlen") * pl.col("_effective_depth")).alias("raw_aligned_bases"),
+        pl.col("_effective_depth").alias("mean_depth_full"),
+        pl.col("_effective_depth").alias("median_depth_full"),
+        pl.col("_effective_depth").alias("median_depth_positive"),
+        pl.col("_effective_depth").alias("depth_p95"),
+        pl.col("_effective_depth").alias("depth_p99"),
+        pl.col("_effective_depth").alias("max_depth"),
+        (pl.col("qlen") * pl.col("_effective_depth")).alias("crumbs_p95"),
+        (pl.col("qlen") * pl.col("_effective_depth")).alias("crumbs_p99"),
+        pl.lit("read_query_constant_depth").alias("winsorization_percentile"),
+        pl.col("_effective_depth").alias("winsorization_cap"),
+        (pl.col("qlen") * pl.col("_effective_depth")).alias("crumbs_score"),
+    ).select(QUERY_OUTPUT_COLUMNS)
 
 
-def build_contig_table(
+def build_query_table(
     *,
     sample_id: str,
     assignments: pl.DataFrame,
     coverage: pl.DataFrame,
     profile_taxonomy: pl.DataFrame,
 ) -> pl.DataFrame:
-    """Join assignments, coverage, and explicit taxonomy into contig evidence."""
+    """Build mixed contig- and read-derived query evidence."""
     validate_assignment_coverage_alignment(assignments, coverage)
     contig_assignments = contig_query_assignments(assignments)
-    contigs = (
+    query_evidence = (
         contig_assignments.join(coverage, on="qseqid", how="inner")
         .join(
             profile_taxonomy.select(
@@ -546,50 +571,55 @@ def build_contig_table(
             pl.col("depth_p99").alias("winsorization_cap"),
             pl.col("crumbs_p99").alias("crumbs_score"),
         )
+        .rename({"contig_length": "query_length"})
     )
     read_queries = build_read_query_table(
         sample_id=sample_id,
         assignments=read_query_assignments(assignments),
     )
     if read_queries.height > 0:
-        contigs = pl.concat(
-            [contigs.select(CONTIG_OUTPUT_COLUMNS), read_queries],
+        query_evidence = pl.concat(
+            [query_evidence.select(QUERY_OUTPUT_COLUMNS), read_queries],
             how="vertical_relaxed",
         )
-    contigs = contigs.select(CONTIG_OUTPUT_COLUMNS)
-    missing_taxonomy = contigs.select("adjusted_taxid").unique().join(
-        profile_taxonomy.select(pl.col("taxon_id").alias("adjusted_taxid")),
-        on="adjusted_taxid",
-        how="anti",
+    query_evidence = query_evidence.select(QUERY_OUTPUT_COLUMNS)
+    missing_taxonomy = (
+        query_evidence.select("adjusted_taxid")
+        .unique()
+        .join(
+            profile_taxonomy.select(pl.col("taxon_id").alias("adjusted_taxid")),
+            on="adjusted_taxid",
+            how="anti",
+        )
     )
     if missing_taxonomy.height > 0:
         missing = missing_taxonomy.get_column("adjusted_taxid").unique().to_list()
         message = "profile taxonomy is missing adjusted taxids: " + ", ".join(missing)
         raise CrumbsProfileError(message)
 
-    return contigs
+    return query_evidence
 
 
 def build_taxon_table(
     *,
     sample_id: str,
-    contigs: pl.DataFrame,
+    queries: pl.DataFrame,
     profile_taxonomy: pl.DataFrame,
 ) -> pl.DataFrame:
-    """Aggregate contig evidence into Taxon CRUMBS rows."""
+    """Aggregate query evidence into Taxon CRUMBS rows."""
     grouped = (
-        contigs.group_by("adjusted_taxid")
+        queries.group_by("adjusted_taxid")
         .agg(
-            pl.len().alias("n_contigs"),
-            pl.col("contig_length").sum().alias("total_contig_length"),
+            pl.len().alias("n_queries"),
+            pl.col("query_length").sum().alias("total_query_length"),
             pl.col("covered_bases_1x").sum().alias("total_covered_bases_1x"),
             pl.col("raw_aligned_bases").sum().alias("total_raw_aligned_bases"),
             pl.col("crumbs_score").sum().alias("total_crumbs_score"),
-            (pl.col("crumbs_score") == 0).sum().alias("n_zero_crumbs_contigs"),
-            pl.col("breadth_1x").median().alias("median_contig_breadth_1x"),
-            pl.col("breadth_1x").min().alias("min_contig_breadth_1x"),
-            pl.col("breadth_1x").max().alias("max_contig_breadth_1x"),
-            pl.col("crumbs_score").max().alias("top_contig_crumbs"),
+            (pl.col("crumbs_score") == 0).sum().alias("n_zero_crumbs_queries"),
+            pl.col("breadth_1x").median().alias("median_query_breadth_1x"),
+            pl.col("breadth_1x").min().alias("min_query_breadth_1x"),
+            pl.col("breadth_1x").max().alias("max_query_breadth_1x"),
+            pl.col("crumbs_score").max().alias("top_query_crumbs"),
             pl.when(pl.col("breadth_1x") < LOW_BREADTH_THRESHOLD)
             .then(pl.col("crumbs_score"))
             .otherwise(0)
@@ -598,7 +628,7 @@ def build_taxon_table(
         )
         .rename({"adjusted_taxid": "taxon_id"})
         .with_columns(
-            (pl.col("total_crumbs_score") / pl.col("total_contig_length")).alias(
+            (pl.col("total_crumbs_score") / pl.col("total_query_length")).alias(
                 "taxon_crumbs",
             ),
         )
@@ -623,13 +653,13 @@ def build_taxon_table(
 
     grouped = grouped.with_columns(
         pl.when(pl.col("total_crumbs_score") > 0)
-        .then(pl.col("top_contig_crumbs") / pl.col("total_crumbs_score"))
+        .then(pl.col("top_query_crumbs") / pl.col("total_crumbs_score"))
         .otherwise(0.0)
-        .alias("fraction_crumbs_from_top_contig"),
+        .alias("fraction_crumbs_from_top_query"),
         pl.when(pl.col("total_crumbs_score") > 0)
         .then(pl.col("low_breadth_crumbs") / pl.col("total_crumbs_score"))
         .otherwise(0.0)
-        .alias("fraction_crumbs_from_low_breadth_contigs"),
+        .alias("fraction_crumbs_from_low_breadth_queries"),
     )
 
     return (
@@ -661,7 +691,7 @@ def write_bioboxes_profile(sample_id: str, taxa: pl.DataFrame, path: Path) -> No
 
 def write_qc(
     sample_id: str,
-    contigs: pl.DataFrame,
+    queries: pl.DataFrame,
     taxa: pl.DataFrame,
     path: Path,
 ) -> None:
@@ -669,10 +699,10 @@ def write_qc(
     qc = {
         "sample_id": sample_id,
         "crumbs_score_column": "crumbs_p99",
-        "winsorization_rule": "per-contig full-depth nearest-rank p99, zeros included",
-        "taxon_crumbs_rule": "sum(contig crumbs_p99) / sum(contig_length)",
+        "winsorization_rule": "contig queries use full-depth nearest-rank p99; read queries use constant depth equal to support_record_count times source-read multiplicity (single=1, merged pair=2)",
+        "taxon_crumbs_rule": "sum(query crumbs_score) / sum(query_length)",
         "is_genome_copy_abundance": False,
-        "n_contigs": contigs.height,
+        "n_queries": queries.height,
         "n_taxa": taxa.height,
         "n_bioboxes_taxa": taxa.filter(pl.col("percentage_emitted") > 0).height,
         "low_breadth_threshold": LOW_BREADTH_THRESHOLD,
@@ -697,7 +727,7 @@ def estimate_profile(
     assignments = collapse_assignments(blast, sample_id)
     typed_coverage = prepare_coverage(coverage, sample_id)
     typed_taxonomy = prepare_profile_taxonomy(profile_taxonomy)
-    contigs = build_contig_table(
+    queries = build_query_table(
         sample_id=sample_id,
         assignments=assignments,
         coverage=typed_coverage,
@@ -705,16 +735,16 @@ def estimate_profile(
     )
     taxa = build_taxon_table(
         sample_id=sample_id,
-        contigs=contigs,
+        queries=queries,
         profile_taxonomy=typed_taxonomy,
     )
 
     paths = output_paths(sample_id, output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    contigs.write_csv(paths.contigs, separator="\t")
+    queries.write_csv(paths.queries, separator="\t")
     taxa.write_csv(paths.taxa, separator="\t")
     write_bioboxes_profile(sample_id, taxa, paths.bioboxes_profile)
-    write_qc(sample_id, contigs, taxa, paths.qc_json)
+    write_qc(sample_id, queries, taxa, paths.qc_json)
     return paths
 
 

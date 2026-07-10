@@ -8,18 +8,18 @@ workflow PREPARE_BLAST_QUERIES {
     ch_contigs          // tuple(sample_id, platform, read_structure, fasta, lookup) from PROCESS_CONTIGS
     ch_paired_reads     // tuple(sample_id, platform, overlap_merged_pair_reads, single_read_reads) from PREPROCESS_READS
     ch_single_reads     // tuple(sample_id, platform, read_structure, fastq) from PREPROCESS_READS
-    ch_virus_index      // path: pre-built or freshly-built virus deacon index
+    ch_target_index     // path: pre-built or freshly-built target deacon index
     ch_depletion_index  // tuple(use_depletion, path): resolved host/contaminant depletion index or sentinel
 
     main:
     DEACON_FILTER_CONTIGS(
         ch_contigs
-            .combine(ch_virus_index)
+            .combine(ch_target_index)
             .combine(ch_depletion_index)
     )
 
     PROFILE_FILTERED_CONTIGS(
-        DEACON_FILTER_CONTIGS.out.map { sample_id, platform, read_structure, fasta, _lookup ->
+        DEACON_FILTER_CONTIGS.out.contigs.map { sample_id, platform, read_structure, fasta, _lookup ->
             tuple(
                 [
                     id: sample_id,
@@ -46,13 +46,13 @@ workflow PREPARE_BLAST_QUERIES {
     )
 
     CONTIG_READ_MAPBACK(
-        DEACON_FILTER_CONTIGS.out,
+        DEACON_FILTER_CONTIGS.out.contigs,
         ch_paired_reads,
         ch_single_reads,
     )
 
     SELECT_BLAST_QUERIES(
-        DEACON_FILTER_CONTIGS.out,
+        DEACON_FILTER_CONTIGS.out.contigs,
     )
 
     ch_query_batches = SELECT_BLAST_QUERIES.out.query_fastas
@@ -68,7 +68,7 @@ workflow PREPARE_BLAST_QUERIES {
             }
         }
 
-    ch_contig_query_lookups = DEACON_FILTER_CONTIGS.out
+    ch_contig_query_lookups = DEACON_FILTER_CONTIGS.out.contigs
         .map { sample_id, _platform, _read_structure, _fasta, lookup -> tuple(sample_id, lookup) }
 
     if (params.experimental == true) {
@@ -109,7 +109,7 @@ workflow PREPARE_BLAST_QUERIES {
     emit:
     queries = ch_query_batches
     query_lookups = ch_query_lookups
-    contig_sequences = DEACON_FILTER_CONTIGS.out
+    contig_sequences = DEACON_FILTER_CONTIGS.out.contigs
     contig_read_counts = CONTIG_READ_MAPBACK.out.contig_read_counts
     filtered_bam = CONTIG_READ_MAPBACK.out.filtered_bam
     unmapped_reads = CONTIG_READ_MAPBACK.out.unmapped_reads

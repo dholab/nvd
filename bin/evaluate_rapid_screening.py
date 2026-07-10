@@ -670,7 +670,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--sourmash-gather-csv", type=Path, action="append", default=[])
     parser.add_argument("--blast-tsv", type=Path, action="append", default=[])
     parser.add_argument("--crumbs-taxa-tsv", type=Path, action="append", default=[])
-    parser.add_argument("--crumbs-contigs-tsv", type=Path, action="append", default=[])
+    parser.add_argument("--crumbs-queries-tsv", type=Path, action="append", default=[])
     parser.add_argument("--output-database", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     return parser.parse_args(argv)
@@ -679,7 +679,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 def main(argv: Sequence[str] | None = None) -> None:
     args = parse_args(argv)
     _ = args.blast_tsv
-    _ = args.crumbs_contigs_tsv
+    _ = args.crumbs_queries_tsv
     build_outputs(
         sample_read_counts=args.sample_read_counts,
         lineages_csv=args.lineages_csv,

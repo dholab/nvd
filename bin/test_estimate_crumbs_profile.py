@@ -15,16 +15,17 @@ from hypothesis import strategies as st
 if TYPE_CHECKING:
     from pathlib import Path
 
-EXPECTED_CONTIG_A_CRUMBS = 50.0
+EXPECTED_QUERY_A_CRUMBS = 50.0
 EXPECTED_HOMO_TOTAL_CRUMBS = 200.0
 EXPECTED_HOMO_TAXON_CRUMBS = 0.5
 EXPECTED_PAN_TAXON_CRUMBS = 1.0
 EXPECTED_ZERO_TAXON_CRUMBS = 0.0
-EXPECTED_CONTIG_COUNT = 4
+EXPECTED_QUERY_COUNT = 4
 EXPECTED_BIOBOXES_TAXA = 2
 EXPECTED_HOMO_PERCENTAGE = 33.33333333333333
 EXPECTED_PAN_PERCENTAGE = 66.66666666666666
 EXPECTED_FRAGMENTED_TAXON_COUNT = 2
+EXPECTED_READ_QUERY_TOTAL_CRUMBS = 875.0
 BLAST_FIELDS = [
     "sample",
     "qseqid",
@@ -177,11 +178,11 @@ def taxon_metadata(taxon_ids: set[str]) -> pl.DataFrame:
     )
 
 
-def contig_evidence_row(
+def query_evidence_row(
     *,
     qseqid: str,
     taxon_id: str,
-    contig_length: int,
+    query_length: int,
     crumbs_score: float,
     breadth_1x: float = 1.0,
 ) -> dict[str, object]:
@@ -192,11 +193,11 @@ def contig_evidence_row(
         "adjusted_taxid_name": taxon_id,
         "adjusted_taxid_rank": "species",
         "adjustment_method": "dominant",
-        "contig_length": contig_length,
-        "covered_bases_1x": round(contig_length * breadth_1x),
+        "query_length": query_length,
+        "covered_bases_1x": round(query_length * breadth_1x),
         "breadth_1x": breadth_1x,
         "raw_aligned_bases": crumbs_score,
-        "mean_depth_full": crumbs_score / contig_length,
+        "mean_depth_full": crumbs_score / query_length,
         "median_depth_full": 0.0,
         "median_depth_positive": 0.0,
         "depth_p95": 0.0,
@@ -401,24 +402,24 @@ def test_estimates_taxon_crumbs_and_bioboxes_profile(tmp_path: Path) -> None:
         ],
     )
 
-    contigs = read_tsv(tmp_path / "sample-1.crumbs.contigs.tsv")
-    assert [row["qseqid"] for row in contigs] == [
+    queries = read_tsv(tmp_path / "sample-1.crumbs.queries.tsv")
+    assert [row["qseqid"] for row in queries] == [
         "contig-a",
         "contig-b",
         "contig-c",
         "contig-zero",
     ]
-    assert float(contigs[0]["crumbs_score"]) == EXPECTED_CONTIG_A_CRUMBS
+    assert float(queries[0]["crumbs_score"]) == EXPECTED_QUERY_A_CRUMBS
 
     taxa = read_tsv(tmp_path / "sample-1.crumbs.taxa.tsv")
     taxa_by_id = {row["taxon_id"]: row for row in taxa}
-    assert taxa_by_id["9606"]["n_contigs"] == "2"
-    assert taxa_by_id["9606"]["total_contig_length"] == "400"
+    assert taxa_by_id["9606"]["n_queries"] == "2"
+    assert taxa_by_id["9606"]["total_query_length"] == "400"
     assert float(taxa_by_id["9606"]["total_crumbs_score"]) == EXPECTED_HOMO_TOTAL_CRUMBS
     assert float(taxa_by_id["9606"]["taxon_crumbs"]) == EXPECTED_HOMO_TAXON_CRUMBS
     assert float(taxa_by_id["9598"]["taxon_crumbs"]) == EXPECTED_PAN_TAXON_CRUMBS
     assert float(taxa_by_id["9605"]["taxon_crumbs"]) == EXPECTED_ZERO_TAXON_CRUMBS
-    assert taxa_by_id["9605"]["n_zero_crumbs_contigs"] == "1"
+    assert taxa_by_id["9605"]["n_zero_crumbs_queries"] == "1"
     assert taxa_by_id["9606"]["rankpath"] == "no rank|superkingdom|genus|species"
     assert taxa_by_id["9605"]["rankpath"] == "no rank|superkingdom|genus"
 
@@ -440,7 +441,7 @@ def test_estimates_taxon_crumbs_and_bioboxes_profile(tmp_path: Path) -> None:
 
     qc = json.loads((tmp_path / "sample-1.crumbs.qc.json").read_text(encoding="utf-8"))
     assert qc["sample_id"] == "sample-1"
-    assert qc["n_contigs"] == EXPECTED_CONTIG_COUNT
+    assert qc["n_queries"] == EXPECTED_QUERY_COUNT
     assert qc["n_bioboxes_taxa"] == EXPECTED_BIOBOXES_TAXA
     assert qc["crumbs_score_column"] == "crumbs_p99"
 
@@ -528,6 +529,17 @@ def test_read_query_assignments_use_support_count_without_coverage_row(
                 "query_class": "overlap_merged_pair",
                 "support_record_count": 7,
             },
+            {
+                "sample": "sample-1",
+                "qseqid": "nvdReadQuery_sample-1_000001",
+                "qlen": 25,
+                "adjusted_taxid": 9606,
+                "adjusted_taxid_name": "Homo sapiens",
+                "adjusted_taxid_rank": "species",
+                "adjustment_method": "dominant",
+                "query_class": "single_read",
+                "support_record_count": 3,
+            },
         ],
     )
     coverage = write_tsv(
@@ -569,20 +581,32 @@ def test_read_query_assignments_use_support_count_without_coverage_row(
 
     run_estimator(tmp_path, blast, coverage, taxonomy)
 
-    contigs = read_tsv(tmp_path / "sample-1.crumbs.contigs.tsv")
+    queries = read_tsv(tmp_path / "sample-1.crumbs.queries.tsv")
     read_query = next(
-        row for row in contigs if row["qseqid"] == "nvdMergeReadQuery_sample-1_000001"
+        row for row in queries if row["qseqid"] == "nvdMergeReadQuery_sample-1_000001"
     )
-    assert read_query["contig_length"] == "50"
-    assert read_query["covered_bases_1x"] == "0"
-    assert read_query["breadth_1x"] == "0.0"
-    assert read_query["raw_aligned_bases"] == "7.0"
-    assert read_query["crumbs_score"] == "7.0"
-    assert read_query["winsorization_percentile"] == "read_query_support"
+    assert read_query["query_length"] == "50"
+    assert read_query["covered_bases_1x"] == "50"
+    assert read_query["breadth_1x"] == "1.0"
+    assert read_query["mean_depth_full"] == "14.0"
+    assert read_query["raw_aligned_bases"] == "700.0"
+    assert read_query["crumbs_score"] == "700.0"
+    assert read_query["winsorization_percentile"] == "read_query_constant_depth"
+
+    single_query = next(
+        row for row in queries if row["qseqid"] == "nvdReadQuery_sample-1_000001"
+    )
+    assert single_query["covered_bases_1x"] == "25"
+    assert single_query["breadth_1x"] == "1.0"
+    assert single_query["mean_depth_full"] == "3.0"
+    assert single_query["raw_aligned_bases"] == "75.0"
+    assert single_query["crumbs_score"] == "75.0"
 
     [taxon] = read_tsv(tmp_path / "sample-1.crumbs.taxa.tsv")
-    assert taxon["n_contigs"] == "2"
-    assert float(taxon["total_crumbs_score"]) == 107.0
+    assert taxon["n_queries"] == "3"
+    assert float(taxon["total_crumbs_score"]) == EXPECTED_READ_QUERY_TOTAL_CRUMBS
+    assert taxon["median_query_breadth_1x"] == "1.0"
+    assert taxon["fraction_crumbs_from_low_breadth_queries"] == "0.0"
 
 
 def test_conflicting_repeated_blast_assignments_fail_loudly(
@@ -612,7 +636,7 @@ def test_conflicting_repeated_blast_assignments_fail_loudly(
 
     with pytest.raises(
         CrumbsProfileError,
-        match="conflicting assignments for contigs: contig-a",
+        match="conflicting assignments for queries: contig-a",
     ):
         run_estimator(tmp_path, blast, coverage, taxonomy)
 
@@ -702,10 +726,10 @@ def test_profile_assignment_uses_strongest_blast_row_when_tasks_disagree(
 
     run_estimator(tmp_path, blast, coverage, taxonomy)
 
-    [contig] = read_tsv(tmp_path / "sample-1.crumbs.contigs.tsv")
-    assert contig["adjusted_taxid"] == "10258"
-    assert contig["adjusted_taxid_name"] == "Orf virus"
-    assert contig["adjustment_method"] == "lca"
+    [query] = read_tsv(tmp_path / "sample-1.crumbs.queries.tsv")
+    assert query["adjusted_taxid"] == "10258"
+    assert query["adjusted_taxid_name"] == "Orf virus"
+    assert query["adjustment_method"] == "lca"
 
 
 def test_equally_strong_conflicting_profile_assignments_fail_loudly(
@@ -770,7 +794,7 @@ def test_equally_strong_conflicting_profile_assignments_fail_loudly(
 
     with pytest.raises(
         CrumbsProfileError,
-        match="conflicting assignments for contigs: contig-a",
+        match="conflicting assignments for queries: contig-a",
     ):
         run_estimator(tmp_path, blast, coverage, taxonomy)
 
@@ -1089,12 +1113,12 @@ def test_all_zero_crumbs_sample_keeps_sidecars_without_bioboxes_taxa(
 def test_taxon_table_obeys_independent_crumbs_formula(
     rows: list[tuple[str, int, float]],
 ) -> None:
-    contigs = pl.DataFrame(
+    queries = pl.DataFrame(
         [
-            contig_evidence_row(
+            query_evidence_row(
                 qseqid=f"contig-{index}",
                 taxon_id=taxon_id,
-                contig_length=contig_length,
+                query_length=contig_length,
                 crumbs_score=crumbs_score,
             )
             for index, (taxon_id, contig_length, crumbs_score) in enumerate(rows)
@@ -1104,7 +1128,7 @@ def test_taxon_table_obeys_independent_crumbs_formula(
 
     taxa = build_taxon_table(
         sample_id="sample-1",
-        contigs=contigs,
+        queries=queries,
         profile_taxonomy=taxonomy,
     )
 
@@ -1161,26 +1185,26 @@ def test_taxon_percentage_is_invariant_to_same_depth_fragmentation(
     taxon_a_lengths: list[int],
     taxon_b_length: int,
 ) -> None:
-    contig_rows = [
-        contig_evidence_row(
+    query_rows = [
+        query_evidence_row(
             qseqid=f"tax-a-contig-{index}",
             taxon_id="tax-a",
-            contig_length=contig_length,
+            query_length=contig_length,
             crumbs_score=depth_a * contig_length,
         )
         for index, contig_length in enumerate(taxon_a_lengths)
     ]
-    contig_rows.append(
-        contig_evidence_row(
+    query_rows.append(
+        query_evidence_row(
             qseqid="tax-b-contig-0",
             taxon_id="tax-b",
-            contig_length=taxon_b_length,
+            query_length=taxon_b_length,
             crumbs_score=depth_b * taxon_b_length,
         ),
     )
     taxa = build_taxon_table(
         sample_id="sample-1",
-        contigs=pl.DataFrame(contig_rows),
+        queries=pl.DataFrame(query_rows),
         profile_taxonomy=taxon_metadata({"tax-a", "tax-b"}),
     )
 

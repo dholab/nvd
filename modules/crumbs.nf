@@ -68,7 +68,7 @@ process ESTIMATE_CRUMBS_PROFILE {
     tuple val(sample_id), path(blast_tsv), path(coverage_tsv), path(profile_taxonomy_tsv)
 
     output:
-    tuple val(sample_id), path("${sample_id}.crumbs.contigs.tsv"), emit: contigs
+    tuple val(sample_id), path("${sample_id}.crumbs.queries.tsv"), emit: queries
     tuple val(sample_id), path("${sample_id}.crumbs.taxa.tsv"), emit: taxa
     tuple val(sample_id), path("${sample_id}.crumbs.bioboxes.profile.tsv"), emit: bioboxes_profile
     tuple val(sample_id), path("${sample_id}.crumbs.qc.json"), emit: qc
