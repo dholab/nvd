@@ -332,6 +332,27 @@ def assert_long_read_assembly_outputs(
         )
 
 
+def assert_read_profiles_respect_length_filter(results_root: Path) -> None:
+    """Assert final read profiles satisfy their declared minimum length."""
+    profile_dir = results_root / "02_preprocessed_reads"
+    profiles = sorted(profile_dir.glob("*.fastx_profile.json"))
+    assert profiles, f"No final read profiles found in {profile_dir}"
+
+    for path in profiles:
+        profile = json.loads(path.read_text(encoding="utf-8"))
+        thresholds = {
+            threshold["name"]: float(threshold["value"])
+            for threshold in profile["thresholds"]
+        }
+        minimum = profile["length"]["min"]
+        expected_minimum = thresholds["min_read_length"]
+        assert minimum is not None, f"{path} does not report a minimum read length"
+        assert float(minimum) >= expected_minimum, (
+            f"{path} reports minimum read length {minimum}, below the declared "
+            f"filter threshold {expected_minimum}"
+        )
+
+
 def make_e2e_run_dir() -> Path:
     output_root = Path(os.environ.get("NVD_E2E_OUTPUT_DIR", E2E_OUTPUT_DIR))
     run_id = datetime.now(tz=UTC).strftime("%Y%m%dT%H%M%SZ") + f"-pid{os.getpid()}"
@@ -456,6 +477,8 @@ def run_nextflow() -> tuple[subprocess.CompletedProcess[str], Path]:
         str(results_dir),
         "--work_dir",
         str(work_dir),
+        "--filter_reads",
+        "true",
     ]
     if experimental:
         command.extend(
@@ -510,6 +533,7 @@ def test_mini_sra_viral_pipeline_completes() -> None:
     )
 
     results_root = run_dir / "results" / "nvd"
+    assert_read_profiles_respect_length_filter(results_root)
     final_dir = results_root / "07_merged_blast_results" / "final"
     final_blast_files = sorted(final_dir.glob("*_blast.final.tsv"))
 
