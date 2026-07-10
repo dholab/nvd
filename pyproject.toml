@@ -90,9 +90,15 @@ rust-script = ">=0.36.0"
 [tool.pixi.pypi-dependencies]
 nvd = { path = ".", editable = true }
 
+[tool.pixi.feature.dev.dependencies]
+python = "3.12.*"
+
+[tool.pixi.environments]
+dev = { features = ["dev"], solve-group = "default" }
+
 [tool.pixi.tasks]
-e2e-test = "NVD_E2E_SHOW_PROGRESS=1 uv run pytest tests/test_nextflow_integration.py -m 'slow and network' -q -s"
-e2e-test-ci = "uv run pytest tests/test_nextflow_integration.py -m 'slow and network' -q"
+e2e-test = "NVD_E2E_SHOW_PROGRESS=1 pytest tests/test_nextflow_integration.py -m 'slow and network' -q -s"
+e2e-test-ci = "pytest tests/test_nextflow_integration.py -m 'slow and network' -q"
 
 [dependency-groups]
 dev = [

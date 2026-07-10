@@ -54,22 +54,21 @@ jobs:
           distribution: "temurin"
           java-version: "17"
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v2
-
-      - name: Set up Pixi environment
+      - name: Set up Pixi dev environment
         uses: prefix-dev/setup-pixi@v0.9.6
         with:
           pixi-version: v0.68.0
           cache: true
+          environments: dev
+          locked: true
 
       - name: Check Pixi-provided Nextflow
-        run: pixi run nextflow -version
+        run: pixi run -e dev nextflow -version
 
       - name: Run mini SRA integration test
         env:
           NVD_INTEGRATION_PROFILE: test
-        run: pixi run e2e-test-ci
+        run: pixi run -e dev e2e-test-ci
 
       - name: Upload integration diagnostics
         if: failure()
