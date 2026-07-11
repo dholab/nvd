@@ -269,18 +269,17 @@ def write_empty_unmapped_outputs(config: MapbackConfig) -> None:
 
 def write_unmapped_counts(
     config: MapbackConfig,
-    inputs: Sequence[FastqMappingInput],
+    _inputs: Sequence[FastqMappingInput],
 ) -> None:
     header = "sample_id\tplatform\tquery_class\tunmapped_reads\n"
-    for input_ in inputs:
+    for query_class in QUERY_CLASSES:
         unmapped_reads = count_fastq_records(
-            unmapped_fastq_path(config.sample_id, input_.query_class),
+            unmapped_fastq_path(config.sample_id, query_class),
         )
         row = (
-            f"{config.sample_id}\t{config.platform}\t{input_.query_class}"
-            f"\t{unmapped_reads}\n"
+            f"{config.sample_id}\t{config.platform}\t{query_class}\t{unmapped_reads}\n"
         )
-        unmapped_counts_path(config.sample_id, input_.query_class).write_text(
+        unmapped_counts_path(config.sample_id, query_class).write_text(
             header + row,
             encoding="utf-8",
         )

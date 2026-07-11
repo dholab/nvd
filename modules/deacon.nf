@@ -91,24 +91,24 @@ process DEACON_DEPLETE {
      * between filtering and compression automatically.
      */
 
-    tag "${sample_id}"
+    tag "${meta.id}, ${meta.query_class}"
     label "medium"
 
     errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
     maxRetries 2
 
     input:
-    tuple val(sample_id), val(platform), val(read_structure), val(query_class), path(reads), path(index)
+    tuple val(meta), path(reads), path(index)
 
     output:
-    tuple val(sample_id), val(platform), val(read_structure), val(query_class), path("${sample_id}.${query_class}.depleted.fastq.gz"), emit: reads
-    tuple val(sample_id), path("${sample_id}.deacon.json"), emit: stats
+    tuple val(meta), path("${meta.id}.${meta.query_class}.depleted.fastq.gz"), emit: reads
+    tuple val(meta), path("${meta.id}.${meta.query_class}.deacon.json"), emit: stats
 
     script:
-    def input_stream = read_structure == "interleaved"
+    def input_stream = meta.read_structure == "interleaved"
         ? "gzip -dc ${reads} | "
         : ""
-    def filter_inputs = read_structure == "interleaved" ? "- -" : "${reads}"
+    def filter_inputs = meta.read_structure == "interleaved" ? "- -" : "${reads}"
     """
     set -euo pipefail
 
@@ -117,8 +117,8 @@ process DEACON_DEPLETE {
         --threads ${task.cpus} \
         --abs-threshold ${params.host_abs_threshold} \
         --rel-threshold ${params.host_rel_threshold} \
-        --summary ${sample_id}.deacon.json \
-        --output ${sample_id}.${query_class}.depleted.fastq.gz \
+        --summary ${meta.id}.${meta.query_class}.deacon.json \
+        --output ${meta.id}.${meta.query_class}.depleted.fastq.gz \
         ${index} \
         ${filter_inputs}
     """

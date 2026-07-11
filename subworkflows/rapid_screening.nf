@@ -3,7 +3,7 @@ include { CONCAT_READS_AS_FASTA } from "../modules/seqkit"
 
 workflow RAPID_SCREENING {
     take:
-    ch_preprocessed_read_shards  // tuple(meta, reads, profile_json, length_histogram); meta includes id, platform, read_structure, query_class, sequence_count
+    ch_profiled_batches_by_sample  // tuple(sample_meta, batches); each batch contains meta and reads
 
     main:
     def is_http_url = { value -> value && value ==~ /(?i)^https?:\/\/.+/ }
@@ -47,20 +47,18 @@ workflow RAPID_SCREENING {
 
     // Avoid scheduling sourmash for read files that cannot produce a query
     // sketch. Use cached profiler counts rather than scanning FASTQ/FASTA here.
-    ch_grouped_read_shards = ch_preprocessed_read_shards
-        .map { meta, reads, _profile_json, _length_histogram ->
-            tuple(meta.id, meta.platform, meta.read_structure, [meta: meta, reads: reads])
-        }
-        .groupTuple(by: [0, 1, 2])
-        .map { sample_id, platform, read_structure, rows ->
-            def count = rows.collect { row -> row.meta.sequence_count }.sum()
-            def reads = rows.collect { row -> row.reads }
-            tuple([id: sample_id, platform: platform, read_structure: read_structure, sequence_count: count], reads)
-        }
+    ch_sample_reads = ch_profiled_batches_by_sample
         .filter { meta, _reads -> meta.sequence_count > 0 }
-        .map { meta, reads -> tuple(meta.id, meta.platform, meta.read_structure, reads) }
+        .map { meta, batches ->
+            tuple(
+                meta.id,
+                meta.platform,
+                meta.read_structure,
+                batches.collect { batch -> batch.reads },
+            )
+        }
 
-    CONCAT_READS_AS_FASTA(ch_grouped_read_shards)
+    CONCAT_READS_AS_FASTA(ch_sample_reads)
     SOURMASH_SKETCH_QUERY_METAGENOME(CONCAT_READS_AS_FASTA.out)
 
     ch_gather_inputs = SOURMASH_SKETCH_QUERY_METAGENOME.out.query_sketches

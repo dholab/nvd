@@ -55,11 +55,14 @@ params.filter_low_complexity_reads = {str(filter_low_complexity_reads).lower()}
 params.min_read_entropy = 0.9
 params.min_read_length = {min_read_length}
 params.max_read_length = null
+params.min_read_quality_illumina = 20
+params.min_read_quality_nanopore = 20
 
 include {{ FILTER_READS }} from '{BBMAP_MODULE}'
 
 workflow {{
-    FILTER_READS(Channel.of(tuple('sample_A', 'illumina', '{read_structure}', 'single_read', file('{reads}'), 20)))
+    meta = [id: 'sample_A', platform: 'illumina', read_structure: '{read_structure}', query_class: 'single_read']
+    FILTER_READS(Channel.of(tuple(meta, file('{reads}'))))
 }}
 """,
         encoding="utf-8",
@@ -103,7 +106,8 @@ nextflow.enable.dsl = 2
 include {{ DEDUP_WITH_CLUMPIFY }} from '{BBMAP_MODULE}'
 
 workflow {{
-    DEDUP_WITH_CLUMPIFY(Channel.of(tuple('sample_A', 'illumina', 'single', 'single_read', file('{reads}'))))
+    meta = [id: 'sample_A', platform: 'illumina', read_structure: 'single', query_class: 'single_read']
+    DEDUP_WITH_CLUMPIFY(Channel.of(tuple(meta, file('{reads}'))))
 }}
 """,
         encoding="utf-8",
@@ -171,7 +175,8 @@ nextflow.enable.dsl = 2
 include {{ TRIM_ADAPTERS }} from '{BBMAP_MODULE}'
 
 workflow {{
-    TRIM_ADAPTERS(Channel.of(tuple('sample_A', 'illumina', '{read_structure}', 'single_read', file('{reads}'))))
+    meta = [id: 'sample_A', platform: 'illumina', read_structure: '{read_structure}', query_class: 'single_read']
+    TRIM_ADAPTERS(Channel.of(tuple(meta, file('{reads}'))))
 }}
 """,
         encoding="utf-8",

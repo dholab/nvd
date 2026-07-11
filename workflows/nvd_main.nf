@@ -68,7 +68,7 @@ workflow NVD_MAIN {
   ch_sourmash_tax_reports = channel.empty()
 
   if (params.experimental == true) {
-    rapid_screening = RAPID_SCREENING(PREPROCESS_READS.out.profiled_read_shards)
+    rapid_screening = RAPID_SCREENING(PREPROCESS_READS.out.profiled_batches_by_sample)
     SAMPLE_SIMILARITY_QC(rapid_screening.query_sketches)
     ch_sourmash_gather_csv = rapid_screening.gather_csv
     ch_sourmash_lineages = rapid_screening.lineages
@@ -77,22 +77,15 @@ workflow NVD_MAIN {
 
   // Filter out samples with fewer than 100 reads before assembly; they are
   // insufficient for de novo assembly and would otherwise fan out downstream.
-  ch_reads_for_assembly = PREPROCESS_READS.out.profiled_reads
-    .filter { _meta, _reads, _profile_json, _length_histogram -> !params.skip_assembly }
+  ch_short_read_batches_by_sample_for_assembly = PREPROCESS_READS.out.profiled_batches_by_sample
+    .filter { meta, _batches -> !params.skip_assembly && meta.platform == "illumina" }
 
-  ch_reads_by_platform = ch_reads_for_assembly.branch { meta, _reads, _profile_json, _length_histogram ->
-    illumina: meta.platform == "illumina"
-    long_read: true
-  }
-
-  ch_short_read_shards_for_assembly = PREPROCESS_READS.out.profiled_read_shards
-    .filter { meta, _reads, _profile_json, _length_histogram -> !params.skip_assembly && meta.platform == "illumina" }
-
-  ch_long_reads_for_assembly = ch_reads_by_platform.long_read
+  ch_long_reads_for_assembly = PREPROCESS_READS.out.profiled_read_batches
+    .filter { meta, _reads, _profile_json, _length_histogram -> !params.skip_assembly && meta.platform != "illumina" }
     .filter { meta, _reads, _profile_json, _length_histogram -> meta.sequence_count >= 100 }
     .map { meta, reads, _profile_json, _length_histogram -> tuple(meta.id, meta.platform, meta.read_structure, file(reads)) }
 
-  SHORT_READ_DENOVO_ASSEMBLY(ch_short_read_shards_for_assembly)
+  SHORT_READ_DENOVO_ASSEMBLY(ch_short_read_batches_by_sample_for_assembly)
   LONG_READ_DENOVO_ENSEMBLY(ch_long_reads_for_assembly)
 
   ch_assembled_contigs = SHORT_READ_DENOVO_ASSEMBLY.out.contigs

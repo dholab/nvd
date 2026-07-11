@@ -100,11 +100,9 @@ params.host_rel_threshold = 0.0
 include {{ DEACON_DEPLETE }} from '{DEACON_MODULE}'
 
 workflow {{
+    meta = [id: 'sample_A', platform: 'illumina', read_structure: '{read_structure}', query_class: 'single_read']
     DEACON_DEPLETE(Channel.of(tuple(
-        'sample_A',
-        'illumina',
-        '{read_structure}',
-        'single_read',
+        meta,
         file('{reads}'),
         file('{index}'),
     )))
