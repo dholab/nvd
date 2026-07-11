@@ -304,7 +304,9 @@ def assert_long_read_assembly_outputs(
     selected_sra_runs: list[dict[str, Any]],
 ) -> None:
     assembly_root = results_root / "03_assembled_contigs"
-    eligibility_report = assembly_root / "long_read_assembly_eligibility.tsv"
+    eligibility_report = (
+        assembly_root / "decisions" / "long_read_assembly_eligibility.tsv"
+    )
     assert eligibility_report.is_file(), (
         f"Missing long-read assembly eligibility report: {eligibility_report}"
     )
@@ -334,7 +336,7 @@ def assert_long_read_assembly_outputs(
 
 def assert_read_profiles_respect_length_filter(results_root: Path) -> None:
     """Assert final read profiles satisfy their declared minimum length."""
-    profile_dir = results_root / "02_preprocessed_reads"
+    profile_dir = results_root / "02_preprocessed_reads" / "profiles"
     profiles = sorted(profile_dir.glob("*.fastx_profile.json"))
     assert profiles, f"No final read profiles found in {profile_dir}"
 
@@ -358,26 +360,39 @@ def assert_target_enrichment_outputs(
     expected_sample_ids: set[str],
 ) -> None:
     """Assert per-sample and experiment-wide enrichment results are published."""
-    enriched_reads_dir = results_root / "01_target_enriched_reads"
+    enriched_reads_dir = results_root / "01_target_enrichment" / "reads"
     for sample_id in expected_sample_ids:
-        for suffix in ("target_enriched.fastq.gz", "deacon_filter.json"):
-            artifact = enriched_reads_dir / f"{sample_id}.{suffix}"
-            assert artifact.is_file(), f"Missing target enrichment result: {artifact}"
-            assert artifact.stat().st_size > 0, (
-                f"Empty target enrichment result: {artifact}"
-            )
+        enriched_reads = enriched_reads_dir / f"{sample_id}.target_enriched.fastq.gz"
+        assert enriched_reads.is_file(), (
+            f"Missing target enrichment result: {enriched_reads}"
+        )
+        assert enriched_reads.stat().st_size > 0, (
+            f"Empty target enrichment result: {enriched_reads}"
+        )
 
-    report_dir = results_root / "08_experiment_summary" / "target_enrichment"
-    expected_reports = (
-        "target_enrichment_summary.tsv",
+    summary_dir = results_root / "01_target_enrichment" / "summaries"
+    for sample_id in expected_sample_ids:
+        summary = summary_dir / f"{sample_id}.deacon_filter.json"
+        assert summary.is_file(), f"Missing target enrichment summary: {summary}"
+        assert summary.stat().st_size > 0, f"Empty target enrichment summary: {summary}"
+    experiment_summary = summary_dir / "target_enrichment_summary.tsv"
+    assert experiment_summary.is_file(), (
+        f"Missing target enrichment summary: {experiment_summary}"
+    )
+    assert experiment_summary.stat().st_size > 0, (
+        f"Empty target enrichment summary: {experiment_summary}"
+    )
+
+    plot_dir = results_root / "01_target_enrichment" / "plots"
+    expected_plots = (
         "target_enriched_bases_ranked.html",
         "target_retained_vs_filtered_stacked.html",
         "target_reads_vs_bases_scatter.html",
     )
-    for filename in expected_reports:
-        report = report_dir / filename
-        assert report.is_file(), f"Missing target enrichment report: {report}"
-        assert report.stat().st_size > 0, f"Empty target enrichment report: {report}"
+    for filename in expected_plots:
+        plot = plot_dir / filename
+        assert plot.is_file(), f"Missing target enrichment plot: {plot}"
+        assert plot.stat().st_size > 0, f"Empty target enrichment plot: {plot}"
 
 
 def make_e2e_run_dir() -> Path:
@@ -566,11 +581,12 @@ def test_mini_sra_viral_pipeline_completes() -> None:
     }
     assert_target_enrichment_outputs(results_root, expected_sample_ids)
     assert_read_profiles_respect_length_filter(results_root)
-    final_dir = results_root / "07_merged_blast_results" / "final"
+    merged_blast_dir = results_root / "07_merged_blast_results"
+    final_dir = merged_blast_dir / "final"
     final_blast_files = sorted(final_dir.glob("*_blast.final.tsv"))
 
     experiment_blast = (
-        results_root / "08_experiment_summary" / "experiment_blast_results.tsv"
+        results_root / "12_experiment_summary" / "experiment_blast_results.tsv"
     )
 
     if skip_assembly:
@@ -654,15 +670,30 @@ def test_mini_sra_viral_pipeline_completes() -> None:
         if not skip_assembly:
             assert_long_read_assembly_outputs(results_root, selected_sra_runs)
 
-        rapid_screening_root = results_root / "08_experiment_summary" / "rapid_screening"
-        sourmash_root = rapid_screening_root / "engines" / "sourmash"
-        ref_dir = sourmash_root / "reference_profiling" / "reference"
-        gather_dir = sourmash_root / "reference_profiling" / "gather"
-        merged_taxburst_dir = (
-            sourmash_root / "reference_profiling" / "reports" / "taxburst"
+        big_tables_dir = results_root / "11_big_tables"
+        for filename in ("query_big_table.tsv", "taxon_big_table.tsv"):
+            featured_table = results_root / filename
+            grouped_table = big_tables_dir / filename
+            assert featured_table.is_file(), (
+                f"Missing featured Big Table: {featured_table}"
+            )
+            assert grouped_table.is_file(), (
+                f"Missing grouped Big Table: {grouped_table}"
+            )
+            assert featured_table.read_bytes() == grouped_table.read_bytes()
+
+        sourmash_root = (
+            results_root
+            / "08_metagenomic_profiles"
+            / "rapid_screening"
+            / "engines"
+            / "sourmash"
         )
+        ref_dir = sourmash_root / "reference"
+        gather_dir = sourmash_root / "gather"
+        merged_taxburst_dir = sourmash_root / "plots" / "taxburst"
         taxburst_dir = merged_taxburst_dir / "per_sample"
-        sankey_dir = sourmash_root / "reference_profiling" / "reports" / "sankey"
+        sankey_dir = sourmash_root / "plots" / "sankey"
 
         ref_sketches = sorted(ref_dir.glob("sourmash_reference.k31.scaled50.sig.zip"))
         assert ref_sketches, f"Missing sourmash reference sketch in {ref_dir}"
@@ -705,7 +736,7 @@ def test_mini_sra_viral_pipeline_completes() -> None:
                 f"Empty sourmash Sankey report: {sankey_html}"
             )
 
-        eval_root = rapid_screening_root / "eval"
+        eval_root = results_root / "10_rapid_screening_eval"
         for eval_artifact in (
             eval_root / "database" / "rapid_screening_eval.duckdb",
             eval_root / "exports" / "screening_signal_followup_by_sample_rank.tsv",

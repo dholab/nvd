@@ -124,9 +124,9 @@ workflow {{
 
     diagnostics = f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}"
     assert completed.returncode == 0, diagnostics
-    published = results / "nvd" / "01_target_enriched_reads"
-    assert (published / "sample_A.target_enriched.fastq.gz").is_file()
-    assert (published / "sample_A.deacon_filter.json").is_file()
+    target_results = results / "nvd" / "01_target_enrichment"
+    assert (target_results / "reads" / "sample_A.target_enriched.fastq.gz").is_file()
+    assert (target_results / "summaries" / "sample_A.deacon_filter.json").is_file()
 
 
 def test_zero_target_reads_stop_before_preprocessing(tmp_path: Path) -> None:
