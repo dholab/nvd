@@ -11,7 +11,7 @@ process SELECT_BLAST_QUERIES {
   tuple val(sample_id), val(platform), val(read_structure), path(fasta), path(lookup)
 
   output:
-  tuple val(sample_id), val(platform), path("*.blast_queries.fasta", optional: true), path(lookup), emit: query_fastas
+  tuple val(sample_id), val(platform), path("*.blast_queries.fasta"), path(lookup), emit: query_fastas, optional: true
 
   script:
   """
@@ -36,7 +36,7 @@ process NORMALIZE_READ_BLAST_QUERIES {
   tuple val(sample_id), val(platform), val(query_class), path(reads)
 
   output:
-  tuple val(sample_id), val(platform), val(query_class), path("*.blast_queries.fasta", optional: true), path("*.query_sequences.sqlite", optional: true), emit: queries
+  tuple val(sample_id), val(platform), val(query_class), path("*.blast_queries.fasta"), path("*.query_sequences.sqlite"), emit: queries, optional: true
 
   script:
   def producer = query_class == "overlap_merged_pair" ? "bbmerge" : "source_read"
