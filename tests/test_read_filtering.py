@@ -53,11 +53,14 @@ params.filter_low_complexity_reads = {str(filter_low_complexity_reads).lower()}
 params.min_read_entropy = 0.9
 params.min_read_length = {min_read_length}
 params.max_read_length = null
+params.min_read_quality_illumina = 20
+params.min_read_quality_nanopore = 20
 
 include {{ FILTER_READS }} from '{BBMAP_MODULE}'
 
 workflow {{
-    FILTER_READS(Channel.of(tuple('sample_A', 'illumina', '{read_structure}', 'single_read', file('{reads}'), 20)))
+    meta = [id: 'sample_A', platform: 'illumina', read_structure: '{read_structure}', query_class: 'single_read']
+    FILTER_READS(Channel.of(tuple(meta, file('{reads}'))))
 }}
 """,
         encoding="utf-8",

@@ -218,6 +218,35 @@ def test_unmapped_counts_are_written_per_external_query_class(
         )
 
 
+def test_unmapped_counts_include_absent_query_classes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    cfg = config(tmp_path)
+    write_empty_unmapped_outputs(cfg)
+    write_fastq_gz(Path("sample1.single_read.mapback_unmapped.fastq.gz"), 1)
+
+    write_unmapped_counts(
+        cfg,
+        [
+            FastqMappingInput(
+                query_class="single_read",
+                read_group_id="single_reads",
+                fastq=Path("single.fastq.gz"),
+            ),
+        ],
+    )
+
+    assert Path(
+        "sample1.overlap_merged_pair.mapback_unmapped_counts.tsv",
+    ).read_text(encoding="utf-8") == (
+        "sample_id\tplatform\tquery_class\tunmapped_reads\n"
+        "sample1\tillumina\toverlap_merged_pair\t0\n"
+    )
+    assert Path("sample1.single_read.mapback_unmapped_counts.tsv").exists()
+
+
 def test_threads_per_mapper_leaves_capacity_for_the_shared_bam_writer() -> None:
     assert (
         threads_per_mapper(total_threads=4, input_count=1) == ONE_INPUT_MAPPER_THREADS

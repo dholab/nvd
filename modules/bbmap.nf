@@ -62,7 +62,7 @@ process DEDUP_WITH_CLUMPIFY {
 
     /* Deduplicate reads using clumpify */
 
-	tag "${sample_id}"
+	tag "${meta.id}, ${meta.query_class}"
 	label "high"
 
 	errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
@@ -71,17 +71,17 @@ process DEDUP_WITH_CLUMPIFY {
 	cpus 4
 
 	input:
-	tuple val(sample_id), val(platform), val(read_structure), val(query_class), path(reads)
+	tuple val(meta), path(reads)
 
 	output:
-	tuple val(sample_id), val(platform), val(read_structure), val(query_class), path("${sample_id}.${query_class}.dedup.fastq.gz")
+	tuple val(meta), path("${meta.id}.${meta.query_class}.dedup.fastq.gz")
 
 	script:
-	def int_flag = read_structure == "interleaved" ? "int=t" : ""
+	def int_flag = meta.read_structure == "interleaved" ? "int=t" : ""
 	"""
 	clumpify.sh \\
 	in=${reads} \\
-	out="${sample_id}.${query_class}.dedup.fastq.gz" \\
+	out="${meta.id}.${meta.query_class}.dedup.fastq.gz" \\
 	dedupe=2 \\
 	reorder=p \\
 	subs=2 \\
@@ -95,7 +95,7 @@ process TRIM_ADAPTERS {
 
 	/* Trim Illumina adapters using bbduk */
 
-	tag "${sample_id}"
+	tag "${meta.id}, ${meta.query_class}"
 	label "high"
 
 	errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
@@ -104,17 +104,17 @@ process TRIM_ADAPTERS {
 	cpus 4
 
 	input:
-	tuple val(sample_id), val(platform), val(read_structure), val(query_class), path(reads)
+	tuple val(meta), path(reads)
 
 	output:
-	tuple val(sample_id), val(platform), val(read_structure), val(query_class), path("${sample_id}.${query_class}.trimmed.fastq.gz")
+	tuple val(meta), path("${meta.id}.${meta.query_class}.trimmed.fastq.gz")
 
 	script:
-	def pair_trim_args = read_structure == "interleaved" ? "tpe tbo" : ""
+	def pair_trim_args = meta.read_structure == "interleaved" ? "tpe tbo" : ""
 	"""
 	bbduk.sh \\
 		in=${reads} \\
-		out=${sample_id}.${query_class}.trimmed.fastq.gz \\
+		out=${meta.id}.${meta.query_class}.trimmed.fastq.gz \\
 		ref=adapters \\
 		ktrim=r \\
 		k=23 \\
@@ -130,7 +130,7 @@ process FILTER_READS {
 
 	/* Independently filter reads by quality/length and normalized k-mer entropy */
 
-	tag "${sample_id}"
+	tag "${meta.id}, ${meta.query_class}"
 	label "high"
 
 	errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
@@ -139,26 +139,29 @@ process FILTER_READS {
 	cpus 4
 
 	input:
-	tuple val(sample_id), val(platform), val(read_structure), val(query_class), path(reads), val(min_quality)
+	tuple val(meta), path(reads)
 
 	output:
-	tuple val(sample_id), val(platform), val(read_structure), val(query_class), path("${sample_id}.${query_class}.filtered.fastq.gz")
+	tuple val(meta), path("${meta.id}.${meta.query_class}.filtered.fastq.gz")
 
 	script:
 	def max_len_arg = params.max_read_length ? "maxlength=${params.max_read_length}" : ""
+	def min_quality = meta.platform == "illumina"
+		? params.min_read_quality_illumina
+		: params.min_read_quality_nanopore
 	def quality_args = params.filter_reads
 		? "minavgquality=${min_quality} minlength=${params.min_read_length} ${max_len_arg}"
 		: "minavgquality=0 minlength=0"
 	def entropy_args = params.filter_low_complexity_reads
 		? "entropy=${params.min_read_entropy} entropywindow=50 entropyk=5"
 		: ""
-	def pair_args = read_structure == "interleaved"
+	def pair_args = meta.read_structure == "interleaved"
 		? "int=t removeifeitherbad=t"
 		: "int=f"
 	"""
 	bbduk.sh \\
 		in=${reads} \\
-		out=${sample_id}.${query_class}.filtered.fastq.gz \\
+		out=${meta.id}.${meta.query_class}.filtered.fastq.gz \\
 		${pair_args} \\
 		${quality_args} \\
 		${entropy_args} \\
@@ -172,7 +175,7 @@ process REPAIR_PAIRS {
 
 	/* Repair interleaved paired-end reads, discarding orphans */
 
-	tag "${sample_id}"
+	tag "${meta.id}, ${meta.query_class}"
 	label "high"
 
 	errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
@@ -181,17 +184,17 @@ process REPAIR_PAIRS {
 	cpus 4
 
 	input:
-	tuple val(sample_id), val(platform), val(read_structure), val(query_class), path(reads)
+	tuple val(meta), path(reads)
 
 	output:
-	tuple val(sample_id), val(platform), val(read_structure), val(query_class), path("${sample_id}.${query_class}.repaired.fastq.gz")
+	tuple val(meta), path("${meta.id}.${meta.query_class}.repaired.fastq.gz")
 
 	script:
 	"""
 	repair.sh \\
 		in=${reads} \\
-		out=${sample_id}.${query_class}.repaired.fastq.gz \\
-		outs=${sample_id}.${query_class}.singletons.fastq.gz \\
+		out=${meta.id}.${meta.query_class}.repaired.fastq.gz \\
+		outs=${meta.id}.${meta.query_class}.singletons.fastq.gz \\
 		interleaved=t \\
 		repair=t \\
 		threads=${task.cpus} \\
