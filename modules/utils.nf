@@ -1,4 +1,33 @@
 /*
+ * Record the invocation and source identity that produced the result tree.
+ */
+process RECORD_RUN_METADATA {
+
+  label "low"
+  cache false
+
+  input:
+  val command
+  val nvd_version
+  val source_revision
+  val source_dirty
+
+  output:
+  path "run_command.sh", emit: command_file
+  path "nvd_version.txt", emit: version_file
+
+  script:
+  def encoded_command = command.bytes.encodeBase64().toString()
+  """
+  write_run_metadata.py \
+      --command-base64 '${encoded_command}' \
+      --version '${nvd_version}' \
+      --revision '${source_revision}' \
+      --dirty '${source_dirty}'
+  """
+}
+
+/*
  * Compute the deterministic run context without writing workflow state.
  */
 process COMPUTE_RUN_CONTEXT {
