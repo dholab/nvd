@@ -377,9 +377,9 @@ def test_rapid_screening_eval_wiring_and_publish_hierarchy() -> None:
             'path "rapid_screening_eval.html"',
         ),
         "conf/results.config": (
-            'rapid_screening = params.experiment_summary + "/rapid_screening"',
+            'rapid_screening = params.nvd_results + "/08_metagenomic_profiles/rapid_screening"',
             'sourmash_screening_engine = params.rapid_screening + "/engines/sourmash"',
-            'rapid_screening_eval = params.rapid_screening + "/eval"',
+            'rapid_screening_eval = params.nvd_results + "/10_rapid_screening_eval"',
             "path: { params.rapid_screening_eval }",
             'path: { params.rapid_screening_eval + "/reports" }',
         ),
