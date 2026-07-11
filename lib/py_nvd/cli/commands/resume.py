@@ -20,12 +20,14 @@ from py_nvd.cli.prompts import (
     confirm_with_timeout,
     is_interactive,
 )
+from py_nvd.cli.provenance import nextflow_environment
 from py_nvd.cli.utils import (
     RESUME_FILE,
     console,
     error,
     format_command_for_display,
     get_editor,
+    get_pipeline_root,
     info,
     warning,
 )
@@ -64,7 +66,11 @@ def _execute_command(command: str) -> None:
     """
     try:
         split_command = shlex.split(command)
-        result = subprocess.run(split_command, check=False)  # noqa: S603
+        result = subprocess.run(  # noqa: S603
+            split_command,
+            check=False,
+            env=nextflow_environment(get_pipeline_root()),
+        )
         sys.exit(result.returncode)
     except KeyboardInterrupt:
         console.print("\n[yellow]Pipeline interrupted by user[/yellow]")

@@ -15,6 +15,7 @@ from typing import Any
 
 import typer
 
+from py_nvd.cli.provenance import nextflow_environment
 from py_nvd.cli.utils import (
     DEFAULT_CONFIG,
     PANEL_ANALYSIS,
@@ -616,7 +617,8 @@ def run(
     # =========================================================================
 
     # Build command with pipeline params
-    cmd = params.to_nextflow_args(get_pipeline_root())
+    pipeline_root = get_pipeline_root()
+    cmd = params.to_nextflow_args(pipeline_root)
 
     # Add Nextflow-native options (not pipeline params)
     if effective_profile:
@@ -651,7 +653,11 @@ def run(
 
     # Execute nextflow
     try:
-        result = subprocess.run(cmd, check=False)  # noqa: S603
+        result = subprocess.run(  # noqa: S603
+            cmd,
+            check=False,
+            env=nextflow_environment(pipeline_root),
+        )
         sys.exit(result.returncode)
     except KeyboardInterrupt:
         console.print("\n[yellow]Pipeline interrupted by user[/yellow]")
