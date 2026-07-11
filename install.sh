@@ -1106,7 +1106,7 @@ main() {
 	print_header "Installation Complete"
 	echo
 	echo "  Next steps:"
-	echo "    1. Start a new shell (or run: source ~/.bashrc)"
+	echo "    1. Start a new shell (or follow the shell-specific activation instruction above)"
 	echo "    2. Run: nvd --help"
 	echo "    3. See documentation: https://github.com/dholab/nvd"
 	echo

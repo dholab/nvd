@@ -15,9 +15,12 @@ from py_nvd.cli.commands.setup import (
     CHTC_DEFAULT_TAXONOMY_DIR,
     _detect_shell,
     _generate_setup_conf,
+    _generate_shell_hook_block,
     _generate_wrapper_script,
     _guard_bash_completion_script,
+    _install_shell_hook,
     _is_oconnor_chtc,
+    _path_contains_directory,
     _validate_config_dir,
     setup_app,
 )
@@ -32,6 +35,43 @@ runner = CliRunner()
 def test_detect_shell_bash(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("SHELL", "/bin/bash")
     assert _detect_shell() == "bash"
+
+
+def test_shell_hook_block_bootstraps_wrapper_without_path() -> None:
+    block = _generate_shell_hook_block("zsh")
+
+    assert '$HOME/.local/bin/nvd" setup shell-hook --shell zsh' in block
+    assert "$(nvd setup shell-hook)" not in block
+
+
+def test_install_shell_hook_replaces_legacy_path_dependent_hook(
+    tmp_path: Path,
+) -> None:
+    rc_file = tmp_path / ".zshrc"
+    rc_file.write_text(
+        'export EDITOR=vim\n\n# NVD shell integration\neval "$(nvd setup shell-hook)"\n',
+    )
+
+    assert _install_shell_hook(rc_file, "zsh")
+
+    updated = rc_file.read_text()
+    assert "export EDITOR=vim" in updated
+    assert updated.count("# NVD shell integration") == 1
+    assert "$(nvd setup shell-hook)" not in updated
+    assert '$HOME/.local/bin/nvd" setup shell-hook --shell zsh' in updated
+
+
+def test_path_directory_check_uses_complete_path_entries(tmp_path: Path) -> None:
+    wrapper_dir = tmp_path / ".local" / "bin"
+
+    assert _path_contains_directory(
+        wrapper_dir,
+        f"/usr/bin:{wrapper_dir}:/bin",
+    )
+    assert not _path_contains_directory(
+        wrapper_dir,
+        f"/usr/bin:{wrapper_dir}-old:/bin",
+    )
 
 
 def test_is_oconnor_chtc_true_on_matching_host() -> None:

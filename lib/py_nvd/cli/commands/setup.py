@@ -422,7 +422,9 @@ def _guard_bash_completion_script(script: str) -> str:
     )
 
 
-SHELL_HOOK_MARKER = "nvd setup shell-hook"
+SHELL_HOOK_MARKER = "# NVD shell integration"
+LEGACY_SHELL_HOOK_LINE = 'eval "$(nvd setup shell-hook)"'
+WRAPPER_SHELL_PATH = "$HOME/.local/bin/nvd"
 
 
 def _get_rc_file(shell_type: str) -> Path:
@@ -437,28 +439,69 @@ def _is_hook_installed(rc_file: Path) -> bool:
     """Check if the shell hook is already installed in the RC file."""
     if not rc_file.exists():
         return False
-    return SHELL_HOOK_MARKER in rc_file.read_text()
+    content = rc_file.read_text()
+    return SHELL_HOOK_MARKER in content and WRAPPER_SHELL_PATH in content
 
 
-def _install_shell_hook(rc_file: Path) -> bool:
+def _has_legacy_shell_hook(rc_file: Path) -> bool:
+    """Check for the old shell hook that assumes nvd is already on PATH."""
+    return rc_file.exists() and LEGACY_SHELL_HOOK_LINE in rc_file.read_text()
+
+
+def _generate_shell_hook_block(shell_type: str) -> str:
+    """Generate a shell hook that bootstraps through the installed wrapper."""
+    if shell_type not in ("bash", "zsh"):
+        msg = f"Unsupported shell: {shell_type}"
+        raise ValueError(msg)
+    return f"""
+{SHELL_HOOK_MARKER}
+if [[ -x \"{WRAPPER_SHELL_PATH}\" ]]; then
+    eval \"$(\"{WRAPPER_SHELL_PATH}\" setup shell-hook --shell {shell_type})\"
+fi
+"""
+
+
+def _install_shell_hook(rc_file: Path, shell_type: str) -> bool:
     """
     Install the shell hook into the RC file.
 
-    Appends the eval line to the RC file. Returns True on success,
-    False if there was a permission error.
+    Replaces the legacy PATH-dependent hook when present; otherwise appends the
+    self-bootstrapping block. Returns False only on a permission error.
     """
-    hook_line = f'eval "$({SHELL_HOOK_MARKER})"'
-    hook_block = f"""
-# NVD shell integration
-{hook_line}
-"""
+    hook_block = _generate_shell_hook_block(shell_type)
 
     try:
+        existing = rc_file.read_text() if rc_file.exists() else ""
+        if _is_hook_installed(rc_file):
+            return True
+        legacy_block = f"{SHELL_HOOK_MARKER}\n{LEGACY_SHELL_HOOK_LINE}"
+        if legacy_block in existing:
+            rc_file.write_text(existing.replace(legacy_block, hook_block.strip()))
+            return True
         with rc_file.open("a") as f:
             f.write(hook_block)
         return True
     except PermissionError:
         return False
+
+
+def _path_contains_directory(directory: Path, path_value: str | None = None) -> bool:
+    """Return whether PATH contains a directory after user expansion."""
+    entries = path_value if path_value is not None else os.environ.get("PATH", "")
+    expected = directory.expanduser().resolve()
+    return any(
+        entry and Path(entry).expanduser().resolve() == expected
+        for entry in entries.split(os.pathsep)
+    )
+
+
+def _print_manual_shell_hook(shell_type: str) -> None:
+    """Print copyable shell integration and current-shell PATH instructions."""
+    console.print("Add this block to your shell's RC file:")
+    console.print(_generate_shell_hook_block(shell_type).strip(), markup=False)
+    console.print()
+    console.print("To use nvd in the current shell immediately:")
+    console.print('  export PATH="$HOME/.local/bin:$PATH"', markup=False)
 
 
 def _validate_config_dir(path: Path) -> tuple[bool, str]:
@@ -831,6 +874,10 @@ def setup(
         _install_wrapper_script(nvd_repo, DEFAULT_WRAPPER_DIR)
         success(f"Wrapper script installed to {wrapper_path}")
 
+    if not _path_contains_directory(DEFAULT_WRAPPER_DIR):
+        warning(f"{DEFAULT_WRAPPER_DIR} is not on PATH in the current shell")
+        info("The NVD shell hook can add it without requiring nvd to be on PATH first")
+
     # Determine default profile (CHTC uses chtc_htc profile from user.config)
     default_profile = "chtc_htc" if is_chtc else None
     preset_store = CHTC_DEFAULT_PRESET_STORE if is_chtc else None
@@ -862,49 +909,60 @@ def setup(
 
     if not skip_shell_hook:
         if detected_shell is None:
-            # Can't detect shell - print manual instructions
             warning("Could not detect shell")
             console.print()
-            console.print("Add this line to your shell's RC file manually:")
-            console.print(f'  [cyan]eval "$({SHELL_HOOK_MARKER})"[/cyan]')
+            _print_manual_shell_hook("bash")
             console.print()
         else:
             rc_file = _get_rc_file(detected_shell)
 
             if _is_hook_installed(rc_file):
                 info(f"Shell hook already installed in {rc_file}")
-            elif non_interactive:
-                # Just install it
-                if _install_shell_hook(rc_file):
-                    success(f"Shell hook added to {rc_file}")
+            else:
+                legacy_hook = _has_legacy_shell_hook(rc_file)
+                action = (
+                    "Update legacy shell hook in"
+                    if legacy_hook
+                    else "Add shell hook to"
+                )
+                if legacy_hook:
+                    warning(
+                        f"Existing hook in {rc_file} assumes nvd is already on PATH",
+                    )
+
+                if non_interactive:
+                    install_hook = True
                 else:
+                    console.print(f"{action} {rc_file}?")
+                    console.print(
+                        _generate_shell_hook_block(detected_shell).strip(),
+                        style="dim",
+                        markup=False,
+                    )
+                    install_hook = typer.confirm("Proceed?", default=True)
+
+                if install_hook and _install_shell_hook(rc_file, detected_shell):
+                    verb = "updated in" if legacy_hook else "added to"
+                    success(f"Shell hook {verb} {rc_file}")
+                elif install_hook:
                     warning(f"Could not modify {rc_file} (permission denied)")
                     console.print()
-                    console.print("Add this line manually:")
-                    console.print(f'  [cyan]eval "$({SHELL_HOOK_MARKER})"[/cyan]')
-            else:
-                # Ask first
-                console.print(f"Add shell hook to {rc_file}?")
-                console.print(f'  [dim]eval "$({SHELL_HOOK_MARKER})"[/dim]')
-                add_hook = typer.confirm("Proceed?", default=True)
-
-                if add_hook:
-                    if _install_shell_hook(rc_file):
-                        success(f"Shell hook added to {rc_file}")
-                    else:
-                        warning(f"Could not modify {rc_file} (permission denied)")
-                        console.print()
-                        console.print("Add this line manually:")
-                        console.print(f'  [cyan]eval "$({SHELL_HOOK_MARKER})"[/cyan]')
+                    _print_manual_shell_hook(detected_shell)
                 else:
                     info("Skipping shell hook installation")
                     console.print()
-                    console.print("To install later, add this to your RC file:")
-                    console.print(f'  [cyan]eval "$({SHELL_HOOK_MARKER})"[/cyan]')
+                    _print_manual_shell_hook(detected_shell)
 
             console.print()
     else:
         info("Skipping shell hook installation (--skip-shell-hook)")
+        if detected_shell:
+            console.print()
+            _print_manual_shell_hook(detected_shell)
+        else:
+            console.print()
+            console.print("To use nvd in the current shell immediately:")
+            console.print('  export PATH="$HOME/.local/bin:$PATH"', markup=False)
         console.print()
 
     if is_chtc and not skip_container:
