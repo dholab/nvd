@@ -145,21 +145,25 @@ def write_minimal_inputs(
     return blast, coverage, taxonomy
 
 
-def run_estimator(tmp_path: Path, blast: Path, coverage: Path, taxonomy: Path) -> None:
-    main(
-        [
-            "--sample-id",
-            "sample-1",
-            "--blast-tsv",
-            str(blast),
-            "--coverage-tsv",
-            str(coverage),
-            "--profile-taxonomy-tsv",
-            str(taxonomy),
-            "--output-dir",
-            str(tmp_path),
-        ],
-    )
+def run_estimator(
+    tmp_path: Path,
+    blast: Path,
+    coverage: Path | None,
+    taxonomy: Path,
+) -> None:
+    args = [
+        "--sample-id",
+        "sample-1",
+        "--blast-tsv",
+        str(blast),
+        "--profile-taxonomy-tsv",
+        str(taxonomy),
+        "--output-dir",
+        str(tmp_path),
+    ]
+    if coverage is not None:
+        args.extend(["--coverage-tsv", str(coverage)])
+    main(args)
 
 
 def taxon_metadata(taxon_ids: set[str]) -> pl.DataFrame:
@@ -607,6 +611,66 @@ def test_read_query_assignments_use_support_count_without_coverage_row(
     assert float(taxon["total_crumbs_score"]) == EXPECTED_READ_QUERY_TOTAL_CRUMBS
     assert taxon["median_query_breadth_1x"] == "1.0"
     assert taxon["fraction_crumbs_from_low_breadth_queries"] == "0.0"
+
+
+def test_read_only_queries_do_not_require_a_coverage_file(tmp_path: Path) -> None:
+    blast = write_tsv(
+        tmp_path / "sample-1.blast.final.tsv",
+        [
+            "sample",
+            "qseqid",
+            "qlen",
+            "adjusted_taxid",
+            "adjusted_taxid_name",
+            "adjusted_taxid_rank",
+            "adjustment_method",
+            "query_class",
+            "support_record_count",
+        ],
+        [
+            {
+                "sample": "sample-1",
+                "qseqid": "nvdReadQuery_sample-1_000001",
+                "qlen": 25,
+                "adjusted_taxid": 9606,
+                "adjusted_taxid_name": "Homo sapiens",
+                "adjusted_taxid_rank": "species",
+                "adjustment_method": "dominant",
+                "query_class": "single_read",
+                "support_record_count": 3,
+            },
+        ],
+    )
+    taxonomy = write_tsv(
+        tmp_path / "profile_taxonomy.tsv",
+        TAXONOMY_FIELDS,
+        [
+            {
+                "taxon_id": 9606,
+                "taxon_name": "Homo sapiens",
+                "rank": "species",
+                "taxpath": "131567|2759|9605|9606",
+                "taxpathsn": "cellular organisms|Eukaryota|Homo|Homo sapiens",
+                "rankpath": "no rank|superkingdom|genus|species",
+            },
+        ],
+    )
+
+    run_estimator(tmp_path, blast, None, taxonomy)
+
+    [query] = read_tsv(tmp_path / "sample-1.crumbs.queries.tsv")
+    assert query["qseqid"] == "nvdReadQuery_sample-1_000001"
+    assert query["mean_depth_full"] == "3.0"
+
+
+def test_contig_queries_still_require_coverage(tmp_path: Path) -> None:
+    blast, _coverage, taxonomy = write_minimal_inputs(tmp_path)
+
+    with pytest.raises(
+        CrumbsProfileError,
+        match="coverage TSV is missing assigned contigs: contig-a",
+    ):
+        run_estimator(tmp_path, blast, None, taxonomy)
 
 
 def test_conflicting_repeated_blast_assignments_fail_loudly(
