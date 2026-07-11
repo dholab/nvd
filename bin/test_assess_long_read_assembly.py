@@ -166,6 +166,18 @@ def test_report_writes_header_when_there_are_no_long_read_samples(
     ]
 
 
+def test_assess_reports_samples_with_no_eligible_assembler(tmp_path: Path) -> None:
+    report = assess(tmp_path, sample_id="sample-1", counts=(0, 0, 0))
+
+    assert not (tmp_path / "sample-1.metamdbg.run").exists()
+    assert not (tmp_path / "sample-1.myloasm.run").exists()
+    assert not (tmp_path / "sample-1.metaflye.run").exists()
+    [row] = read_rows(report)
+    assert row["metamdbg_decision"] == "skip"
+    assert row["myloasm_decision"] == "skip"
+    assert row["metaflye_decision"] == "skip"
+
+
 def test_assess_rejects_missing_required_threshold(tmp_path: Path) -> None:
     profile = tmp_path / "sample-1.fastx_profile.json"
     write_profile(

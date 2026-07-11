@@ -12,6 +12,7 @@ workflow REPORTING {
     ch_query_lookups
     ch_contig_read_counts
     ch_filtered_bam
+    ch_no_contigs
     ch_target_enrichment_stats
     ch_taxonomy_dir
     ch_run_ready
@@ -57,6 +58,7 @@ workflow REPORTING {
         CRUMBS_PROFILING(
             ch_split_blast_results.for_emit,
             ch_filtered_bam,
+            ch_no_contigs,
             ch_taxonomy_dir,
         )
 
