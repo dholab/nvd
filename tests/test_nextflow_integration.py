@@ -353,6 +353,33 @@ def assert_read_profiles_respect_length_filter(results_root: Path) -> None:
         )
 
 
+def assert_target_enrichment_outputs(
+    results_root: Path,
+    expected_sample_ids: set[str],
+) -> None:
+    """Assert per-sample and experiment-wide enrichment results are published."""
+    enriched_reads_dir = results_root / "01_target_enriched_reads"
+    for sample_id in expected_sample_ids:
+        for suffix in ("target_enriched.fastq.gz", "deacon_filter.json"):
+            artifact = enriched_reads_dir / f"{sample_id}.{suffix}"
+            assert artifact.is_file(), f"Missing target enrichment result: {artifact}"
+            assert artifact.stat().st_size > 0, (
+                f"Empty target enrichment result: {artifact}"
+            )
+
+    report_dir = results_root / "08_experiment_summary" / "target_enrichment"
+    expected_reports = (
+        "target_enrichment_summary.tsv",
+        "target_enriched_bases_ranked.html",
+        "target_retained_vs_filtered_stacked.html",
+        "target_reads_vs_bases_scatter.html",
+    )
+    for filename in expected_reports:
+        report = report_dir / filename
+        assert report.is_file(), f"Missing target enrichment report: {report}"
+        assert report.stat().st_size > 0, f"Empty target enrichment report: {report}"
+
+
 def make_e2e_run_dir() -> Path:
     output_root = Path(os.environ.get("NVD_E2E_OUTPUT_DIR", E2E_OUTPUT_DIR))
     run_id = datetime.now(tz=UTC).strftime("%Y%m%dT%H%M%SZ") + f"-pid{os.getpid()}"
@@ -533,6 +560,11 @@ def test_mini_sra_viral_pipeline_completes() -> None:
     )
 
     results_root = run_dir / "results" / "nvd"
+    expected_sample_ids = {
+        str(run_info["sample_id"])
+        for run_info in (*LOCAL_E2E_SAMPLES, *selected_sra_runs)
+    }
+    assert_target_enrichment_outputs(results_root, expected_sample_ids)
     assert_read_profiles_respect_length_filter(results_root)
     final_dir = results_root / "07_merged_blast_results" / "final"
     final_blast_files = sorted(final_dir.glob("*_blast.final.tsv"))
