@@ -11,9 +11,18 @@ workflow SHORT_READ_DENOVO_ASSEMBLY {
         .map { meta, batches ->
             tuple(meta, batches.collect { batch -> batch.reads })
         }
-        .filter { meta, _reads -> meta.sequence_count >= 100 }
 
-    ch_reads_by_structure = ch_sample_reads.branch { meta, _reads ->
+    ch_assembly_inputs = ch_sample_reads.branch { meta, _reads ->
+        eligible: meta.sequence_count >= 100
+        ineligible: true
+    }
+
+    ch_no_contigs = ch_assembly_inputs.ineligible.map { meta, _reads ->
+        log.debug "nvd.contig_route sample_id=${meta.id} platform=${meta.platform} outcome=no_contigs stage=short_read_ineligible"
+        tuple(meta.id, meta.platform)
+    }
+
+    ch_reads_by_structure = ch_assembly_inputs.eligible.branch { meta, _reads ->
         interleaved: meta.read_structure == "interleaved"
         single: true
     }
@@ -34,4 +43,5 @@ workflow SHORT_READ_DENOVO_ASSEMBLY {
 
     emit:
     contigs = ASSEMBLE_WITH_SPADES.out  // tuple(sample_id, platform, read_structure, producer, fasta)
+    no_contigs = ch_no_contigs          // tuple(sample_id, platform)
 }

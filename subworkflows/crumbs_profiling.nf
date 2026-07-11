@@ -12,6 +12,7 @@ workflow CRUMBS_PROFILING {
     take:
     ch_blast_results
     ch_filtered_bam
+    ch_no_contigs     // tuple(sample_id, platform), explicit successful no-contig routes only
     ch_taxonomy_dir
 
     main:
@@ -36,7 +37,7 @@ workflow CRUMBS_PROFILING {
     // the empty case when no-contig routing is activated.
     ch_coverage_inputs = SUMMARIZE_CONTIG_COVERAGE.out.coverage_summary.map { sample_id, coverage_tsv ->
         tuple(sample_id, [coverage_tsv])
-    }
+    }.mix(ch_no_contigs.map { sample_id, _platform -> tuple(sample_id, []) })
 
     ch_profile_inputs = ch_blast_results
         .join(ch_coverage_inputs, by: 0)
