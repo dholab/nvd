@@ -31,11 +31,18 @@ workflow CRUMBS_PROFILING {
     ch_profile_taxonomy = PREPARE_NCBI_PROFILE_TAXONOMY.out.profile_taxonomy
         .map { _profile_id, profile_taxonomy_tsv -> profile_taxonomy_tsv }
 
+    // The estimator accepts zero or one coverage file. Existing mapback
+    // samples contribute the singleton case; explicit no-contig samples add
+    // the empty case when no-contig routing is activated.
+    ch_coverage_inputs = SUMMARIZE_CONTIG_COVERAGE.out.coverage_summary.map { sample_id, coverage_tsv ->
+        tuple(sample_id, [coverage_tsv])
+    }
+
     ch_profile_inputs = ch_blast_results
-        .join(SUMMARIZE_CONTIG_COVERAGE.out.coverage_summary, by: 0)
+        .join(ch_coverage_inputs, by: 0)
         .combine(ch_profile_taxonomy)
-        .map { sample_id, blast_tsv, coverage_tsv, profile_taxonomy_tsv ->
-            tuple(sample_id, blast_tsv, coverage_tsv, profile_taxonomy_tsv)
+        .map { sample_id, blast_tsv, coverage_files, profile_taxonomy_tsv ->
+            tuple(sample_id, blast_tsv, coverage_files, profile_taxonomy_tsv)
         }
 
     ESTIMATE_CRUMBS_PROFILE(ch_profile_inputs)

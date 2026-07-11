@@ -14,6 +14,8 @@ import sqlite3
 from pathlib import Path
 
 MIN_CONTIG_COUNT_COLUMNS = 2
+READ_QUERY_CLASSES = frozenset({"overlap_merged_pair", "single_read"})
+READ_QUERY_PREFIXES = ("nvdMergeReadQuery_", "nvdReadQuery_")
 
 
 def load_contig_counts(contig_counts_path: Path) -> dict[str, str]:
@@ -48,6 +50,13 @@ def load_query_metadata(query_lookup_paths: list[Path]) -> dict[str, dict[str, s
     return queries
 
 
+def is_read_query(qseqid: str, metadata: dict[str, str]) -> bool:
+    """Return whether a query can be finalized without contig mapback counts."""
+    return metadata.get("query_class") in READ_QUERY_CLASSES or qseqid.startswith(
+        READ_QUERY_PREFIXES,
+    )
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         description="Enrich merged BLAST results with pipeline metadata.",
@@ -61,8 +70,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument(
         "--contig-counts",
         type=Path,
-        required=True,
-        help="Two-column TSV of qseqid and mapped read count",
+        help="Optional two-column TSV of qseqid and mapped read count",
     )
     parser.add_argument(
         "--output",
@@ -99,7 +107,7 @@ def main(argv: list[str] | None = None) -> None:
     )
     args = parser.parse_args(argv)
 
-    contig_counts = load_contig_counts(args.contig_counts)
+    contig_counts = load_contig_counts(args.contig_counts) if args.contig_counts else {}
     queries_by_qseqid = load_query_metadata(args.query_lookup)
 
     metadata_columns = [
@@ -125,6 +133,9 @@ def main(argv: list[str] | None = None) -> None:
         for row in reader:
             qseqid = row.get("qseqid", "")
             query = queries_by_qseqid.get(qseqid, {})
+            if args.contig_counts is None and not is_read_query(qseqid, query):
+                message = f"contig query requires mapped-read counts: {qseqid}"
+                raise ValueError(message)
             row["query_class"] = query.get("query_class", "")
             row["producer"] = query.get("producer", "")
             row["source_id"] = query.get("source_id", "")

@@ -48,7 +48,12 @@ workflow CONTIG_READ_MAPBACK {
     }
 
     emit:
-    contig_read_counts = COUNT_MAPPED_READS.out.mapped_counts
+    // Finalization accepts zero or one mapped-count file per sample. Mapback
+    // samples contribute the singleton case; explicit no-contig samples add
+    // the empty case in PREPARE_BLAST_QUERIES.
+    contig_read_counts = COUNT_MAPPED_READS.out.mapped_counts.map { sample_id, counts ->
+        tuple(sample_id, [counts])
+    }
     filtered_bam = COUNT_MAPPED_READS.out.filtered_bam
     unmapped_reads = ch_unmapped_reads
     unmapped_read_counts = ch_unmapped_read_counts

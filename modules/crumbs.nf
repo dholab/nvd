@@ -65,7 +65,7 @@ process ESTIMATE_CRUMBS_PROFILE {
     label "low"
 
     input:
-    tuple val(sample_id), path(blast_tsv), path(coverage_tsv), path(profile_taxonomy_tsv)
+    tuple val(sample_id), path(blast_tsv), path(coverage_files), path(profile_taxonomy_tsv)
 
     output:
     tuple val(sample_id), path("${sample_id}.crumbs.queries.tsv"), emit: queries
@@ -74,11 +74,14 @@ process ESTIMATE_CRUMBS_PROFILE {
     tuple val(sample_id), path("${sample_id}.crumbs.qc.json"), emit: qc
 
     script:
+    def files = coverage_files instanceof List ? coverage_files : [coverage_files]
+    assert files.size() <= 1 : "Expected at most one coverage file for ${sample_id}, received ${files.size()}"
+    def coverage_arg = files ? "--coverage-tsv ${files[0]}" : ""
     """
     estimate_crumbs_profile.py \
         --sample-id ${sample_id} \
         --blast-tsv ${blast_tsv} \
-        --coverage-tsv ${coverage_tsv} \
+        ${coverage_arg} \
         --profile-taxonomy-tsv ${profile_taxonomy_tsv} \
         --output-dir .
     """

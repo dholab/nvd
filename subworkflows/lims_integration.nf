@@ -48,23 +48,26 @@ workflow LIMS_INTEGRATION {
         .map { _ready, _list_valid, _fresh -> true }
         .first()
 
-    // Join BLAST results with contig FASTA for per-sample processing.
-    // The BLAST TSV already contains mapped_reads, total_reads, blast_db_version,
-    // and nextflow_run_id from upstream ADD_READ_COUNTS_TO_BLAST.
+    // BLAST row insertion does not require a contig FASTA. This keeps valid
+    // read-only samples eligible for the reduced-schema LIMS table.
+    ch_blast_labkey = ch_labkey_blast_results.map { sample_id, blast_tsv ->
+        tuple(sample_id, blast_tsv, "${sample_id}_blast_labkey.csv")
+    }
+
+    // FASTA insertion and the combined WebDAV upload remain synchronized by
+    // this inner join. Read-only samples intentionally skip both for now.
     ch_all_sample_data = ch_labkey_blast_results
         .join(ch_labkey_contigs, by: 0)
 
     ch_split = ch_all_sample_data
         .multiMap { sample_id, blast_tsv, fasta ->
-            def blast_output = "${sample_id}_blast_labkey.csv"
             def fasta_output = "${sample_id}_fasta_labkey.csv"
-            blast_labkey: [sample_id, blast_tsv, blast_output]
             webdav_upload: [sample_id, blast_tsv, fasta]
             fasta_labkey: [sample_id, fasta, fasta_output]
         }
 
     LABKEY_PREPARE_BLAST(
-        ch_split.blast_labkey,
+        ch_blast_labkey,
         experiment_id,
         ch_validation_gate,
     )

@@ -6,6 +6,7 @@ import csv
 import sqlite3
 from typing import TYPE_CHECKING
 
+import pytest
 from finalize_blast_results import main
 
 if TYPE_CHECKING:
@@ -65,14 +66,11 @@ def write_blast_tsv(path: Path) -> None:
         )
 
 
-def write_mixed_blast_tsv(path: Path) -> None:
+def write_query_blast_tsv(path: Path, qseqids: tuple[str, ...]) -> None:
     with path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=BLAST_HEADER, delimiter="\t")
         writer.writeheader()
-        for qseqid in (
-            "nvdContigQuery_sample-1_000001",
-            "nvdReadQuery_sample-1_000001",
-        ):
+        for qseqid in qseqids:
             writer.writerow(
                 {
                     "task": "megablast",
@@ -182,6 +180,8 @@ def write_read_query_lookup(path: Path) -> None:
                 "sha-read",
             ),
         )
+
+
 def test_final_blast_rows_include_collected_contig_metadata(tmp_path: Path) -> None:
     blast_tsv = tmp_path / "blast.tsv"
     counts = tmp_path / "counts.tsv"
@@ -261,7 +261,13 @@ def test_finalizer_loads_metadata_from_multiple_query_lookups(tmp_path: Path) ->
     contig_lookup = tmp_path / "sample.contig.query_sequences.sqlite"
     read_lookup = tmp_path / "sample.single_read.query_sequences.sqlite"
     output = tmp_path / "final.tsv"
-    write_mixed_blast_tsv(blast_tsv)
+    write_query_blast_tsv(
+        blast_tsv,
+        (
+            "nvdContigQuery_sample-1_000001",
+            "nvdReadQuery_sample-1_000001",
+        ),
+    )
     write_counts(counts)
     write_query_lookup(contig_lookup)
     write_read_query_lookup(read_lookup)
@@ -296,3 +302,63 @@ def test_finalizer_loads_metadata_from_multiple_query_lookups(tmp_path: Path) ->
     assert read_row["source_id"] == "readA/1"
     assert read_row["support_record_count"] == "3"
     assert read_row["mapped_reads"] == "0"
+
+
+def test_rows_default_to_zero_without_contig_counts(tmp_path: Path) -> None:
+    blast_tsv = tmp_path / "blast.tsv"
+    read_lookup = tmp_path / "sample.read.query_sequences.sqlite"
+    output = tmp_path / "final.tsv"
+    write_query_blast_tsv(blast_tsv, ("nvdReadQuery_sample-1_000001",))
+    write_read_query_lookup(read_lookup)
+
+    main(
+        [
+            "--blast-tsv",
+            str(blast_tsv),
+            "--query-lookup",
+            str(read_lookup),
+            "--output",
+            str(output),
+            "--total-reads",
+            "10",
+            "--blast-db-version",
+            "nt-test",
+            "--virus-index-version",
+            "virus-test",
+            "--run-id",
+            "run-test",
+        ],
+    )
+
+    assert {row["mapped_reads"] for row in read_tsv(output)} == {"0"}
+
+
+def test_contig_rows_require_contig_counts(tmp_path: Path) -> None:
+    blast_tsv = tmp_path / "blast.tsv"
+    query_lookup = tmp_path / "sample.query_sequences.sqlite"
+    output = tmp_path / "final.tsv"
+    write_blast_tsv(blast_tsv)
+    write_query_lookup(query_lookup)
+
+    with pytest.raises(
+        ValueError,
+        match="contig query requires mapped-read counts: nvdContigQuery_sample-1_000001",
+    ):
+        main(
+            [
+                "--blast-tsv",
+                str(blast_tsv),
+                "--query-lookup",
+                str(query_lookup),
+                "--output",
+                str(output),
+                "--total-reads",
+                "10",
+                "--blast-db-version",
+                "nt-test",
+                "--virus-index-version",
+                "virus-test",
+                "--run-id",
+                "run-test",
+            ],
+        )

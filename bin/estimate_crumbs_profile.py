@@ -187,7 +187,7 @@ def require_columns(
 def read_inputs(
     *,
     blast_tsv: Path,
-    coverage_tsv: Path,
+    coverage_tsv: Path | None,
     profile_taxonomy_tsv: Path,
 ) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:
     """Read and validate estimator inputs."""
@@ -196,10 +196,14 @@ def read_inputs(
         separator="\t",
         schema_overrides=BLAST_SCHEMA_OVERRIDES,
     )
-    coverage = pl.read_csv(
-        coverage_tsv,
-        separator="\t",
-        schema_overrides=COVERAGE_SCHEMA_OVERRIDES,
+    coverage = (
+        pl.read_csv(
+            coverage_tsv,
+            separator="\t",
+            schema_overrides=COVERAGE_SCHEMA_OVERRIDES,
+        )
+        if coverage_tsv is not None
+        else pl.DataFrame(schema=COVERAGE_SCHEMA_OVERRIDES)
     )
     profile_taxonomy = pl.read_csv(
         profile_taxonomy_tsv,
@@ -711,7 +715,7 @@ def estimate_profile(
     *,
     sample_id: str,
     blast_tsv: Path,
-    coverage_tsv: Path,
+    coverage_tsv: Path | None,
     profile_taxonomy_tsv: Path,
     output_dir: Path,
 ) -> OutputPaths:
@@ -749,7 +753,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Estimate CRUMBS taxonomic profiles")
     parser.add_argument("--sample-id", required=True)
     parser.add_argument("--blast-tsv", type=Path, required=True)
-    parser.add_argument("--coverage-tsv", type=Path, required=True)
+    parser.add_argument("--coverage-tsv", type=Path)
     parser.add_argument("--profile-taxonomy-tsv", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     return parser.parse_args(argv)
