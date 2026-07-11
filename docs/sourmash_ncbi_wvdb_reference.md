@@ -45,6 +45,16 @@ Contigs without genus or species assignments are left blank at those ranks. We d
 
 The FASTA identifiers are normalized with the same `WVDB|` prefix before sketching, so the sourmash signature names and lineage identifiers match.
 
+### Taxonomy conflict policy
+
+The combined build validates complete sourmash sketch identities before concatenation. A sketch identity comprises its digest, k-mer size, molecule type, `num`, `scaled`, and abundance-tracking setting. Duplicate identities are a hard build error because selecting a signature by input order would hide a data conflict.
+
+Distinct signatures can still assign the same normalized taxon name to incompatible parents. The curation command makes that policy explicit through `--taxonomy-conflict-policy`, with `error`, `most-specified`, `ncbi-wins`, and `wvdb-wins` options. The checked-in recipe uses `most-specified`: empty, unknown, and unclassified ranks do not contribute to specificity; a unique most-specified lineage is applied to every affected signature; and equally specified incompatible lineages remain a hard error. Source-specific policies first prefer their named source, then apply the same specificity and tie rules within that source.
+
+Every automatic or unresolved decision is written to `ncbi-viruses-2025.01-plus-wvdb-v2.taxonomy-conflicts.tsv`. Resolved conflicts also emit warnings during the build. The published lineage CSV contains only identifiers present in the input manifests.
+
+Maintainers can select another explicit policy with the recipe's third argument, for example `just build-sourmash-ncbi-wvdb yes build/sourmash/ncbi-virus-wvdb-v2 ncbi-wins`.
+
 ## Build command
 
 Because the commands used to run the build are intricate and must be run in a specific order with specific directories, we use a `justfile` recipe to provide shorthands. These shorthands require explicit user confirmation before downloading big files:

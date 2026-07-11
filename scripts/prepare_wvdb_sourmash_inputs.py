@@ -8,13 +8,16 @@
 from __future__ import annotations
 
 import argparse
+import csv
+import warnings
+from collections import defaultdict
+from dataclasses import dataclass
 from pathlib import Path
 
 import polars as pl
 
 WVDB_ID_PREFIX = "WVDB|"
-LINEAGE_COLUMNS = (
-    "ident",
+TAXONOMY_RANKS = (
     "superkingdom",
     "phylum",
     "class",
@@ -22,7 +25,48 @@ LINEAGE_COLUMNS = (
     "family",
     "genus",
     "species",
+    "strain",
 )
+LINEAGE_COLUMNS = ("ident", *TAXONOMY_RANKS)
+SIGNATURE_IDENTITY_COLUMNS = (
+    "md5",
+    "ksize",
+    "moltype",
+    "num",
+    "scaled",
+    "with_abundance",
+)
+TAXONOMY_CONFLICT_POLICIES = (
+    "error",
+    "most-specified",
+    "ncbi-wins",
+    "wvdb-wins",
+)
+UNKNOWN_TAXA = frozenset({"", "unknown", "na", "n/a", "none"})
+DIAGNOSTIC_COLUMNS = (
+    "conflict_type",
+    "rank",
+    "normalized_name",
+    "policy",
+    "decision",
+    "source",
+    "ident",
+    "signature_identity",
+    "specificity",
+    "lineage",
+)
+
+
+@dataclass(frozen=True)
+class CurationPaths:
+    """Input and output paths for combined-reference taxonomy curation."""
+
+    reference_manifest_csv: Path
+    wvdb_manifest_csv: Path
+    reference_lineages_csv: Path
+    wvdb_lineages_csv: Path
+    lineages_csv: Path
+    diagnostics_tsv: Path
 
 
 def ensure_parent(path: Path) -> None:
@@ -221,6 +265,400 @@ def check_manifest_coverage(manifest_csv: Path, lineages_csv: Path) -> None:
     find_missing_wvdb_lineages(manifest, lineages).pipe(fail_on_missing_wvdb_lineages)
 
 
+def clean_cell(value: object) -> str:
+    """Return a stripped string for CSV values that may be missing."""
+    return "" if value is None else str(value).strip()
+
+
+def read_csv_dicts(path: Path) -> list[dict[str, str]]:
+    """Read a CSV file into string-valued dictionaries."""
+    with path.open(newline="", encoding="utf-8") as handle:
+        return [
+            {key: clean_cell(value) for key, value in row.items()}
+            for row in csv.DictReader(handle)
+        ]
+
+
+def read_manifest_dicts(path: Path, *, source: str) -> list[dict[str, str]]:
+    """Read sourmash manifest rows and attach their curation source."""
+    with path.open(newline="", encoding="utf-8") as handle:
+        first_line = handle.readline()
+        if not first_line.startswith("# SOURMASH-MANIFEST-VERSION:"):
+            handle.seek(0)
+        reader = csv.DictReader(handle)
+        columns = set(reader.fieldnames or ())
+        required = {"name", *SIGNATURE_IDENTITY_COLUMNS}
+        missing = required.difference(columns)
+        if missing:
+            msg = f"{path} is missing required column(s): {', '.join(sorted(missing))}"
+            raise ValueError(msg)
+        records = []
+        for row in reader:
+            record = {key: clean_cell(value) for key, value in row.items()}
+            record["ident"] = record["name"].split(maxsplit=1)[0]
+            record["source"] = source
+            records.append(record)
+        return records
+
+
+def read_lineage_dicts(path: Path, *, source: str) -> list[dict[str, str]]:
+    """Read lineage rows into one curation schema with source metadata."""
+    rows = []
+    for raw in read_csv_dicts(path):
+        ident = clean_cell(raw.get("ident") or raw.get("identifiers"))
+        if not ident:
+            msg = f"{path} contains a lineage row without ident/identifiers"
+            raise ValueError(msg)
+        row = {rank: clean_cell(raw.get(rank)) for rank in TAXONOMY_RANKS}
+        row["ident"] = ident
+        row["source"] = source
+        rows.append(row)
+    return rows
+
+
+def lineage_by_identifier(rows: list[dict[str, str]]) -> dict[str, dict[str, str]]:
+    """Index unique lineage records by identifier."""
+    by_ident: dict[str, dict[str, str]] = {}
+    for row in rows:
+        ident = row["ident"]
+        if ident in by_ident:
+            msg = f"Duplicate lineage identifier: {ident}"
+            raise ValueError(msg)
+        by_ident[ident] = row
+    return by_ident
+
+
+def signature_identity(record: dict[str, str]) -> tuple[str, ...]:
+    """Return the complete manifest-level identity of a sourmash sketch."""
+    return tuple(record[column] for column in SIGNATURE_IDENTITY_COLUMNS)
+
+
+def signature_identity_text(record: dict[str, str]) -> str:
+    """Format a sketch identity for diagnostics."""
+    return ";".join(
+        f"{column}={record[column]}" for column in SIGNATURE_IDENTITY_COLUMNS
+    )
+
+
+def normalized_taxon_name(value: object) -> str:
+    """Normalize WVDB/NCBI spelling differences for taxonomy comparison."""
+    return " ".join(clean_cell(value).replace("_", " ").casefold().split())
+
+
+def is_informative_taxon(value: object) -> bool:
+    """Return whether a rank value provides more than unknown classification."""
+    normalized = normalized_taxon_name(value)
+    return normalized not in UNKNOWN_TAXA and not normalized.startswith("unclassified")
+
+
+def lineage_prefix(row: dict[str, str], rank_index: int) -> tuple[str, ...]:
+    """Return a normalized lineage prefix through the selected rank."""
+    return tuple(
+        normalized_taxon_name(row[rank]) for rank in TAXONOMY_RANKS[: rank_index + 1]
+    )
+
+
+def specificity(row: dict[str, str], rank_index: int) -> tuple[int, int]:
+    """Score informative ranks through the taxon whose placement is contested."""
+    informative = [
+        index
+        for index, rank in enumerate(TAXONOMY_RANKS[: rank_index + 1])
+        if is_informative_taxon(row[rank])
+    ]
+    return len(informative), max(informative, default=-1)
+
+
+def lineage_text(row: dict[str, str]) -> str:
+    """Format a lineage for actionable diagnostics."""
+    return " > ".join(row[rank] or "<blank>" for rank in TAXONOMY_RANKS)
+
+
+def write_diagnostics(path: Path, rows: list[dict[str, str]]) -> None:
+    """Write all automatic and unresolved curation decisions."""
+    ensure_parent(path)
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=DIAGNOSTIC_COLUMNS,
+            delimiter="\t",
+            lineterminator="\n",
+        )
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def fail_on_duplicate_signature_identities(
+    manifest_rows: list[dict[str, str]],
+    lineages: dict[str, dict[str, str]],
+    diagnostics: list[dict[str, str]],
+) -> None:
+    """Reject duplicate sketch identities instead of relying on input ordering."""
+    grouped: defaultdict[tuple[str, ...], list[dict[str, str]]] = defaultdict(list)
+    for record in manifest_rows:
+        grouped[signature_identity(record)].append(record)
+
+    duplicate_groups = [records for records in grouped.values() if len(records) > 1]
+    for records in duplicate_groups:
+        for record in records:
+            lineage = lineages.get(record["ident"], {})
+            diagnostics.append(
+                {
+                    "conflict_type": "signature_identity",
+                    "rank": "",
+                    "normalized_name": "",
+                    "policy": "error",
+                    "decision": "ambiguous",
+                    "source": record["source"],
+                    "ident": record["ident"],
+                    "signature_identity": signature_identity_text(record),
+                    "specificity": "",
+                    "lineage": lineage_text(lineage) if lineage else "<missing>",
+                },
+            )
+
+    if duplicate_groups:
+        records = duplicate_groups[0]
+        msg = (
+            "Duplicate sourmash signature identity: "
+            f"{signature_identity_text(records[0])}; identifiers="
+            f"{', '.join(record['ident'] for record in records)}; lineages="
+            f"{' || '.join(lineage_text(lineages[record['ident']]) for record in records if record['ident'] in lineages)}"
+        )
+        raise ValueError(msg)
+
+
+def preferred_source(policy: str) -> str | None:
+    """Return the source selected by an explicit source-precedence policy."""
+    if policy == "ncbi-wins":
+        return "ncbi"
+    if policy == "wvdb-wins":
+        return "wvdb"
+    return None
+
+
+def select_canonical_lineage(
+    rows: list[dict[str, str]],
+    *,
+    rank_index: int,
+    policy: str,
+) -> dict[str, str] | None:
+    """Select one canonical lineage or return None for an unresolved conflict."""
+    if policy == "error":
+        return None
+
+    candidates = rows
+    source = preferred_source(policy)
+    if source and any(row["source"] == source for row in rows):
+        candidates = [row for row in rows if row["source"] == source]
+
+    best_score = max(specificity(row, rank_index) for row in candidates)
+    best = [row for row in candidates if specificity(row, rank_index) == best_score]
+    prefixes = {lineage_prefix(row, rank_index) for row in best}
+    if len(prefixes) != 1:
+        return None
+    return min(best, key=lambda row: row["ident"])
+
+
+def taxonomy_conflicts_at_rank(
+    rows: list[dict[str, str]],
+    rank_index: int,
+) -> list[tuple[str, list[dict[str, str]]]]:
+    """Return taxon-name groups assigned to incompatible parents at one rank."""
+    rank = TAXONOMY_RANKS[rank_index]
+    grouped: defaultdict[str, list[dict[str, str]]] = defaultdict(list)
+    for row in rows:
+        name = normalized_taxon_name(row[rank])
+        if name:
+            grouped[name].append(row)
+    return [
+        (name, candidates)
+        for name, candidates in grouped.items()
+        if len({lineage_prefix(row, rank_index) for row in candidates}) > 1
+    ]
+
+
+def append_taxonomy_diagnostics(
+    diagnostics: list[dict[str, str]],
+    candidates: list[dict[str, str]],
+    *,
+    conflict: tuple[int, str, str],
+    winner: dict[str, str] | None,
+) -> None:
+    """Record every candidate participating in one taxonomy-name conflict."""
+    rank_index, name, policy = conflict
+    rank = TAXONOMY_RANKS[rank_index]
+    winner_prefix = lineage_prefix(winner, rank_index) if winner else None
+    for row in candidates:
+        decision = (
+            "ambiguous"
+            if winner is None
+            else "winner"
+            if lineage_prefix(row, rank_index) == winner_prefix
+            else "rewritten"
+        )
+        diagnostics.append(
+            {
+                "conflict_type": "taxonomy_name",
+                "rank": rank,
+                "normalized_name": name,
+                "policy": policy,
+                "decision": decision,
+                "source": row["source"],
+                "ident": row["ident"],
+                "signature_identity": "",
+                "specificity": ":".join(
+                    str(value) for value in specificity(row, rank_index)
+                ),
+                "lineage": lineage_text(row),
+            },
+        )
+
+
+def curate_taxonomy_names(
+    rows: list[dict[str, str]],
+    *,
+    policy: str,
+    diagnostics: list[dict[str, str]],
+) -> tuple[int, list[str]]:
+    """Canonicalize conflicting taxon placements from broad to specific ranks."""
+    resolved = 0
+    unresolved: list[str] = []
+    for rank_index, rank in enumerate(TAXONOMY_RANKS[1:], start=1):
+        for name, candidates in taxonomy_conflicts_at_rank(rows, rank_index):
+            winner = select_canonical_lineage(
+                candidates,
+                rank_index=rank_index,
+                policy=policy,
+            )
+            if winner is None:
+                unresolved.append(f"{rank}={name}")
+
+            append_taxonomy_diagnostics(
+                diagnostics,
+                candidates,
+                conflict=(rank_index, name, policy),
+                winner=winner,
+            )
+
+            if winner is None:
+                continue
+
+            resolved += 1
+            for row in candidates:
+                for ancestor_rank in TAXONOMY_RANKS[: rank_index + 1]:
+                    row[ancestor_rank] = winner[ancestor_rank]
+
+    return resolved, unresolved
+
+
+def find_cross_rank_taxon_names(
+    rows: list[dict[str, str]],
+    *,
+    policy: str,
+    diagnostics: list[dict[str, str]],
+) -> list[str]:
+    """Record names reused at multiple ranks, which Taxburst cannot represent."""
+    occurrences: defaultdict[str, list[tuple[str, dict[str, str]]]] = defaultdict(list)
+    for row in rows:
+        for rank in TAXONOMY_RANKS:
+            name = normalized_taxon_name(row[rank])
+            if name:
+                occurrences[name].append((rank, row))
+
+    conflicts = []
+    for name, candidates in occurrences.items():
+        ranks = {rank for rank, _row in candidates}
+        if len(ranks) <= 1:
+            continue
+        conflicts.append(f"{name} ({', '.join(sorted(ranks))})")
+        for rank, row in candidates:
+            diagnostics.append(
+                {
+                    "conflict_type": "taxonomy_rank",
+                    "rank": rank,
+                    "normalized_name": name,
+                    "policy": policy,
+                    "decision": "ambiguous",
+                    "source": row["source"],
+                    "ident": row["ident"],
+                    "signature_identity": "",
+                    "specificity": "",
+                    "lineage": lineage_text(row),
+                },
+            )
+    return conflicts
+
+
+def write_curated_lineages(path: Path, rows: list[dict[str, str]]) -> None:
+    """Write only the lineage columns consumed by sourmash taxonomy commands."""
+    ensure_parent(path)
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=LINEAGE_COLUMNS, lineterminator="\n")
+        writer.writeheader()
+        writer.writerows(
+            {column: row[column] for column in LINEAGE_COLUMNS} for row in rows
+        )
+
+
+def curate_lineages(
+    paths: CurationPaths,
+    *,
+    policy: str,
+) -> None:
+    """Validate sketch identities and canonicalize conflicting taxonomy names."""
+    manifest_rows = [
+        *read_manifest_dicts(paths.reference_manifest_csv, source="ncbi"),
+        *read_manifest_dicts(paths.wvdb_manifest_csv, source="wvdb"),
+    ]
+    lineage_rows = [
+        *read_lineage_dicts(paths.reference_lineages_csv, source="ncbi"),
+        *read_lineage_dicts(paths.wvdb_lineages_csv, source="wvdb"),
+    ]
+    lineages = lineage_by_identifier(lineage_rows)
+    missing = [
+        record["ident"] for record in manifest_rows if record["ident"] not in lineages
+    ]
+    if missing:
+        msg = f"{len(missing)} signatures are missing lineages. Examples: {', '.join(missing[:10])}"
+        raise ValueError(msg)
+
+    diagnostics: list[dict[str, str]] = []
+    try:
+        fail_on_duplicate_signature_identities(manifest_rows, lineages, diagnostics)
+    except ValueError:
+        write_diagnostics(paths.diagnostics_tsv, diagnostics)
+        raise
+
+    retained_rows = [lineages[record["ident"]] for record in manifest_rows]
+    resolved, unresolved = curate_taxonomy_names(
+        retained_rows,
+        policy=policy,
+        diagnostics=diagnostics,
+    )
+    cross_rank_conflicts = find_cross_rank_taxon_names(
+        retained_rows,
+        policy=policy,
+        diagnostics=diagnostics,
+    )
+    write_diagnostics(paths.diagnostics_tsv, diagnostics)
+    if resolved:
+        warnings.warn(
+            f"resolved {resolved} taxonomy conflict(s) using policy {policy}; "
+            f"evidence={paths.diagnostics_tsv}",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+    if unresolved or cross_rank_conflicts:
+        examples = [*unresolved, *cross_rank_conflicts]
+        msg = (
+            f"{len(examples)} ambiguous taxonomy conflict(s) under policy {policy}. "
+            f"Examples: {', '.join(examples[:10])}. Evidence: {paths.diagnostics_tsv}"
+        )
+        raise ValueError(msg)
+
+    write_curated_lineages(paths.lineages_csv, retained_rows)
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build the command-line parser."""
     parser = argparse.ArgumentParser(
@@ -244,6 +682,22 @@ def build_parser() -> argparse.ArgumentParser:
     check.add_argument("--manifest-csv", type=Path, required=True)
     check.add_argument("--lineages-csv", type=Path, required=True)
 
+    curate = subcommands.add_parser(
+        "curate-lineages",
+        help="Validate signature identity and resolve conflicting taxonomy names.",
+    )
+    curate.add_argument("--reference-manifest-csv", type=Path, required=True)
+    curate.add_argument("--wvdb-manifest-csv", type=Path, required=True)
+    curate.add_argument("--reference-lineages-csv", type=Path, required=True)
+    curate.add_argument("--wvdb-lineages-csv", type=Path, required=True)
+    curate.add_argument(
+        "--taxonomy-conflict-policy",
+        choices=TAXONOMY_CONFLICT_POLICIES,
+        required=True,
+    )
+    curate.add_argument("--lineages-csv", type=Path, required=True)
+    curate.add_argument("--diagnostics-tsv", type=Path, required=True)
+
     return parser
 
 
@@ -262,6 +716,18 @@ def main() -> None:
             )
         elif args.command == "check-manifest-coverage":
             check_manifest_coverage(args.manifest_csv, args.lineages_csv)
+        elif args.command == "curate-lineages":
+            curate_lineages(
+                CurationPaths(
+                    reference_manifest_csv=args.reference_manifest_csv,
+                    wvdb_manifest_csv=args.wvdb_manifest_csv,
+                    reference_lineages_csv=args.reference_lineages_csv,
+                    wvdb_lineages_csv=args.wvdb_lineages_csv,
+                    lineages_csv=args.lineages_csv,
+                    diagnostics_tsv=args.diagnostics_tsv,
+                ),
+                policy=args.taxonomy_conflict_policy,
+            )
     except ValueError as exc:
         parser.exit(1, f"error: {exc}\n")
 
