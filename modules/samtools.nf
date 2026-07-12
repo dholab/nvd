@@ -75,3 +75,25 @@ process SUMMARIZE_CONTIG_COVERAGE {
     """
 
 }
+
+process RENDER_CONTIG_COVERAGE_HISTOGRAM {
+
+    tag "${sample_id}"
+    label "low"
+    errorStrategy 'ignore'
+
+    input:
+    tuple val(sample_id), path(bam), path(bai)
+
+    output:
+    tuple val(sample_id), path("${sample_id}.contig_coverage.histogram.txt"), emit: histogram
+
+    script:
+    """
+    samtools coverage \
+        --histogram \
+        --n-bins 100 \
+        --output ${sample_id}.contig_coverage.histogram.txt \
+        ${bam}
+    """
+}

@@ -3,6 +3,7 @@ include { NOTIFY_SLACK } from "../modules/utils"
 include { BUILD_SEQUENCE_FLOW; RENDER_MERGED_TAXON_ABUNDANCE_SUNBURST; RENDER_TAXON_ABUNDANCE_SUNBURST; RENDER_SOURMASH_SANKEY } from "../modules/reporting"
 include { CRUMBS_PROFILING } from "./crumbs_profiling"
 include { LIMS_INTEGRATION } from "./lims_integration"
+include { RENDER_CONTIG_COVERAGE_HISTOGRAM } from "../modules/samtools"
 
 workflow REPORTING {
     take:
@@ -39,6 +40,7 @@ workflow REPORTING {
         .join(ch_query_lookups, by: 0)
 
     ADD_READ_COUNTS_TO_BLAST(ch_blast_finalize, run_id)
+    RENDER_CONTIG_COVERAGE_HISTOGRAM(ch_filtered_bam)
 
     ch_split_blast_results = ADD_READ_COUNTS_TO_BLAST.out
         .multiMap { sample_id, blast_tsv ->
