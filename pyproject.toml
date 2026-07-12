@@ -71,6 +71,7 @@ taxburst = ">=0.3.2,<0.4"
 # source for linux-aarch64 and other headless pipeline platforms.
 pyqt = ">=5.15.11,<6"
 vsearch = ">=2.31.0,<3"
+alignoth = ">=1.6.0,<2"
 
 # ----------------------------------------------------------------------------------- #
 

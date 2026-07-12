@@ -32,6 +32,7 @@ environments:
     - https://pypi.org/simple
     packages:
       linux-64:
+      - conda: https://conda.anaconda.org/bioconda/linux-64/alignoth-1.6.0-h9e2517d_0.conda
       - conda: https://conda.anaconda.org/bioconda/linux-64/bbmap-39.81-h9b5c0a0_1.conda
       - conda: https://conda.anaconda.org/bioconda/linux-64/blast-2.17.0-h66d330f_0.conda
       - conda: https://conda.anaconda.org/bioconda/linux-64/deacon-0.15.0-hdd79491_0.conda
@@ -370,6 +371,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/fb/63/a5a1628898729bcfb67ea785a152e424d78e0f57dfbba46213a652532d6a/UpSetPlot-0.9.0.tar.gz
       - pypi: https://files.pythonhosted.org/packages/fd/7b/122376b1fd3c62c1ed9dc80c931ace4844b3c55407b6fb2d199377c9736f/pydantic-2.13.4-py3-none-any.whl
       linux-aarch64:
+      - conda: https://conda.anaconda.org/bioconda/linux-aarch64/alignoth-1.6.0-hb267aa8_0.conda
       - conda: https://conda.anaconda.org/bioconda/linux-aarch64/bbmap-39.81-heff9fa3_1.conda
       - conda: https://conda.anaconda.org/bioconda/linux-aarch64/blast-2.16.0-h6a93c2d_5.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/linux-aarch64/deacon-0.15.0-hacc9189_0.conda
@@ -714,6 +716,7 @@ environments:
       - conda: https://conda.anaconda.org/bioconda/noarch/perl-types-serialiser-1.01-pl5321hdfd78af_0.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/noarch/sourmash-4.9.4-hdfd78af_0.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/noarch/taxburst-0.3.2-pyhdfd78af_0.conda
+      - conda: https://conda.anaconda.org/bioconda/osx-64/alignoth-1.6.0-h822ee72_0.conda
       - conda: https://conda.anaconda.org/bioconda/osx-64/bbmap-39.81-h831ead7_1.conda
       - conda: https://conda.anaconda.org/bioconda/osx-64/blast-2.17.0-h53185c9_0.conda
       - conda: https://conda.anaconda.org/bioconda/osx-64/deacon-0.15.0-h5126ea9_0.conda
@@ -1006,6 +1009,7 @@ environments:
       - conda: https://conda.anaconda.org/bioconda/noarch/perl-types-serialiser-1.01-pl5321hdfd78af_0.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/noarch/sourmash-4.9.4-hdfd78af_0.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/noarch/taxburst-0.3.2-pyhdfd78af_0.conda
+      - conda: https://conda.anaconda.org/bioconda/osx-arm64/alignoth-1.6.0-h75efd46_0.conda
       - conda: https://conda.anaconda.org/bioconda/osx-arm64/bbmap-39.81-he046917_1.conda
       - conda: https://conda.anaconda.org/bioconda/osx-arm64/blast-2.16.0-hb260f6e_5.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/osx-arm64/deacon-0.15.0-hc0d6d67_0.conda
@@ -1300,6 +1304,7 @@ environments:
     - https://pypi.org/simple
     packages:
       linux-64:
+      - conda: https://conda.anaconda.org/bioconda/linux-64/alignoth-1.6.0-h9e2517d_0.conda
       - conda: https://conda.anaconda.org/bioconda/linux-64/bbmap-39.91-h09cc210_0.conda
       - conda: https://conda.anaconda.org/bioconda/linux-64/blast-2.17.0-h66d330f_0.conda
       - conda: https://conda.anaconda.org/bioconda/linux-64/deacon-0.15.0-hdd79491_0.conda
@@ -1750,6 +1755,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/fc/12/97b4295858db7bf5251880ffc77919a28a2179d80de62d91923f6933f264/marimo-0.23.15-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/fd/7b/122376b1fd3c62c1ed9dc80c931ace4844b3c55407b6fb2d199377c9736f/pydantic-2.13.4-py3-none-any.whl
       linux-aarch64:
+      - conda: https://conda.anaconda.org/bioconda/linux-aarch64/alignoth-1.6.0-hb267aa8_0.conda
       - conda: https://conda.anaconda.org/bioconda/linux-aarch64/bbmap-39.91-h7683cbd_0.conda
       - conda: https://conda.anaconda.org/bioconda/linux-aarch64/blast-2.16.0-h6a93c2d_5.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/linux-aarch64/deacon-0.15.0-hacc9189_0.conda
@@ -2206,6 +2212,7 @@ environments:
       - conda: https://conda.anaconda.org/bioconda/noarch/perl-types-serialiser-1.01-pl5321hdfd78af_0.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/noarch/sourmash-4.9.4-hdfd78af_0.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/noarch/taxburst-0.3.2-pyhdfd78af_0.conda
+      - conda: https://conda.anaconda.org/bioconda/osx-64/alignoth-1.6.0-h822ee72_0.conda
       - conda: https://conda.anaconda.org/bioconda/osx-64/bbmap-39.91-h991cdf7_0.conda
       - conda: https://conda.anaconda.org/bioconda/osx-64/blast-2.17.0-h53185c9_0.conda
       - conda: https://conda.anaconda.org/bioconda/osx-64/deacon-0.15.0-h5126ea9_0.conda
@@ -2609,6 +2616,7 @@ environments:
       - conda: https://conda.anaconda.org/bioconda/noarch/perl-types-serialiser-1.01-pl5321hdfd78af_0.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/noarch/sourmash-4.9.4-hdfd78af_0.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/noarch/taxburst-0.3.2-pyhdfd78af_0.conda
+      - conda: https://conda.anaconda.org/bioconda/osx-arm64/alignoth-1.6.0-h75efd46_0.conda
       - conda: https://conda.anaconda.org/bioconda/osx-arm64/bbmap-39.91-he046917_0.conda
       - conda: https://conda.anaconda.org/bioconda/osx-arm64/blast-2.16.0-hb260f6e_5.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/osx-arm64/deacon-0.15.0-hc0d6d67_0.conda
@@ -3006,6 +3014,26 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/fc/12/97b4295858db7bf5251880ffc77919a28a2179d80de62d91923f6933f264/marimo-0.23.15-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/fd/7b/122376b1fd3c62c1ed9dc80c931ace4844b3c55407b6fb2d199377c9736f/pydantic-2.13.4-py3-none-any.whl
 packages:
+- conda: https://conda.anaconda.org/bioconda/linux-64/alignoth-1.6.0-h9e2517d_0.conda
+  sha256: d2c6d1871e282d739fb9aaccb2ebf455ed2541b71b6ef378621f3e91e5a75788
+  md5: ce0f0c980ebaab8690f7819c206dc2c4
+  depends:
+  - __glibc >=2.17,<3.0.a0
+  - libcblas >=3.9.0,<4.0a0
+  - libcurl >=8.21.0,<9.0a0
+  - libgcc >=14
+  - libstdcxx >=14
+  - openssl >=3.5.7,<4.0a0
+  constrains:
+  - __glibc >=2.17
+  license: MIT
+  license_family: MIT
+  purls: []
+  run_exports:
+    weak:
+    - alignoth >=1.6.0,<1.7.0a0
+  size: 3824875
+  timestamp: 1783645079816
 - conda: https://conda.anaconda.org/bioconda/linux-64/bbmap-39.81-h9b5c0a0_1.conda
   sha256: 96e2ed5f82a928fe6a71893e366166390c63034b45976211cf91baf90d4e41d9
   md5: 4af20865073c32418b8553da02e436bb
@@ -3016,6 +3044,9 @@ packages:
   - samtools >=1.23.1,<2.0a0
   license: BSD-3-Clause-LBNL
   purls: []
+  run_exports:
+    weak:
+    - bbmap >=39.81,<40.0a0
   size: 93105368
   timestamp: 1774976438094
 - conda: https://conda.anaconda.org/bioconda/linux-64/bbmap-39.91-h09cc210_0.conda
@@ -3379,6 +3410,9 @@ packages:
   - __glibc >=2.17
   license: MIT
   purls: []
+  run_exports:
+    weak:
+    - sracha >=0.3.10,<0.4.0a0
   size: 3017594
   timestamp: 1781702733474
 - conda: https://conda.anaconda.org/bioconda/linux-64/sracha-0.3.11-h54198d6_0.conda
@@ -3412,6 +3446,25 @@ packages:
     - vsearch >=2.31.0,<3.0a0
   size: 308632
   timestamp: 1777559969511
+- conda: https://conda.anaconda.org/bioconda/linux-aarch64/alignoth-1.6.0-hb267aa8_0.conda
+  sha256: 7f40c7bcea23cb0417285016f31b299277913bbdcdd87bd2f078dcc399cf5110
+  md5: 7dd4f673294991e231674b81c962ed29
+  depends:
+  - libcblas >=3.9.0,<4.0a0
+  - libcurl >=8.21.0,<9.0a0
+  - libgcc >=14
+  - libstdcxx >=14
+  - openssl >=3.5.7,<4.0a0
+  constrains:
+  - __glibc >=2.17
+  license: MIT
+  license_family: MIT
+  purls: []
+  run_exports:
+    weak:
+    - alignoth >=1.6.0,<1.7.0a0
+  size: 4462719
+  timestamp: 1783644809360
 - conda: https://conda.anaconda.org/bioconda/linux-aarch64/bbmap-39.81-heff9fa3_1.conda
   sha256: 9e1c50e599881bf86c123e51c60ea030f2e55d83890cab77cb206294a75bef0f
   md5: e2146081b0193f3a33fc800aac9b822c
@@ -3422,6 +3475,9 @@ packages:
   - samtools >=1.23.1,<2.0a0
   license: BSD-3-Clause-LBNL
   purls: []
+  run_exports:
+    weak:
+    - bbmap >=39.81,<40.0a0
   size: 93798515
   timestamp: 1776424997843
 - conda: https://conda.anaconda.org/bioconda/linux-aarch64/bbmap-39.91-h7683cbd_0.conda
@@ -3814,6 +3870,9 @@ packages:
   - __glibc >=2.17
   license: MIT
   purls: []
+  run_exports:
+    weak:
+    - sracha >=0.3.10,<0.4.0a0
   size: 2940791
   timestamp: 1781702560184
 - conda: https://conda.anaconda.org/bioconda/linux-aarch64/sracha-0.3.11-h389c417_0.conda
@@ -3952,6 +4011,25 @@ packages:
     - taxburst >=0.3.2,<0.4.0a0
   size: 64098
   timestamp: 1755607523465
+- conda: https://conda.anaconda.org/bioconda/osx-64/alignoth-1.6.0-h822ee72_0.conda
+  sha256: 9bb3cef50a4bd21d2c57e3c6f7b98aa1254ff7b0965bb8f276ca1207d3ea235d
+  md5: 02400f2e34b60ef24e2fd5ab917f3d04
+  depends:
+  - __osx >=10.13
+  - libcblas >=3.9.0,<4.0a0
+  - libcurl >=8.21.0,<9.0a0
+  - libcxx >=19
+  - openssl >=3.5.7,<4.0a0
+  constrains:
+  - __osx >=10.13
+  license: MIT
+  license_family: MIT
+  purls: []
+  run_exports:
+    weak:
+    - alignoth >=1.6.0,<1.7.0a0
+  size: 1930333
+  timestamp: 1783646206732
 - conda: https://conda.anaconda.org/bioconda/osx-64/bbmap-39.81-h831ead7_1.conda
   sha256: d7bdc66811f020d0f36a0f072606a6d68f36b2a5cb803f07fb01515b9a8a24b0
   md5: f53051b0c88bb33095ab8370f51831f1
@@ -3961,6 +4039,9 @@ packages:
   - samtools >=1.23.1,<2.0a0
   license: BSD-3-Clause-LBNL
   purls: []
+  run_exports:
+    weak:
+    - bbmap >=39.81,<40.0a0
   size: 94168433
   timestamp: 1774977570827
 - conda: https://conda.anaconda.org/bioconda/osx-64/bbmap-39.91-h991cdf7_0.conda
@@ -4319,6 +4400,9 @@ packages:
   - __osx >=11.0
   license: MIT
   purls: []
+  run_exports:
+    weak:
+    - sracha >=0.3.10,<0.4.0a0
   size: 2935743
   timestamp: 1781704340258
 - conda: https://conda.anaconda.org/bioconda/osx-64/sracha-0.3.11-h518e4cb_0.conda
@@ -4349,6 +4433,25 @@ packages:
     - vsearch >=2.31.0,<3.0a0
   size: 291379
   timestamp: 1777561379071
+- conda: https://conda.anaconda.org/bioconda/osx-arm64/alignoth-1.6.0-h75efd46_0.conda
+  sha256: 4e931d03071e2462a7e5fdf7677d18ec2a2f16ae0a4c3cc0afa13787bf02547a
+  md5: adfcd9fad07636684a23fe284ebbbb12
+  depends:
+  - __osx >=11.0
+  - libcblas >=3.9.0,<4.0a0
+  - libcurl >=8.21.0,<9.0a0
+  - libcxx >=19
+  - openssl >=3.5.7,<4.0a0
+  constrains:
+  - __osx >=11.0
+  license: MIT
+  license_family: MIT
+  purls: []
+  run_exports:
+    weak:
+    - alignoth >=1.6.0,<1.7.0a0
+  size: 1802700
+  timestamp: 1783644544270
 - conda: https://conda.anaconda.org/bioconda/osx-arm64/bbmap-39.81-he046917_1.conda
   sha256: ba4c29f184f2abe6e4630dea809e221639f4f48edb0e158e27dfa6559e02bd1b
   md5: 6d62f8e37a08d6348368844a45f386f4
@@ -4359,6 +4462,9 @@ packages:
   - samtools >=1.23.1,<2.0a0
   license: BSD-3-Clause-LBNL
   purls: []
+  run_exports:
+    weak:
+    - bbmap >=39.81,<40.0a0
   size: 93167198
   timestamp: 1776521806505
 - conda: https://conda.anaconda.org/bioconda/osx-arm64/bbmap-39.91-he046917_0.conda
@@ -4731,6 +4837,9 @@ packages:
   - __osx >=11.0
   license: MIT
   purls: []
+  run_exports:
+    weak:
+    - sracha >=0.3.10,<0.4.0a0
   size: 2654035
   timestamp: 1781702356728
 - conda: https://conda.anaconda.org/bioconda/osx-arm64/sracha-0.3.11-h1a4e967_0.conda
@@ -7576,7 +7685,7 @@ packages:
   license: PSF-2.0
   license_family: PSF
   purls:
-  - pkg:pypi/matplotlib?source=compressed-mapping
+  - pkg:pypi/matplotlib?source=hash-mapping
   run_exports: {}
   size: 9022139
   timestamp: 1781626880429
@@ -7712,7 +7821,7 @@ packages:
   license: BSD-3-Clause
   license_family: BSD
   purls:
-  - pkg:pypi/numpy?source=compressed-mapping
+  - pkg:pypi/numpy?source=hash-mapping
   run_exports:
     weak:
     - numpy >=1.25,<3
@@ -8066,7 +8175,7 @@ packages:
   - libwebp-base >=1.6.0,<2.0a0
   license: HPND
   purls:
-  - pkg:pypi/pillow?source=compressed-mapping
+  - pkg:pypi/pillow?source=hash-mapping
   run_exports: {}
   size: 1064129
   timestamp: 1782912080163
@@ -16723,7 +16832,7 @@ packages:
   - libtiff >=4.7.1,<4.8.0a0
   license: HPND
   purls:
-  - pkg:pypi/pillow?source=compressed-mapping
+  - pkg:pypi/pillow?source=hash-mapping
   run_exports: {}
   size: 987687
   timestamp: 1782912253167
@@ -17037,7 +17146,7 @@ packages:
   license: BSD-3-Clause
   license_family: BSD
   purls:
-  - pkg:pypi/scipy?source=compressed-mapping
+  - pkg:pypi/scipy?source=hash-mapping
   run_exports: {}
   size: 15781271
   timestamp: 1781914294124
@@ -18018,7 +18127,7 @@ packages:
   license: MIT
   license_family: MIT
   purls:
-  - pkg:pypi/fonttools?source=compressed-mapping
+  - pkg:pypi/fonttools?source=hash-mapping
   run_exports: {}
   size: 2904377
   timestamp: 1778771054844
@@ -19763,7 +19872,7 @@ packages:
   license: BSD-3-Clause
   license_family: BSD
   purls:
-  - pkg:pypi/numpy?source=compressed-mapping
+  - pkg:pypi/numpy?source=hash-mapping
   run_exports:
     weak:
     - numpy >=1.25,<3
@@ -19785,7 +19894,7 @@ packages:
   license: BSD-3-Clause
   license_family: BSD
   purls:
-  - pkg:pypi/numpy?source=compressed-mapping
+  - pkg:pypi/numpy?source=hash-mapping
   run_exports:
     weak:
     - numpy >=1.25,<3
