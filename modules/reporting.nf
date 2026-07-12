@@ -62,3 +62,22 @@ process RENDER_SOURMASH_SANKEY {
       --title "${sample_id} sourmash taxonomic profile"
   """
 }
+
+process BUILD_SEQUENCE_FLOW {
+
+  label "low"
+
+  input:
+  path evidence_files, stageAs: "sequence_flow_evidence??????/*"
+
+  output:
+  path "sequence_flow.tsv", emit: sequence_flow
+
+  script:
+  def evidence_args = evidence_files.collect { evidence -> "--evidence '${evidence}'" }.join(" ")
+  """
+  build_sequence_flow.py \
+      ${evidence_args} \
+      --output sequence_flow.tsv
+  """
+}

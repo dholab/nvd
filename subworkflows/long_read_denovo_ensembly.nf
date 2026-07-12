@@ -7,6 +7,8 @@ workflow LONG_READ_DENOVO_ENSEMBLY {
     ch_long_read_profiles  // tuple(meta, reads, profile_json, length_histogram)
 
     main:
+    ch_assembly_eligibility = channel.empty()
+    ch_union_provenance = channel.empty()
 
     if (params.experimental == true) {
         ASSESS_LONG_READ_ASSEMBLY_ELIGIBILITY(
@@ -14,6 +16,7 @@ workflow LONG_READ_DENOVO_ENSEMBLY {
                 tuple(meta, reads, profile_json)
             }
         )
+        ch_assembly_eligibility = ASSESS_LONG_READ_ASSEMBLY_ELIGIBILITY.out.report
 
         ASSEMBLE_WITH_MYLOASM(
             ASSESS_LONG_READ_ASSEMBLY_ELIGIBILITY.out.myloasm.map { meta, reads, _marker ->
@@ -78,6 +81,7 @@ workflow LONG_READ_DENOVO_ENSEMBLY {
         FIND_CONTAINMENT_DUPLICATES(NORMALIZE_CONTIGS.out.prepared)
         EXTRACT_UNIQUE_CONTIGS(FIND_CONTAINMENT_DUPLICATES.out.candidates)
         ch_long_read_contigs = EXTRACT_UNIQUE_CONTIGS.out.contigs
+        ch_union_provenance = EXTRACT_UNIQUE_CONTIGS.out.provenance
     } else {
         ch_long_read_assembly_inputs = ch_long_read_profiles.branch { meta, _reads, _profile_json, _length_histogram ->
             eligible: meta.sequence_count >= 100
@@ -101,4 +105,6 @@ workflow LONG_READ_DENOVO_ENSEMBLY {
     emit:
     contigs = ch_long_read_contigs  // tuple(sample_id, platform, read_structure, producer, fasta)
     no_contigs = ch_no_contigs      // tuple(sample_id, platform)
+    assembly_eligibility = ch_assembly_eligibility
+    union_provenance = ch_union_provenance
 }

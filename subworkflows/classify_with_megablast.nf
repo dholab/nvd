@@ -49,6 +49,7 @@ workflow CLASSIFY_WITH_MEGABLAST {
 
     emit:
     filtered_megablast = FILTER_NON_VIRUS_MEGABLAST_NODES.out.hits
+    filter_decisions = FILTER_NON_VIRUS_MEGABLAST_NODES.out.decisions
     megablast_query_partition = PARTITION_MEGABLAST_QUERIES.out
     megablast          = SELECT_TOP_BLAST_HITS.out
 }
