@@ -125,7 +125,7 @@ workflow LIMS_INTEGRATION {
         .mix(LABKEY_UPLOAD_FASTA.out.log)
         .collectFile(
             name: 'final_labkey_upload.log',
-            storeDir: params.results,
+            storeDir: params.labkey_uploads + '/upload_logs',
         )
 
     emit:
