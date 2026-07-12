@@ -3,6 +3,7 @@ include { NOTIFY_SLACK } from "../modules/utils"
 include { BUILD_SEQUENCE_FLOW; RENDER_MERGED_TAXON_ABUNDANCE_SUNBURST; RENDER_TAXON_ABUNDANCE_SUNBURST; RENDER_SOURMASH_SANKEY } from "../modules/reporting"
 include { CRUMBS_PROFILING } from "./crumbs_profiling"
 include { LIMS_INTEGRATION } from "./lims_integration"
+include { RENDER_CONTIG_COVERAGE_HISTOGRAM } from "../modules/samtools"
 
 workflow REPORTING {
     take:
@@ -58,6 +59,8 @@ workflow REPORTING {
             .map { sample_id, _query_class, final_tsv -> tuple(sample_id, final_tsv) }
             .groupTuple()
     )
+
+    RENDER_CONTIG_COVERAGE_HISTOGRAM(ch_filtered_bam)
 
     ch_sample_blast_results = CONCATENATE_SAMPLE_BLAST_RESULTS.out
         .multiMap { sample_id, blast_tsv ->
