@@ -77,4 +77,5 @@ workflow CLASSIFY_WITH_BLASTN {
 
   emit:
   merged_results = STACK_BATCH_BLAST_RESULTS.out
+  filter_decisions = FILTER_NON_VIRUS_BLASTN_NODES.out.decisions
 }

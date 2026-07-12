@@ -128,6 +128,16 @@ workflow NVD_MAIN {
     ch_taxonomy_dir,
   )
 
+  ch_sequence_flow_evidence = LONG_READ_DENOVO_ENSEMBLY.out.assembly_eligibility
+    .map { _sample_id, report -> report }
+    .mix(LONG_READ_DENOVO_ENSEMBLY.out.union_provenance.map { _sample_id, _provenance, summary -> summary })
+    .mix(PREPARE_BLAST_QUERIES.out.contig_filter_decisions.map { _sample_id, decision -> decision })
+    .mix(PREPARE_BLAST_QUERIES.out.mapback_count_files.map { _sample_id, counts -> counts })
+    .mix(PREPARE_BLAST_QUERIES.out.blast_query_summaries.map { _sample_id, summary -> summary })
+    .mix(CLASSIFY_WITH_MEGABLAST.out.megablast_query_partition.map { _sample_id, _query_class, _accounted_ids, _blastn_candidates, summary -> summary })
+    .mix(CLASSIFY_WITH_MEGABLAST.out.filter_decisions.map { _sample_id, _query_class, decision -> decision })
+    .mix(CLASSIFY_WITH_BLASTN.out.filter_decisions.map { _sample_id, _query_class, decision -> decision })
+
   REPORTING(
     CLASSIFY_WITH_BLASTN.out.merged_results,
     PREPROCESS_READS.out.read_counts,
@@ -141,6 +151,7 @@ workflow NVD_MAIN {
     COMPUTE_RUN_CONTEXT.out.ready,
     ch_run_context,
     ch_sourmash_tax_reports,
+    ch_sequence_flow_evidence,
     workflow.runName,
   )
 

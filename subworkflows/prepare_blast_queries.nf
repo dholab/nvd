@@ -102,6 +102,7 @@ workflow PREPARE_BLAST_QUERIES {
     ch_contig_query_lookups = ch_filtered_contigs
         .map { sample_id, _platform, _read_structure, _fasta, lookup -> tuple(sample_id, lookup) }
 
+    ch_blast_query_summaries = channel.empty()
     if (params.experimental == true) {
         ch_no_contig_paired = ch_paired_reads
             .combine(ch_no_contig_samples, by: [0, 1])
@@ -160,12 +161,16 @@ workflow PREPARE_BLAST_QUERIES {
             .filter { row -> row.size() == 3 }
             .map { sample_id, platform, _sample_marker -> tuple(sample_id, platform) }
         SUMMARIZE_EMPTY_BLAST_QUERY_BATCHES(ch_samples_without_query_batches)
+        ch_blast_query_summaries = SUMMARIZE_BLAST_QUERY_BATCHES.out
+            .mix(SUMMARIZE_EMPTY_BLAST_QUERY_BATCHES.out)
     } else {
         ch_query_lookups = ch_contig_query_lookups.groupTuple()
     }
 
     ch_contig_read_counts = CONTIG_READ_MAPBACK.out.contig_read_counts
         .mix(ch_no_contig_samples.map { sample_id, _platform -> tuple(sample_id, []) })
+    ch_mapback_count_files = CONTIG_READ_MAPBACK.out.contig_read_counts
+        .flatMap { sample_id, counts -> counts.collect { count_file -> tuple(sample_id, count_file) } }
 
     emit:
     queries = ch_query_batches
@@ -176,4 +181,7 @@ workflow PREPARE_BLAST_QUERIES {
     unmapped_reads = CONTIG_READ_MAPBACK.out.unmapped_reads
     unmapped_read_counts = CONTIG_READ_MAPBACK.out.unmapped_read_counts
     no_contigs = ch_no_contig_samples
+    contig_filter_decisions = DEACON_FILTER_CONTIGS.out.decisions
+    mapback_count_files = ch_mapback_count_files
+    blast_query_summaries = ch_blast_query_summaries
 }

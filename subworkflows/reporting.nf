@@ -1,6 +1,6 @@
 include { ADD_READ_COUNTS_TO_BLAST; BUILD_QUERY_BIG_TABLE; BUILD_TAXON_BIG_TABLE; CONCATENATE_QUERY_BIG_TABLE; CONCATENATE_TAXON_BIG_TABLE; CONCATENATE_EXPERIMENT_BLAST; TARGET_ENRICHMENT_REPORT } from "../modules/utils"
 include { NOTIFY_SLACK } from "../modules/utils"
-include { RENDER_MERGED_TAXON_ABUNDANCE_SUNBURST; RENDER_TAXON_ABUNDANCE_SUNBURST; RENDER_SOURMASH_SANKEY } from "../modules/reporting"
+include { BUILD_SEQUENCE_FLOW; RENDER_MERGED_TAXON_ABUNDANCE_SUNBURST; RENDER_TAXON_ABUNDANCE_SUNBURST; RENDER_SOURMASH_SANKEY } from "../modules/reporting"
 include { CRUMBS_PROFILING } from "./crumbs_profiling"
 include { LIMS_INTEGRATION } from "./lims_integration"
 
@@ -18,6 +18,7 @@ workflow REPORTING {
     ch_run_ready
     ch_run_context
     ch_sourmash_tax_reports
+    ch_sequence_flow_evidence
     run_id
 
     main:
@@ -55,6 +56,8 @@ workflow REPORTING {
     )
 
     if (params.experimental == true) {
+        BUILD_SEQUENCE_FLOW(ch_sequence_flow_evidence.collect())
+
         CRUMBS_PROFILING(
             ch_split_blast_results.for_emit,
             ch_filtered_bam,
@@ -137,6 +140,7 @@ workflow REPORTING {
     taxon_big_tables = params.experimental ? BUILD_TAXON_BIG_TABLE.out : channel.empty()
     taxon_big_table = params.experimental ? CONCATENATE_TAXON_BIG_TABLE.out.concatenated_tsv : channel.empty()
     experiment_blast = CONCATENATE_EXPERIMENT_BLAST.out.concatenated_tsv
+    sequence_flow = params.experimental ? BUILD_SEQUENCE_FLOW.out.sequence_flow : channel.empty()
     target_enrichment_report = TARGET_ENRICHMENT_REPORT.out.summary_tsv
     taxon_abundance_sunbursts = params.experimental ? RENDER_TAXON_ABUNDANCE_SUNBURST.out.reports : channel.empty()
     merged_taxon_abundance_sunburst = params.experimental ? RENDER_MERGED_TAXON_ABUNDANCE_SUNBURST.out.report : channel.empty()
