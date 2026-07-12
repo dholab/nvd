@@ -1,6 +1,6 @@
 include { ADD_READ_COUNTS_TO_BLAST; BUILD_QUERY_BIG_TABLE; BUILD_TAXON_BIG_TABLE; CONCATENATE_QUERY_BIG_TABLE; CONCATENATE_TAXON_BIG_TABLE; CONCATENATE_EXPERIMENT_BLAST; TARGET_ENRICHMENT_REPORT } from "../modules/utils"
 include { NOTIFY_SLACK } from "../modules/utils"
-include { BUILD_SEQUENCE_FLOW; RENDER_MERGED_TAXON_ABUNDANCE_SUNBURST; RENDER_TAXON_ABUNDANCE_SUNBURST; RENDER_SOURMASH_SANKEY } from "../modules/reporting"
+include { BUILD_SEQUENCE_FLOW; RENDER_CONTIG_ALIGNMENT_PLOTS; RENDER_MERGED_TAXON_ABUNDANCE_SUNBURST; RENDER_TAXON_ABUNDANCE_SUNBURST; RENDER_SOURMASH_SANKEY } from "../modules/reporting"
 include { CRUMBS_PROFILING } from "./crumbs_profiling"
 include { LIMS_INTEGRATION } from "./lims_integration"
 include { RENDER_CONTIG_COVERAGE_HISTOGRAM } from "../modules/samtools"
@@ -29,7 +29,12 @@ workflow REPORTING {
 
     ch_contig_sequence_parts = ch_contig_sequences.multiMap { sample_id, _platform, _read_structure, fasta, _lookup ->
         for_lims: tuple(sample_id, fasta)
+        for_alignment_plots: tuple(sample_id, fasta)
     }
+
+    ch_contig_alignment_plot_inputs = ch_contig_sequence_parts.for_alignment_plots
+        .join(ch_filtered_bam, by: 0)
+        .map { sample_id, fasta, bam, bai -> tuple(sample_id, fasta, bam, bai) }
 
     // Enrich BLAST results with all pipeline metadata (mapped_reads, total_reads,
     // blast_db_version, nextflow_run_id) so the published TSV is complete
@@ -41,6 +46,7 @@ workflow REPORTING {
 
     ADD_READ_COUNTS_TO_BLAST(ch_blast_finalize, run_id)
     RENDER_CONTIG_COVERAGE_HISTOGRAM(ch_filtered_bam)
+    RENDER_CONTIG_ALIGNMENT_PLOTS(ch_contig_alignment_plot_inputs)
 
     ch_split_blast_results = ADD_READ_COUNTS_TO_BLAST.out
         .multiMap { sample_id, blast_tsv ->
