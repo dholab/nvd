@@ -74,6 +74,7 @@ jobs:
               which blastn && blastn -version &&
               which nextflow && nextflow -version &&
               which minimap2 && minimap2 --version &&
+              which alignoth && alignoth --version &&
               which seqkit && seqkit version
             '
       
