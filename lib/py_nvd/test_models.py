@@ -585,7 +585,7 @@ class TestNvdParamsDefaults:
 
     def test_default_monoimage(self) -> None:
         """Default monoimage matches nextflow.config."""
-        assert NvdParams().monoimage == "nrminor/nvd:v3.0.0"
+        assert NvdParams().monoimage == "nrminor/nvd:latest"
 
 
 class TestLoadParamsFile:

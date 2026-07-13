@@ -381,7 +381,7 @@
     },
     "monoimage": {
       "type": "string",
-      "default": "nrminor/nvd:v3.0.0",
+      "default": "nrminor/nvd:latest",
       "description": "Container image to use for pipeline execution"
     },
     "slack_enabled": {
