@@ -75,11 +75,18 @@ def validate_dataframe(
                     f"  WARNING: Could not convert '{col}' to {dtype}: {e!s}",
                 )
 
+    # Taxonomy absence is meaningful and must remain null through conversion to
+    # LabKey's empty representation rather than becoming fabricated taxid 0.
+    nullable_taxid_columns = {"staxids", "adjusted_taxid"}
+
     # Fill null values with appropriate defaults
     for col in df.columns:
         if df[col].dtype in [pl.Float32, pl.Float64]:
             df = df.with_columns(pl.col(col).fill_null(0.0))
-        elif df[col].dtype in [pl.Int8, pl.Int16, pl.Int32, pl.Int64]:
+        elif (
+            df[col].dtype in [pl.Int8, pl.Int16, pl.Int32, pl.Int64]
+            and col not in nullable_taxid_columns
+        ):
             df = df.with_columns(pl.col(col).fill_null(0))
         elif df[col].dtype == pl.Utf8:
             df = df.with_columns(pl.col(col).fill_null(""))
