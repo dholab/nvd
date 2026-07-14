@@ -4,6 +4,7 @@ include { BUILD_SEQUENCE_FLOW; RENDER_CONTIG_ALIGNMENT_PLOTS; RENDER_MERGED_TAXO
 include { CRUMBS_PROFILING } from "./crumbs_profiling"
 include { LIMS_INTEGRATION } from "./lims_integration"
 include { RENDER_CONTIG_COVERAGE_HISTOGRAM } from "../modules/samtools"
+include { ANNOTATE_BLAST_RISK_GROUPS } from "../modules/risk_groups"
 
 workflow REPORTING {
     take:
@@ -20,6 +21,7 @@ workflow REPORTING {
     ch_run_ready
     ch_run_context
     ch_sourmash_tax_reports
+    ch_risk_group_lookup
     ch_sequence_flow_evidence
     run_id
 
@@ -48,7 +50,13 @@ workflow REPORTING {
     // regardless of whether LabKey is enabled. This now runs per (sample_id,
     // query_class) batch — before batches are stacked — so each read type's
     // hits can be uploaded eagerly downstream.
-    ch_blast_finalize = ch_blast_results
+    ANNOTATE_BLAST_RISK_GROUPS(
+        ch_blast_results,
+        ch_risk_group_lookup,
+        ch_taxonomy_dir,
+    )
+
+    ch_blast_finalize = ANNOTATE_BLAST_RISK_GROUPS.out
         .combine(ch_read_counts, by: 0)
         .combine(ch_contig_read_counts, by: 0)
         .combine(ch_query_lookups, by: 0)
@@ -56,7 +64,17 @@ workflow REPORTING {
             tuple(sample_id, query_class, batch_tsv, total_reads, contig_counts, lookups)
         }
 
-    ADD_READ_COUNTS_TO_BLAST(ch_blast_finalize, run_id)   // -> tuple(sample_id, query_class, batch.final.tsv)
+    def target_enrichment_enabled = NvdUtils.targetEnrichmentEnabled(params)
+    ch_blast_db_version = Channel.value(params.blast_db_version)
+    ch_virus_index_version = Channel.value(
+        target_enrichment_enabled ? params.virus_index_version : "not_used"
+    )
+    ADD_READ_COUNTS_TO_BLAST(
+        ch_blast_finalize,
+        run_id,
+        ch_blast_db_version,
+        ch_virus_index_version,
+    )
 
     // Collapse query-class partitions into the canonical per-sample BLAST result.
     CONCATENATE_SAMPLE_BLAST_RESULTS(
