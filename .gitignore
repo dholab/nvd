@@ -66,6 +66,7 @@
 !/assets/test_samplesheet.csv
 !/assets/human_viruses_taxlist.txt.zst
 !/assets/empty_deacon.k31w1.idx
+!/assets/human_virus_risk_group_lookup.tsv
 
 # docs
 !/docs
