@@ -30,6 +30,7 @@ BLAST_HEADER = [
     "adjusted_taxid",
     "adjusted_taxid_name",
     "adjusted_taxid_rank",
+    "who_risk_group",
     "adjustment_method",
 ]
 
@@ -61,6 +62,7 @@ def write_blast_tsv(path: Path) -> None:
                 "adjusted_taxid": "10239",
                 "adjusted_taxid_name": "Viruses",
                 "adjusted_taxid_rank": "superkingdom",
+                "who_risk_group": "Risk Group 2",
                 "adjustment_method": "dominant",
             },
         )
@@ -89,6 +91,7 @@ def write_query_blast_tsv(path: Path, qseqids: tuple[str, ...]) -> None:
                     "adjusted_taxid": "10239",
                     "adjusted_taxid_name": "Viruses",
                     "adjusted_taxid_rank": "superkingdom",
+                    "who_risk_group": "Risk Group 2",
                     "adjustment_method": "dominant",
                 },
             )
@@ -219,6 +222,7 @@ def test_final_blast_rows_include_collected_contig_metadata(tmp_path: Path) -> N
     assert row["source_id"] == "NODE_1_length_4_cov_1.0"
     assert row["support_record_count"] == "1"
     assert row["mapped_reads"] == "7"
+    assert row["who_risk_group"] == "Risk Group 2"
     assert "evidence_length" not in row
 
 

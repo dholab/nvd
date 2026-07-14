@@ -26,11 +26,43 @@ COLUMN_RENAMES = {
     "sample": "sample_id",
     "rank": "tax_rank",
 }
+LABKEY_INPUT_COLUMNS = {
+    "task",
+    "sample",
+    "qseqid",
+    "qlen",
+    "sseqid",
+    "stitle",
+    "length",
+    "pident",
+    "evalue",
+    "bitscore",
+    "sscinames",
+    "staxids",
+    "rank",
+    "adjusted_taxid",
+    "adjustment_method",
+    "adjusted_taxid_name",
+    "adjusted_taxid_rank",
+    "query_class",
+    "producer",
+    "source_id",
+    "support_record_count",
+    "mapped_reads",
+    "total_reads",
+    "blast_db_version",
+    "virus_index_version",
+    "nextflow_run_id",
+}
 
 
 def rename_columns(row: dict[str, str]) -> dict[str, str]:
-    """Rename TSV columns to match LabKey schema."""
-    return {COLUMN_RENAMES.get(key, key): value for key, value in row.items()}
+    """Project and rename final BLAST columns for the current LabKey schema."""
+    return {
+        COLUMN_RENAMES.get(key, key): value
+        for key, value in row.items()
+        if key in LABKEY_INPUT_COLUMNS
+    }
 
 
 def main():

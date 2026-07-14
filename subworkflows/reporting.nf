@@ -4,6 +4,7 @@ include { BUILD_SEQUENCE_FLOW; RENDER_CONTIG_ALIGNMENT_PLOTS; RENDER_MERGED_TAXO
 include { CRUMBS_PROFILING } from "./crumbs_profiling"
 include { LIMS_INTEGRATION } from "./lims_integration"
 include { RENDER_CONTIG_COVERAGE_HISTOGRAM } from "../modules/samtools"
+include { ANNOTATE_BLAST_RISK_GROUPS } from "../modules/risk_groups"
 
 workflow REPORTING {
     take:
@@ -19,6 +20,7 @@ workflow REPORTING {
     ch_run_ready
     ch_run_context
     ch_sourmash_tax_reports
+    ch_risk_group_lookup
     ch_sequence_flow_evidence
     run_id
 
@@ -39,12 +41,28 @@ workflow REPORTING {
     // Enrich BLAST results with all pipeline metadata (mapped_reads, total_reads,
     // blast_db_version, nextflow_run_id) so the published TSV is complete
     // regardless of whether LabKey is enabled.
-    ch_blast_finalize = ch_blast_results
+    ANNOTATE_BLAST_RISK_GROUPS(
+        ch_blast_results,
+        ch_risk_group_lookup,
+        ch_taxonomy_dir,
+    )
+
+    ch_blast_finalize = ANNOTATE_BLAST_RISK_GROUPS.out
         .join(ch_read_counts, by: 0)
         .join(ch_contig_read_counts, by: 0)
         .join(ch_query_lookups, by: 0)
 
-    ADD_READ_COUNTS_TO_BLAST(ch_blast_finalize, run_id)
+    def target_enrichment_enabled = NvdUtils.targetEnrichmentEnabled(params)
+    ch_blast_db_version = Channel.value(params.blast_db_version)
+    ch_virus_index_version = Channel.value(
+        target_enrichment_enabled ? params.virus_index_version : "not_used"
+    )
+    ADD_READ_COUNTS_TO_BLAST(
+        ch_blast_finalize,
+        run_id,
+        ch_blast_db_version,
+        ch_virus_index_version,
+    )
     RENDER_CONTIG_COVERAGE_HISTOGRAM(ch_filtered_bam)
     RENDER_CONTIG_ALIGNMENT_PLOTS(ch_contig_alignment_plot_inputs)
 

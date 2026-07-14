@@ -66,9 +66,13 @@ workflow NVD_MAIN {
   ch_sourmash_gather_csv = channel.empty()
   ch_sourmash_lineages = channel.empty()
   ch_sourmash_tax_reports = channel.empty()
+  ch_risk_group_lookup = Channel.value(file("${projectDir}/assets/human_virus_risk_group_lookup.tsv"))
 
   if (params.experimental == true) {
-    rapid_screening = RAPID_SCREENING(PREPROCESS_READS.out.profiled_batches_by_sample)
+    rapid_screening = RAPID_SCREENING(
+      PREPROCESS_READS.out.profiled_batches_by_sample,
+      ch_risk_group_lookup,
+    )
     SAMPLE_SIMILARITY_QC(rapid_screening.query_sketches)
     ch_sourmash_gather_csv = rapid_screening.gather_csv
     ch_sourmash_lineages = rapid_screening.lineages
@@ -151,6 +155,7 @@ workflow NVD_MAIN {
     COMPUTE_RUN_CONTEXT.out.ready,
     ch_run_context,
     ch_sourmash_tax_reports,
+    ch_risk_group_lookup,
     ch_sequence_flow_evidence,
     workflow.runName,
   )

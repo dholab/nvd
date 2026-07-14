@@ -26,6 +26,7 @@ REQUIRED_QUERY_COLUMNS = {
     "assigned_taxid",
     "assigned_taxid_name",
     "assigned_taxid_rank",
+    "who_risk_group",
     "support_tier",
     "query_class",
     "crumbs_score",
@@ -40,6 +41,7 @@ OUTPUT_COLUMNS = [
     "relative_crumbs_percent",
     "supporting_query_count",
     "taxid",
+    "who_risk_group",
     "total_query_span",
     "total_crumbs_score",
     "strong_query_count",
@@ -164,6 +166,7 @@ def aggregate_queries(frame: pl.LazyFrame) -> pl.LazyFrame:
         pl.col("assigned_taxid_name").alias("taxon_name"),
         pl.col("assigned_taxid_rank").alias("taxon_rank"),
     ).agg(
+        pl.col("who_risk_group").first(),
         pl.len().alias("supporting_query_count"),
         pl.col("_qlen_num").sum().alias("total_query_span"),
         pl.col("_crumbs_score_num").sum().alias("query_total_crumbs_score"),

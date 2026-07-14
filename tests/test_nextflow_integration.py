@@ -60,9 +60,11 @@ def write_mini_taxdump(taxonomy_dir: Path) -> None:
 2732544\t|\t2732506\t|\torder\t|\t
 10240\t|\t2732544\t|\tfamily\t|\t
 10242\t|\t10240\t|\tgenus\t|\t
-10244\t|\t10242\t|\tspecies\t|\t
+3431483\t|\t10242\t|\tspecies\t|\t
+10244\t|\t3431483\t|\tno rank\t|\t
 10255\t|\t10240\t|\tgenus\t|\t
-10258\t|\t10255\t|\tspecies\t|\t
+3431389\t|\t10255\t|\tspecies\t|\t
+10258\t|\t3431389\t|\tno rank\t|\t
 """,
         encoding="utf-8",
     )
@@ -75,8 +77,10 @@ def write_mini_taxdump(taxonomy_dir: Path) -> None:
 2732544\t|\tChitovirales\t|\t\t|\tscientific name\t|
 10240\t|\tPoxviridae\t|\t\t|\tscientific name\t|
 10242\t|\tOrthopoxvirus\t|\t\t|\tscientific name\t|
+3431483\t|\tOrthopoxvirus monkeypox\t|\t\t|\tscientific name\t|
 10244\t|\tMonkeypox virus\t|\t\t|\tscientific name\t|
 10255\t|\tParapoxvirus\t|\t\t|\tscientific name\t|
+3431389\t|\tParapoxvirus orf\t|\t\t|\tscientific name\t|
 10258\t|\tOrf virus\t|\t\t|\tscientific name\t|
 """,
         encoding="utf-8",
@@ -254,6 +258,7 @@ def test_sourmash_tax_metagenome_writes_all_formats_with_strain_taxids(
         if line and not line.startswith(("#", "@"))
     ]
     assert profile_rows
+    assert {"3431389", "3431483"}.issubset({row[0] for row in profile_rows})
     rank_order = (
         "superkingdom",
         "phylum",
@@ -607,12 +612,17 @@ def test_mini_sra_viral_pipeline_completes() -> None:
         )
         experiment_rows = read_tsv_rows(experiment_blast)
         assert experiment_rows, f"No experiment BLAST rows found in {experiment_blast}"
+        assert "who_risk_group" in experiment_rows[0]
 
         # Assert per-sample biological expectations for the rows actually under
         # test. Coupling this loop to every manifest row makes a deleted
         # samplesheet row fail as a missing output, even though the pipeline did
         # exactly what the samplesheet requested.
         for run_info in selected_sra_runs:
+            expected_risk_group = {
+                "Orf virus": "RG2",
+                "Monkeypox virus": "RG3",
+            }[run_info["expected_organism"]]
             sample_rows = [
                 row
                 for row in experiment_rows
@@ -625,10 +635,19 @@ def test_mini_sra_viral_pipeline_completes() -> None:
                 row.get("staxids") == str(run_info["taxid"]) for row in sample_rows
             ), f"No {run_info['taxid']} BLAST taxid found for {run_info['sample_id']}"
             assert any(
-                run_info["expected_organism"] in row.get("rank", "")
+                row.get("adjusted_taxid") == str(run_info["taxid"])
+                and row.get("who_risk_group") == expected_risk_group
                 for row in sample_rows
             ), (
-                f"No {run_info['expected_organism']} lineage found for "
+                f"No {expected_risk_group} WHO risk group found for "
+                f"{run_info['taxid']} in {run_info['sample_id']}"
+            )
+            assert any(
+                row.get("adjusted_taxid") == str(run_info["taxid"])
+                and row.get("adjusted_taxid_name") == run_info["expected_organism"]
+                for row in sample_rows
+            ), (
+                f"No {run_info['expected_organism']} adjusted taxon found for "
                 f"{run_info['sample_id']}"
             )
             expected_tasks = run_info.get("expected_tasks", [])
@@ -682,6 +701,13 @@ def test_mini_sra_viral_pipeline_completes() -> None:
                 f"Missing grouped Big Table: {grouped_table}"
             )
             assert featured_table.read_bytes() == grouped_table.read_bytes()
+            rows = read_tsv_rows(featured_table)
+            assert rows, f"No rows in featured Big Table: {featured_table}"
+            columns = list(rows[0])
+            taxid_column = (
+                "assigned_taxid" if filename == "query_big_table.tsv" else "taxid"
+            )
+            assert columns.index("who_risk_group") == columns.index(taxid_column) + 1
 
         sourmash_root = (
             results_root
@@ -692,6 +718,7 @@ def test_mini_sra_viral_pipeline_completes() -> None:
         )
         ref_dir = sourmash_root / "reference"
         gather_dir = sourmash_root / "gather"
+        risk_group_dir = sourmash_root / "taxonomy" / "risk_groups"
         merged_taxburst_dir = sourmash_root / "plots" / "taxburst"
         taxburst_dir = merged_taxburst_dir / "per_sample"
         sankey_dir = sourmash_root / "plots" / "sankey"
@@ -702,6 +729,10 @@ def test_mini_sra_viral_pipeline_completes() -> None:
         expected_species_by_sample = {
             run_info["sample_id"]: run_info["expected_organism"]
             for run_info in selected_sra_runs
+        }
+        expected_risk_group_species = {
+            "Orf virus": ("Parapoxvirus orf", "RG2"),
+            "Monkeypox virus": ("Orthopoxvirus monkeypox", "RG3"),
         }
         merged_taxburst_html = merged_taxburst_dir / "sourmash.taxburst.html"
         assert merged_taxburst_html.is_file(), (
@@ -720,6 +751,28 @@ def test_mini_sra_viral_pipeline_completes() -> None:
                 expected_species in (row.get("name") or row.get("match_name", ""))
                 for row in gather_rows
             ), f"No {expected_species} sourmash gather hit found for {sample_id}"
+
+            risk_group_csv = (
+                risk_group_dir
+                / f"{sample_id}.sourmash.tax_metagenome.with_risk_groups.csv"
+            )
+            assert risk_group_csv.is_file(), (
+                f"Missing WHO risk-group annotated sourmash summary: {risk_group_csv}"
+            )
+            risk_group_rows = read_csv_rows(risk_group_csv)
+            assert risk_group_rows, f"No rows in {risk_group_csv}"
+            columns = list(risk_group_rows[0])
+            assert columns.index("who_risk_group") == columns.index("lineage") + 1
+            assert any(
+                row.get("lineage", "").split(";")[-1]
+                == expected_risk_group_species[expected_species][0]
+                and row.get("who_risk_group")
+                == expected_risk_group_species[expected_species][1]
+                for row in risk_group_rows
+            ), (
+                "No WHO risk group found for "
+                f"{expected_risk_group_species[expected_species]} in {risk_group_csv}"
+            )
 
             taxburst_html = taxburst_dir / f"{sample_id}.sourmash.taxburst.html"
             taxburst_json = taxburst_dir / f"{sample_id}.sourmash.taxburst.json"

@@ -252,31 +252,31 @@ process DEACON_FILTER_CONTIGS {
     maxRetries 2
 
     input:
-    tuple val(sample_id), val(platform), val(read_structure), path(fasta), path(query_lookup), path(deacon_idx), val(use_depletion), path(depletion_idx)
+    tuple val(sample_id), val(platform), val(read_structure), path(fasta), path(query_lookup), path(deacon_idx), val(contig_filter_policy), path(depletion_idx)
 
     output:
     tuple val(sample_id), val(platform), val(read_structure), path("${sample_id}.target_filtered.fasta"), path(query_lookup), emit: contigs
     tuple val(sample_id), path("${sample_id}.contig_target_filtering.tsv"), emit: decisions
 
     script:
-    def target_deplete_arg = NvdUtils.targetEnrichmentEnabled(params) ? "" : "--deplete"
-    if (use_depletion)
+    def target_deplete_arg = contig_filter_policy.target_enrichment_enabled ? "" : "--deplete"
+    if (contig_filter_policy.depletion_enabled)
         """
         set -euo pipefail
 
         deacon filter \
             ${target_deplete_arg} \
             --threads ${task.cpus} \
-            --abs-threshold ${params.virus_abs_threshold} \
-            --rel-threshold ${params.virus_rel_threshold} \
+            --abs-threshold ${contig_filter_policy.target_abs_threshold} \
+            --rel-threshold ${contig_filter_policy.target_rel_threshold} \
             --summary ${sample_id}.target_filter.deacon.json \
             ${deacon_idx} \
             ${fasta} \
         | deacon filter \
             --deplete \
             --threads ${task.cpus} \
-            --abs-threshold ${params.host_abs_threshold} \
-            --rel-threshold ${params.host_rel_threshold} \
+            --abs-threshold ${contig_filter_policy.depletion_abs_threshold} \
+            --rel-threshold ${contig_filter_policy.depletion_rel_threshold} \
             --summary ${sample_id}.host_depletion.deacon.json \
             --output ${sample_id}.target_filtered.fasta \
             ${depletion_idx} \
@@ -293,8 +293,8 @@ process DEACON_FILTER_CONTIGS {
         deacon filter \
             ${target_deplete_arg} \
             --threads ${task.cpus} \
-            --abs-threshold ${params.virus_abs_threshold} \
-            --rel-threshold ${params.virus_rel_threshold} \
+            --abs-threshold ${contig_filter_policy.target_abs_threshold} \
+            --rel-threshold ${contig_filter_policy.target_rel_threshold} \
             --summary ${sample_id}.target_filter.deacon.json \
             --output ${sample_id}.target_filtered.fasta \
             ${deacon_idx} \

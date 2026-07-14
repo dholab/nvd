@@ -22,6 +22,7 @@ QUERY_COLUMNS = [
     "crumbs_score",
     "qlen",
     "assigned_taxid",
+    "who_risk_group",
     "assignment_method",
     "qseqid",
     "best_hit_qcov",
@@ -73,6 +74,7 @@ EXPECTED_LEFT_TO_RIGHT_COLUMNS = [
     "relative_crumbs_percent",
     "supporting_query_count",
     "taxid",
+    "who_risk_group",
     "total_query_span",
     "total_crumbs_score",
     "strong_query_count",
@@ -107,6 +109,7 @@ def query_row(**overrides: object) -> dict[str, object]:
         "sample_id": "sample-1",
         "assigned_taxid_name": "Alpha virus",
         "assigned_taxid_rank": "species",
+        "who_risk_group": "Risk Group 2",
         "support_tier": "strong",
         "query_class": "long_assembly_contig",
         "crumbs_score": "100",
@@ -192,6 +195,7 @@ def test_taxon_big_table_aggregates_query_support_and_crumbs(tmp_path: Path) -> 
     assert list(row) == EXPECTED_LEFT_TO_RIGHT_COLUMNS
     assert row["taxid"] == "111"
     assert row["taxon_name"] == "Alpha virus"
+    assert row["who_risk_group"] == "Risk Group 2"
     assert row["support_tier"] == "strong"
     assert row["support_tier_rule"] == "multi_query_strong_support"
     assert row["supporting_query_count"] == "2"

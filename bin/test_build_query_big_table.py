@@ -32,6 +32,7 @@ BLAST_COLUMNS = [
     "adjusted_taxid",
     "adjusted_taxid_name",
     "adjusted_taxid_rank",
+    "who_risk_group",
     "adjustment_method",
     "query_class",
     "producer",
@@ -52,6 +53,7 @@ EXPECTED_LEFT_TO_RIGHT_COLUMNS = [
     "crumbs_score",
     "qlen",
     "assigned_taxid",
+    "who_risk_group",
     "assignment_method",
     "qseqid",
     "best_hit_qcov",
@@ -104,6 +106,7 @@ def base_hit(**overrides: str) -> dict[str, str]:
         "adjusted_taxid": "111",
         "adjusted_taxid_name": "Alpha virus",
         "adjusted_taxid_rank": "species",
+        "who_risk_group": "Risk Group 2",
         "adjustment_method": "dominant",
         "query_class": "long_assembly_contig",
         "producer": "spades",
@@ -160,6 +163,7 @@ def test_query_big_table_collapses_retained_hits_to_one_auditable_assignment_row
     assert row["qseqid"] == "nvdContigQuery_sample-1_000001"
     assert row["assigned_taxid"] == "111"
     assert row["assigned_taxid_name"] == "Alpha virus"
+    assert row["who_risk_group"] == "Risk Group 2"
     assert row["assignment_method"] == "dominant"
     assert row["best_hit_qcov"] == "0.9"
     assert row["best_hit_evalue"] == "1e-50"
@@ -476,7 +480,9 @@ def test_query_big_table_collapses_conflicting_crumbs_scores_to_absence(
 def test_query_big_table_reports_missing_consumed_columns(tmp_path: Path) -> None:
     blast_tsv = tmp_path / "final_blast.tsv"
     output = tmp_path / "query_big_table.tsv"
-    columns_without_producer = [column for column in BLAST_COLUMNS if column != "producer"]
+    columns_without_producer = [
+        column for column in BLAST_COLUMNS if column != "producer"
+    ]
     row = base_hit()
     write_tsv(
         blast_tsv,
