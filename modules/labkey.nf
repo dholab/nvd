@@ -260,7 +260,8 @@ process LABKEY_UPLOAD_BLAST {
         --labkey-project-name '${params.labkey_project_name}' \
         --labkey-api-key \$LABKEY_API_KEY \
         --labkey-schema '${params.labkey_schema}' \
-        --table-name '${params.labkey_blast_meta_hits_list}'
+        --table-name '${params.labkey_blast_meta_hits_list}' \
+        --blast-retention-count '${params.blast_retention_count}'
     """
 }
 
