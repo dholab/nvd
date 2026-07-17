@@ -10,7 +10,9 @@ import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-REPORTING_SUBWORKFLOW = ROOT / "subworkflows" / "nvd_multiqc_reporting"
+BUNDLING_SUBWORKFLOW = ROOT / "subworkflows" / "multiqc_bundling"
+FASTQC_MODULE = ROOT / "modules" / "fastqc"
+MULTIQC_MODULE = ROOT / "modules" / "multiqc"
 EXPECTED_EXPANDED_UNITS = 7
 EXPECTED_PAIRED_UNITS_PER_END = 2
 EXPECTED_RENDERED_FASTQC_UNITS = 4
@@ -30,11 +32,20 @@ def workflow_environment(bin_dir: Path) -> dict[str, str]:
     return environment
 
 
-def run_nextflow(workflow: Path, *, bin_dir: Path) -> subprocess.CompletedProcess[str]:
+def run_nextflow(
+    workflow: Path,
+    *,
+    bin_dir: Path,
+    isolated_config: bool = True,
+) -> subprocess.CompletedProcess[str]:
     nextflow = shutil.which("nextflow")
     assert nextflow is not None
+    command = [nextflow]
+    if isolated_config:
+        command.extend(["-C", "/dev/null"])
+    command.extend(["run", str(workflow)])
     return subprocess.run(  # noqa: S603
-        [nextflow, "-C", "/dev/null", "run", str(workflow)],
+        command,
         cwd=workflow.parent,
         env=workflow_environment(bin_dir),
         text=True,
@@ -47,6 +58,21 @@ def copy_reporting_lib(tmp_path: Path) -> None:
     lib = tmp_path / "lib"
     lib.mkdir(exist_ok=True)
     shutil.copy2(ROOT / "lib" / "NvdReporting.groovy", lib / "NvdReporting.groovy")
+
+
+def copy_results_config(tmp_path: Path) -> None:
+    conf = tmp_path / "conf"
+    conf.mkdir()
+    shutil.copy2(ROOT / "conf" / "results.config", conf / "results.config")
+    (tmp_path / "nextflow.config").write_text(
+        f"""\
+params.results = '{tmp_path / "results"}'
+params.experimental = false
+params.no_enrichment = true
+includeConfig 'conf/results.config'
+""",
+        encoding="utf-8",
+    )
 
 
 def write_fastq(path: Path) -> Path:
@@ -142,12 +168,18 @@ def write_roster(
     if read_structure == "single":
         record["read_structure"] = "single"
         record["read_counts"] = {"single": read_count}
-        record["reads"] = [f"/fake/private/single_{index}.fastq" for index in range(read_count)]
+        record["reads"] = [
+            f"/fake/private/single_{index}.fastq" for index in range(read_count)
+        ]
     else:
         record["read_structure"] = "paired"
         record["read_counts"] = {"R1": read_count, "R2": read_count}
-        record["r1"] = [f"/fake/private/R1_{index}.fastq" for index in range(read_count)]
-        record["r2"] = [f"/fake/private/R2_{index}.fastq" for index in range(read_count)]
+        record["r1"] = [
+            f"/fake/private/R1_{index}.fastq" for index in range(read_count)
+        ]
+        record["r2"] = [
+            f"/fake/private/R2_{index}.fastq" for index in range(read_count)
+        ]
     path.write_text(
         json.dumps(record) + "\n",
         encoding="utf-8",
@@ -158,6 +190,13 @@ def write_roster(
 def nextflow_file(path: Path) -> str:
     escaped = str(path).replace("\\", "\\\\").replace("'", "\\'")
     return f"file('{escaped}')"
+
+
+def empty_domain_inputs(config: Path) -> str:
+    channels = ["Channel.value(false)" for _ in range(3)]
+    channels.extend("Channel.empty()" for _ in range(9))
+    channels.append(f"Channel.value(file('{config}'))")
+    return ",\n        ".join(channels) + ","
 
 
 def write_version(path: Path) -> Path:
@@ -236,10 +275,157 @@ workflow {{
     assert len(aliases) == len(set(aliases))
 
 
+def test_target_enrichment_package_crosses_explicit_process_boundary(
+    tmp_path: Path,
+) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    copy_reporting_lib(tmp_path)
+    write_tool_fakes(bin_dir)
+    roster = write_roster(tmp_path / "resolved_reads.jsonl")
+    version = write_version(tmp_path / "nvd_version.txt")
+    config = ROOT / "assets" / "multiqc_config.yaml"
+    stats = tmp_path / "deacon.json"
+    stats.write_text(
+        json.dumps(
+            {
+                "version": "deacon-test",
+                "seqs_in": 10,
+                "seqs_out": 8,
+                "seqs_removed": 2,
+                "seqs_out_proportion": 0.8,
+                "seqs_removed_proportion": 0.2,
+                "bp_in": 1000,
+                "bp_out": 800,
+                "bp_removed": 200,
+                "bp_out_proportion": 0.8,
+                "bp_removed_proportion": 0.2,
+            },
+        ),
+        encoding="utf-8",
+    )
+    workflow = tmp_path / "main.nf"
+    workflow.write_text(
+        f"""\
+nextflow.enable.dsl = 2
+
+include {{ MULTIQC_BUNDLING }} from '{BUNDLING_SUBWORKFLOW}'
+
+params.results = '{tmp_path / "results"}'
+params.experimental = false
+workflow {{
+    MULTIQC_BUNDLING(
+        Channel.empty(),
+        Channel.empty(),
+        Channel.value(file('{roster}')),
+        Channel.value(file('{version}')),
+        Channel.value(false),
+        Channel.value(true),
+        Channel.value(false),
+        Channel.value(false),
+        Channel.of(tuple('sample_A', {nextflow_file(stats)})),
+        Channel.empty(),
+        Channel.empty(),
+        Channel.empty(),
+        Channel.empty(),
+        Channel.empty(),
+        Channel.empty(),
+        Channel.empty(),
+        Channel.empty(),
+        Channel.value(file('{config}')),
+    )
+}}
+""",
+        encoding="utf-8",
+    )
+
+    completed = run_nextflow(workflow, bin_dir=bin_dir)
+    diagnostics = f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}"
+    assert completed.returncode == 0, diagnostics
+    manifests = sorted(tmp_path.glob("work/**/nvd_report_manifest.json"))
+    assert manifests, diagnostics
+    manifest = json.loads(manifests[-1].read_text(encoding="utf-8"))
+    assert len(manifest["report_packages"]) == 1
+    assert "nvd_target_enrichment" in manifest["sections"]
+    sections = sorted(tmp_path.glob("work/**/nvd_target_enrichment_mqc.yaml"))
+    assert sections, diagnostics
+    section_text = sections[-1].read_text(encoding="utf-8")
+    assert "status: observed" in section_text
+    assert "reads_in: 10" in section_text
+    assert "\n  sample_A:\n" in section_text
+    assert "row_0001" not in section_text
+    assert "sample_id:" not in section_text
+
+
+def test_assembly_decision_without_profile_is_reported_as_absent(
+    tmp_path: Path,
+) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    copy_reporting_lib(tmp_path)
+    write_tool_fakes(bin_dir)
+    roster = write_roster(tmp_path / "resolved_reads.jsonl")
+    version = write_version(tmp_path / "nvd_version.txt")
+    config = ROOT / "assets" / "multiqc_config.yaml"
+    workflow = tmp_path / "main.nf"
+    workflow.write_text(
+        f"""\
+nextflow.enable.dsl = 2
+
+include {{ MULTIQC_BUNDLING }} from '{BUNDLING_SUBWORKFLOW}'
+
+params.results = '{tmp_path / "results"}'
+params.experimental = false
+workflow {{
+    MULTIQC_BUNDLING(
+        Channel.empty(),
+        Channel.empty(),
+        Channel.value(file('{roster}')),
+        Channel.value(file('{version}')),
+        Channel.value(false),
+        Channel.value(false),
+        Channel.value(false),
+        Channel.value(true),
+        Channel.empty(),
+        Channel.empty(),
+        Channel.empty(),
+        Channel.empty(),
+        Channel.empty(),
+        Channel.empty(),
+        Channel.of(tuple(
+            [id: 'sample_A', producer: 'spades'],
+            'run',
+            120,
+            100,
+            'short_read_minimum_sequence_count',
+        )),
+        Channel.empty(),
+        Channel.empty(),
+        Channel.value(file('{config}')),
+    )
+}}
+""",
+        encoding="utf-8",
+    )
+
+    completed = run_nextflow(workflow, bin_dir=bin_dir)
+    diagnostics = f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}"
+    assert completed.returncode == 0, diagnostics
+    sections = sorted(tmp_path.glob("work/**/nvd_assembly_mqc.yaml"))
+    assert sections, diagnostics
+    section_text = sections[-1].read_text(encoding="utf-8")
+    assert "status: expected_output_absent" in section_text
+    assert "eligibility_decision: run" in section_text
+    assert "\n  sample_A | spades:\n" in section_text
+    assert "row_0001" not in section_text
+    assert "sample_id:" not in section_text
+
+
 def test_physical_unit_aliases_survive_staging_and_rendering(tmp_path: Path) -> None:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     copy_reporting_lib(tmp_path)
+    copy_results_config(tmp_path)
     write_tool_fakes(bin_dir, fake_multiqc=False)
     r1_a = write_fastq(tmp_path / "sample_A.raw.R1.001.fastq")
     (tmp_path / "repeated").mkdir()
@@ -277,7 +463,9 @@ def test_physical_unit_aliases_survive_staging_and_rendering(tmp_path: Path) -> 
         f"""\
 nextflow.enable.dsl = 2
 
-include {{ NVD_MULTIQC_REPORT }} from '{REPORTING_SUBWORKFLOW}'
+include {{ MULTIQC_BUNDLING }} from '{BUNDLING_SUBWORKFLOW}'
+include {{ GENERATE_MULTIQC_REPORT }} from '{MULTIQC_MODULE}'
+include {{ FASTQC_RAW }} from '{FASTQC_MODULE}'
 
 params.results = '{tmp_path / "results"}'
 params.experimental = false
@@ -287,25 +475,35 @@ workflow {{
         [id: 'sample_A', platform: 'illumina', source: 'paired_globs', read_mode: 'paired', r1_count: 2],
         [{nextflow_file(r1_a)}, {nextflow_file(r1_b)}, {nextflow_file(r2_a)}, {nextflow_file(r2_b)}],
     ))
-    NVD_MULTIQC_REPORT(
-        reads,
+    fastqc_units = reads.flatMap {{ meta, read_files -> NvdReporting.processReadyFastqcTuples(meta, read_files) }}
+    FASTQC_RAW(fastqc_units)
+    MULTIQC_BUNDLING(
+        FASTQC_RAW.out.packages,
+        FASTQC_RAW.out.zips,
         Channel.value(file('{roster}')),
         Channel.value(file('{version}')),
         Channel.value(false),
-        Channel.value(file('{config}')),
+        {empty_domain_inputs(config)}
     )
-    NVD_MULTIQC_REPORT.out.report.view {{ report -> "REPORT: ${{report.name}}" }}
-    NVD_MULTIQC_REPORT.out.data.view {{ data -> "DATA: ${{data.name}}" }}
+    GENERATE_MULTIQC_REPORT(
+        MULTIQC_BUNDLING.out.fastqc_zips,
+        MULTIQC_BUNDLING.out.inputs,
+        MULTIQC_BUNDLING.out.config,
+    )
+    GENERATE_MULTIQC_REPORT.out.report.view {{ report -> "REPORT: ${{report.name}}" }}
+    GENERATE_MULTIQC_REPORT.out.data.view {{ data -> "DATA: ${{data.name}}" }}
 }}
 """,
         encoding="utf-8",
     )
 
-    completed = run_nextflow(workflow, bin_dir=bin_dir)
+    completed = run_nextflow(workflow, bin_dir=bin_dir, isolated_config=False)
     diagnostics = f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}"
     assert completed.returncode == 0, diagnostics
     assert "REPORT: multiqc_report.html" in completed.stdout
     assert "DATA: multiqc_data" in completed.stdout
+    assert (tmp_path / "results" / "nvd" / "multiqc_report.html").is_file()
+    assert (tmp_path / "results" / "nvd" / "multiqc_data").is_dir()
     assert not (tmp_path / "command_substitution_side_effect").exists()
     assert not sorted(tmp_path.glob("work/**/command_substitution_side_effect"))
 
@@ -324,6 +522,20 @@ workflow {{
         "sample_A.raw.R2.002",
     ]
     assert {unit["read_end"] for unit in manifest["raw_fastqc"]} == {"R1", "R2"}
+    published_fastqc = (
+        tmp_path
+        / "results"
+        / "nvd"
+        / "00_input_preparation"
+        / "raw_fastq_qc"
+        / "fastqc"
+    )
+    assert sorted(path.name for path in published_fastqc.glob("*_fastqc.zip")) == [
+        f"{alias}_fastqc.zip" for alias in aliases
+    ]
+    assert sorted(path.name for path in published_fastqc.glob("*_fastqc.html")) == [
+        f"{alias}_fastqc.html" for alias in aliases
+    ]
     assert poison_id not in json.dumps(manifest)
 
     data_dirs = sorted(tmp_path.glob("work/**/multiqc_data"))
@@ -362,7 +574,9 @@ def test_ignored_fastqc_failure_still_renders_roster_report(tmp_path: Path) -> N
         f"""\
 nextflow.enable.dsl = 2
 
-include {{ NVD_MULTIQC_REPORT }} from '{REPORTING_SUBWORKFLOW}'
+include {{ MULTIQC_BUNDLING }} from '{BUNDLING_SUBWORKFLOW}'
+include {{ GENERATE_MULTIQC_REPORT }} from '{MULTIQC_MODULE}'
+include {{ FASTQC_RAW }} from '{FASTQC_MODULE}'
 
 params.results = '{tmp_path / "results"}'
 params.experimental = false
@@ -371,14 +585,22 @@ workflow {{
         [id: 'sample_A', platform: 'illumina', source: 'single_file', read_mode: 'single', r1_count: 1],
         [{nextflow_file(read)}],
     ))
-    NVD_MULTIQC_REPORT(
-        reads,
+    fastqc_units = reads.flatMap {{ meta, read_files -> NvdReporting.processReadyFastqcTuples(meta, read_files) }}
+    FASTQC_RAW(fastqc_units)
+    MULTIQC_BUNDLING(
+        FASTQC_RAW.out.packages,
+        FASTQC_RAW.out.zips,
         Channel.value(file('{roster}')),
         Channel.value(file('{version}')),
         Channel.value(false),
-        Channel.value(file('{config}')),
+        {empty_domain_inputs(config)}
     )
-    NVD_MULTIQC_REPORT.out.report.view {{ report -> "REPORT: ${{report.name}}" }}
+    GENERATE_MULTIQC_REPORT(
+        MULTIQC_BUNDLING.out.fastqc_zips,
+        MULTIQC_BUNDLING.out.inputs,
+        MULTIQC_BUNDLING.out.config,
+    )
+    GENERATE_MULTIQC_REPORT.out.report.view {{ report -> "REPORT: ${{report.name}}" }}
 }}
 """,
         encoding="utf-8",
@@ -414,7 +636,7 @@ def test_single_read_fastqc_renders_through_real_multiqc(tmp_path: Path) -> None
     copy_reporting_lib(tmp_path)
     write_tool_fakes(bin_dir, fake_multiqc=False)
     read = write_fastq(tmp_path / "single.fastq")
-    sample_id = "-sample_A"
+    sample_id = "sample_A.fastq"
     roster = write_roster(
         tmp_path / "resolved_reads.jsonl",
         sample_id=sample_id,
@@ -429,7 +651,9 @@ def test_single_read_fastqc_renders_through_real_multiqc(tmp_path: Path) -> None
         f"""\
 nextflow.enable.dsl = 2
 
-include {{ NVD_MULTIQC_REPORT }} from '{REPORTING_SUBWORKFLOW}'
+include {{ MULTIQC_BUNDLING }} from '{BUNDLING_SUBWORKFLOW}'
+include {{ GENERATE_MULTIQC_REPORT }} from '{MULTIQC_MODULE}'
+include {{ FASTQC_RAW }} from '{FASTQC_MODULE}'
 
 params.results = '{tmp_path / "results"}'
 params.experimental = false
@@ -438,15 +662,23 @@ workflow {{
         [id: '{sample_id}', platform: 'illumina', source: 'single_file', read_mode: 'single', r1_count: 1],
         [{nextflow_file(read)}],
     ))
-    NVD_MULTIQC_REPORT(
-        reads,
+    fastqc_units = reads.flatMap {{ meta, read_files -> NvdReporting.processReadyFastqcTuples(meta, read_files) }}
+    FASTQC_RAW(fastqc_units)
+    MULTIQC_BUNDLING(
+        FASTQC_RAW.out.packages,
+        FASTQC_RAW.out.zips,
         Channel.value(file('{roster}')),
         Channel.value(file('{version}')),
         Channel.value(false),
-        Channel.value(file('{config}')),
+        {empty_domain_inputs(config)}
     )
-    NVD_MULTIQC_REPORT.out.report.view {{ report -> "REPORT: ${{report.name}}" }}
-    NVD_MULTIQC_REPORT.out.data.view {{ data -> "DATA: ${{data.name}}" }}
+    GENERATE_MULTIQC_REPORT(
+        MULTIQC_BUNDLING.out.fastqc_zips,
+        MULTIQC_BUNDLING.out.inputs,
+        MULTIQC_BUNDLING.out.config,
+    )
+    GENERATE_MULTIQC_REPORT.out.report.view {{ report -> "REPORT: ${{report.name}}" }}
+    GENERATE_MULTIQC_REPORT.out.data.view {{ data -> "DATA: ${{data.name}}" }}
 }}
 """,
         encoding="utf-8",
@@ -468,14 +700,23 @@ workflow {{
             "source": "single_file",
             "read_end": "single",
             "input_ordinal": 1,
-            "alias": "-sample_A.raw.single.001",
-            "zip_alias": "-sample_A.raw.single.001_fastqc.zip",
-            "html_alias": "-sample_A.raw.single.001_fastqc.html",
+            "alias": "sample_A.fastq.raw.single.001",
+            "zip_alias": "sample_A.fastq.raw.single.001_fastqc.zip",
+            "html_alias": "sample_A.fastq.raw.single.001_fastqc.html",
         },
     ]
     data_dirs = sorted(tmp_path.glob("work/**/multiqc_data"))
     assert data_dirs, diagnostics
-    assert "-sample_A.raw.single.001" in read_native_fastqc_data(data_dirs[-1])
+    assert "sample_A.fastq.raw.single.001" in read_native_fastqc_data(data_dirs[-1])
+    fastqc_rows = (data_dirs[-1] / "multiqc_fastqc.txt").read_text(
+        encoding="utf-8",
+    ).splitlines()
+    assert fastqc_rows[1].split("\t", 1)[0] == "sample_A.fastq.raw.single.001"
+    roster_rows = (data_dirs[-1] / "multiqc_nvd_sample_roster.txt").read_text(
+        encoding="utf-8",
+    ).splitlines()
+    assert "sample_id" not in roster_rows[0].split("\t")
+    assert roster_rows[1].split("\t", 1)[0] == sample_id
 
 
 def test_renderer_failure_is_ancillary_to_independent_sentinel(tmp_path: Path) -> None:
@@ -497,21 +738,28 @@ def test_renderer_failure_is_ancillary_to_independent_sentinel(tmp_path: Path) -
         f"""\
 nextflow.enable.dsl = 2
 
-include {{ NVD_MULTIQC_REPORT }} from '{REPORTING_SUBWORKFLOW}'
+include {{ MULTIQC_BUNDLING }} from '{BUNDLING_SUBWORKFLOW}'
+include {{ GENERATE_MULTIQC_REPORT }} from '{MULTIQC_MODULE}'
 
 params.results = '{tmp_path / "results"}'
 params.experimental = false
 workflow {{
     sentinel = Channel.value('scientific-complete')
-    NVD_MULTIQC_REPORT(
+    MULTIQC_BUNDLING(
+        Channel.empty(),
         Channel.empty(),
         Channel.value(file('{roster}')),
         Channel.value(file('{version}')),
         Channel.value(false),
-        Channel.value(file('{config}')),
+        {empty_domain_inputs(config)}
     )
-    NVD_MULTIQC_REPORT.out.report.view {{ report -> "REPORT: ${{report.name}}" }}
-    NVD_MULTIQC_REPORT.out.data.view {{ data -> "DATA: ${{data.name}}" }}
+    GENERATE_MULTIQC_REPORT(
+        MULTIQC_BUNDLING.out.fastqc_zips,
+        MULTIQC_BUNDLING.out.inputs,
+        MULTIQC_BUNDLING.out.config,
+    )
+    GENERATE_MULTIQC_REPORT.out.report.view {{ report -> "REPORT: ${{report.name}}" }}
+    GENERATE_MULTIQC_REPORT.out.data.view {{ data -> "DATA: ${{data.name}}" }}
     sentinel.view {{ value -> "SENTINEL: ${{value}}" }}
 }}
 """,
@@ -555,18 +803,19 @@ def test_compiler_failure_remains_ancillary_to_independent_sentinel(
         f"""\
 nextflow.enable.dsl = 2
 
-include {{ NVD_MULTIQC_REPORT }} from '{REPORTING_SUBWORKFLOW}'
+include {{ MULTIQC_BUNDLING }} from '{BUNDLING_SUBWORKFLOW}'
 
 params.results = '{tmp_path / "results"}'
 params.experimental = false
 workflow {{
     sentinel = Channel.value('scientific-complete')
-    NVD_MULTIQC_REPORT(
+    MULTIQC_BUNDLING(
+        Channel.empty(),
         Channel.empty(),
         Channel.value(file('{bad_roster}')),
         Channel.value(file('{version}')),
         Channel.value(false),
-        Channel.value(file('{config}')),
+        {empty_domain_inputs(config)}
     )
     sentinel.view {{ value -> "SENTINEL: ${{value}}" }}
 }}

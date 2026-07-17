@@ -79,7 +79,8 @@ process EXTRACT_UNIQUE_CONTIGS {
 
     output:
     tuple val(sample_id), val(platform), val(read_structure), val("long_read_union"), path("${sample_id}.long_read_union.contigs.fasta"), emit: contigs
-    tuple val(sample_id), path("${sample_id}.long_read_union.provenance.tsv"), path("${sample_id}.long_read_union.summary.json"), emit: provenance
+    tuple val(sample_id), path("${sample_id}.long_read_union.provenance.tsv"), emit: provenance
+    tuple val(sample_id), path("${sample_id}.long_read_union.summary.json"), emit: summary
 
     script:
     """

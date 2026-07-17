@@ -340,7 +340,7 @@ nvd resume --interactive
 
 The short alias for `run` is available as `nvd r`, but examples use `nvd run` for clarity.
 
-Best-effort reporting retries twice and is then ignored. When available, report artifacts are published as `${results}/nvd/multiqc_report.html` and `${results}/nvd/multiqc_data/`; raw-read FastQC payloads may be partially published under `${results}/nvd/00_input_resolution/fastqc/` as generated `*_fastqc.zip` and `*_fastqc.html`. `multiqc_data/nvd_inputs`, manifest fields/schema, generated YAML names, receipt schemas, and section IDs are internal and not a downstream API.
+Best-effort reporting retries twice and is then ignored. When available, report artifacts are published as `${results}/nvd/multiqc_report.html` and `${results}/nvd/multiqc_data/`; raw-read FastQC payloads may be partially published under `${results}/nvd/00_input_preparation/raw_fastq_qc/fastqc/` as generated `*_fastqc.zip` and `*_fastqc.html`. Resolved input declarations are published under `${results}/nvd/00_input_preparation/input_resolution/`. `multiqc_data/nvd_inputs`, manifest fields/schema, generated YAML names, receipt schemas, and section IDs are internal and not a downstream API.
 
 ## Validation and diagnostics
 
