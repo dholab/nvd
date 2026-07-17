@@ -11,12 +11,14 @@ process ASSESS_LONG_READ_ASSEMBLY_ELIGIBILITY {
     tuple val(meta), path(reads), path("${meta.id}.metamdbg.run"), optional: true, emit: metamdbg
     tuple val(meta), path(reads), path("${meta.id}.metaflye.run"), optional: true, emit: metaflye
     tuple val(meta.id), path("${meta.id}.long_read_assembly_eligibility.tsv"), emit: report
+    tuple val(meta.id), path("${meta.id}.long_read_assembly_eligibility.json"), emit: report_summary
 
     script:
     """
     assess_long_read_assembly.py assess \
         --profile ${profile_json} \
         --output ${meta.id}.long_read_assembly_eligibility.tsv \
+        --summary-json ${meta.id}.long_read_assembly_eligibility.json \
         --myloasm-marker ${meta.id}.myloasm.run \
         --metamdbg-marker ${meta.id}.metamdbg.run \
         --metaflye-marker ${meta.id}.metaflye.run

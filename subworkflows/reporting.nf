@@ -4,6 +4,7 @@ include { CRUMBS_PROFILING } from "./crumbs_profiling"
 include { LIMS_INTEGRATION } from "./lims_integration"
 include { RENDER_CONTIG_COVERAGE_HISTOGRAM } from "../modules/samtools"
 include { ANNOTATE_BLAST_RISK_GROUPS } from "../modules/risk_groups"
+include { GENERATE_MULTIQC_REPORT } from "../modules/multiqc"
 
 workflow REPORTING {
     take:
@@ -21,7 +22,10 @@ workflow REPORTING {
     ch_run_context
     ch_sourmash_tax_reports
     ch_risk_group_lookup
-    ch_sequence_flow_evidence
+    ch_sequence_flow_inputs
+    ch_multiqc_fastqc_zips
+    ch_multiqc_inputs
+    ch_multiqc_config
     run_id
 
     main:
@@ -100,7 +104,7 @@ workflow REPORTING {
     )
 
     if (params.experimental == true) {
-        BUILD_SEQUENCE_FLOW(ch_sequence_flow_evidence.collect())
+        BUILD_SEQUENCE_FLOW(ch_sequence_flow_inputs.collect())
 
         CRUMBS_PROFILING(
             ch_sample_blast_results.for_emit,
@@ -165,6 +169,12 @@ workflow REPORTING {
         ch_run_ready,
     )
 
+    GENERATE_MULTIQC_REPORT(
+        ch_multiqc_fastqc_zips,
+        ch_multiqc_inputs,
+        ch_multiqc_config,
+    )
+
     // Completion means every reporting leaf has settled. Keep this terminal
     // inventory local to REPORTING so adding a report does not spread another
     // synchronization channel through the composition root.
@@ -172,6 +182,7 @@ workflow REPORTING {
         .mix(RENDER_CONTIG_COVERAGE_HISTOGRAM.out.histogram)
         .mix(RENDER_CONTIG_ALIGNMENT_PLOTS.out.plots)
         .mix(TARGET_ENRICHMENT_REPORT.out.summary_tsv)
+        .mix(GENERATE_MULTIQC_REPORT.out.report)
 
     if (params.experimental == true) {
         ch_reporting_terminal_outputs = ch_reporting_terminal_outputs
@@ -227,4 +238,6 @@ workflow REPORTING {
     crumbs_taxburst = params.experimental ? CRUMBS_PROFILING.out.taxburst : channel.empty()
     merged_crumbs_taxburst = params.experimental ? CRUMBS_PROFILING.out.merged_taxburst : channel.empty()
     crumbs_profile_taxonomy = params.experimental ? CRUMBS_PROFILING.out.profile_taxonomy : channel.empty()
+    multiqc_report = GENERATE_MULTIQC_REPORT.out.report
+    multiqc_data = GENERATE_MULTIQC_REPORT.out.data
 }

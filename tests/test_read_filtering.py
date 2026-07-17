@@ -260,6 +260,7 @@ def test_preprocessing_deduplicates_after_adapter_trimming(tmp_path: Path) -> No
     lib_dir = tmp_path / "lib"
     lib_dir.mkdir()
     shutil.copy2(ROOT / "lib" / "NvdUtils.groovy", lib_dir)
+    shutil.copy2(ROOT / "lib" / "NvdReporting.groovy", lib_dir)
     assets_dir = tmp_path / "assets"
     assets_dir.mkdir()
     shutil.copy2(ROOT / "assets" / "empty_deacon.k31w1.idx", assets_dir)

@@ -1,5 +1,10 @@
 title: "NVD MultiQC Report"
-report_comment: "NVD raw-read FastQC and curated run context."
+report_comment: "NVD raw-read FastQC, read/contig QC, and curated run context."
+fn_clean_exts:
+  - type: regex
+    pattern: '\.(?:fastq|fq)(?:\.gz)?$'
+    module: fastqc
+fn_clean_trim: []
 custom_data:
   nvd_sample_roster:
     section_name: "Sample Roster"
@@ -7,9 +12,27 @@ custom_data:
   nvd_raw_fastqc_inventory:
     section_name: "Raw FastQC Inventory"
     section_order: 980
+  nvd_target_enrichment:
+    section_name: "Target Enrichment"
+    section_order: 970
+  nvd_depletion:
+    section_name: "Depletion"
+    section_order: 960
+  nvd_fastx_profiles:
+    section_name: "Query Sequence Profiles"
+    section_order: 950
+  nvd_fastx_length_distribution:
+    section_name: "Query Sequence Length Distribution"
+    section_order: 940
+  nvd_fastx_quality_distribution:
+    section_name: "Read Quality Distribution"
+    section_order: 930
+  nvd_assembly:
+    section_name: "Assembly Decision Metrics"
+    section_order: 920
   nvd_experimental_capabilities:
     section_name: "Experimental Capabilities"
-    section_order: 970
+    section_order: 910
 module_order:
   - custom_content
   - fastqc:
@@ -19,5 +42,17 @@ sp:
     fn: "nvd_sample_roster_mqc.yaml"
   nvd_raw_fastqc_inventory:
     fn: "nvd_raw_fastqc_inventory_mqc.yaml"
+  nvd_target_enrichment:
+    fn: "nvd_target_enrichment_mqc.yaml"
+  nvd_depletion:
+    fn: "nvd_depletion_mqc.yaml"
+  nvd_fastx_profiles:
+    fn: "nvd_fastx_profiles_mqc.yaml"
+  nvd_fastx_length_distribution:
+    fn: "nvd_fastx_length_distribution_mqc.yaml"
+  nvd_fastx_quality_distribution:
+    fn: "nvd_fastx_quality_distribution_mqc.yaml"
+  nvd_assembly:
+    fn: "nvd_assembly_mqc.yaml"
   nvd_experimental_capabilities:
     fn: "nvd_experimental_capabilities_mqc.yaml"

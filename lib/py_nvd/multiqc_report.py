@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import shutil
+from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import TYPE_CHECKING, Annotated, Literal
 
@@ -13,6 +14,22 @@ from pydantic import (
     Field,
     PositiveInt,
     StringConstraints,
+)
+
+from py_nvd.multiqc_domains import (
+    FASTX_MAX_POINTS,
+    LineGraphSection,
+    ReportSection,
+    TableSection,
+    build_domain_sections,
+    report_row_label,
+)
+from py_nvd.multiqc_packages import (
+    Domain,
+    InvalidPackage,
+    ReportPackage,
+    ReportReceipt,
+    parse_report_packages,
 )
 
 if TYPE_CHECKING:
@@ -101,64 +118,139 @@ class ReportPlan(FrozenModel):
 
     schema_version: Literal["nvd.report-plan/v1"] = REPORT_PLAN_SCHEMA
     experimental_enabled: bool
+    target_enrichment_enabled: bool = True
+    depletion_enabled: bool = True
+    assembly_enabled: bool = True
+
+
+class PackageWarning(FrozenModel):
+    domain: Domain
+    package_name: str
+    message: str
 
 
 class ReportManifest(FrozenModel):
-    """Machine-readable index of evidence presented to MultiQC."""
+    """Machine-readable index of inputs presented to MultiQC."""
 
     schema_version: Literal["nvd.multiqc-report/v1"] = MANIFEST_SCHEMA
     report_plan: ReportPlan
     source_identity: SourceIdentity
     samples: tuple[RosterSample, ...]
     raw_fastqc: tuple[FastqcReceipt, ...]
+    report_packages: tuple[ReportReceipt, ...] = ()
+    report_package_warnings: tuple[PackageWarning, ...] = ()
+    fastx_max_points: PositiveInt = FASTX_MAX_POINTS
     sections: tuple[SafeName, ...]
 
 
-def build_multiqc_inputs(
-    *,
-    roster_path: Path,
-    version_path: Path,
-    fastqc_root: Path,
-    output_dir: Path,
-    experimental_enabled: bool,
-) -> Path:
-    roster = parse_roster(roster_path)
+@dataclass(frozen=True, slots=True)
+class ReportRoots:
+    target_enrichment: Path | None = None
+    depletion: Path | None = None
+    fastx: Path | None = None
+    assembly: Path | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ReportConfiguration:
+    experimental_enabled: bool
+    target_enrichment_enabled: bool = True
+    depletion_enabled: bool = True
+    assembly_enabled: bool = True
+
+
+@dataclass(frozen=True, slots=True)
+class CompileRequest:
+    roster_path: Path
+    version_path: Path
+    fastqc_root: Path
+    output_dir: Path
+    configuration: ReportConfiguration
+    report_roots: ReportRoots = field(default_factory=ReportRoots)
+
+
+def build_multiqc_inputs(request: CompileRequest) -> Path:
+    roster = parse_roster(request.roster_path)
     samples = tuple(roster.values())
-    source_identity = parse_source_identity(version_path)
-    raw_fastqc = parse_fastqc_packages(discover_fastqc_packages(fastqc_root), roster)
+    source_identity = parse_source_identity(request.version_path)
+    raw_fastqc = parse_fastqc_packages(
+        discover_fastqc_packages(request.fastqc_root),
+        roster,
+    )
+    parsed_packages = parse_report_packages(
+        {
+            Domain.TARGET_ENRICHMENT: request.report_roots.target_enrichment,
+            Domain.DEPLETION: request.report_roots.depletion,
+            Domain.FASTX: request.report_roots.fastx,
+            Domain.ASSEMBLY: request.report_roots.assembly,
+        },
+        roster,
+    )
+    packages = tuple(
+        package for package in parsed_packages if isinstance(package, ReportPackage)
+    )
+    invalid_packages = tuple(
+        package for package in parsed_packages if isinstance(package, InvalidPackage)
+    )
+    domain_sections = build_domain_sections(
+        packages=packages,
+        sample_ids=tuple(roster),
+        target_enrichment_enabled=request.configuration.target_enrichment_enabled,
+        depletion_enabled=request.configuration.depletion_enabled,
+        assembly_enabled=request.configuration.assembly_enabled,
+    )
     sections = ["nvd_sample_roster"]
     if raw_fastqc:
         sections.append("nvd_raw_fastqc_inventory")
-    if not experimental_enabled:
+    sections.extend(domain_sections)
+    if not request.configuration.experimental_enabled:
         sections.append("nvd_experimental_capabilities")
 
     manifest = ReportManifest(
-        report_plan=ReportPlan(experimental_enabled=experimental_enabled),
+        report_plan=ReportPlan(
+            experimental_enabled=request.configuration.experimental_enabled,
+            target_enrichment_enabled=request.configuration.target_enrichment_enabled,
+            depletion_enabled=request.configuration.depletion_enabled,
+            assembly_enabled=request.configuration.assembly_enabled,
+        ),
         source_identity=source_identity,
         samples=samples,
         raw_fastqc=raw_fastqc,
+        report_packages=tuple(package.receipt for package in packages),
+        report_package_warnings=tuple(
+            PackageWarning(
+                domain=package.domain,
+                package_name=package.package_name,
+                message=str(package.error),
+            )
+            for package in invalid_packages
+        ),
         sections=tuple(sections),
     )
 
-    if output_dir.exists():
-        shutil.rmtree(output_dir)
-    output_dir.mkdir(parents=True)
-    (output_dir / "nvd_report_manifest.json").write_text(
+    if request.output_dir.exists():
+        shutil.rmtree(request.output_dir)
+    request.output_dir.mkdir(parents=True)
+    (request.output_dir / "nvd_report_manifest.json").write_text(
         manifest.model_dump_json(indent=2) + "\n",
         encoding="utf-8",
     )
-    write_software_versions(output_dir / "nvd_mqc_versions.yaml", source_identity)
-    write_roster(output_dir / "nvd_sample_roster_mqc.yaml", samples)
+    write_software_versions(
+        request.output_dir / "nvd_mqc_versions.yaml",
+        source_identity,
+    )
+    write_roster(request.output_dir / "nvd_sample_roster_mqc.yaml", samples)
     if raw_fastqc:
         write_fastqc_inventory(
-            output_dir / "nvd_raw_fastqc_inventory_mqc.yaml",
+            request.output_dir / "nvd_raw_fastqc_inventory_mqc.yaml",
             raw_fastqc,
         )
-    if not experimental_enabled:
+    write_domain_sections(request.output_dir, domain_sections)
+    if not request.configuration.experimental_enabled:
         write_experimental_invitation(
-            output_dir / "nvd_experimental_capabilities_mqc.yaml",
+            request.output_dir / "nvd_experimental_capabilities_mqc.yaml",
         )
-    return output_dir
+    return request.output_dir
 
 
 def parse_roster(path: Path) -> dict[str, RosterSample]:
@@ -305,7 +397,10 @@ def write_roster(path: Path, samples: Sequence[RosterSample]) -> None:
                 "description": "Resolved sample roster from input resolution.",
                 "plot_type": "table",
                 "data": {
-                    sample.sample_id: sample.model_dump(mode="json")
+                    sample.sample_id: sample.model_dump(
+                        mode="json",
+                        exclude={"sample_id"},
+                    )
                     for sample in samples
                 },
             },
@@ -337,13 +432,54 @@ def write_fastqc_inventory(path: Path, raw_fastqc: Sequence[FastqcReceipt]) -> N
     )
 
 
+def write_domain_sections(
+    output_dir: Path,
+    sections: dict[str, ReportSection],
+) -> None:
+    filenames = {
+        "nvd_target_enrichment": "nvd_target_enrichment_mqc.yaml",
+        "nvd_depletion": "nvd_depletion_mqc.yaml",
+        "nvd_fastx_profiles": "nvd_fastx_profiles_mqc.yaml",
+        "nvd_fastx_length_distribution": "nvd_fastx_length_distribution_mqc.yaml",
+        "nvd_fastx_quality_distribution": "nvd_fastx_quality_distribution_mqc.yaml",
+        "nvd_assembly": "nvd_assembly_mqc.yaml",
+    }
+    for section_id, section in sections.items():
+        content = {
+            "id": section_id,
+            "section_name": section.section_name,
+            "description": section.description,
+            "plot_type": section.plot_type,
+        }
+        if isinstance(section, TableSection):
+            rows = {}
+            for row in section.rows:
+                label = report_row_label(row)
+                if label in rows:
+                    message = f"Duplicate report row label in {section_id}: {label}"
+                    raise NvdMultiqcInputError(message)
+                rows[label] = row.model_dump(
+                    mode="json",
+                    exclude={"sample_id"},
+                    exclude_none=True,
+                )
+            content["data"] = rows
+        elif isinstance(section, LineGraphSection):
+            content["data"] = section.data
+            content["pconfig"] = {"xlab": section.xlab, "ylab": section.ylab}
+        (output_dir / filenames[section_id]).write_text(
+            yaml.safe_dump(content, sort_keys=False),
+            encoding="utf-8",
+        )
+
+
 def write_experimental_invitation(path: Path) -> None:
     path.write_text(
         yaml.safe_dump(
             {
                 "id": "nvd_experimental_capabilities",
                 "section_name": "Experimental Capabilities",
-                "description": "Experimental mode can add CRUMBS profiling, rapid-screening evaluation, sample-similarity QC, and related evidence when enabled.",
+                "description": "Experimental mode can add CRUMBS profiling, rapid-screening evaluation, sample-similarity QC, and related results when enabled.",
                 "plot_type": "table",
                 "data": {"experimental_enabled": {"enabled": "false"}},
             },
