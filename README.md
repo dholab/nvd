@@ -307,6 +307,10 @@ nvd run --params-file run.yaml --resume
 nvd resume
 ```
 
+Treat a results directory as belonging to one run identity and sample set. Same-run resume is supported for interrupted work; unrelated or concurrent reuse of a results directory is unsupported, especially with live FASTQ glob inputs.
+
+NVD best-effort reporting retries twice and is then ignored so scientific work can finish. When available, the report artifacts are `${results}/nvd/multiqc_report.html` and `${results}/nvd/multiqc_data/`; raw-read FastQC payloads may be partially available under `${results}/nvd/00_input_resolution/fastqc/` as generated `*_fastqc.zip` and `*_fastqc.html` files. `multiqc_data/nvd_inputs`, manifest fields/schema, generated YAML names, receipt schemas, and section IDs are internal and not a downstream API.
+
 For more on authoring params, managing presets, samplesheet helpers, secrets, and taxonomy setup, see the [NVD CLI Guide](./docs/nvd_cli_guide.md).
 
 **Note**: Prepend commands with `pixi run` when not in an active environment shell, for example `pixi run nvd run --params-file run.yaml`.
