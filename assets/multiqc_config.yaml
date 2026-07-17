@@ -1,0 +1,23 @@
+title: "NVD MultiQC Report"
+report_comment: "NVD raw-read FastQC and curated run context."
+custom_data:
+  nvd_sample_roster:
+    section_name: "Sample Roster"
+    section_order: 990
+  nvd_raw_fastqc_inventory:
+    section_name: "Raw FastQC Inventory"
+    section_order: 980
+  nvd_experimental_capabilities:
+    section_name: "Experimental Capabilities"
+    section_order: 970
+module_order:
+  - custom_content
+  - fastqc:
+      name: "Raw Read Statistics"
+sp:
+  nvd_sample_roster:
+    fn: "nvd_sample_roster_mqc.yaml"
+  nvd_raw_fastqc_inventory:
+    fn: "nvd_raw_fastqc_inventory_mqc.yaml"
+  nvd_experimental_capabilities:
+    fn: "nvd_experimental_capabilities_mqc.yaml"
