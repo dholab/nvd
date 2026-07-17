@@ -1,0 +1,4 @@
+ident,superkingdom,phylum,class,order,family,genus,species,strain,taxpath
+NC_005336.1,Viruses,Nucleocytoviricota,Pokkesviricetes,Chitovirales,Poxviridae,Parapoxvirus,Orf virus,fixture strain 1,10239|2732408|2732506|2732544|10240|10255|10258|900000000001
+NC_003310.1,Viruses,Nucleocytoviricota,Pokkesviricetes,Chitovirales,Poxviridae,Orthopoxvirus,Monkeypox virus,fixture strain 2,10239|2732408|2732506|2732544|10240|10242|10244|900000000002
+NC_063383.1,Viruses,Nucleocytoviricota,Pokkesviricetes,Chitovirales,Poxviridae,Orthopoxvirus,Monkeypox virus,fixture strain 3,10239|2732408|2732506|2732544|10240|10242|10244|900000000003

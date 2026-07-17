@@ -1,0 +1,4 @@
+sample_id,srr,platform,fastq1,fastq2,fastq1_glob,fastq2_glob
+# Illustrative only: replace placeholder /data/run42 paths before validation,,,,,,
+barcode01,,ont,,,/data/run42/fastq_pass/barcode01/*.fastq.gz,
+barcode02,,ont,,,/data/run42/fastq_pass/barcode02/*.fastq.gz,

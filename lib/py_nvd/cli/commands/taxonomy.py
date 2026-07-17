@@ -131,10 +131,26 @@ def taxonomy_ensure(
         bool,
         typer.Option("--json", help="Output as JSON"),
     ] = False,
+    taxonomy_refresh: Annotated[
+        str,
+        typer.Option(
+            "--taxonomy-refresh",
+            help="Refresh policy: missing, stale, or force",
+        ),
+    ] = taxonomy_runtime.TaxonomyRefresh.MISSING.value,
+    taxonomy_max_age_days: Annotated[
+        int,
+        typer.Option(
+            "--taxonomy-max-age-days",
+            help="Freshness threshold for stale refreshes and warnings",
+        ),
+    ] = taxonomy_runtime.DEFAULT_TAXONOMY_MAX_AGE_DAYS,
 ) -> None:
     """Download or rebuild the taxonomy cache if needed."""
     taxdump_dir = taxonomy_runtime.ensure_taxonomy_available(
         taxonomy_dir=taxonomy_dir,
+        refresh=taxonomy_refresh,
+        max_age_days=taxonomy_max_age_days,
     )
     status = _taxonomy_status(taxonomy_dir=taxdump_dir)
     if json_output:

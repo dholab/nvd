@@ -61,8 +61,11 @@
 # assets
 !/assets
 !/assets/example_samplesheet.csv
+!/assets/grouped_illumina_lane_samplesheet.csv
+!/assets/grouped_ont_barcode_samplesheet.csv
 !/assets/test_samplesheet.csv
 !/assets/human_viruses_taxlist.txt.zst
+!/assets/empty_deacon.k31w1.idx
 
 # docs
 !/docs
@@ -70,9 +73,11 @@
 !/docs/contributor_guide.md
 !/docs/example_commands.md
 !/docs/nvd_cli_guide.md
+!/docs/sourmash_ncbi_wvdb_reference.md
 !/docs/virus_enrichment_index.md
 
 # scripts
+!/scripts
 !/scripts/*
 !/scripts/*.sh
 !/scripts/*.awk

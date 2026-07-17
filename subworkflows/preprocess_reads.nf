@@ -3,45 +3,37 @@ include { DEACON_FETCH_INDEX as DEACON_FETCH_HOST_INDEX   } from "../modules/dea
 include { DEACON_BUILD_VIRUS_INDEX_FROM_FASTA             } from "../modules/deacon"
 include { DEACON_BUILD_INDEX_FROM_FASTA                   } from "../modules/deacon"
 include { DEACON_UNION_INDEXES                            } from "../modules/deacon"
-include { DEACON_FILTER_HUMAN_VIRUS_READS                 } from "../modules/deacon"
+include { DEACON_ENRICH_TARGET_READS                     } from "../modules/deacon"
 include { DEACON_DEPLETE                                  } from "../modules/deacon"
 include { DEDUP_WITH_CLUMPIFY ; TRIM_ADAPTERS ; FILTER_READS ; REPAIR_PAIRS } from "../modules/bbmap"
 
 workflow PREPROCESS_READS {
     take:
-    ch_sample_fastqs  // Queue channel: pre-interleave tuples from GATHER_READS
-                      // Paired: tuple(sample_id, platform, R1, R2)
-                      // Single: tuple(sample_id, platform, fastq)
+    ch_read_bundles  // tuple(meta, read_files) from GATHER_READS
 
     main:
-    // Normalize mixed-size tuples from GATHER_READS:
-    //   Paired: (id, platform, R1, R2) -> (id, platform, R1, R2)
-    //   Single: (id, platform, fastq)  -> (id, platform, fastq, NO_R2)
-    // The sentinel file NO_R2 lets DEACON_FILTER_HUMAN_VIRUS_READS distinguish
-    // paired from single-end input with a fixed-size tuple.
-    ch_normalized_samples = ch_sample_fastqs
-        .map { items ->
-            if (items.size() == 4)
-                tuple(items[0], items[1], file(items[2]), file(items[3]))
-            else
-                tuple(items[0], items[1], file(items[2]), file("NO_R2"))
-        }
 
     // -------------------------------------------------------------------------
-    // Step 1: Resolve virus index and frontloaded extraction
+    // Step 1: Resolve target index and frontloaded extraction
     // -------------------------------------------------------------------------
-    // Priority: explicit local path → URL download → build from reference FASTA.
-    // Each condition guards against the higher-priority source being set, so at
-    // most one channel is non-empty and the mix passes through exactly one index.
-    ch_local_virus_index = params.virus_index
+    // Priority when target enrichment is enabled: explicit local path → URL
+    // download → build from reference FASTA. When target enrichment is disabled,
+    // use a committed empty index in deplete mode so deacon keeps all records
+    // while preserving the existing one-FASTQ downstream contract.
+    def target_enrichment_enabled = NvdUtils.targetEnrichmentEnabled(params)
+    ch_target_enrichment_enabled = Channel.value(target_enrichment_enabled)
+    ch_local_virus_index = target_enrichment_enabled && params.virus_index
         ? Channel.fromPath(params.virus_index)
         : Channel.empty()
-    ch_virus_fetch_url = (!params.virus_index && params.virus_index_url)
+    ch_virus_fetch_url = (target_enrichment_enabled && !params.virus_index && params.virus_index_url)
         ? Channel.of(params.virus_index_url)
         : Channel.empty()
-    ch_virus_ref_fasta = (!params.virus_index && !params.virus_index_url && params.virus_reference_fasta)
+    ch_virus_ref_fasta = (target_enrichment_enabled && !params.virus_index && !params.virus_index_url && params.virus_reference_fasta)
         ? Channel.fromPath(params.virus_reference_fasta)
         : Channel.empty()
+    ch_empty_virus_index = target_enrichment_enabled
+        ? Channel.empty()
+        : Channel.fromPath("${projectDir}/assets/empty_deacon.k31w1.idx")
 
     DEACON_FETCH_VIRUS_INDEX(ch_virus_fetch_url)
     DEACON_BUILD_VIRUS_INDEX_FROM_FASTA(ch_virus_ref_fasta)
@@ -49,21 +41,24 @@ workflow PREPROCESS_READS {
     ch_virus_index = ch_local_virus_index
         .mix(DEACON_FETCH_VIRUS_INDEX.out.index)
         .mix(DEACON_BUILD_VIRUS_INDEX_FROM_FASTA.out.index)
+        .mix(ch_empty_virus_index)
 
-    // Extract virus reads — runs BEFORE any preprocessing. For paired reads,
-    // deacon takes R1/R2 and outputs interleaved FASTQ in one step.
-    DEACON_FILTER_HUMAN_VIRUS_READS(
-        ch_normalized_samples.combine(ch_virus_index)
+    // Extract target reads — runs BEFORE any preprocessing. For paired reads,
+    // deacon takes R1/R2 and outputs interleaved FASTQ in one step. When target
+    // enrichment is disabled, the empty-index deplete mode retains all reads.
+    DEACON_ENRICH_TARGET_READS(
+        ch_read_bundles.combine(ch_virus_index)
+            .combine(ch_target_enrichment_enabled)
     )
 
     // -------------------------------------------------------------------------
     // Step 2: Inlined preprocessing on virus-only reads
     // -------------------------------------------------------------------------
-    ch_virus_reads = DEACON_FILTER_HUMAN_VIRUS_READS.out.reads
+    ch_virus_reads = DEACON_ENRICH_TARGET_READS.out.reads
 
     // Extract total read counts from deacon summary JSON (replaces COUNT_READS).
     // The seqs_in field is the total input read count across R1+R2.
-    ch_read_counts = DEACON_FILTER_HUMAN_VIRUS_READS.out.stats
+    ch_read_counts = DEACON_ENRICH_TARGET_READS.out.stats
         .map { sample_id, json_file ->
             def summary = new groovy.json.JsonSlurper().parse(json_file.toFile())
             tuple(sample_id, summary.seqs_in.toString())
@@ -84,32 +79,36 @@ workflow PREPROCESS_READS {
         ? TRIM_ADAPTERS(ch_branched_for_trim.illumina).mix(ch_branched_for_trim.other)
         : ch_after_dedup
 
-    // 2c. Host/contaminant depletion with deacon (optional)
-    def has_host_config = params.host_index || params.host_index_url || params.host_contaminants_fasta
-    if (has_host_config) {
-        ch_local_host_index = params.host_index
+    // 2c. Host/contaminant depletion with deacon (optional). The public
+    // parameter names remain host_* for compatibility, but this channel is the
+    // general depletion index used by both read and contig filtering.
+    def has_depletion_config = params.host_index || params.host_index_url || params.host_contaminants_fasta
+    if (has_depletion_config) {
+        ch_local_depletion_index = params.host_index
             ? Channel.fromPath(params.host_index)
             : Channel.empty()
-        ch_host_fetch_url = (!params.host_index && params.host_index_url)
+        ch_depletion_fetch_url = (!params.host_index && params.host_index_url)
             ? Channel.of(params.host_index_url)
             : Channel.empty()
-        ch_host_contaminants_fasta = params.host_contaminants_fasta
+        ch_depletion_contaminants_fasta = params.host_contaminants_fasta
             ? Channel.fromPath(params.host_contaminants_fasta)
             : Channel.empty()
 
-        DEACON_FETCH_HOST_INDEX(ch_host_fetch_url)
-        DEACON_BUILD_INDEX_FROM_FASTA(ch_host_contaminants_fasta)
+        DEACON_FETCH_HOST_INDEX(ch_depletion_fetch_url)
+        DEACON_BUILD_INDEX_FROM_FASTA(ch_depletion_contaminants_fasta)
 
-        ch_host_index_sources = ch_local_host_index
+        ch_depletion_index_sources = ch_local_depletion_index
             .mix(DEACON_FETCH_HOST_INDEX.out.index)
             .mix(DEACON_BUILD_INDEX_FROM_FASTA.out.index)
             .collect()
 
-        DEACON_UNION_INDEXES(ch_host_index_sources)
-        ch_host_index = DEACON_UNION_INDEXES.out.index
+        DEACON_UNION_INDEXES(ch_depletion_index_sources)
+        ch_depletion_index = DEACON_UNION_INDEXES.out.index
+        ch_depletion_index_option = ch_depletion_index.map { idx -> tuple(true, idx) }
 
-        ch_after_scrub = DEACON_DEPLETE(ch_after_trim.combine(ch_host_index)).reads
+        ch_after_scrub = DEACON_DEPLETE(ch_after_trim.combine(ch_depletion_index)).reads
     } else {
+        ch_depletion_index_option = Channel.value(tuple(false, file("${projectDir}/assets/README.md")))
         ch_after_scrub = ch_after_trim
     }
 
@@ -135,6 +134,7 @@ workflow PREPROCESS_READS {
     emit:
     reads = ch_preprocessed
     read_counts = ch_read_counts
-    virus_enrichment_stats = DEACON_FILTER_HUMAN_VIRUS_READS.out.stats
+    virus_enrichment_stats = DEACON_ENRICH_TARGET_READS.out.stats
     virus_index = ch_virus_index
+    depletion_index = ch_depletion_index_option
 }

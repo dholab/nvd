@@ -16,7 +16,10 @@ workflow CLASSIFY_WITH_MEGABLAST {
     // These FASTA files are uncompressed pipeline outputs. Upstream empty FASTA
     // producers create zero-byte files, so a byte-size check is a cheap scheduling
     // guard. Do not use this predicate for gzipped FASTA inputs.
-    ch_megablast_candidates = ch_virus_contigs.filter { _sample_id, contigs ->
+    ch_megablast_candidates = ch_virus_contigs.filter { _sample_id, _contigs ->
+          !params.skip_blast
+      }
+      .filter { _sample_id, contigs ->
           file(contigs).size() > 0
       }
       .multiMap { sample_id, contigs ->

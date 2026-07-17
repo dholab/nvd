@@ -11,11 +11,11 @@
 from __future__ import annotations
 
 import argparse
-import csv
 import sys
 from pathlib import Path
 
 from loguru import logger
+from py_nvd.read_inputs import ResolutionError, read_rows, resolve_rows
 from py_nvd.run_context import compute_sample_set_id
 
 
@@ -25,24 +25,9 @@ def configure_logging(verbose: bool) -> None:  # noqa: FBT001
 
 
 def read_sample_ids(samplesheet: Path) -> list[str]:
-    """Read non-comment sample IDs from an NVD samplesheet."""
-    sample_ids: list[str] = []
-    with samplesheet.open(newline="") as handle:
-        reader = csv.DictReader(handle)
-        if reader.fieldnames is None or "sample_id" not in reader.fieldnames:
-            msg = "Samplesheet must contain a sample_id column"
-            raise ValueError(msg)
-
-        for row in reader:
-            sample_id = (row.get("sample_id") or "").strip()
-            if not sample_id or sample_id.startswith("#"):
-                continue
-            sample_ids.append(sample_id)
-
-    if not sample_ids:
-        msg = "Samplesheet contains no sample IDs"
-        raise ValueError(msg)
-    return sorted(set(sample_ids))
+    """Read sample IDs from the shared NVD samplesheet resolver."""
+    resolution = resolve_rows(read_rows(samplesheet))
+    return [sample.sample_id for sample in resolution.samples]
 
 
 def main() -> None:
@@ -55,7 +40,7 @@ def main() -> None:
 
     try:
         sample_ids = read_sample_ids(args.samplesheet)
-    except (OSError, ValueError) as exc:
+    except (OSError, ResolutionError, ValueError) as exc:
         logger.error(str(exc))
         raise SystemExit(1) from exc
 

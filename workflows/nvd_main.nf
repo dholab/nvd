@@ -17,28 +17,34 @@ include { PREPROCESS_CONTIGS      } from "../subworkflows/preprocess_contigs"
 include { EXTRACT_HUMAN_VIRUSES   } from "../subworkflows/extract_human_virus_contigs"
 include { CLASSIFY_WITH_MEGABLAST } from "../subworkflows/classify_with_megablast"
 include { CLASSIFY_WITH_BLASTN    } from "../subworkflows/classify_with_blastn"
+include { METAGENOME_PROFILING    } from "../subworkflows/metagenome_profiling"
+include { SAMPLE_SIMILARITY_QC    } from "../subworkflows/sample_similarity_qc"
 include { REPORTING               } from "../subworkflows/reporting"
 include { COMPUTE_RUN_CONTEXT ; ENSURE_TAXONOMY } from "../modules/utils"
 
 
 workflow NVD_MAIN {
   take:
-  ch_samplesheet_row
+  ch_samplesheet
 
   main:
 
-  // Validate required params
-  assert params.blast_db && file(params.blast_db).isDirectory() && (params.virus_index || params.virus_index_url || params.virus_reference_fasta) : """
+  // Validate required params. BLAST DB is only required when assembled contigs
+  // can reach BLAST classification.
+  def requires_blast_db = !(params.skip_assembly || params.skip_blast)
+  def target_enrichment_enabled = NvdUtils.targetEnrichmentEnabled(params)
+  def has_target_enrichment_index = NvdUtils.hasTargetEnrichmentIndex(params)
+  assert (!requires_blast_db || (params.blast_db && file(params.blast_db).isDirectory())) && (!target_enrichment_enabled || has_target_enrichment_index) : """
     One or more required parameters are missing or point to non-existent files:
 
-      blast_db                        -> ${params.blast_db}
-      virus_index / virus_index_url / virus_reference_fasta: at least one must be set
+      blast_db                        -> ${requires_blast_db ? params.blast_db : 'not required when skip_assembly or skip_blast is enabled'}
+      target enrichment index source  -> ${target_enrichment_enabled ? 'virus_index / virus_index_url / virus_reference_fasta: at least one must be set' : 'not required when target enrichment is disabled'}
 
     Please supply the above in your `-c nextflow.config` or via `-params-file`.
     """
 
   // Reference channels
-  ch_blast_db_files = channel.fromPath(params.blast_db)
+  ch_blast_db_files = params.blast_db ? channel.fromPath(params.blast_db) : channel.empty()
 
   // Resolve explicit taxonomy path; Python owns fallback taxonomy-cache rules.
   dirs = NvdDirs.resolve(params, log)
@@ -50,9 +56,17 @@ workflow NVD_MAIN {
     channel.value(dirs.taxonomy_dir)
   )
 
-  GATHER_READS(ch_samplesheet_row)
+  GATHER_READS(ch_samplesheet)
 
-  PREPROCESS_READS(GATHER_READS.out)
+  PREPROCESS_READS(GATHER_READS.out.reads)
+
+  ch_sourmash_tax_reports = channel.empty()
+
+  if (params.experimental == true) {
+    metagenome_profiling = METAGENOME_PROFILING(PREPROCESS_READS.out.reads)
+    SAMPLE_SIMILARITY_QC(metagenome_profiling.query_sketches)
+    ch_sourmash_tax_reports = metagenome_profiling.tax_reports
+  }
 
   PREPROCESS_CONTIGS(PREPROCESS_READS.out.reads)
 
@@ -62,6 +76,7 @@ workflow NVD_MAIN {
     PREPROCESS_CONTIGS.out.contigs,
     PREPROCESS_CONTIGS.out.viral_reads,
     PREPROCESS_READS.out.virus_index,
+    PREPROCESS_READS.out.depletion_index,
   )
 
   CLASSIFY_WITH_MEGABLAST(
@@ -85,6 +100,7 @@ workflow NVD_MAIN {
     PREPROCESS_READS.out.virus_enrichment_stats,
     COMPUTE_RUN_CONTEXT.out.ready,
     ch_run_context,
+    ch_sourmash_tax_reports,
     workflow.runName,
   )
 

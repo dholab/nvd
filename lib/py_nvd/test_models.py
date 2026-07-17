@@ -42,6 +42,7 @@ class TestNvdParamsInstantiation:
             max_concurrent_downloads=5,
             cleanup=True,
             work_dir=Path("/fake/work"),
+            experimental=True,
             # Database versions
             blast_db_version="core-nt_2025-01-01",
             # Database paths
@@ -63,6 +64,7 @@ class TestNvdParamsInstantiation:
             labkey_server="example.com",
         )
         assert p.cleanup is True
+        assert p.experimental is True
         assert p.host_index == Path("/db/host.idx")
         assert p.cutoff_percent == 0.01
         assert p.labkey is True
@@ -131,6 +133,13 @@ class TestNvdParamsPositiveIntValidators:
         assert p.virus_window_size == 1
         assert p.virus_abs_threshold == 1
 
+    def test_sourmash_sketch_params_valid(self) -> None:
+        """Sourmash sketch parameters accept positive integers."""
+        p = NvdParams(sourmash_ksize=31, sourmash_scaled=50, sourmash_threshold_bp=50)
+        assert p.sourmash_ksize == 31
+        assert p.sourmash_scaled == 50
+        assert p.sourmash_threshold_bp == 50
+
     def test_host_kmer_size_zero_rejected(self) -> None:
         """host_kmer_size=0 raises ValidationError."""
         with pytest.raises(ValidationError) as exc_info:
@@ -146,6 +155,16 @@ class TestNvdParamsPositiveIntValidators:
         """virus_window_size=0 raises ValidationError."""
         with pytest.raises(ValidationError):
             NvdParams(virus_window_size=0)
+
+    def test_sourmash_scaled_zero_rejected(self) -> None:
+        """sourmash_scaled=0 raises ValidationError."""
+        with pytest.raises(ValidationError):
+            NvdParams(sourmash_scaled=0)
+
+    def test_sourmash_threshold_bp_negative_rejected(self) -> None:
+        """Negative sourmash_threshold_bp raises ValidationError."""
+        with pytest.raises(ValidationError):
+            NvdParams(sourmash_threshold_bp=-1)
 
     def test_max_blast_targets_valid(self) -> None:
         """max_blast_targets accepts positive integers."""
@@ -196,6 +215,31 @@ class TestNvdParamsNonNegativeIntValidators:
         """Negative min_read_quality_nanopore raises ValidationError."""
         with pytest.raises(ValidationError):
             NvdParams(min_read_quality_nanopore=-5)
+
+
+class TestNvdParamsSourmashResourceValidators:
+    """Tests for sourmash local path and URL resource validators."""
+
+    def test_sourmash_url_params_accept_http_urls(self) -> None:
+        """Sourmash URL params accept HTTP(S) URLs."""
+        p = NvdParams(
+            sourmash_ref_url="https://example.org/ref.sig.zip",
+            sourmash_lineages_url="https://example.org/lineages.csv",
+        )
+        assert p.sourmash_ref_url == "https://example.org/ref.sig.zip"
+        assert p.sourmash_lineages_url == "https://example.org/lineages.csv"
+
+    def test_sourmash_url_params_reject_local_paths(self) -> None:
+        """Sourmash URL params reject local paths."""
+        with pytest.raises(ValidationError) as exc_info:
+            NvdParams(sourmash_ref_url="/refs/ref.sig.zip")
+        assert "Expected an HTTP(S) URL" in str(exc_info.value)
+
+    def test_sourmash_path_params_reject_urls(self) -> None:
+        """Sourmash local path params reject URLs."""
+        with pytest.raises(ValidationError) as exc_info:
+            NvdParams(sourmash_ref_path="https://example.org/ref.sig.zip")
+        assert "Use the corresponding *_url param" in str(exc_info.value)
 
 
 class TestNvdParamsMaxReadLength:
@@ -415,6 +459,48 @@ class TestNvdParamsToNextflowArgs:
         cmd = p.to_nextflow_args(Path("/pipeline"))
         assert "--taxonomy_dir" not in cmd
 
+    def test_experimental_param(self) -> None:
+        """experimental is correctly propagated as a boolean param."""
+        p = NvdParams(experimental=True)
+        cmd = p.to_nextflow_args(Path("/pipeline"))
+
+        experimental_idx = cmd.index("--experimental")
+        assert cmd[experimental_idx + 1] == "true"
+
+    def test_skip_stage_params(self) -> None:
+        """Stage-skip params are propagated with Nextflow underscore names."""
+        p = NvdParams(skip_assembly=True, skip_blast=True)
+        cmd = p.to_nextflow_args(Path("/pipeline"))
+
+        assembly_idx = cmd.index("--skip_assembly")
+        blast_idx = cmd.index("--skip_blast")
+        assert cmd[assembly_idx + 1] == "true"
+        assert cmd[blast_idx + 1] == "true"
+        assert "--skip-assembly" not in cmd
+        assert "--skip-blast" not in cmd
+
+    def test_sourmash_reference_params(self) -> None:
+        """Sourmash reference params are correctly propagated."""
+        p = NvdParams(
+            sourmash_ref_path=Path("/refs/viruses.sig.zip"),
+            sourmash_lineages_path=Path("/refs/viruses.lineages.csv"),
+            sourmash_ksize=31,
+            sourmash_scaled=50,
+            sourmash_threshold_bp=0,
+        )
+        cmd = p.to_nextflow_args(Path("/pipeline"))
+
+        ref_idx = cmd.index("--sourmash_ref_path")
+        lineages_idx = cmd.index("--sourmash_lineages_path")
+        ksize_idx = cmd.index("--sourmash_ksize")
+        scaled_idx = cmd.index("--sourmash_scaled")
+        threshold_idx = cmd.index("--sourmash_threshold_bp")
+        assert cmd[ref_idx + 1] == "/refs/viruses.sig.zip"
+        assert cmd[lineages_idx + 1] == "/refs/viruses.lineages.csv"
+        assert cmd[ksize_idx + 1] == "31"
+        assert cmd[scaled_idx + 1] == "50"
+        assert cmd[threshold_idx + 1] == "0"
+
 
 class TestNvdParamsDefaults:
     """Tests for default values matching nextflow.config."""
@@ -439,6 +525,7 @@ class TestNvdParamsDefaults:
 
     def test_default_virus_index_sources(self) -> None:
         """Virus enrichment has no index source by default."""
+        assert NvdParams().no_enrichment is False
         assert NvdParams().virus_index is None
         assert NvdParams().virus_index_url is None
         assert NvdParams().virus_reference_fasta is None
@@ -447,6 +534,26 @@ class TestNvdParamsDefaults:
         assert NvdParams().virus_abs_threshold == 1
         assert NvdParams().virus_rel_threshold == 0.0
 
+    def test_no_enrichment_param(self) -> None:
+        """The no-enrichment override is propagated with Nextflow underscore naming."""
+        p = NvdParams(no_enrichment=True)
+        cmd = p.to_nextflow_args(Path("/pipeline"))
+
+        no_enrichment_idx = cmd.index("--no_enrichment")
+        assert cmd[no_enrichment_idx + 1] == "true"
+        assert "--no-enrichment" not in cmd
+
+    def test_default_sourmash_reference_sources(self) -> None:
+        """Experimental sourmash reference profiling is off by default."""
+        assert NvdParams().sourmash_ref_path is None
+        assert NvdParams().sourmash_ref_url is None
+        assert NvdParams().sourmash_ref_fasta is None
+        assert NvdParams().sourmash_lineages_path is None
+        assert NvdParams().sourmash_lineages_url is None
+        assert NvdParams().sourmash_ksize == 31
+        assert NvdParams().sourmash_scaled == 50
+        assert NvdParams().sourmash_threshold_bp == 50
+
     def test_default_max_blast_targets(self) -> None:
         """Default max_blast_targets matches nextflow.config."""
         assert NvdParams().max_blast_targets == 100
@@ -454,6 +561,15 @@ class TestNvdParamsDefaults:
     def test_default_preprocess(self) -> None:
         """Default preprocess matches nextflow.config."""
         assert NvdParams().preprocess is False
+
+    def test_default_experimental(self) -> None:
+        """Default experimental gate matches nextflow.config."""
+        assert NvdParams().experimental is False
+
+    def test_default_skip_stage_params(self) -> None:
+        """Stage-skip params are disabled by default."""
+        assert NvdParams().skip_assembly is False
+        assert NvdParams().skip_blast is False
 
     def test_default_labkey(self) -> None:
         """Default labkey matches nextflow.config."""
@@ -469,7 +585,7 @@ class TestNvdParamsDefaults:
 
     def test_default_monoimage(self) -> None:
         """Default monoimage matches nextflow.config."""
-        assert NvdParams().monoimage == "nrminor/nvd:v3.0.0"
+        assert NvdParams().monoimage == "nrminor/nvd:latest"
 
 
 class TestLoadParamsFile:

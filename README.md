@@ -158,12 +158,12 @@ With the environment and source code set up, next you'll need to organize your i
 
 ```csv
 sample_id,srr,platform,fastq1,fastq2
-nanopore_test,,ont,nanopore.fastq.gz,
-illumina_test,,illumina,illumina_R1.fastq.gz,illumina_R1.fastq.gz
-sra_test,SRR33296246,,
+nanopore_test,,ont,/absolute/path/to/nanopore.fastq.gz,
+illumina_test,,illumina,/absolute/path/to/illumina_R1.fastq.gz,/absolute/path/to/illumina_R2.fastq.gz
+sra_test,SRR33296246,illumina,,
 ```
 
-Note that this example samplesheet is provided in the repo's [assets](./assets) directory for convenience.
+Local FASTQ paths should be absolute paths, or absolute symlink paths from the stable filesystem namespace that will also be visible to the machine or cluster worker running NVD. NVD preserves those user-facing symlink paths rather than rewriting them through `realpath`. Example samplesheets in the repo's [assets](./assets) directory are illustrative; replace placeholder FASTQ paths with paths that exist in your run environment before validation.
 
 Again, while manual setup is supported, it's also more error-prone. We instead recommend users take advantage of the `nvd samplesheet` CLI. It can scan a directory of FASTQ files, infer paired-end samples by filename, preview the generated table, write the CSV, and validate the result before you run the pipeline.
 
@@ -179,12 +179,24 @@ If your Illumina FASTQs use CASAVA-style names like `patient-001_S7_L003_R1_001.
 nvd samplesheet generate --from-dir ./fastqs --platform illumina --sanitize --output samplesheet.csv
 ```
 
-`--sanitize` only changes generated sample IDs. It does not concatenate multiple lanes; multi-lane Illumina inputs still produce one row per discovered read pair.
+`--sanitize` only changes generated sample IDs. It does not group multiple lanes by itself; multi-lane Illumina inputs still produce one row per discovered read pair unless you also provide `--group-by illumina-lanes`.
+
+For Illumina directories where each biological sample may have reads split across multiple lanes, use `--group-by illumina-lanes`:
+
+```bash
+nvd samplesheet generate --from-dir ./fastqs --platform illumina --group-by illumina-lanes --sanitize --output samplesheet.csv
+```
 
 For Nanopore/ONT files, use `--platform ont`:
 
 ```bash
 nvd samplesheet generate --from-dir ./nanopore-fastqs --platform ont --output samplesheet.csv
+```
+
+For demultiplexed ONT barcode directories where each `barcodeXX` directory contains multiple FASTQ chunks, use `--group-by ont-barcodes` and point `--from-dir` at the directory containing those barcode directories, such as `fastq_pass`:
+
+```bash
+nvd samplesheet generate --from-dir ./fastq_pass --platform ont --group-by ont-barcodes --output samplesheet.csv
 ```
 
 For public SRA inputs, put one accession per line in a text file:
@@ -359,6 +371,10 @@ nvd taxonomy status --taxonomy-dir /path/to/taxdump
 ```
 
 Existing taxonomy data is reused even when it is older than the freshness warning window. NVD downloads or rebuilds taxonomy only when required files are absent, which avoids mutating shared HPC taxonomy directories merely because they are old.
+
+For pipeline runs, `taxonomy_mode` controls whether NVD may prepare missing taxonomy. The default `null` preserves legacy behavior: `NVD_TAXONOMY_OFFLINE=1` selects read-only mode, otherwise NVD prepares taxonomy only when required files are absent. Set `taxonomy_mode: read_only` to require prepared taxonomy and never download or rebuild during the run, or `taxonomy_mode: missing` to allow missing-only preparation explicitly.
+
+For administrators refreshing a taxonomy directory outside a run, `nvd taxonomy ensure` accepts `--taxonomy-refresh missing|stale|force` and `--taxonomy-max-age-days`.
 
 
 You can also set:

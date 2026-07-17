@@ -1,70 +1,87 @@
 include { FETCH_FASTQ } from "../modules/sratools"
 
+process RESOLVE_READ_INPUTS {
+
+    label "low"
+    // cache false
+
+    input:
+    path samplesheet
+
+    output:
+    path "resolved_reads.jsonl", emit: jsonl
+
+    script:
+    """
+    resolve_read_inputs.py \
+        --samplesheet ${samplesheet} \
+        --output-jsonl resolved_reads.jsonl
+    """
+}
+
 workflow GATHER_READS {
 
     take:
-    ch_samplesheet_row
+    ch_samplesheet
 
     main:
 
-        // DOWNLOAD AND HANDLE SRA ACCESSIONS
-        // ***************************************************************************/
-        ch_sra_accessions = ch_samplesheet_row
-            .filter { _id, srr, _platform, _fastq1, _fastq2 -> srr != null && srr != "" }
-            .map { id, srr, platform, _fastq1, _fastq2 ->
-                assert platform != null && platform != ""
-                tuple(id, platform, srr)
-            }
+        RESOLVE_READ_INPUTS(ch_samplesheet)
 
-        ch_known_pairs = ch_samplesheet_row
-            .filter { _id, srr, _platform, fastq1, fastq2 ->
-                (srr == null || srr == "") && fastq1 != null && fastq1 != "" && fastq2 != null && fastq2 != ""
-            }
-            .map { id, _srr, platform, fastq1, fastq2 -> tuple(id, platform, fastq1, fastq2) }
+        ch_resolved_reads = RESOLVE_READ_INPUTS.out.jsonl
+            .splitText()
+            .filter { line -> line.trim() }
+            .map { line -> new groovy.json.JsonSlurper().parseText(line) }
 
-        ch_known_single = ch_samplesheet_row
-            .filter { _id, srr, _platform, fastq1, fastq2 ->
-                (srr == null || srr == "") && fastq1 != null && fastq1 != "" && (fastq2 == null || fastq2 == "")
+        ch_sra_accessions = ch_resolved_reads
+            .filter { rec -> rec.source == "sra" }
+            .map { rec -> tuple(rec.sample_id, rec.platform, rec.srr) }
+
+        ch_local_bundles = ch_resolved_reads
+             .filter { rec -> rec.source != "sra" }
+             .map { rec ->
+                def meta = [
+                    id: rec.sample_id,
+                    platform: rec.platform,
+                    source: rec.source,
+                    read_mode: rec.source in ["single_file", "single_glob"] ? "single" : "paired",
+                ]
+                meta.deacon_read_structure = meta.read_mode == "paired" ? "interleaved" : "single"
+                if (meta.read_mode == "single") {
+                    def reads = rec.reads.collect { file(it) }
+                    meta.r1_count = reads.size()
+                    return tuple(meta, reads)
+                }
+                def r1 = rec.r1.collect { file(it) }
+                def r2 = rec.r2.collect { file(it) }
+                meta.r1_count = r1.size()
+                tuple(meta, r1 + r2)
             }
-            .map { id, _srr, platform, fastq1, _fastq2 -> tuple(id, platform, file(fastq1)) }
 
         FETCH_FASTQ(ch_sra_accessions)
 
-        // Split the output FASTQs from the SRA download into two channels, where one
-        // contains paired-end libraries with >=2 FASTQs, and the other contains the rest
-        ch_sorted_fastqs = FETCH_FASTQ.out
-            .branch { sample_id, platform, fastq_files ->
-                single: fastq_files.size() == 1
-                    return tuple(sample_id, platform, file(fastq_files[0]))
-
-                paired: fastq_files.size() > 1 && (file(fastq_files[0]).getName().endsWith("1.fastq") || file(fastq_files[0]).getName().endsWith("1.fastq.gz")) && (file(fastq_files[1]).getName().endsWith("2.fastq") || file(fastq_files[1]).getName().endsWith("2.fastq.gz"))
-                    return tuple(sample_id, platform, file(fastq_files[0]), file(fastq_files[1]))
-
-                triple1: fastq_files.size() > 2 && (file(fastq_files[0]).getName().endsWith("1.fastq") || file(fastq_files[0]).getName().endsWith("1.fastq.gz")) && (file(fastq_files[1]).getName().endsWith("2.fastq") || file(fastq_files[1]).getName().endsWith("2.fastq.gz"))
-                    return tuple(sample_id, platform, file(fastq_files[0]), file(fastq_files[1]))
-
-                triple2: fastq_files.size() > 2 && (file(fastq_files[1]).getName().endsWith("1.fastq") || file(fastq_files[1]).getName().endsWith("1.fastq.gz")) && (file(fastq_files[2]).getName().endsWith("2.fastq") || file(fastq_files[2]).getName().endsWith("2.fastq.gz"))
-                    return tuple(sample_id, platform, file(fastq_files[1]), file(fastq_files[2]))
-
-                other: true
+        ch_sra_bundles = FETCH_FASTQ.out
+            .map { sample_id, platform, fastq_files ->
+                def files = (fastq_files instanceof List ? fastq_files : [fastq_files])
+                    .collect { file(it) }
+                    .sort { a, b -> a.getName() <=> b.getName() }
+                def read1 = files.find { path -> path.getName().endsWith("1.fastq") || path.getName().endsWith("1.fastq.gz") || path.getName().contains("_R1_") }
+                def read2 = files.find { path -> path.getName().endsWith("2.fastq") || path.getName().endsWith("2.fastq.gz") || path.getName().contains("_R2_") }
+                if (read1 && read2) {
+                    def meta = [id: sample_id, platform: platform, source: "sra", read_mode: "paired", r1_count: 1, deacon_read_structure: "interleaved"]
+                    return tuple(meta, [read1, read2])
+                }
+                if (files.size() == 1) {
+                    def meta = [id: sample_id, platform: platform, source: "sra", read_mode: "single", r1_count: 1, deacon_read_structure: "single"]
+                    return tuple(meta, files)
+                }
+                throw new IllegalArgumentException("Could not determine SRA FASTQ pairing for ${sample_id}: ${files*.getName()}")
             }
 
-        ch_to_be_paired = ch_known_pairs.mix(
-                ch_sorted_fastqs.paired,
-                ch_sorted_fastqs.triple1,
-                ch_sorted_fastqs.triple2
-            )
-
-        // Emit raw reads — no interleaving. Deacon handles R1/R2 directly
-        // and outputs interleaved as a byproduct of virus filtering.
-        // Paired: tuple(id, platform, R1, R2)
-        // Single: tuple(id, platform, fastq)
-        ch_raw_reads = ch_to_be_paired.mix(
-            ch_known_single,
-            ch_sorted_fastqs.single
-        )
+        ch_raw_reads = ch_local_bundles.mix(ch_sra_bundles)
 
         emit:
-        ch_raw_reads
+        reads = ch_raw_reads
+        resolved_manifest = RESOLVE_READ_INPUTS.out.jsonl
 
 }

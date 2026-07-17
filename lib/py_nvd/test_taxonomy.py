@@ -178,12 +178,7 @@ def test_taxonomy(
     # Build SQLite from test .dmp files
     taxonomy._build_sqlite_from_dmp(minimal_taxdump)
 
-    # Patch _ensure_taxdump to return our test directory
-    monkeypatch.setattr(
-        taxonomy,
-        "_ensure_taxdump",
-        lambda **_kwargs: minimal_taxdump,
-    )
+    monkeypatch.setenv("NVD_TAXONOMY_DB", str(minimal_taxdump))
 
     with taxonomy.open() as tax:
         yield tax
@@ -417,11 +412,7 @@ class TestMergedTaxidResolution:
     ) -> None:
         """Multi-level merge resolution: 11111 -> 22222 -> 9606."""
         taxonomy._build_sqlite_from_dmp(taxdump_with_merge_chain)
-        monkeypatch.setattr(
-            taxonomy,
-            "_ensure_taxdump",
-            lambda **_kwargs: taxdump_with_merge_chain,
-        )
+        monkeypatch.setenv("NVD_TAXONOMY_DB", str(taxdump_with_merge_chain))
 
         with taxonomy.open() as tax:
             taxon = tax.get_taxon(11111)
@@ -436,11 +427,7 @@ class TestMergedTaxidResolution:
     ) -> None:
         """Merge pointing to non-existent taxid returns None."""
         taxonomy._build_sqlite_from_dmp(taxdump_with_merge_chain)
-        monkeypatch.setattr(
-            taxonomy,
-            "_ensure_taxdump",
-            lambda **_kwargs: taxdump_with_merge_chain,
-        )
+        monkeypatch.setenv("NVD_TAXONOMY_DB", str(taxdump_with_merge_chain))
 
         with taxonomy.open() as tax:
             # 99999 -> 88888, but 88888 doesn't exist
@@ -454,11 +441,7 @@ class TestMergedTaxidResolution:
     ) -> None:
         """Cyclic merge (A -> B -> A) returns None instead of infinite loop."""
         taxonomy._build_sqlite_from_dmp(taxdump_with_cyclic_merge)
-        monkeypatch.setattr(
-            taxonomy,
-            "_ensure_taxdump",
-            lambda **_kwargs: taxdump_with_cyclic_merge,
-        )
+        monkeypatch.setenv("NVD_TAXONOMY_DB", str(taxdump_with_cyclic_merge))
 
         with taxonomy.open() as tax:
             # 11111 -> 22222 -> 11111 (cycle)
@@ -503,6 +486,116 @@ class TestTaxdumpManagement:
         os.utime(nodes_dmp, (old_time, old_time))
 
         assert taxonomy._is_taxdump_stale(minimal_taxdump) is False
+
+
+class TestTaxonomyPlanning:
+    """Tests for taxonomy status-to-plan decisions."""
+
+    def test_pipeline_missing_mode_reuses_prepared_stale_taxonomy(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """Pipeline missing mode does not refresh prepared taxonomy only because it is old."""
+        status = taxonomy.TaxonomyStatus(
+            taxdump_dir=tmp_path,
+            missing_dmp_files=(),
+            sqlite_exists=True,
+            age_days=365,
+        )
+
+        plan = taxonomy.plan_pipeline_taxonomy(
+            status,
+            taxonomy.TaxonomyPolicy(mode=taxonomy.TaxonomyMode.MISSING),
+        )
+
+        assert plan.action is taxonomy.TaxonomyAction.USE_EXISTING
+
+    def test_pipeline_read_only_fails_when_not_prepared(self, tmp_path: Path) -> None:
+        """Read-only pipeline mode never plans a build or download."""
+        status = taxonomy.TaxonomyStatus(
+            taxdump_dir=tmp_path,
+            missing_dmp_files=("names.dmp",),
+            sqlite_exists=True,
+            age_days=10,
+        )
+
+        plan = taxonomy.plan_pipeline_taxonomy(
+            status,
+            taxonomy.TaxonomyPolicy(mode=taxonomy.TaxonomyMode.READ_ONLY),
+        )
+
+        assert plan.action is taxonomy.TaxonomyAction.FAIL
+
+    def test_pipeline_missing_mode_builds_sqlite_from_sources(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """Missing mode rebuilds SQLite when sources are present."""
+        status = taxonomy.TaxonomyStatus(
+            taxdump_dir=tmp_path,
+            missing_dmp_files=(),
+            sqlite_exists=False,
+            age_days=10,
+        )
+
+        plan = taxonomy.plan_pipeline_taxonomy(
+            status,
+            taxonomy.TaxonomyPolicy(mode=taxonomy.TaxonomyMode.MISSING),
+        )
+
+        assert plan.action is taxonomy.TaxonomyAction.BUILD_SQLITE
+
+    def test_pipeline_missing_mode_downloads_when_sources_missing(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """Missing mode downloads only when required source files are absent."""
+        status = taxonomy.TaxonomyStatus(
+            taxdump_dir=tmp_path,
+            missing_dmp_files=("nodes.dmp",),
+            sqlite_exists=False,
+            age_days=None,
+        )
+
+        plan = taxonomy.plan_pipeline_taxonomy(
+            status,
+            taxonomy.TaxonomyPolicy(mode=taxonomy.TaxonomyMode.MISSING),
+        )
+
+        assert plan.action is taxonomy.TaxonomyAction.DOWNLOAD_AND_BUILD
+
+    def test_admin_stale_refreshes_old_taxonomy(self, tmp_path: Path) -> None:
+        """Admin stale policy opts into age-based refresh."""
+        status = taxonomy.TaxonomyStatus(
+            taxdump_dir=tmp_path,
+            missing_dmp_files=(),
+            sqlite_exists=True,
+            age_days=365,
+        )
+
+        plan = taxonomy.plan_admin_taxonomy(
+            status,
+            refresh=taxonomy.TaxonomyRefresh.STALE,
+            max_age_days=90,
+        )
+
+        assert plan.action is taxonomy.TaxonomyAction.DOWNLOAD_AND_BUILD
+
+    def test_admin_force_always_refreshes(self, tmp_path: Path) -> None:
+        """Admin force policy always plans a fresh download and build."""
+        status = taxonomy.TaxonomyStatus(
+            taxdump_dir=tmp_path,
+            missing_dmp_files=(),
+            sqlite_exists=True,
+            age_days=1,
+        )
+
+        plan = taxonomy.plan_admin_taxonomy(
+            status,
+            refresh=taxonomy.TaxonomyRefresh.FORCE,
+        )
+
+        assert plan.action is taxonomy.TaxonomyAction.DOWNLOAD_AND_BUILD
 
 
 class TestEnsureTaxdump:
@@ -875,7 +968,9 @@ class TestOfflineMode:
         ):
             pass
 
-        assert "offline mode is enabled" in str(exc_info.value)
+        assert "read-only taxonomy mode requires prepared taxonomy" in str(
+            exc_info.value,
+        )
         # SQLite should still not exist (we didn't try to build it)
         assert not sqlite_path.exists()
 
@@ -890,7 +985,9 @@ class TestOfflineMode:
         ):
             pass
 
-        assert "offline mode is enabled" in str(exc_info.value)
+        assert "read-only taxonomy mode requires prepared taxonomy" in str(
+            exc_info.value,
+        )
         assert str(empty_dir) in str(exc_info.value)
 
     def test_offline_env_var(
@@ -939,6 +1036,25 @@ class TestOfflineMode:
         with taxonomy.open(taxonomy_dir=minimal_taxdump, offline=False) as tax:
             taxon = tax.get_taxon(9606)
             assert taxon is not None
+
+    def test_explicit_missing_mode_overrides_offline_env(
+        self,
+        minimal_taxdump: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Explicit missing mode may prepare taxonomy under legacy offline env."""
+        sqlite_path = minimal_taxdump / "taxonomy.sqlite"
+        assert not sqlite_path.exists()
+        monkeypatch.setenv("NVD_TAXONOMY_OFFLINE", "1")
+
+        with taxonomy.open(
+            taxonomy_dir=minimal_taxdump,
+            taxonomy_mode="missing",
+        ) as tax:
+            taxon = tax.get_taxon(9606)
+            assert taxon is not None
+
+        assert sqlite_path.exists()
 
 
 class TestTaxonomyDbEnvVar:
@@ -1007,7 +1123,9 @@ class TestSyncMode:
         ):
             pass
 
-        assert "source files are missing" in str(exc_info.value)
+        assert "read-only taxonomy mode requires prepared taxonomy" in str(
+            exc_info.value,
+        )
         assert exc_info.value.operation == "Loading taxonomy database"
 
     def test_sync_mode_allows_stale_existing_taxonomy(
@@ -1039,7 +1157,10 @@ class TestSyncMode:
         ):
             pass
 
-        assert "needs rebuild" in str(exc_info.value)
+        assert "read-only taxonomy mode requires prepared taxonomy" in str(
+            exc_info.value,
+        )
+        assert "taxonomy.sqlite" in str(exc_info.value)
 
     def test_sync_mode_succeeds_when_taxonomy_available(
         self,
@@ -1144,7 +1265,7 @@ class TestSyncMode:
         assert "Consequence:" in warning
         assert "Resolution:" in warning
         assert "Continuing with the existing taxonomy database" in warning
-        assert ensure_called == [True]
+        assert ensure_called == []
 
 
 class TestTaxonomyUnavailableError:
@@ -1460,14 +1581,12 @@ class TestPreUseValidation:
         conn.commit()
         conn.close()
 
-        # Also need a nodes.dmp so _is_taxdump_stale doesn't trigger download
+        # Also need source files so the planner treats this as prepared.
         (taxdump_dir / "nodes.dmp").write_text("")
+        (taxdump_dir / "names.dmp").write_text("")
+        (taxdump_dir / "merged.dmp").write_text("")
 
-        monkeypatch.setattr(
-            taxonomy,
-            "_ensure_taxdump",
-            lambda **_kwargs: taxdump_dir,
-        )
+        monkeypatch.setenv("NVD_TAXONOMY_DB", str(taxdump_dir))
 
         with (
             pytest.raises(taxonomy.TaxonomyUnavailableError) as exc_info,
@@ -1495,12 +1614,10 @@ class TestPreUseValidation:
         conn.close()
 
         (taxdump_dir / "nodes.dmp").write_text("")
+        (taxdump_dir / "names.dmp").write_text("")
+        (taxdump_dir / "merged.dmp").write_text("")
 
-        monkeypatch.setattr(
-            taxonomy,
-            "_ensure_taxdump",
-            lambda **_kwargs: taxdump_dir,
-        )
+        monkeypatch.setenv("NVD_TAXONOMY_DB", str(taxdump_dir))
 
         with (
             pytest.raises(taxonomy.TaxonomyUnavailableError) as exc_info,

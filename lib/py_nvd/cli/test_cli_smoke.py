@@ -147,6 +147,51 @@ def test_run_uses_taxonomy_env_as_pipeline_param(
     assert str(taxonomy_dir) in result.output
 
 
+def test_run_accepts_skip_stage_flags(tmp_path: Path) -> None:
+    """Hyphenated CLI flags map to underscore Nextflow params."""
+    samplesheet = tmp_path / "samples.csv"
+    samplesheet.write_text("sample_id,srr,platform,fastq1,fastq2\n", encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        [
+            "run",
+            "--samplesheet",
+            str(samplesheet),
+            "--skip-assembly",
+            "--skip-blast",
+            "--dry-run",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "--skip_assembly" in result.output
+    assert "--skip_blast" in result.output
+    assert "--skip-assembly" not in result.output
+    assert "--skip-blast" not in result.output
+
+
+def test_run_accepts_no_enrichment_flag(tmp_path: Path) -> None:
+    """Hyphenated CLI flag maps to the underscore Nextflow param."""
+    samplesheet = tmp_path / "samples.csv"
+    samplesheet.write_text("sample_id,srr,platform,fastq1,fastq2\n", encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        [
+            "run",
+            "--samplesheet",
+            str(samplesheet),
+            "--no-enrichment",
+            "--dry-run",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "--no_enrichment" in result.output
+    assert "--no-enrichment" not in result.output
+
+
 def test_samplesheet_generate_sanitizes_illumina_ids(tmp_path: Path) -> None:
     fastq_dir = tmp_path / "fastqs"
     fastq_dir.mkdir()
@@ -172,5 +217,121 @@ def test_samplesheet_generate_sanitizes_illumina_ids(tmp_path: Path) -> None:
 
     assert result.exit_code == 0, result.output
     with samplesheet.open(newline="", encoding="utf-8") as handle:
-        rows = list(csv.DictReader(handle))
+        reader = csv.DictReader(handle)
+        rows = list(reader)
+    assert reader.fieldnames == ["sample_id", "srr", "platform", "fastq1", "fastq2"]
     assert rows[0]["sample_id"] == "patient-001"
+
+
+def test_samplesheet_generate_accepts_platform_aliases(tmp_path: Path) -> None:
+    fastq_dir = tmp_path / "fastqs"
+    fastq_dir.mkdir()
+    (fastq_dir / "nanopore.fastq.gz").write_text("", encoding="utf-8")
+    samplesheet = tmp_path / "samplesheet.csv"
+
+    result = runner.invoke(
+        app,
+        [
+            "samplesheet",
+            "generate",
+            "--from-dir",
+            str(fastq_dir),
+            "--platform",
+            "nanopore",
+            "--output",
+            str(samplesheet),
+            "--force",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "platform alias 'nanopore' was normalized to 'ont'" in result.output
+    with samplesheet.open(newline="", encoding="utf-8") as handle:
+        rows = list(csv.DictReader(handle))
+    assert rows[0]["platform"] == "ont"
+
+
+def test_samplesheet_generate_groups_illumina_lanes_in_glob_columns(
+    tmp_path: Path,
+) -> None:
+    fastq_dir = tmp_path / "fastqs"
+    fastq_dir.mkdir()
+    for lane in ("L001", "L002"):
+        (fastq_dir / f"patient-001_S7_{lane}_R1_001.fastq.gz").write_text(
+            "",
+            encoding="utf-8",
+        )
+        (fastq_dir / f"patient-001_S7_{lane}_R2_001.fastq.gz").write_text(
+            "",
+            encoding="utf-8",
+        )
+    samplesheet = tmp_path / "samplesheet.csv"
+
+    result = runner.invoke(
+        app,
+        [
+            "samplesheet",
+            "generate",
+            "--from-dir",
+            str(fastq_dir),
+            "--platform",
+            "illumina",
+            "--output",
+            str(samplesheet),
+            "--force",
+            "--sanitize",
+            "--group-by",
+            "illumina-lanes",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    with samplesheet.open(newline="", encoding="utf-8") as handle:
+        reader = csv.DictReader(handle)
+        rows = list(reader)
+
+    assert reader.fieldnames == [
+        "sample_id",
+        "srr",
+        "platform",
+        "fastq1",
+        "fastq2",
+        "fastq1_glob",
+        "fastq2_glob",
+    ]
+    assert rows == [
+        {
+            "sample_id": "patient-001",
+            "srr": "",
+            "platform": "illumina",
+            "fastq1": "",
+            "fastq2": "",
+            "fastq1_glob": str(
+                fastq_dir.absolute()
+                / "patient-001_S7_L[0-9][0-9][0-9]_R1_[0-9][0-9][0-9].fastq.gz",
+            ),
+            "fastq2_glob": str(
+                fastq_dir.absolute()
+                / "patient-001_S7_L[0-9][0-9][0-9]_R2_[0-9][0-9][0-9].fastq.gz",
+            ),
+        },
+    ]
+
+
+def test_samplesheet_validation_subcommands_use_same_read_preflight(
+    tmp_path: Path,
+) -> None:
+    samplesheet = tmp_path / "samples.csv"
+    samplesheet.write_text(
+        "sample_id,srr,platform,fastq1,fastq2\nS1,,illumina,reads.fastq.gz,\n",
+        encoding="utf-8",
+    )
+
+    for command in (
+        ["samplesheet", "validate", str(samplesheet)],
+        ["validate", "samplesheet", str(samplesheet)],
+    ):
+        result = runner.invoke(app, command)
+
+        assert result.exit_code != 0
+        assert "FASTQ paths and glob patterns must be absolute" in result.output

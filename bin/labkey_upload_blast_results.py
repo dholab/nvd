@@ -75,16 +75,71 @@ def validate_dataframe(
                     f"  WARNING: Could not convert '{col}' to {dtype}: {e!s}",
                 )
 
+    # Taxonomy absence is meaningful and must remain null through conversion to
+    # LabKey's empty representation rather than becoming fabricated taxid 0.
+    nullable_taxid_columns = {"staxids", "adjusted_taxid"}
+
     # Fill null values with appropriate defaults
     for col in df.columns:
         if df[col].dtype in [pl.Float32, pl.Float64]:
             df = df.with_columns(pl.col(col).fill_null(0.0))
-        elif df[col].dtype in [pl.Int8, pl.Int16, pl.Int32, pl.Int64]:
+        elif (
+            df[col].dtype in [pl.Int8, pl.Int16, pl.Int32, pl.Int64]
+            and col not in nullable_taxid_columns
+        ):
             df = df.with_columns(pl.col(col).fill_null(0))
         elif df[col].dtype == pl.Utf8:
             df = df.with_columns(pl.col(col).fill_null(""))
 
     return df
+
+
+def apply_reference_cutoff(df: pl.DataFrame, top_k: int) -> pl.DataFrame:
+    """Keep only the top_k highest-bitscore reference sequences per (sample_id, qseqid).
+
+    core_nt contains many redundant reference sequences, so a single contig can match
+    dozens of references at an identical bitscore. Inserting every tied reference bloats
+    the LabKey production list. This bounds the list to the top_k references per
+    (sample_id, qseqid) by descending bitscore, breaking ties deterministically on
+    sseqid; every taxid row of a retained reference is kept.
+
+    Only the production-list insert is trimmed here. The raw enriched BLAST result is
+    uploaded to WebDAV separately (upstream of this step) and is left untouched.
+
+    Args:
+        df: Cleaned BLAST DataFrame (expects sample_id, qseqid, sseqid, bitscore).
+        top_k: Maximum reference sequences to keep per (sample_id, qseqid).
+
+    Returns:
+        Rows whose reference is within the top_k for its group. Returned unchanged when
+        top_k <= 0 or the required columns are absent.
+    """
+    required_columns = {"sample_id", "qseqid", "sseqid", "bitscore"}
+    if top_k <= 0 or not required_columns.issubset(df.columns):
+        return df
+
+    retained_references = (
+        df.group_by(["sample_id", "qseqid", "sseqid"])
+        .agg(pl.col("bitscore").max().alias("_bitscore"))
+        # Best bitscore first, then a deterministic sseqid tiebreak so a truncated tie
+        # is reproducible run-to-run.
+        .sort(
+            ["sample_id", "qseqid", "_bitscore", "sseqid"],
+            descending=[False, False, True, False],
+        )
+        # 0-based ordinal position within each (sample_id, qseqid) group.
+        .with_columns(
+            pl.int_range(pl.len()).over(["sample_id", "qseqid"]).alias("_position"),
+        )
+        .filter(pl.col("_position") < top_k)
+        .select(["sample_id", "qseqid", "sseqid"])
+    )
+
+    return df.join(
+        retained_references,
+        on=["sample_id", "qseqid", "sseqid"],
+        how="semi",
+    )
 
 
 def get_sample_stats(df: pl.DataFrame) -> dict[str, Any]:
@@ -181,6 +236,13 @@ def main():
     parser.add_argument("--labkey-schema", required=True)
     parser.add_argument("--table-name", default="metagenomic_hits_test_nvd2")
     parser.add_argument(
+        "--blast-retention-count",
+        type=int,
+        default=5,
+        help="Max reference sequences to keep per (sample, contig) in the "
+        "production list (default: 5). Trims only the insert, not the WebDAV upload.",
+    )
+    parser.add_argument(
         "--batch-size",
         type=int,
         default=1000,
@@ -260,6 +322,17 @@ def main():
 
             # Validate and clean the DataFrame
             df = validate_dataframe(df, csv_file, log_entries)
+
+            # Trim the production list to the top references per contig. core_nt
+            # redundancy can otherwise insert dozens of tied references per contig;
+            # this bounds the inserted rows without touching the WebDAV upload.
+            rows_before_cutoff = len(df)
+            df = apply_reference_cutoff(df, args.blast_retention_count)
+            if len(df) != rows_before_cutoff:
+                log_entries.append(
+                    f"  Production-list cutoff (<= {args.blast_retention_count} "
+                    f"references per contig): {rows_before_cutoff} -> {len(df)} rows",
+                )
 
             record_count = len(df)
             total_records_processed += record_count

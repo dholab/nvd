@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import py_compile
 import re
+import subprocess
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -89,3 +91,109 @@ def test_nextflow_referenced_python_scripts_exist_and_compile(
             cfile=str(tmp_path / f"{script_path.stem}.pyc"),
             doraise=True,
         )
+
+
+def test_resolve_read_inputs_starts_with_package_imports() -> None:
+    """The read resolver script should start without source-tree path shims."""
+    result = subprocess.run(  # noqa: S603
+        [sys.executable, str(ROOT / "bin" / "resolve_read_inputs.py"), "--help"],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0
+    assert "Resolve NVD samplesheet read declarations" in result.stdout
+
+
+def test_taxonomy_processes_forward_policy_arguments() -> None:
+    """Taxonomy preflight and annotation processes should receive policy controls."""
+    expected = {
+        ROOT / "modules" / "utils.nf": ("ensure_taxonomy.py", "annotate_blast_lca.py"),
+        ROOT / "modules" / "blast.nf": ("annotate_blast_results.py",),
+    }
+
+    missing: list[str] = []
+    for path, commands in expected.items():
+        text = path.read_text(encoding="utf-8")
+        missing.extend(
+            f"{path.relative_to(ROOT)}: missing {command}"
+            for command in commands
+            if command not in text
+        )
+        if "--taxonomy-mode" not in text:
+            missing.append(f"{path.relative_to(ROOT)}: missing --taxonomy-mode")
+        if "--taxonomy-max-age-days" not in text:
+            missing.append(f"{path.relative_to(ROOT)}: missing --taxonomy-max-age-days")
+
+    assert not missing, "\n".join(missing)
+
+
+def test_skip_stage_params_gate_expensive_nextflow_processes() -> None:
+    """Skip params should guard scheduling before SPAdes and MEGABLAST."""
+    expected = {
+        ROOT / "subworkflows" / "preprocess_contigs.nf": (
+            "params.skip_assembly",
+            "RUN_SPADES(",
+        ),
+        ROOT / "subworkflows" / "classify_with_megablast.nf": (
+            "params.skip_blast",
+            "MEGABLAST(",
+        ),
+    }
+
+    missing: list[str] = []
+    for path, fragments in expected.items():
+        text = path.read_text(encoding="utf-8")
+        missing.extend(
+            f"{path.relative_to(ROOT)}: missing {fragment}"
+            for fragment in fragments
+            if fragment not in text
+        )
+
+    main_text = (ROOT / "workflows" / "nvd_main.nf").read_text(encoding="utf-8")
+    missing.extend(
+        f"workflows/nvd_main.nf: missing {fragment}"
+        for fragment in (
+            "requires_blast_db",
+            "params.skip_assembly",
+            "params.skip_blast",
+        )
+        if fragment not in main_text
+    )
+
+    assert not missing, "\n".join(missing)
+
+
+def test_sourmash_reports_do_not_wait_for_runtime_taxonomy_normalization() -> None:
+    """Per-sample sourmash reports should stream from each summary CSV."""
+    reporting_module = (ROOT / "modules" / "reporting.nf").read_text(
+        encoding="utf-8",
+    )
+    reporting_subworkflow = (ROOT / "subworkflows" / "reporting.nf").read_text(
+        encoding="utf-8",
+    )
+
+    forbidden_fragments = (
+        "BUILD_TAXONOMIC_PROFILE_NORMALIZATION_MAP",
+        "NORMALIZE_TAXONOMIC_PROFILE_SUMMARY",
+        "normalize_taxonomic_profile_summary.py",
+        "taxonomic_profile.summary.normalized.csv",
+    )
+    for fragment in forbidden_fragments:
+        assert fragment not in reporting_module
+        assert fragment not in reporting_subworkflow
+
+    assert "ch_sourmash_profile_summaries = ch_sourmash_tax_reports" in (
+        reporting_subworkflow
+    )
+    assert "RENDER_TAXON_ABUNDANCE_SUNBURST(ch_sourmash_profile_summaries)" in (
+        reporting_subworkflow
+    )
+    assert "RENDER_SOURMASH_SANKEY(ch_sourmash_profile_summaries)" in (
+        reporting_subworkflow
+    )
+    assert "ch_merged_taxburst_input = ch_sourmash_profile_summaries" in (
+        reporting_subworkflow
+    )

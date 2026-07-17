@@ -6,6 +6,7 @@ import json
 import re
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pydantic.dataclasses import dataclass
@@ -107,6 +108,21 @@ class NvdParams(BaseModel):
         description="Nextflow work directory",
         json_schema_extra={"category": "Core"},
     )
+    experimental: bool = Field(
+        default=False,
+        description="Enable experimental release-candidate features",
+        json_schema_extra={"category": "Core"},
+    )
+    skip_assembly: bool = Field(
+        default=False,
+        description="Skip SPAdes assembly and all downstream contig classification",
+        json_schema_extra={"category": "Core"},
+    )
+    skip_blast: bool = Field(
+        default=False,
+        description="Skip MEGABLAST and BLASTN contig search.",
+        json_schema_extra={"category": "Core"},
+    )
 
     blast_db_version: str | None = Field(
         None,
@@ -149,6 +165,11 @@ class NvdParams(BaseModel):
         description="Custom vertebrate-infecting virus FASTA for building an enrichment index",
         json_schema_extra={"category": "Databases"},
     )
+    no_enrichment: bool = Field(
+        default=False,
+        description="Disable target enrichment even when a virus index source is provided",
+        json_schema_extra={"category": "Databases"},
+    )
     virus_kmer_size: int = Field(
         31,
         description="K-mer size for building a custom virus enrichment index",
@@ -169,7 +190,46 @@ class NvdParams(BaseModel):
         description="Minimum relative proportion of minimizers for virus read enrichment (0.0-1.0)",
         json_schema_extra={"category": "Databases"},
     )
-
+    sourmash_ref_path: Path | None = Field(
+        None,
+        description="Path to a prebuilt sourmash reference sketch database",
+        json_schema_extra={"category": "Databases"},
+    )
+    sourmash_ref_url: str | None = Field(
+        None,
+        description="URL to download a prebuilt sourmash reference sketch database",
+        json_schema_extra={"category": "Databases"},
+    )
+    sourmash_ref_fasta: Path | None = Field(
+        None,
+        description="Local FASTA to sketch as an experimental sourmash reference database",
+        json_schema_extra={"category": "Databases"},
+    )
+    sourmash_lineages_path: Path | None = Field(
+        None,
+        description="Path to a sourmash taxonomy lineages CSV matching the reference sketch database",
+        json_schema_extra={"category": "Databases"},
+    )
+    sourmash_lineages_url: str | None = Field(
+        None,
+        description="URL to download a sourmash taxonomy lineages CSV matching the reference sketch database",
+        json_schema_extra={"category": "Databases"},
+    )
+    sourmash_ksize: int = Field(
+        31,
+        description="K-mer size for experimental sourmash sketching",
+        json_schema_extra={"category": "Databases"},
+    )
+    sourmash_scaled: int = Field(
+        50,
+        description="Scaled value for experimental sourmash sketching",
+        json_schema_extra={"category": "Databases"},
+    )
+    sourmash_threshold_bp: int = Field(
+        50,
+        description="Minimum estimated base-pair overlap for experimental sourmash gather",
+        json_schema_extra={"category": "Databases"},
+    )
     preprocess: bool = Field(
         default=False,
         description="Enable all preprocessing steps",
@@ -359,6 +419,21 @@ class NvdParams(BaseModel):
         description="Explicit taxonomy database directory",
         json_schema_extra={"category": "Core"},
     )
+    taxonomy_mode: str | None = Field(
+        None,
+        description="Pipeline taxonomy mode: read_only or missing",
+        json_schema_extra={"category": "Core"},
+    )
+    taxonomy_refresh: str = Field(
+        "missing",
+        description="Admin taxonomy refresh policy: missing, stale, or force",
+        json_schema_extra={"category": "Core"},
+    )
+    taxonomy_max_age_days: int = Field(
+        90,
+        description="Freshness threshold for taxonomy refreshes and warnings",
+        json_schema_extra={"category": "Core"},
+    )
 
     date: str | None = Field(
         None,
@@ -376,7 +451,7 @@ class NvdParams(BaseModel):
         json_schema_extra={"category": "Internal"},
     )
     monoimage: str = Field(
-        "nrminor/nvd:v3.0.0",
+        "nrminor/nvd:latest",
         description="Container image",
         json_schema_extra={"category": "Internal"},
     )
@@ -408,6 +483,9 @@ class NvdParams(BaseModel):
         "virus_kmer_size",
         "virus_window_size",
         "virus_abs_threshold",
+        "sourmash_ksize",
+        "sourmash_scaled",
+        "taxonomy_max_age_days",
     )
     @classmethod
     def validate_positive_int(cls, v: int) -> int:
@@ -426,12 +504,68 @@ class NvdParams(BaseModel):
             raise ValueError(msg)
         return v
 
+    @field_validator("sourmash_threshold_bp")
+    @classmethod
+    def validate_non_negative_sourmash_threshold(cls, v: int) -> int:
+        """Validate sourmash_threshold_bp is non-negative."""
+        if v < 0:
+            msg = f"Must be >= 0, got {v}"
+            raise ValueError(msg)
+        return v
+
     @field_validator("max_read_length")
     @classmethod
     def validate_max_read_length(cls, v: int | None) -> int | None:
         """Validate max_read_length is positive if set."""
         if v is not None and v < 1:
             msg = f"Must be >= 1, got {v}"
+            raise ValueError(msg)
+        return v
+
+    @field_validator("taxonomy_mode")
+    @classmethod
+    def validate_taxonomy_mode(cls, v: str | None) -> str | None:
+        """Validate pipeline taxonomy mode."""
+        if v is not None and v not in {"read_only", "missing"}:
+            msg = "taxonomy_mode must be one of ['missing', 'read_only']"
+            raise ValueError(msg)
+        return v
+
+    @field_validator("taxonomy_refresh")
+    @classmethod
+    def validate_taxonomy_refresh(cls, v: str) -> str:
+        """Validate admin taxonomy refresh policy."""
+        if v not in {"missing", "stale", "force"}:
+            msg = "taxonomy_refresh must be one of ['force', 'missing', 'stale']"
+            raise ValueError(msg)
+        return v
+
+    @field_validator(
+        "sourmash_ref_path",
+        "sourmash_ref_fasta",
+        "sourmash_lineages_path",
+        mode="before",
+    )
+    @classmethod
+    def validate_not_url_path(cls, v: object) -> object:
+        """Validate that local sourmash path params are not URLs."""
+        if v is None:
+            return v
+        parsed = urlparse(str(v))
+        if parsed.scheme in {"http", "https"}:
+            msg = "Use the corresponding *_url param for remote sourmash resources"
+            raise ValueError(msg)
+        return v
+
+    @field_validator("sourmash_ref_url", "sourmash_lineages_url")
+    @classmethod
+    def validate_url(cls, v: str | None) -> str | None:
+        """Validate that sourmash URL params are HTTP(S) URLs."""
+        if v is None:
+            return v
+        parsed = urlparse(v)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            msg = f"Expected an HTTP(S) URL, got {v}"
             raise ValueError(msg)
         return v
 

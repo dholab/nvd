@@ -7,7 +7,7 @@ authors = [
   { name = "William Gardner", email = "wkgardner@wisc.edu" },
 ]
 requires-python = ">= 3.11, < 3.14"
-version = "3.0.1"
+version = "3.1.0"
 dependencies = [
   "altair>=6.1.0",
   "biopython>=1.85",
@@ -16,6 +16,7 @@ dependencies = [
   "loguru>=0.7.3",
   "lxml>=5.4.0",
   "more-itertools>=10.7.0",
+  "numpy>=2.0.0",
   "pandas>=2.2.3",
   "polars>=1.27.1",
   "pydantic>=2.12.5",
@@ -23,6 +24,7 @@ dependencies = [
   "pyyaml>=6.0.2",
   "rich>=14.0.0",
   "slack-sdk>=3.39.0",
+  "sourmash-plugin-betterplot>=0.5.9",
   "taxopy>=0.14.0",
   "typer>=0.15.2",
   "vl-convert-python>=1.9.0.post1",
@@ -37,7 +39,7 @@ platforms = ["linux-64", "linux-aarch64", "osx-64", "osx-arm64"]
 # ----------------------------------------------------------------------------------- #
 bbmap = ">=39.19,<40"
 blast = ">=2.16.0,<3"
-deacon = ">=0.13.0,<0.14"
+deacon = ">=0.15.0,<0.16"
 fastp = ">=1.0.1,<2"
 minimap2 = ">=2.22,<3"
 samtools = ">=1.5,<2"
@@ -57,6 +59,13 @@ yaml = ">=0.2.5,<0.3"
 zstd = ">=1.5.7,<2"
 nextflow = ">=25.10.2,<26"
 sracha = { version = ">=0.3.10,<0.4", channel = "bioconda" }
+sourmash = ">=4.9.4,<5"
+sourmash_plugin_branchwater = ">=0.9.15,<0.10"
+taxburst = ">=0.3.2,<0.4"
+# BetterPlot currently declares a hard PyPI pyqt5 dependency. Keep PyQt on the
+# conda side so Pixi can use platform packages instead of building PyQt from
+# source for linux-aarch64 and other headless pipeline platforms.
+pyqt = ">=5.15.11,<6"
 
 # ----------------------------------------------------------------------------------- #
 
@@ -83,6 +92,7 @@ e2e-test-ci = "uv run pytest tests/test_nextflow_integration.py -m 'slow and net
 [dependency-groups]
 dev = [
   "basedpyright>=1.28.4",
+  "hypothesis>=6.155.7",
   "jupyter>=1.1.1",
   "marimo[sql]>=0.11.28",
   "polars>=1.26.0",

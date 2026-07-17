@@ -25,6 +25,8 @@ class AnnotationRequest:
     task: str
     taxonomy_dir: str | None
     sync: bool
+    taxonomy_mode: str | None
+    taxonomy_max_age_days: int | None
 
 
 def parse_command_line_args() -> argparse.Namespace:
@@ -46,6 +48,18 @@ def parse_command_line_args() -> argparse.Namespace:
         action="store_true",
         help="Require pre-cached taxonomy database (fail if unavailable)",
     )
+    parser.add_argument(
+        "--taxonomy-mode",
+        choices=[mode.value for mode in taxonomy.TaxonomyMode],
+        default=None,
+        help="Pipeline taxonomy mode: read_only or missing",
+    )
+    parser.add_argument(
+        "--taxonomy-max-age-days",
+        type=int,
+        default=None,
+        help="Freshness warning threshold for existing taxonomy",
+    )
 
     return parser.parse_args()
 
@@ -65,6 +79,8 @@ def annotate_blast_results(request: AnnotationRequest) -> None:
             taxonomy.open(
                 taxonomy_dir=request.taxonomy_dir,
                 sync=request.sync,
+                taxonomy_mode=request.taxonomy_mode,
+                max_age_days=request.taxonomy_max_age_days,
             ) as tax,
             open(request.input_file) as infile,
             open(request.output_file, "w", newline="") as outfile,
@@ -132,6 +148,8 @@ def main() -> None:
             task=args.task,
             taxonomy_dir=args.taxonomy_dir,
             sync=args.sync,
+            taxonomy_mode=args.taxonomy_mode,
+            taxonomy_max_age_days=args.taxonomy_max_age_days,
         ),
     )
 

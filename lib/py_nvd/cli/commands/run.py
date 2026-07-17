@@ -15,6 +15,7 @@ from typing import Any
 
 import typer
 
+from py_nvd.cli.provenance import nextflow_environment
 from py_nvd.cli.utils import (
     DEFAULT_CONFIG,
     PANEL_ANALYSIS,
@@ -111,6 +112,24 @@ def run(
         help="Explicit taxonomy database directory",
         rich_help_panel=PANEL_CORE,
     ),
+    taxonomy_mode: str | None = typer.Option(
+        None,
+        "--taxonomy-mode",
+        help="Pipeline taxonomy mode: read_only or missing",
+        rich_help_panel=PANEL_CORE,
+    ),
+    taxonomy_refresh: str | None = typer.Option(
+        None,
+        "--taxonomy-refresh",
+        help="Taxonomy preflight refresh policy: missing, stale, or force",
+        rich_help_panel=PANEL_CORE,
+    ),
+    taxonomy_max_age_days: int | None = typer.Option(
+        None,
+        "--taxonomy-max-age-days",
+        help="Freshness threshold for taxonomy refreshes and warnings",
+        rich_help_panel=PANEL_CORE,
+    ),
     preset: str | None = typer.Option(
         None,
         "--preset",
@@ -126,6 +145,24 @@ def run(
         exists=True,
         file_okay=True,
         dir_okay=False,
+        rich_help_panel=PANEL_CORE,
+    ),
+    experimental: bool | None = typer.Option(
+        None,
+        "--experimental",
+        help="Enable experimental release-candidate features",
+        rich_help_panel=PANEL_CORE,
+    ),
+    skip_assembly: bool | None = typer.Option(
+        None,
+        "--skip-assembly",
+        help="Skip SPAdes assembly and downstream contig classification",
+        rich_help_panel=PANEL_CORE,
+    ),
+    skip_blast: bool | None = typer.Option(
+        None,
+        "--skip-blast",
+        help="Skip MEGABLAST and BLASTN contig search.",
         rich_help_panel=PANEL_CORE,
     ),
     # -------------------------------------------------------------------------
@@ -159,6 +196,60 @@ def run(
         None,
         "--virus-reference-fasta",
         help="Custom vertebrate-infecting virus FASTA for building an enrichment index",
+        rich_help_panel=PANEL_DATABASES,
+    ),
+    no_enrichment: bool | None = typer.Option(
+        None,
+        "--no-enrichment",
+        help="Disable target enrichment even when an index source is configured",
+        rich_help_panel=PANEL_DATABASES,
+    ),
+    sourmash_ref_path: Path | None = typer.Option(
+        None,
+        "--sourmash-ref-path",
+        help="Path to a prebuilt sourmash reference sketch database",
+        rich_help_panel=PANEL_DATABASES,
+    ),
+    sourmash_ref_url: str | None = typer.Option(
+        None,
+        "--sourmash-ref-url",
+        help="URL to download a prebuilt sourmash reference sketch database",
+        rich_help_panel=PANEL_DATABASES,
+    ),
+    sourmash_ref_fasta: Path | None = typer.Option(
+        None,
+        "--sourmash-ref-fasta",
+        help="Local FASTA to sketch as an experimental sourmash reference database",
+        rich_help_panel=PANEL_DATABASES,
+    ),
+    sourmash_lineages_path: Path | None = typer.Option(
+        None,
+        "--sourmash-lineages-path",
+        help="Path to a sourmash taxonomy lineages CSV matching the reference sketch database",
+        rich_help_panel=PANEL_DATABASES,
+    ),
+    sourmash_lineages_url: str | None = typer.Option(
+        None,
+        "--sourmash-lineages-url",
+        help="URL to download a sourmash taxonomy lineages CSV matching the reference sketch database",
+        rich_help_panel=PANEL_DATABASES,
+    ),
+    sourmash_ksize: int | None = typer.Option(
+        None,
+        "--sourmash-ksize",
+        help="K-mer size for experimental sourmash sketching (default: 31)",
+        rich_help_panel=PANEL_DATABASES,
+    ),
+    sourmash_scaled: int | None = typer.Option(
+        None,
+        "--sourmash-scaled",
+        help="Scaled value for experimental sourmash sketching (default: 50)",
+        rich_help_panel=PANEL_DATABASES,
+    ),
+    sourmash_threshold_bp: int | None = typer.Option(
+        None,
+        "--sourmash-threshold-bp",
+        help="Minimum estimated base-pair overlap for experimental sourmash gather (default: 50)",
         rich_help_panel=PANEL_DATABASES,
     ),
     virus_kmer_size: int | None = typer.Option(
@@ -505,16 +596,31 @@ def run(
         "cleanup": cleanup,
         "work_dir": work_dir,
         "taxonomy_dir": resolved_taxonomy_dir,
+        "taxonomy_mode": taxonomy_mode,
+        "taxonomy_refresh": taxonomy_refresh,
+        "taxonomy_max_age_days": taxonomy_max_age_days,
+        "experimental": experimental,
+        "skip_assembly": skip_assembly,
+        "skip_blast": skip_blast,
         # Reference paths
         "blast_db": blast_db,
         "blast_db_prefix": blast_db_prefix,
         "virus_index": virus_index,
         "virus_index_url": virus_index_url,
         "virus_reference_fasta": virus_reference_fasta,
+        "no_enrichment": no_enrichment,
         "virus_kmer_size": virus_kmer_size,
         "virus_window_size": virus_window_size,
         "virus_abs_threshold": virus_abs_threshold,
         "virus_rel_threshold": virus_rel_threshold,
+        "sourmash_ref_path": sourmash_ref_path,
+        "sourmash_ref_url": sourmash_ref_url,
+        "sourmash_ref_fasta": sourmash_ref_fasta,
+        "sourmash_lineages_path": sourmash_lineages_path,
+        "sourmash_lineages_url": sourmash_lineages_url,
+        "sourmash_ksize": sourmash_ksize,
+        "sourmash_scaled": sourmash_scaled,
+        "sourmash_threshold_bp": sourmash_threshold_bp,
         # Reference versions
         "blast_db_version": blast_db_version,
         # Analysis
@@ -603,8 +709,10 @@ def run(
         warning("No config file found. Using command-line parameters only.")
         warning(f"Consider creating a config file at: {DEFAULT_CONFIG}")
 
-    # Check Nextflow is installed
-    if not check_command_exists("nextflow"):
+    # Check Nextflow is installed before real execution. Dry-run mode only needs
+    # to render the command, which is useful on systems where Nextflow is not
+    # installed yet.
+    if not dry_run and not check_command_exists("nextflow"):
         error(
             "Nextflow not found. Please install Nextflow:\n"
             "  curl -s https://get.nextflow.io | bash\n"
@@ -616,7 +724,8 @@ def run(
     # =========================================================================
 
     # Build command with pipeline params
-    cmd = params.to_nextflow_args(get_pipeline_root())
+    pipeline_root = get_pipeline_root()
+    cmd = params.to_nextflow_args(pipeline_root)
 
     # Add Nextflow-native options (not pipeline params)
     if effective_profile:
@@ -651,7 +760,11 @@ def run(
 
     # Execute nextflow
     try:
-        result = subprocess.run(cmd, check=False)  # noqa: S603
+        result = subprocess.run(  # noqa: S603
+            cmd,
+            check=False,
+            env=nextflow_environment(pipeline_root),
+        )
         sys.exit(result.returncode)
     except KeyboardInterrupt:
         console.print("\n[yellow]Pipeline interrupted by user[/yellow]")

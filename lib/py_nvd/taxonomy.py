@@ -28,7 +28,9 @@ import tarfile
 import urllib.error
 import urllib.request
 from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -50,6 +52,91 @@ TAXDUMP_URL = "https://ftp.ncbi.nlm.nih.gov/pub/taxonomy/taxdump.tar.gz"
 REQUIRED_DMP_FILES = {"nodes.dmp", "names.dmp", "merged.dmp"}
 DEFAULT_TAXONOMY_MAX_AGE_DAYS = 90
 MAX_AGE = timedelta(days=DEFAULT_TAXONOMY_MAX_AGE_DAYS)
+
+
+class TaxonomyMode(StrEnum):
+    """Pipeline-facing taxonomy availability modes."""
+
+    READ_ONLY = "read_only"
+    MISSING = "missing"
+
+
+class TaxonomyRefresh(StrEnum):
+    """Admin-facing taxonomy preparation refresh modes."""
+
+    MISSING = "missing"
+    STALE = "stale"
+    FORCE = "force"
+
+
+class TaxonomyAction(StrEnum):
+    """Concrete action selected by taxonomy planning."""
+
+    USE_EXISTING = "use_existing"
+    BUILD_SQLITE = "build_sqlite"
+    DOWNLOAD_AND_BUILD = "download_and_build"
+    FAIL = "fail"
+
+
+@dataclass(frozen=True)
+class TaxonomyStatus:
+    """Read-only inspection of a taxonomy directory."""
+
+    taxdump_dir: Path
+    missing_dmp_files: tuple[str, ...]
+    sqlite_exists: bool
+    age_days: int | None
+
+    @property
+    def has_sources(self) -> bool:
+        """Whether all required NCBI taxdump source files are present."""
+        return not self.missing_dmp_files
+
+    @property
+    def is_prepared(self) -> bool:
+        """Whether taxonomy can be opened without mutating the directory."""
+        return self.has_sources and self.sqlite_exists
+
+    def is_stale(self, max_age_days: int = DEFAULT_TAXONOMY_MAX_AGE_DAYS) -> bool:
+        """Whether taxonomy is older than the configured freshness window."""
+        return self.age_days is None or self.age_days > max_age_days
+
+
+@dataclass(frozen=True)
+class TaxonomyPlan:
+    """Decision about how taxonomy should be made available."""
+
+    status: TaxonomyStatus
+    action: TaxonomyAction
+    reason: str
+
+
+@dataclass(frozen=True)
+class TaxonomyPolicy:
+    """Resolved pipeline taxonomy availability policy."""
+
+    mode: TaxonomyMode = TaxonomyMode.MISSING
+    max_age_days: int = DEFAULT_TAXONOMY_MAX_AGE_DAYS
+
+    @classmethod
+    def from_env_and_params(
+        cls,
+        *,
+        mode: str | TaxonomyMode | None,
+        max_age_days: int | None,
+        offline: bool,
+    ) -> TaxonomyPolicy:
+        """Resolve explicit params plus legacy offline mode into one policy."""
+        if mode is None and offline:
+            resolved_mode = TaxonomyMode.READ_ONLY
+        elif mode is None:
+            resolved_mode = TaxonomyMode.MISSING
+        else:
+            resolved_mode = TaxonomyMode(mode)
+        return cls(
+            mode=resolved_mode,
+            max_age_days=max_age_days or DEFAULT_TAXONOMY_MAX_AGE_DAYS,
+        )
 
 
 def _missing_required_dmp_files(taxdump_dir: Path) -> list[Path]:
@@ -77,6 +164,114 @@ def _is_taxdump_stale(taxdump_dir: Path, max_age: timedelta = MAX_AGE) -> bool:
     mtime = datetime.fromtimestamp(nodes_dmp.stat().st_mtime, tz=UTC)
     age = datetime.now(tz=UTC) - mtime
     return age > max_age
+
+
+def inspect_taxonomy(taxonomy_dir: Path | str | None = None) -> TaxonomyStatus:
+    """Inspect taxonomy availability without creating, downloading, or rebuilding."""
+    taxdump_dir = get_taxdump_dir(taxonomy_dir=taxonomy_dir)
+    nodes_dmp = taxdump_dir / "nodes.dmp"
+    age_days = None
+    if nodes_dmp.exists():
+        mtime = datetime.fromtimestamp(nodes_dmp.stat().st_mtime, tz=UTC)
+        age_days = (datetime.now(tz=UTC) - mtime).days
+    return TaxonomyStatus(
+        taxdump_dir=taxdump_dir,
+        missing_dmp_files=tuple(
+            path.name for path in _missing_required_dmp_files(taxdump_dir)
+        ),
+        sqlite_exists=(taxdump_dir / "taxonomy.sqlite").exists(),
+        age_days=age_days,
+    )
+
+
+def plan_pipeline_taxonomy(
+    status: TaxonomyStatus,
+    policy: TaxonomyPolicy,
+) -> TaxonomyPlan:
+    """Plan taxonomy availability for pipeline runs."""
+    if policy.mode is TaxonomyMode.READ_ONLY:
+        if status.is_prepared:
+            return TaxonomyPlan(
+                status,
+                TaxonomyAction.USE_EXISTING,
+                "prepared taxonomy exists",
+            )
+        missing = [*status.missing_dmp_files]
+        if not status.sqlite_exists:
+            missing.append("taxonomy.sqlite")
+        return TaxonomyPlan(
+            status,
+            TaxonomyAction.FAIL,
+            "read-only taxonomy mode requires prepared taxonomy at "
+            f"{status.taxdump_dir}; missing: {', '.join(sorted(missing))}",
+        )
+
+    if status.is_prepared:
+        return TaxonomyPlan(
+            status,
+            TaxonomyAction.USE_EXISTING,
+            "prepared taxonomy exists",
+        )
+    if status.has_sources:
+        return TaxonomyPlan(
+            status,
+            TaxonomyAction.BUILD_SQLITE,
+            "taxonomy.sqlite is missing",
+        )
+    return TaxonomyPlan(
+        status,
+        TaxonomyAction.DOWNLOAD_AND_BUILD,
+        "required taxdump files are missing",
+    )
+
+
+def plan_admin_taxonomy(
+    status: TaxonomyStatus,
+    *,
+    refresh: TaxonomyRefresh = TaxonomyRefresh.MISSING,
+    max_age_days: int = DEFAULT_TAXONOMY_MAX_AGE_DAYS,
+) -> TaxonomyPlan:
+    """Plan taxonomy preparation for explicit admin commands."""
+    if refresh is TaxonomyRefresh.FORCE:
+        return TaxonomyPlan(
+            status,
+            TaxonomyAction.DOWNLOAD_AND_BUILD,
+            "force refresh requested",
+        )
+    if not status.has_sources:
+        return TaxonomyPlan(
+            status,
+            TaxonomyAction.DOWNLOAD_AND_BUILD,
+            "required taxdump files are missing",
+        )
+    if refresh is TaxonomyRefresh.STALE and status.is_stale(max_age_days):
+        return TaxonomyPlan(
+            status,
+            TaxonomyAction.DOWNLOAD_AND_BUILD,
+            "taxonomy is stale",
+        )
+    if not status.sqlite_exists:
+        return TaxonomyPlan(
+            status,
+            TaxonomyAction.BUILD_SQLITE,
+            "taxonomy.sqlite is missing",
+        )
+    return TaxonomyPlan(status, TaxonomyAction.USE_EXISTING, "prepared taxonomy exists")
+
+
+def execute_taxonomy_plan(plan: TaxonomyPlan) -> Path:
+    """Execute a taxonomy plan, mutating only for build/download actions."""
+    taxdump_dir = plan.status.taxdump_dir
+    if plan.action is TaxonomyAction.USE_EXISTING:
+        return taxdump_dir
+    if plan.action is TaxonomyAction.BUILD_SQLITE:
+        _build_sqlite_from_dmp(taxdump_dir)
+        return taxdump_dir
+    if plan.action is TaxonomyAction.DOWNLOAD_AND_BUILD:
+        _download_and_extract_taxdump(taxdump_dir)
+        _build_sqlite_from_dmp(taxdump_dir)
+        return taxdump_dir
+    raise TaxonomyOfflineError(plan.reason)
 
 
 def _download_and_extract_taxdump(taxdump_dir: Path) -> None:
@@ -285,6 +480,9 @@ def _build_sqlite_from_dmp(taxdump_dir: Path) -> Path:  # noqa: C901, PLR0912, P
 
 def _ensure_taxdump(
     taxonomy_dir: Path | str | None = None,
+    *,
+    refresh: TaxonomyRefresh | str = TaxonomyRefresh.MISSING,
+    max_age_days: int = DEFAULT_TAXONOMY_MAX_AGE_DAYS,
 ) -> Path:
     """
     Ensure taxdump is downloaded, extracted, and SQLite is built when missing.
@@ -295,24 +493,20 @@ def _ensure_taxdump(
     Returns:
         Path to taxdump directory.
     """
-    taxdump_dir = get_taxdump_dir(taxonomy_dir=taxonomy_dir)
-    sqlite_path = taxdump_dir / "taxonomy.sqlite"
-
-    missing_dmp_files = _required_dmp_files_missing(taxdump_dir)
-    sqlite_missing = not sqlite_path.exists()
-
-    if missing_dmp_files:
-        _download_and_extract_taxdump(taxdump_dir)
-        _build_sqlite_from_dmp(taxdump_dir)
-    elif sqlite_missing:
-        # .dmp files exist but SQLite needs rebuilding
-        _build_sqlite_from_dmp(taxdump_dir)
-
-    return taxdump_dir
+    status = inspect_taxonomy(taxonomy_dir=taxonomy_dir)
+    plan = plan_admin_taxonomy(
+        status,
+        refresh=TaxonomyRefresh(refresh),
+        max_age_days=max_age_days,
+    )
+    return execute_taxonomy_plan(plan)
 
 
 def ensure_taxonomy_available(
     taxonomy_dir: Path | str | None = None,
+    *,
+    refresh: TaxonomyRefresh | str = TaxonomyRefresh.MISSING,
+    max_age_days: int = DEFAULT_TAXONOMY_MAX_AGE_DAYS,
 ) -> Path:
     """
     Ensure taxonomy database is downloaded and ready for use.
@@ -328,11 +522,17 @@ def ensure_taxonomy_available(
 
     Args:
         taxonomy_dir: Optional explicit taxonomy directory.
+        refresh: Admin refresh policy for preparation.
+        max_age_days: Freshness window used when refresh is ``stale``.
 
     Returns:
         Path to the taxdump directory containing taxonomy.sqlite
     """
-    return _ensure_taxdump(taxonomy_dir=taxonomy_dir)
+    return _ensure_taxdump(
+        taxonomy_dir=taxonomy_dir,
+        refresh=refresh,
+        max_age_days=max_age_days,
+    )
 
 
 class TaxonomyDB:
@@ -776,11 +976,13 @@ Resolution:
 
 
 @contextmanager
-def open(  # noqa: A001, C901, PLR0912, PLR0915
+def open(  # noqa: A001, C901, PLR0912, PLR0913, PLR0915
     offline: bool | None = None,  # noqa: FBT001
     *,
     taxonomy_dir: Path | str | None = None,
     sync: bool = False,
+    taxonomy_mode: TaxonomyMode | str | None = None,
+    max_age_days: int | None = None,
     warn_callback: Callable[[str], None] | None = None,
 ) -> Generator[TaxonomyDB, None, None]:
     """
@@ -801,6 +1003,11 @@ def open(  # noqa: A001, C901, PLR0912, PLR0915
               If False (default), attempt lazy download with a warning if
               required taxonomy files are missing. Stale-but-complete taxonomy
               is reused for reproducibility.
+        taxonomy_mode: Pipeline taxonomy mode. ``read_only`` never mutates;
+                       ``missing`` prepares taxonomy only when files are absent.
+                       If unset, NVD_TAXONOMY_OFFLINE=1 selects ``read_only``;
+                       otherwise the default is ``missing``.
+        max_age_days: Freshness warning window.
         warn_callback: Optional callback function to receive warning messages.
                        If None, warnings are printed to stderr. The callback
                        should accept a single string argument.
@@ -846,94 +1053,75 @@ def open(  # noqa: A001, C901, PLR0912, PLR0915
     if offline is None:
         offline = os.environ.get("NVD_TAXONOMY_OFFLINE", "").lower() in ("1", "true")
 
-    taxdump_dir = get_taxdump_dir(taxonomy_dir=taxonomy_dir)
+    policy = TaxonomyPolicy.from_env_and_params(
+        mode=taxonomy_mode,
+        max_age_days=max_age_days,
+        offline=offline or sync,
+    )
+    status = inspect_taxonomy(taxonomy_dir=taxonomy_dir)
+    plan = plan_pipeline_taxonomy(status, policy)
+    taxdump_dir = status.taxdump_dir
     sqlite_path = taxdump_dir / "taxonomy.sqlite"
-    missing_dmp_files = _missing_required_dmp_files(taxdump_dir)
-    sqlite_missing = not sqlite_path.exists()
-    stale = _is_taxdump_stale(taxdump_dir)
 
-    if offline:
-        if sqlite_missing:
-            # In offline mode, require pre-built taxonomy.sqlite. Don't attempt
-            # to build from .dmp files: distributed workers on read-only
-            # filesystems can't write, and attempting to do so causes "unable
-            # to write to readonly database" errors.
-            msg = (
-                f"Taxonomy database not found at {sqlite_path} and offline mode is enabled. "
-                f"Run 'nvd taxonomy ensure' or ensure ENSURE_TAXONOMY runs locally before "
-                f"launching distributed jobs."
-            )
-            raise TaxonomyOfflineError(msg)
-    else:
-        needs_download = bool(missing_dmp_files)
-        needs_rebuild = sqlite_missing and not needs_download
-
-        if needs_download or needs_rebuild:
-            if sync:
-                # Sync mode: fail if taxonomy not ready
-                if needs_download:
-                    reason = "Required taxonomy source files are missing"
-                else:
-                    reason = "taxonomy.sqlite not found (needs rebuild from .dmp files)"
-                raise TaxonomyUnavailableError(
-                    taxdump_dir=taxdump_dir,
-                    operation="Loading taxonomy database",
-                    reason=reason,
-                )
-            else:
-                # Graceful mode: warn and attempt download
-                if needs_download:
-                    context = "Required taxonomy files are missing"
-                else:
-                    context = "taxonomy.sqlite needs to be rebuilt from .dmp files"
-
-                warning = format_taxonomy_warning(
-                    operation="Loading taxonomy database",
-                    context=context,
-                    error=None,
-                    taxdump_dir=taxdump_dir,
-                    will_download=True,
-                )
-                emit_warning(warning)
-
-        elif stale:
-            warning = format_taxonomy_warning(
-                operation="Loading taxonomy database",
-                context=(
-                    f"Taxonomy is older than the configured freshness window "
-                    f"({DEFAULT_TAXONOMY_MAX_AGE_DAYS} days); continuing with "
-                    "the existing database"
-                ),
-                error=None,
+    if plan.action is TaxonomyAction.FAIL:
+        if sync:
+            raise TaxonomyUnavailableError(
                 taxdump_dir=taxdump_dir,
-                will_download=False,
-                will_continue=True,
+                operation="Loading taxonomy database",
+                reason=plan.reason,
             )
-            emit_warning(warning)
+        raise TaxonomyOfflineError(plan.reason)
 
-        # Attempt to ensure taxonomy is available (download if needed)
-        try:
-            taxdump_dir = _ensure_taxdump(taxonomy_dir=taxonomy_dir)
-            sqlite_path = taxdump_dir / "taxonomy.sqlite"
-        except Exception as e:
-            if sync:
-                raise TaxonomyUnavailableError(
-                    taxdump_dir=taxdump_dir,
-                    operation="Downloading/building taxonomy database",
-                    reason=str(e),
-                    original_error=e,
-                ) from e
-            else:
-                # Even in graceful mode, we can't proceed without taxonomy
-                warning = format_taxonomy_warning(
-                    operation="Downloading/building taxonomy database",
-                    context="Failed to download or build taxonomy database",
-                    error=e,
-                    taxdump_dir=taxdump_dir,
-                    will_download=False,
-                )
-                emit_warning(warning)
-                raise
+    if plan.action is not TaxonomyAction.USE_EXISTING:
+        if sync:
+            raise TaxonomyUnavailableError(
+                taxdump_dir=taxdump_dir,
+                operation="Loading taxonomy database",
+                reason=plan.reason,
+            )
+        warning = format_taxonomy_warning(
+            operation="Loading taxonomy database",
+            context=plan.reason,
+            error=None,
+            taxdump_dir=taxdump_dir,
+            will_download=plan.action is TaxonomyAction.DOWNLOAD_AND_BUILD,
+        )
+        emit_warning(warning)
+
+    elif status.is_stale(policy.max_age_days):
+        warning = format_taxonomy_warning(
+            operation="Loading taxonomy database",
+            context=(
+                f"Taxonomy is older than the configured freshness window "
+                f"({policy.max_age_days} days); continuing with the existing database"
+            ),
+            error=None,
+            taxdump_dir=taxdump_dir,
+            will_download=False,
+            will_continue=True,
+        )
+        emit_warning(warning)
+
+    try:
+        taxdump_dir = execute_taxonomy_plan(plan)
+        sqlite_path = taxdump_dir / "taxonomy.sqlite"
+    except Exception as e:
+        if sync:
+            raise TaxonomyUnavailableError(
+                taxdump_dir=taxdump_dir,
+                operation="Downloading/building taxonomy database",
+                reason=str(e),
+                original_error=e,
+            ) from e
+        warning = format_taxonomy_warning(
+            operation="Downloading/building taxonomy database",
+            context="Failed to download or build taxonomy database",
+            error=e,
+            taxdump_dir=taxdump_dir,
+            will_download=False,
+        )
+        emit_warning(warning)
+        raise
 
     # Open in read-only mode to avoid "unable to write to readonly database" errors
     # on distributed workers where the state directory may be read-only.

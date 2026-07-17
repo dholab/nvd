@@ -1,4 +1,33 @@
 /*
+ * Record the invocation and source identity that produced the result tree.
+ */
+process RECORD_RUN_METADATA {
+
+  label "low"
+  cache false
+
+  input:
+  val command
+  val nvd_version
+  val source_revision
+  val source_dirty
+
+  output:
+  path "run_command.sh", emit: command_file
+  path "nvd_version.txt", emit: version_file
+
+  script:
+  def encoded_command = command.bytes.encodeBase64().toString()
+  """
+  write_run_metadata.py \
+      --command-base64 '${encoded_command}' \
+      --version '${nvd_version}' \
+      --revision '${source_revision}' \
+      --dirty '${source_dirty}'
+  """
+}
+
+/*
  * Compute the deterministic run context without writing workflow state.
  */
 process COMPUTE_RUN_CONTEXT {
@@ -37,10 +66,16 @@ process ENSURE_TAXONOMY {
 
   script:
   def taxonomy_dir_arg = taxonomy_dir ? "--taxonomy-dir '${taxonomy_dir}'" : ""
+  def taxonomy_mode_arg = params.taxonomy_mode ? "--taxonomy-mode '${params.taxonomy_mode}'" : ""
+  def taxonomy_refresh_arg = params.taxonomy_refresh ? "--taxonomy-refresh '${params.taxonomy_refresh}'" : ""
+  def taxonomy_max_age_arg = params.taxonomy_max_age_days ? "--taxonomy-max-age-days ${params.taxonomy_max_age_days}" : ""
   """
   ensure_taxonomy.py \\
       --verbose \\
-      ${taxonomy_dir_arg}
+      ${taxonomy_dir_arg} \\
+      ${taxonomy_mode_arg} \\
+      ${taxonomy_refresh_arg} \\
+      ${taxonomy_max_age_arg}
   """
 }
 
@@ -61,8 +96,10 @@ process ANNOTATE_LEAST_COMMON_ANCESTORS {
 
   script:
   def taxonomy_dir_arg = taxonomy_dir ? "--taxonomy-dir '${taxonomy_dir}'" : ""
+  def taxonomy_mode_arg = params.taxonomy_mode ? "--taxonomy-mode '${params.taxonomy_mode}'" : ""
+  def taxonomy_max_age_arg = params.taxonomy_max_age_days ? "--taxonomy-max-age-days ${params.taxonomy_max_age_days}" : ""
   """
-  annotate_blast_lca.py -i ${all_blast_hits} -o ${sample_id}_blast.merged_with_lca.tsv ${taxonomy_dir_arg}
+  annotate_blast_lca.py -i ${all_blast_hits} -o ${sample_id}_blast.merged_with_lca.tsv ${taxonomy_dir_arg} ${taxonomy_mode_arg} ${taxonomy_max_age_arg}
   """
 }
 
@@ -91,6 +128,7 @@ process ADD_READ_COUNTS_TO_BLAST {
   tuple val(sample_id), path("${sample_id}_blast.final.tsv")
 
   script:
+  def virus_index_version = NvdUtils.targetEnrichmentEnabled(params) ? params.virus_index_version : "not_used"
   """
   finalize_blast_results.py \\
       --blast-tsv ${blast_tsv} \\
@@ -98,7 +136,7 @@ process ADD_READ_COUNTS_TO_BLAST {
       --output ${sample_id}_blast.final.tsv \\
       --total-reads ${total_reads} \\
       --blast-db-version '${params.blast_db_version}' \\
-      --virus-index-version '${params.virus_index_version}' \\
+      --virus-index-version '${virus_index_version}' \\
       --run-id '${run_id}'
   """
 }
