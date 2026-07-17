@@ -329,6 +329,8 @@ Resume using the same CLI inputs:
 nvd run --params-file run.yaml --resume
 ```
 
+Use resume to recover the same run after an interruption. A results directory belongs to one run identity and sample set; unrelated or concurrent reuse is unsupported. Grouped FASTQ glob patterns are live at run startup, so changing the underlying files means you should choose a fresh `--results` directory and run without `--resume`.
+
 Resume the exact previous command cached by `nvd run`:
 
 ```bash
@@ -337,6 +339,8 @@ nvd resume --interactive
 ```
 
 The short alias for `run` is available as `nvd r`, but examples use `nvd run` for clarity.
+
+Best-effort reporting retries twice and is then ignored. When available, report artifacts are published as `${results}/nvd/multiqc_report.html` and `${results}/nvd/multiqc_data/`; raw-read FastQC payloads may be partially published under `${results}/nvd/00_input_resolution/fastqc/` as generated `*_fastqc.zip` and `*_fastqc.html`. `multiqc_data/nvd_inputs`, manifest fields/schema, generated YAML names, receipt schemas, and section IDs are internal and not a downstream API.
 
 ## Validation and diagnostics
 

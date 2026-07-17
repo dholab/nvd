@@ -525,6 +525,8 @@ def test_write_jsonl_uses_expected_shape(tmp_path: Path) -> None:
             "sample_id": "S1",
             "platform": "illumina",
             "source": "paired_files",
+            "read_structure": "paired",
+            "read_counts": {"R1": 1, "R2": 1},
             "r1": [str(r1)],
             "r2": [str(r2)],
             "warnings": [],

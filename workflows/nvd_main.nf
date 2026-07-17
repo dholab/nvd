@@ -23,12 +23,14 @@ include { RAPID_SCREENING         } from "../subworkflows/rapid_screening"
 include { SAMPLE_SIMILARITY_QC    } from "../subworkflows/sample_similarity_qc"
 include { RAPID_SCREENING_EVAL    } from "../subworkflows/rapid_screening_eval"
 include { REPORTING               } from "../subworkflows/reporting"
+include { NVD_MULTIQC_REPORT      } from "../subworkflows/nvd_multiqc_reporting"
 include { COMPUTE_RUN_CONTEXT ; ENSURE_TAXONOMY } from "../modules/utils"
 
 
 workflow NVD_MAIN {
   take:
   ch_samplesheet
+  ch_nvd_version_file
 
   main:
 
@@ -160,6 +162,16 @@ workflow NVD_MAIN {
     workflow.runName,
   )
 
+  ch_scientific_completion = REPORTING.out.blast_results.count()
+
+  NVD_MULTIQC_REPORT(
+    GATHER_READS.out.reads,
+    GATHER_READS.out.resolved_manifest,
+    ch_nvd_version_file,
+    channel.value(params.experimental == true),
+    channel.value(file("${projectDir}/assets/multiqc_config.yaml")),
+  )
+
   if (params.experimental == true) {
     RAPID_SCREENING_EVAL(
       PREPROCESS_READS.out.read_counts,
@@ -174,6 +186,6 @@ workflow NVD_MAIN {
   }
 
   emit:
-  completion = REPORTING.out.blast_results.count().map { n -> "NVD main workflow complete: ${n} samples processed" }
+  completion = ch_scientific_completion.map { n -> "NVD main workflow complete: ${n} samples processed" }
   labkey_log = REPORTING.out.labkey_log
 }

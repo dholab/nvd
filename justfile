@@ -1,6 +1,7 @@
 set shell := ["bash", "-cu"]
 
 PYTHON_CI_PATHS := "lib/ scripts/"
+REPORTING_TYPECHECK_PATHS := "lib/py_nvd/read_inputs.py lib/py_nvd/multiqc_report.py bin/write_nvd_fastqc_receipt.py"
 NCBI_VIRUS_SOURMASH_SIG_URL := "https://farm.cse.ucdavis.edu/~ctbrown/sourmash-db.new/ncbi-viruses-2025.01/ncbi-viruses-2025.01.dna.k=31.sig.zip"
 NCBI_VIRUS_SOURMASH_LINEAGES_URL := "https://farm.cse.ucdavis.edu/~ctbrown/sourmash-db.new/ncbi-viruses-2025.01/ncbi-viruses.2025.01.lineages.csv"
 WVDB_FASTA_URL := "https://zenodo.org/records/20276352/files/WVDB_v1.0.fasta?download=1"
@@ -36,7 +37,7 @@ shell-dev:
 # === Day-to-day Checks ===
 
 # run the usual local checks, excluding the slow networked integration test
-check: fmt-check lint schema-check test config-check
+check: fmt-check lint typecheck-reporting schema-check test config-check
     @echo "Project checks passed"
 
 # check Python formatting for paths covered by CI
@@ -54,6 +55,10 @@ lint:
 # lint and apply safe Python fixes for paths covered by CI
 lint-fix:
     uv run ruff check {{ PYTHON_CI_PATHS }} --fix
+
+# statically check the typed MultiQC reporting boundary
+typecheck-reporting:
+    pixi run -e dev ty check {{ REPORTING_TYPECHECK_PATHS }}
 
 # validate that the params schema covers pipeline params
 schema-check:

@@ -400,6 +400,32 @@ def assert_target_enrichment_outputs(
         assert plot.stat().st_size > 0, f"Empty target enrichment plot: {plot}"
 
 
+def assert_successful_nvd_multiqc_outputs(results_root: Path) -> None:
+    """Assert the healthy fixture completed ancillary reporting and publication."""
+    report = results_root / "multiqc_report.html"
+    data = results_root / "multiqc_data"
+    nvd_inputs = data / "nvd_inputs"
+    manifest_path = nvd_inputs / "nvd_report_manifest.json"
+    raw_fastqc = results_root / "00_input_resolution" / "fastqc"
+
+    assert report.is_file(), f"Missing NVD MultiQC report: {report}"
+    assert report.stat().st_size > 0, f"Empty NVD MultiQC report: {report}"
+    assert data.is_dir(), f"Missing NVD MultiQC data directory: {data}"
+    assert any(data.iterdir()), f"Empty NVD MultiQC data directory: {data}"
+    assert manifest_path.is_file(), f"Missing retained NVD MultiQC manifest: {manifest_path}"
+    assert (nvd_inputs / "nvd_sample_roster_mqc.yaml").is_file()
+    assert raw_fastqc.is_dir(), f"Missing retained raw FastQC directory: {raw_fastqc}"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    raw_units = manifest.get("raw_fastqc")
+    assert raw_units, f"No observed raw FastQC units in retained manifest: {manifest_path}"
+    expected_zips = sorted(str(unit["zip_alias"]) for unit in raw_units)
+    expected_htmls = sorted(str(unit["html_alias"]) for unit in raw_units)
+    observed_zips = sorted(path.name for path in raw_fastqc.glob("*.raw.*_fastqc.zip"))
+    observed_htmls = sorted(path.name for path in raw_fastqc.glob("*.raw.*_fastqc.html"))
+    assert observed_zips == expected_zips
+    assert observed_htmls == expected_htmls
+
+
 def make_e2e_run_dir() -> Path:
     output_root = Path(os.environ.get("NVD_E2E_OUTPUT_DIR", E2E_OUTPUT_DIR))
     run_id = datetime.now(tz=UTC).strftime("%Y%m%dT%H%M%SZ") + f"-pid{os.getpid()}"
@@ -585,6 +611,7 @@ def test_mini_sra_viral_pipeline_completes() -> None:
         str(run_info["sample_id"])
         for run_info in (*LOCAL_E2E_SAMPLES, *selected_sra_runs)
     }
+    assert_successful_nvd_multiqc_outputs(results_root)
     assert_target_enrichment_outputs(results_root, expected_sample_ids)
     assert_read_profiles_respect_length_filter(results_root)
     merged_blast_dir = results_root / "07_merged_blast_results"

@@ -20,5 +20,5 @@ workflow {
 
   ch_input_samplesheet = channel.fromPath(params.samplesheet)
 
-  nvd_main_results = NVD_MAIN(ch_input_samplesheet)
+  nvd_main_results = NVD_MAIN(ch_input_samplesheet, RECORD_RUN_METADATA.out.version_file)
 }
