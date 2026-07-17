@@ -1,4 +1,4 @@
-process BUILD_NVD_MULTIQC_INPUTS {
+process BUILD_MULTIQC_INPUTS {
     label "low"
 
     errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
@@ -8,7 +8,14 @@ process BUILD_NVD_MULTIQC_INPUTS {
     path resolved_reads
     path nvd_version
     path "fastqc_packages/*"
+    path "target_enrichment_packages/*"
+    path "depletion_packages/*"
+    path "fastx_packages/*"
+    path "assembly_packages/*"
     val experimental_enabled
+    val target_enrichment_enabled
+    val depletion_enabled
+    val assembly_enabled
 
     output:
     path "nvd_inputs", emit: inputs
@@ -16,16 +23,161 @@ process BUILD_NVD_MULTIQC_INPUTS {
     script:
     """
     mkdir -p fastqc_packages
+    mkdir -p target_enrichment_packages depletion_packages fastx_packages assembly_packages
     build_nvd_multiqc_inputs.py \
         --resolved-reads '${resolved_reads}' \
         --nvd-version '${nvd_version}' \
         --fastqc-root fastqc_packages \
+        --target-enrichment-root target_enrichment_packages \
+        --depletion-root depletion_packages \
+        --fastx-root fastx_packages \
+        --assembly-root assembly_packages \
         --experimental-enabled '${experimental_enabled}' \
+        --target-enrichment-enabled '${target_enrichment_enabled}' \
+        --depletion-enabled '${depletion_enabled}' \
+        --assembly-enabled '${assembly_enabled}' \
         --output-dir nvd_inputs
     """
 }
 
-process MULTIQC_NVD {
+process PACKAGE_NVD_DEACON_REPORT {
+    label "low"
+
+    errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
+    maxRetries 2
+
+    input:
+    tuple val(domain), val(sample_id), val(query_class), path(stats, stageAs: "stats.input")
+
+    output:
+    path "*.pkg", arity: '1', emit: packages
+
+    script:
+    """
+    package_nvd_report.py deacon \
+        --domain='${domain}' \
+        --sample-id='${sample_id}' \
+        --query-class='${query_class}' \
+        --stats=stats.input
+    """
+}
+
+process PACKAGE_NVD_PROFILE_REPORT {
+    label "low"
+
+    errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
+    maxRetries 2
+
+    input:
+    tuple val(domain), val(sample_id), val(stage), val(query_class), val(producer), path(profile, stageAs: "profile.input"), path(length_histogram, stageAs: "length_histogram.input")
+
+    output:
+    path "*.pkg", arity: '1', emit: packages
+
+    script:
+    """
+    package_nvd_report.py profile \
+        --domain='${domain}' \
+        --sample-id='${sample_id}' \
+        --stage='${stage}' \
+        --query-class='${query_class}' \
+        --producer='${producer}' \
+        --profile=profile.input \
+        --length-histogram=length_histogram.input
+    """
+}
+
+process PACKAGE_NVD_PROFILE_WITH_QUALITY_REPORT {
+    label "low"
+
+    errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
+    maxRetries 2
+
+    input:
+    tuple val(domain), val(sample_id), val(stage), val(query_class), val(producer), path(profile, stageAs: "profile.input"), path(length_histogram, stageAs: "length_histogram.input"), path(quality_histogram, stageAs: "quality_histogram.input")
+
+    output:
+    path "*.pkg", arity: '1', emit: packages
+
+    script:
+    """
+    package_nvd_report.py profile \
+        --domain='${domain}' \
+        --sample-id='${sample_id}' \
+        --stage='${stage}' \
+        --query-class='${query_class}' \
+        --producer='${producer}' \
+        --profile=profile.input \
+        --length-histogram=length_histogram.input \
+        --quality-histogram=quality_histogram.input
+    """
+}
+
+process PACKAGE_NVD_ELIGIBILITY_REPORT {
+    label "low"
+
+    errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
+    maxRetries 2
+
+    input:
+    tuple val(sample_id), val(producer), val(decision), val(sequence_count), val(threshold), val(reason)
+
+    output:
+    path "*.pkg", arity: '1', emit: packages
+
+    script:
+    """
+    package_nvd_report.py eligibility \
+        --sample-id='${sample_id}' \
+        --producer='${producer}' \
+        --decision='${decision}' \
+        --sequence-count='${sequence_count}' \
+        --threshold='${threshold}' \
+        --reason='${reason}'
+    """
+}
+
+process PACKAGE_NVD_LONG_READ_ELIGIBILITY_REPORT {
+    label "low"
+
+    errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
+    maxRetries 2
+
+    input:
+    tuple val(sample_id), path(summary, stageAs: "summary.input")
+
+    output:
+    path "*.pkg", arity: '1', emit: packages
+
+    script:
+    """
+    package_nvd_report.py long-read-eligibility \
+        --sample-id='${sample_id}' \
+        --summary=summary.input
+    """
+}
+
+process PACKAGE_NVD_UNION_REPORT {
+    label "low"
+
+    errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
+    maxRetries 2
+
+    input:
+    tuple val(sample_id), path(summary, stageAs: "summary.input")
+
+    output:
+    path "*.pkg", arity: '1', emit: packages
+
+    script:
+    """
+    package_nvd_report.py union \
+        --sample-id='${sample_id}' \
+        --summary=summary.input
+    """
+}
+
+process GENERATE_MULTIQC_REPORT {
     label "low"
 
     errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }

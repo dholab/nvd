@@ -8,6 +8,16 @@ from typing import TYPE_CHECKING
 
 import pytest
 from assess_long_read_assembly import REPORT_FIELDS, main
+from py_nvd.multiqc_assembly import (
+    LongReadAssemblerDecision,
+    parse_long_read_eligibility,
+)
+from py_nvd.multiqc_packages import (
+    LongReadEligibilityReceipt,
+    ReportPackage,
+    write_package,
+)
+from pydantic import ValidationError
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -80,6 +90,8 @@ def assess(tmp_path: Path, *, sample_id: str, counts: tuple[int, int, int]) -> P
             str(profile),
             "--output",
             str(report),
+            "--summary-json",
+            str(tmp_path / f"{sample_id}.long_read_assembly_eligibility.json"),
             "--metamdbg-marker",
             str(tmp_path / f"{sample_id}.metamdbg.run"),
             "--myloasm-marker",
@@ -99,6 +111,26 @@ def test_assess_uses_threshold_counts_for_run_and_skip_decisions(
     assert (tmp_path / "sample-1.metamdbg.run").exists()
     assert (tmp_path / "sample-1.myloasm.run").exists()
     assert not (tmp_path / "sample-1.metaflye.run").exists()
+    summary = json.loads(
+        (tmp_path / "sample-1.long_read_assembly_eligibility.json").read_text(),
+    )
+    assert summary["schema_version"] == "nvd.long-read-assembly-eligibility/v1"
+    assert [item["producer"] for item in summary["assemblers"]] == [
+        "metamdbg",
+        "myloasm",
+        "metaflye",
+    ]
+    receipt = LongReadEligibilityReceipt(sample_id="sample-1")
+    package_dir = write_package(
+        receipt,
+        (tmp_path / "sample-1.long_read_assembly_eligibility.json",),
+        output_root=tmp_path,
+    )
+    decisions = parse_long_read_eligibility(ReportPackage(package_dir, receipt))
+    assert all(
+        isinstance(decision, LongReadAssemblerDecision) for decision in decisions
+    )
+    assert [decision.decision for decision in decisions] == ["run", "run", "skip"]
     assert read_rows(report) == [
         {
             "sample_id": "sample-1",
@@ -122,6 +154,51 @@ def test_assess_uses_threshold_counts_for_run_and_skip_decisions(
             "metaflye_reason": "no_reads_meet_length_floor",
         },
     ]
+
+
+def test_assess_accepts_the_producers_mixed_threshold_axes(tmp_path: Path) -> None:
+    profile = tmp_path / "sample-1.fastx_profile.json"
+    write_profile(
+        profile,
+        sample_id="sample-1",
+        metamdbg_reads=3,
+        myloasm_reads=1,
+        metaflye_reads=0,
+    )
+    payload = json.loads(profile.read_text(encoding="utf-8"))
+    payload["thresholds"].insert(
+        0,
+        {
+            "name": "min_read_quality",
+            "axis": "quality",
+            "value": 12,
+            "sequence_count_at_or_above": 4,
+            "bases_at_or_above": None,
+        },
+    )
+    profile.write_text(json.dumps(payload), encoding="utf-8")
+    report = tmp_path / "sample-1.long_read_assembly_eligibility.tsv"
+
+    main(
+        [
+            "assess",
+            "--profile",
+            str(profile),
+            "--output",
+            str(report),
+            "--metamdbg-marker",
+            str(tmp_path / "sample-1.metamdbg.run"),
+            "--myloasm-marker",
+            str(tmp_path / "sample-1.myloasm.run"),
+            "--metaflye-marker",
+            str(tmp_path / "sample-1.metaflye.run"),
+        ],
+    )
+
+    [row] = read_rows(report)
+    assert row["metamdbg_qualifying_bases"] == "2249"
+    assert row["myloasm_qualifying_bases"] == "1000"
+    assert row["metaflye_qualifying_bases"] == "0"
 
 
 def test_report_combines_rows_in_sample_order(tmp_path: Path) -> None:
@@ -207,3 +284,78 @@ def test_assess_rejects_missing_required_threshold(tmp_path: Path) -> None:
                 str(tmp_path / "metaflye.run"),
             ],
         )
+
+
+def test_assess_rejects_an_assembler_threshold_on_the_quality_axis(
+    tmp_path: Path,
+) -> None:
+    profile = tmp_path / "sample-1.fastx_profile.json"
+    write_profile(
+        profile,
+        sample_id="sample-1",
+        metamdbg_reads=1,
+        myloasm_reads=1,
+        metaflye_reads=1,
+    )
+    payload = json.loads(profile.read_text(encoding="utf-8"))
+    payload["thresholds"][0]["axis"] = "quality"
+    payload["thresholds"][0]["bases_at_or_above"] = None
+    profile.write_text(json.dumps(payload), encoding="utf-8")
+    report = tmp_path / "report.tsv"
+    marker = tmp_path / "metamdbg.run"
+
+    with pytest.raises(TypeError, match="must have axis 'length'"):
+        main(
+            [
+                "assess",
+                "--profile",
+                str(profile),
+                "--output",
+                str(report),
+                "--metamdbg-marker",
+                str(marker),
+                "--myloasm-marker",
+                str(tmp_path / "myloasm.run"),
+                "--metaflye-marker",
+                str(tmp_path / "metaflye.run"),
+            ],
+        )
+
+    assert not report.exists()
+    assert not marker.exists()
+
+
+def test_assess_parses_the_profile_before_creating_outputs(tmp_path: Path) -> None:
+    profile = tmp_path / "sample-1.fastx_profile.json"
+    write_profile(
+        profile,
+        sample_id="sample-1",
+        metamdbg_reads=1,
+        myloasm_reads=1,
+        metaflye_reads=1,
+    )
+    payload = json.loads(profile.read_text(encoding="utf-8"))
+    del payload["total_bases"]
+    profile.write_text(json.dumps(payload), encoding="utf-8")
+    report = tmp_path / "report.tsv"
+    marker = tmp_path / "metamdbg.run"
+
+    with pytest.raises(ValidationError):
+        main(
+            [
+                "assess",
+                "--profile",
+                str(profile),
+                "--output",
+                str(report),
+                "--metamdbg-marker",
+                str(marker),
+                "--myloasm-marker",
+                str(tmp_path / "myloasm.run"),
+                "--metaflye-marker",
+                str(tmp_path / "metaflye.run"),
+            ],
+        )
+
+    assert not report.exists()
+    assert not marker.exists()

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Normalize stage-specific routing evidence into one experiment ledger."""
+"""Normalize stage-specific routing reports into one experiment ledger."""
 
 from __future__ import annotations
 
@@ -45,7 +45,7 @@ class LedgerRow:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--evidence", type=Path, action="append", required=True)
+    parser.add_argument("--input", type=Path, action="append", required=True)
     parser.add_argument("--output", type=Path, required=True)
     return parser.parse_args()
 
@@ -197,7 +197,7 @@ def blast_filter_rows(path: Path) -> list[LedgerRow]:
     ]
 
 
-def rows_for_evidence(path: Path) -> list[LedgerRow]:
+def rows_for_input(path: Path) -> list[LedgerRow]:
     name = path.name
     adapters = (
         ((".long_read_assembly_eligibility.tsv",), eligibility_rows),
@@ -214,12 +214,12 @@ def rows_for_evidence(path: Path) -> list[LedgerRow]:
     for suffixes, adapter in adapters:
         if name.endswith(suffixes):
             return adapter(path)
-    message = f"Unsupported sequence-flow evidence file: {path}"
+    message = f"Unsupported sequence-flow input file: {path}"
     raise ValueError(message)
 
 
 def build_rows(paths: Iterable[Path]) -> list[LedgerRow]:
-    rows = [row for path in paths for row in rows_for_evidence(path)]
+    rows = [row for path in paths for row in rows_for_input(path)]
     return sorted(
         rows,
         key=lambda row: (
@@ -240,7 +240,7 @@ def write_rows(path: Path, rows: Iterable[LedgerRow]) -> None:
 
 def main() -> None:
     args = parse_args()
-    write_rows(args.output, build_rows(args.evidence))
+    write_rows(args.output, build_rows(args.input))
 
 
 if __name__ == "__main__":

@@ -601,16 +601,31 @@ def write_summary(
         return int(connection.execute(query).fetchone()[0])
 
     summary = {
+        "schema_version": "nvd.long-read-union-summary/v1",
         "sample_id": sample_id,
         "source_contig_count": count("select count(*) from contig"),
+        "source_bases": count("select coalesce(sum(length), 0) from contig"),
         "representative_count": count(
             "select count(distinct representative_id) from contig",
         ),
         "emitted_contig_count": count("select count(*) from contig where emitted = 1"),
+        "emitted_bases": count(
+            "select coalesce(sum(length), 0) from (select representative_id, max(length) as length from contig where emitted = 1 group by representative_id)",
+        ),
         "exact_duplicate_count": count("select count(*) from duplicate"),
         "exact_containment_count": count(
             "select count(distinct contained_id) from containment",
         ),
+        "by_assembler": [
+            {
+                "producer": assembler,
+                "source_count": source_count,
+                "source_bases": source_bases,
+            }
+            for assembler, source_count, source_bases in connection.execute(
+                "select assembler, count(*), coalesce(sum(length), 0) from contig group by assembler order by assembler",
+            )
+        ],
     }
     path.write_text(
         json.dumps(summary, indent=2, sort_keys=True) + "\n",

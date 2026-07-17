@@ -10,6 +10,8 @@ import yaml
 from pydantic import ValidationError
 
 from py_nvd.multiqc_report import (
+    CompileRequest,
+    ReportConfiguration,
     build_multiqc_inputs,
     parse_fastqc_packages,
     parse_roster,
@@ -94,11 +96,15 @@ def build_inputs(
     experimental_enabled: bool,
 ) -> Path:
     return build_multiqc_inputs(
-        roster_path=roster_path,
-        version_path=version_path,
-        fastqc_root=fastqc_root,
-        output_dir=output_dir,
-        experimental_enabled=experimental_enabled,
+        CompileRequest(
+            roster_path=roster_path,
+            version_path=version_path,
+            fastqc_root=fastqc_root,
+            output_dir=output_dir,
+            configuration=ReportConfiguration(
+                experimental_enabled=experimental_enabled,
+            ),
+        ),
     )
 
 
@@ -123,6 +129,9 @@ def test_compiler_generates_minimal_manifest_and_custom_content(tmp_path: Path) 
         "report_plan": {
             "schema_version": "nvd.report-plan/v1",
             "experimental_enabled": False,
+            "target_enrichment_enabled": True,
+            "depletion_enabled": True,
+            "assembly_enabled": True,
         },
         "source_identity": {"version": "3.3.0", "revision": "abc123"},
         "samples": [
@@ -154,6 +163,9 @@ def test_compiler_generates_minimal_manifest_and_custom_content(tmp_path: Path) 
                 "html_alias": "sample_A.raw.R1.001_fastqc.html",
             },
         ],
+        "report_packages": [],
+        "report_package_warnings": [],
+        "fastx_max_points": 1000,
         "sections": [
             "nvd_sample_roster",
             "nvd_raw_fastqc_inventory",
@@ -167,6 +179,11 @@ def test_compiler_generates_minimal_manifest_and_custom_content(tmp_path: Path) 
     assert (output_dir / "nvd_sample_roster_mqc.yaml").is_file()
     assert (output_dir / "nvd_raw_fastqc_inventory_mqc.yaml").is_file()
     assert (output_dir / "nvd_experimental_capabilities_mqc.yaml").is_file()
+
+    roster_section = yaml.safe_load(
+        (output_dir / "nvd_sample_roster_mqc.yaml").read_text(encoding="utf-8"),
+    )
+    assert all("sample_id" not in row for row in roster_section["data"].values())
 
     generated_text = "\n".join(path.read_text() for path in output_dir.iterdir())
     assert "/secret/source" not in generated_text
@@ -254,7 +271,7 @@ def test_compiler_preserves_roster_order_and_sorts_fastqc_units(
         alias="sample_A.raw.R1.001",
     )
 
-    build_multiqc_inputs(
+    build_inputs(
         roster_path=roster,
         version_path=version,
         fastqc_root=fastqc_root,
@@ -263,7 +280,7 @@ def test_compiler_preserves_roster_order_and_sorts_fastqc_units(
     )
     shuffled_roster_path = tmp_path / "shuffled_resolved_reads.jsonl"
     shuffled_roster = write_roster(shuffled_roster_path, shuffled=True)
-    build_multiqc_inputs(
+    build_inputs(
         roster_path=shuffled_roster,
         version_path=version,
         fastqc_root=fastqc_root,
@@ -313,7 +330,7 @@ def test_compiler_rejects_unsafe_alias_identity(tmp_path: Path) -> None:
     )
 
     with pytest.raises(ValidationError):
-        build_multiqc_inputs(
+        build_inputs(
             roster_path=write_roster(tmp_path / "resolved_reads.jsonl"),
             version_path=write_version(tmp_path / "nvd_version.txt"),
             fastqc_root=tmp_path,

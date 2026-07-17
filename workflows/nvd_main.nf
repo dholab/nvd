@@ -22,8 +22,8 @@ include { CLASSIFY_WITH_BLASTN    } from "../subworkflows/classify_with_blastn"
 include { RAPID_SCREENING         } from "../subworkflows/rapid_screening"
 include { SAMPLE_SIMILARITY_QC    } from "../subworkflows/sample_similarity_qc"
 include { RAPID_SCREENING_EVAL    } from "../subworkflows/rapid_screening_eval"
+include { MULTIQC_BUNDLING        } from "../subworkflows/multiqc_bundling"
 include { REPORTING               } from "../subworkflows/reporting"
-include { NVD_MULTIQC_REPORT      } from "../subworkflows/nvd_multiqc_reporting"
 include { COMPUTE_RUN_CONTEXT ; ENSURE_TAXONOMY } from "../modules/utils"
 
 
@@ -38,6 +38,7 @@ workflow NVD_MAIN {
   // direct-read querying remains enabled while assembly is skipped.
   def requires_blast_db = !params.skip_blast && (!params.skip_assembly || params.experimental)
   def target_enrichment_enabled = NvdUtils.targetEnrichmentEnabled(params)
+  def depletion_enabled = NvdUtils.depletionEnabled(params)
   def has_target_enrichment_index = NvdUtils.hasTargetEnrichmentIndex(params)
   assert (!requires_blast_db || (params.blast_db && file(params.blast_db).isDirectory())) && (!target_enrichment_enabled || has_target_enrichment_index) : """
     One or more required parameters are missing or point to non-existent files:
@@ -134,15 +135,36 @@ workflow NVD_MAIN {
     ch_taxonomy_dir,
   )
 
-  ch_sequence_flow_evidence = LONG_READ_DENOVO_ENSEMBLY.out.assembly_eligibility
+  ch_sequence_flow_inputs = LONG_READ_DENOVO_ENSEMBLY.out.assembly_eligibility
     .map { _sample_id, report -> report }
-    .mix(LONG_READ_DENOVO_ENSEMBLY.out.union_provenance.map { _sample_id, _provenance, summary -> summary })
+    .mix(LONG_READ_DENOVO_ENSEMBLY.out.union_summaries.map { _sample_id, summary -> summary })
     .mix(PREPARE_BLAST_QUERIES.out.contig_filter_decisions.map { _sample_id, decision -> decision })
     .mix(PREPARE_BLAST_QUERIES.out.mapback_count_files.map { _sample_id, counts -> counts })
     .mix(PREPARE_BLAST_QUERIES.out.blast_query_summaries.map { _sample_id, summary -> summary })
     .mix(CLASSIFY_WITH_MEGABLAST.out.megablast_query_partition.map { _sample_id, _query_class, _accounted_ids, _blastn_candidates, summary -> summary })
     .mix(CLASSIFY_WITH_MEGABLAST.out.filter_decisions.map { _sample_id, _query_class, decision -> decision })
     .mix(CLASSIFY_WITH_BLASTN.out.filter_decisions.map { _sample_id, _query_class, decision -> decision })
+
+  MULTIQC_BUNDLING(
+    PREPROCESS_READS.out.raw_fastqc_packages,
+    PREPROCESS_READS.out.raw_fastqc_zips,
+    GATHER_READS.out.resolved_manifest,
+    ch_nvd_version_file,
+    channel.value(params.experimental == true),
+    channel.value(target_enrichment_enabled),
+    channel.value(depletion_enabled),
+    channel.value(!params.skip_assembly),
+    PREPROCESS_READS.out.target_enrichment_stats,
+    PREPROCESS_READS.out.depletion_stats,
+    PREPROCESS_READS.out.processed_read_profiles,
+    PREPROCESS_READS.out.processed_read_quality_histograms,
+    PREPARE_BLAST_QUERIES.out.filtered_contig_profiles,
+    SHORT_READ_DENOVO_ASSEMBLY.out.assembly_profiles.mix(LONG_READ_DENOVO_ENSEMBLY.out.assembly_profiles),
+    SHORT_READ_DENOVO_ASSEMBLY.out.eligibility_decisions.mix(LONG_READ_DENOVO_ENSEMBLY.out.eligibility_decisions),
+    LONG_READ_DENOVO_ENSEMBLY.out.eligibility_summaries,
+    LONG_READ_DENOVO_ENSEMBLY.out.union_summaries,
+    channel.value(file("${projectDir}/assets/multiqc_config.yaml")),
+  )
 
   REPORTING(
     CLASSIFY_WITH_BLASTN.out.merged_results,
@@ -158,19 +180,14 @@ workflow NVD_MAIN {
     ch_run_context,
     ch_sourmash_tax_reports,
     ch_risk_group_lookup,
-    ch_sequence_flow_evidence,
+    ch_sequence_flow_inputs,
+    MULTIQC_BUNDLING.out.fastqc_zips,
+    MULTIQC_BUNDLING.out.inputs,
+    MULTIQC_BUNDLING.out.config,
     workflow.runName,
   )
 
   ch_scientific_completion = REPORTING.out.blast_results.count()
-
-  NVD_MULTIQC_REPORT(
-    GATHER_READS.out.reads,
-    GATHER_READS.out.resolved_manifest,
-    ch_nvd_version_file,
-    channel.value(params.experimental == true),
-    channel.value(file("${projectDir}/assets/multiqc_config.yaml")),
-  )
 
   if (params.experimental == true) {
     RAPID_SCREENING_EVAL(

@@ -7,12 +7,19 @@ include { DEACON_ENRICH_TARGET_READS                     } from "../modules/deac
 include { DEACON_DEPLETE                                  } from "../modules/deacon"
 include { MERGE_PAIRS ; DEDUP_WITH_CLUMPIFY ; TRIM_ADAPTERS ; FILTER_READS ; REPAIR_PAIRS } from "../modules/bbmap"
 include { PROFILE_FASTX as PROFILE_READS ; PLOT_FASTX_LENGTH_PROFILE as PLOT_READ_LENGTH_PROFILES ; PLOT_FASTX_QUALITY_PROFILE as PLOT_READ_QUALITY_PROFILES } from "../modules/fastx"
+include { FASTQC_RAW } from "../modules/fastqc"
 
 workflow PREPROCESS_READS {
     take:
     ch_read_bundles  // tuple(meta, read_files) from GATHER_READS
 
     main:
+
+    // Raw-read QC is an ancillary preprocessing branch. Each physical FASTQ
+    // remains an independent task so failures, retries, memory, and cache reuse
+    // stay bounded without delaying target enrichment.
+    ch_fastqc_units = ch_read_bundles.flatMap { meta, reads -> NvdReporting.processReadyFastqcTuples(meta, reads) }
+    FASTQC_RAW(ch_fastqc_units)
 
     // -------------------------------------------------------------------------
     // Step 1: Resolve target index and frontloaded extraction
@@ -158,7 +165,7 @@ workflow PREPROCESS_READS {
     // 2c. Host/contaminant depletion with deacon (optional). The public
     // parameter names remain host_* for compatibility, but this channel is the
     // general depletion index used by both read and contig filtering.
-    def has_depletion_config = params.host_index || params.host_index_url || params.host_contaminants_fasta
+    def has_depletion_config = NvdUtils.depletionEnabled(params)
     if (has_depletion_config) {
         ch_local_depletion_index = params.host_index
             ? Channel.fromPath(params.host_index)
@@ -182,10 +189,13 @@ workflow PREPROCESS_READS {
         ch_depletion_index = DEACON_UNION_INDEXES.out.index
         ch_depletion_index_option = ch_depletion_index.map { idx -> tuple(true, idx) }
 
-        ch_after_scrub = DEACON_DEPLETE(ch_after_trim.combine(ch_depletion_index)).reads
+        DEACON_DEPLETE(ch_after_trim.combine(ch_depletion_index))
+        ch_after_scrub = DEACON_DEPLETE.out.reads
+        ch_depletion_stats = DEACON_DEPLETE.out.stats
     } else {
         ch_depletion_index_option = Channel.value(tuple(false, file("${projectDir}/assets/README.md")))
         ch_after_scrub = ch_after_trim
+        ch_depletion_stats = channel.empty()
     }
 
     // 2d. Independently optional quality/length and low-complexity filters
@@ -223,6 +233,7 @@ workflow PREPROCESS_READS {
             meta + [
                 profile_stage: meta.query_class,
                 profile_key: "${meta.id}:${meta.read_structure}:${meta.query_class}",
+                profile_format: "fastq",
                 thresholds: thresholds,
             ],
             reads,
@@ -377,12 +388,17 @@ workflow PREPROCESS_READS {
     // tuple(meta, reads, profile_json, length_histogram)
     // meta: id, platform, read_structure, query_class, sample_batch_count, profile_stage, sequence_count
     profiled_read_batches = ch_profiled_preprocessed_batches
+    processed_read_profiles = PROFILE_READS.out.profiled
+    processed_read_quality_histograms = PROFILE_READS.out.quality_histogram
     // tuple(sample_meta, batches); each batch contains meta and reads
     profiled_batches_by_sample = ch_profiled_batches_by_sample
     paired_reads_for_mapback = ch_paired_reads_for_mapback
     single_reads_for_mapback = ch_single_reads_for_mapback
     read_counts = ch_read_counts
     target_enrichment_stats = DEACON_ENRICH_TARGET_READS.out.stats
+    depletion_stats = ch_depletion_stats
+    raw_fastqc_packages = FASTQC_RAW.out.packages
+    raw_fastqc_zips = FASTQC_RAW.out.zips
     target_index = ch_target_index
     depletion_index = ch_depletion_index_option
 }

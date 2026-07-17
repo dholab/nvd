@@ -406,22 +406,40 @@ def assert_successful_nvd_multiqc_outputs(results_root: Path) -> None:
     data = results_root / "multiqc_data"
     nvd_inputs = data / "nvd_inputs"
     manifest_path = nvd_inputs / "nvd_report_manifest.json"
-    raw_fastqc = results_root / "00_input_resolution" / "fastqc"
+    raw_fastqc = results_root / "00_input_preparation" / "raw_fastq_qc" / "fastqc"
 
     assert report.is_file(), f"Missing NVD MultiQC report: {report}"
     assert report.stat().st_size > 0, f"Empty NVD MultiQC report: {report}"
     assert data.is_dir(), f"Missing NVD MultiQC data directory: {data}"
     assert any(data.iterdir()), f"Empty NVD MultiQC data directory: {data}"
-    assert manifest_path.is_file(), f"Missing retained NVD MultiQC manifest: {manifest_path}"
+    assert manifest_path.is_file(), (
+        f"Missing retained NVD MultiQC manifest: {manifest_path}"
+    )
     assert (nvd_inputs / "nvd_sample_roster_mqc.yaml").is_file()
+    expected_domain_inputs = (
+        "nvd_target_enrichment_mqc.yaml",
+        "nvd_depletion_mqc.yaml",
+        "nvd_fastx_profiles_mqc.yaml",
+        "nvd_fastx_length_distribution_mqc.yaml",
+        "nvd_fastx_quality_distribution_mqc.yaml",
+        "nvd_assembly_mqc.yaml",
+    )
+    for filename in expected_domain_inputs:
+        assert (nvd_inputs / filename).is_file(), (
+            f"Missing retained NVD MultiQC input: {filename}"
+        )
     assert raw_fastqc.is_dir(), f"Missing retained raw FastQC directory: {raw_fastqc}"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     raw_units = manifest.get("raw_fastqc")
-    assert raw_units, f"No observed raw FastQC units in retained manifest: {manifest_path}"
+    assert raw_units, (
+        f"No observed raw FastQC units in retained manifest: {manifest_path}"
+    )
     expected_zips = sorted(str(unit["zip_alias"]) for unit in raw_units)
     expected_htmls = sorted(str(unit["html_alias"]) for unit in raw_units)
     observed_zips = sorted(path.name for path in raw_fastqc.glob("*.raw.*_fastqc.zip"))
-    observed_htmls = sorted(path.name for path in raw_fastqc.glob("*.raw.*_fastqc.html"))
+    observed_htmls = sorted(
+        path.name for path in raw_fastqc.glob("*.raw.*_fastqc.html")
+    )
     assert observed_zips == expected_zips
     assert observed_htmls == expected_htmls
 
@@ -614,6 +632,30 @@ def test_mini_sra_viral_pipeline_completes() -> None:
     assert_successful_nvd_multiqc_outputs(results_root)
     assert_target_enrichment_outputs(results_root, expected_sample_ids)
     assert_read_profiles_respect_length_filter(results_root)
+    resolved_manifest = (
+        results_root
+        / "00_input_preparation"
+        / "input_resolution"
+        / "resolved_reads.jsonl"
+    )
+    resolved_records = [
+        json.loads(line)
+        for line in resolved_manifest.read_text(encoding="utf-8").splitlines()
+    ]
+    resolved_by_sample = {record["sample_id"]: record for record in resolved_records}
+    for run_info in LOCAL_E2E_SAMPLES:
+        record = resolved_by_sample[run_info["sample_id"]]
+        assert record["source"] == run_info["source"]
+
+    glob_record = resolved_by_sample["local_hits_glob"]
+    assert [Path(path).name for path in glob_record["r1"]] == [
+        "local_hits_glob_L001_R1_001.fastq.gz",
+        "local_hits_glob_L002_R1_001.fastq.gz",
+    ]
+    assert [Path(path).name for path in glob_record["r2"]] == [
+        "local_hits_glob_L001_R2_001.fastq.gz",
+        "local_hits_glob_L002_R2_001.fastq.gz",
+    ]
     merged_blast_dir = results_root / "07_merged_blast_results"
     final_dir = merged_blast_dir / "final"
     final_blast_files = sorted(final_dir.glob("*_blast.final.tsv"))
@@ -683,30 +725,6 @@ def test_mini_sra_viral_pipeline_completes() -> None:
                 f"Missing expected BLAST tasks for {run_info['sample_id']}: "
                 f"expected {sorted(expected_tasks)}, observed {sorted(observed_tasks)}"
             )
-
-        resolved_manifest = (
-            results_root / "00_input_resolution" / "resolved_reads.jsonl"
-        )
-        resolved_records = [
-            json.loads(line)
-            for line in resolved_manifest.read_text(encoding="utf-8").splitlines()
-        ]
-        resolved_by_sample = {
-            record["sample_id"]: record for record in resolved_records
-        }
-        for run_info in LOCAL_E2E_SAMPLES:
-            record = resolved_by_sample[run_info["sample_id"]]
-            assert record["source"] == run_info["source"]
-
-        glob_record = resolved_by_sample["local_hits_glob"]
-        assert [Path(path).name for path in glob_record["r1"]] == [
-            "local_hits_glob_L001_R1_001.fastq.gz",
-            "local_hits_glob_L002_R1_001.fastq.gz",
-        ]
-        assert [Path(path).name for path in glob_record["r2"]] == [
-            "local_hits_glob_L001_R2_001.fastq.gz",
-            "local_hits_glob_L002_R2_001.fastq.gz",
-        ]
 
         for organism in {
             str(run_info["expected_organism"]) for run_info in selected_sra_runs

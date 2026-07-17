@@ -89,6 +89,7 @@ workflow PREPARE_BLAST_QUERIES {
                     read_structure: read_structure,
                     profile_stage: "filtered_contigs",
                     profile_key: "${sample_id}:${platform}:${read_structure}:filtered_contigs",
+                    profile_format: "fasta",
                     profile_prefix: "${sample_id}.filtered_contigs",
                     thresholds: [
                         [name: "min_consecutive_bases", axis: "length", value: params.min_consecutive_bases],
@@ -212,6 +213,7 @@ workflow PREPARE_BLAST_QUERIES {
     unmapped_reads = CONTIG_READ_MAPBACK.out.unmapped_reads
     unmapped_read_counts = CONTIG_READ_MAPBACK.out.unmapped_read_counts
     no_contigs = ch_no_contig_samples
+    filtered_contig_profiles = PROFILE_FILTERED_CONTIGS.out.profiled
     contig_filter_decisions = DEACON_FILTER_CONTIGS.out.decisions
     mapback_count_files = ch_mapback_count_files
     blast_query_summaries = ch_blast_query_summaries

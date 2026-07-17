@@ -5,6 +5,7 @@ include { CRUMBS_PROFILING } from "./crumbs_profiling"
 include { LIMS_INTEGRATION } from "./lims_integration"
 include { RENDER_CONTIG_COVERAGE_HISTOGRAM } from "../modules/samtools"
 include { ANNOTATE_BLAST_RISK_GROUPS } from "../modules/risk_groups"
+include { GENERATE_MULTIQC_REPORT } from "../modules/multiqc"
 
 workflow REPORTING {
     take:
@@ -21,7 +22,10 @@ workflow REPORTING {
     ch_run_context
     ch_sourmash_tax_reports
     ch_risk_group_lookup
-    ch_sequence_flow_evidence
+    ch_sequence_flow_inputs
+    ch_multiqc_fastqc_zips
+    ch_multiqc_inputs
+    ch_multiqc_config
     run_id
 
     main:
@@ -82,7 +86,7 @@ workflow REPORTING {
     )
 
     if (params.experimental == true) {
-        BUILD_SEQUENCE_FLOW(ch_sequence_flow_evidence.collect())
+        BUILD_SEQUENCE_FLOW(ch_sequence_flow_inputs.collect())
 
         CRUMBS_PROFILING(
             ch_split_blast_results.for_emit,
@@ -159,6 +163,12 @@ workflow REPORTING {
         ch_labkey_url,
     )
 
+    GENERATE_MULTIQC_REPORT(
+        ch_multiqc_fastqc_zips,
+        ch_multiqc_inputs,
+        ch_multiqc_config,
+    )
+
     emit:
     blast_results = ch_split_blast_results.for_emit
     query_big_tables = params.experimental ? BUILD_QUERY_BIG_TABLE.out : channel.empty()
@@ -183,4 +193,6 @@ workflow REPORTING {
     crumbs_taxburst = params.experimental ? CRUMBS_PROFILING.out.taxburst : channel.empty()
     merged_crumbs_taxburst = params.experimental ? CRUMBS_PROFILING.out.merged_taxburst : channel.empty()
     crumbs_profile_taxonomy = params.experimental ? CRUMBS_PROFILING.out.profile_taxonomy : channel.empty()
+    multiqc_report = GENERATE_MULTIQC_REPORT.out.report
+    multiqc_data = GENERATE_MULTIQC_REPORT.out.data
 }

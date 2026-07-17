@@ -68,16 +68,16 @@ process BUILD_SEQUENCE_FLOW {
   label "low"
 
   input:
-  path evidence_files, stageAs: "sequence_flow_evidence??????/*"
+  path input_files, stageAs: "sequence_flow_inputs??????/*"
 
   output:
   path "sequence_flow.tsv", emit: sequence_flow
 
   script:
-  def evidence_args = evidence_files.collect { evidence -> "--evidence '${evidence}'" }.join(" ")
+  def input_args = input_files.collect { input -> "--input '${input}'" }.join(" ")
   """
   build_sequence_flow.py \
-      ${evidence_args} \
+      ${input_args} \
       --output sequence_flow.tsv
   """
 }

@@ -1,6 +1,7 @@
 include { ASSEMBLE_WITH_SPADES } from "../modules/spades"
 include { ASSESS_LONG_READ_ASSEMBLY_ELIGIBILITY ; REPORT_LONG_READ_ASSEMBLY_ELIGIBILITY ; ASSEMBLE_WITH_MYLOASM ; ASSEMBLE_WITH_METAMDBG ; ASSEMBLE_WITH_METAFLYE } from "../modules/long_read_assembly"
 include { NORMALIZE_CONTIGS ; FIND_CONTAINMENT_DUPLICATES ; EXTRACT_UNIQUE_CONTIGS } from "../modules/contig_union"
+include { PROFILE_ASSEMBLY_FASTA_FOR_REPORT as PROFILE_LONG_READ_ASSEMBLY_REPORT } from "../modules/fastx"
 
 workflow LONG_READ_DENOVO_ENSEMBLY {
     take:
@@ -8,7 +9,10 @@ workflow LONG_READ_DENOVO_ENSEMBLY {
 
     main:
     ch_assembly_eligibility = channel.empty()
+    ch_long_read_eligibility_summaries = channel.empty()
     ch_union_provenance = channel.empty()
+    ch_long_read_union_summaries = channel.empty()
+    ch_assembly_eligibility_decisions = channel.empty()
 
     if (params.experimental == true) {
         ASSESS_LONG_READ_ASSEMBLY_ELIGIBILITY(
@@ -17,6 +21,7 @@ workflow LONG_READ_DENOVO_ENSEMBLY {
             }
         )
         ch_assembly_eligibility = ASSESS_LONG_READ_ASSEMBLY_ELIGIBILITY.out.report
+        ch_long_read_eligibility_summaries = ASSESS_LONG_READ_ASSEMBLY_ELIGIBILITY.out.report_summary
 
         ASSEMBLE_WITH_MYLOASM(
             ASSESS_LONG_READ_ASSEMBLY_ELIGIBILITY.out.myloasm.map { meta, reads, _marker ->
@@ -82,6 +87,11 @@ workflow LONG_READ_DENOVO_ENSEMBLY {
         EXTRACT_UNIQUE_CONTIGS(FIND_CONTAINMENT_DUPLICATES.out.candidates)
         ch_long_read_contigs = EXTRACT_UNIQUE_CONTIGS.out.contigs
         ch_union_provenance = EXTRACT_UNIQUE_CONTIGS.out.provenance
+        ch_long_read_union_summaries = EXTRACT_UNIQUE_CONTIGS.out.summary
+        ch_profiles_to_report = ASSEMBLE_WITH_MYLOASM.out.contigs
+            .mix(ASSEMBLE_WITH_METAMDBG.out.contigs)
+            .mix(ASSEMBLE_WITH_METAFLYE.out.contigs)
+            .mix(EXTRACT_UNIQUE_CONTIGS.out.contigs)
     } else {
         ch_long_read_assembly_inputs = ch_long_read_profiles.branch { meta, _reads, _profile_json, _length_histogram ->
             eligible: meta.sequence_count >= 100
@@ -93,6 +103,13 @@ workflow LONG_READ_DENOVO_ENSEMBLY {
             tuple(meta.id, meta.platform)
         }
 
+        ch_assembly_eligibility_decisions = ch_long_read_assembly_inputs.ineligible.map { meta, _reads, _profile_json, _length_histogram ->
+            tuple(meta + [producer: 'spades'], 'skip', meta.sequence_count, 100, 'long_read_minimum_sequence_count')
+        }
+            .mix(ch_long_read_assembly_inputs.eligible.map { meta, _reads, _profile_json, _length_histogram ->
+                tuple(meta + [producer: 'spades'], 'run', meta.sequence_count, 100, 'long_read_minimum_sequence_count')
+            })
+
         ASSEMBLE_WITH_SPADES(
             ch_long_read_assembly_inputs.eligible
                 .map { meta, reads, _profile_json, _length_histogram ->
@@ -100,11 +117,18 @@ workflow LONG_READ_DENOVO_ENSEMBLY {
                 }
         )
         ch_long_read_contigs = ASSEMBLE_WITH_SPADES.out
+        ch_profiles_to_report = ASSEMBLE_WITH_SPADES.out
     }
+
+    PROFILE_LONG_READ_ASSEMBLY_REPORT(ch_profiles_to_report)
 
     emit:
     contigs = ch_long_read_contigs  // tuple(sample_id, platform, read_structure, producer, fasta)
     no_contigs = ch_no_contigs      // tuple(sample_id, platform)
     assembly_eligibility = ch_assembly_eligibility
+    eligibility_decisions = ch_assembly_eligibility_decisions
+    eligibility_summaries = ch_long_read_eligibility_summaries
     union_provenance = ch_union_provenance
+    union_summaries = ch_long_read_union_summaries
+    assembly_profiles = PROFILE_LONG_READ_ASSEMBLY_REPORT.out.profiled
 }

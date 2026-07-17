@@ -55,6 +55,7 @@ class ProfileRequest:
     sample_id: str
     stage: str
     input_files: tuple[Path, ...]
+    input_format: str
     length_bin_size: int
     quality_bin_size: int
     thresholds: tuple[Threshold, ...]
@@ -70,6 +71,8 @@ class FastxProfile:
     min_length: int | None
     max_length: int | None
     mean_length: float | None
+    n50: int | None
+    l50: int | None
     mean_quality: float | None
     format: str
     length_histogram: Counter[int]
@@ -86,6 +89,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--sample-id", required=True)
     parser.add_argument("--stage", required=True)
     parser.add_argument("--input", type=Path, nargs="+", required=True)
+    parser.add_argument("--input-format", choices=("fastq", "fasta"), required=True)
     parser.add_argument("--output-prefix")
     parser.add_argument("--length-bin-size", type=int, default=50)
     parser.add_argument("--quality-bin-size", type=int, default=1)
@@ -209,6 +213,24 @@ def weighted_mean(counts: Counter[int]) -> float | None:
     return sum(value * count for value, count in counts.items()) / total_count
 
 
+def n50_l50(length_counts: Counter[int]) -> tuple[int | None, int | None]:
+    total_bases = sum(length * count for length, count in length_counts.items())
+    if total_bases == 0:
+        return None, None
+    target = (total_bases + 1) // 2
+    cumulative_bases = 0
+    cumulative_sequences = 0
+    for length in sorted(length_counts, reverse=True):
+        count = length_counts[length]
+        bases = length * count
+        if cumulative_bases + bases >= target:
+            needed = (target - cumulative_bases + length - 1) // length
+            return length, cumulative_sequences + max(needed, 1)
+        cumulative_bases += bases
+        cumulative_sequences += count
+    raise AssertionError("N50/L50 scan exhausted nonempty length counts")
+
+
 def summarize_threshold(
     threshold: Threshold,
     *,
@@ -240,6 +262,13 @@ def profile_fastx(request: ProfileRequest) -> FastxProfile:
     sequence_count = sum(raw.length_counts.values())
     total_bases = sum(length * count for length, count in raw.length_counts.items())
     quality_count = sum(raw.quality_counts.values())
+    if request.input_format == "fastq" and quality_count != sequence_count:
+        message = "FASTQ quality histogram count must equal sequence count"
+        raise ValueError(message)
+    if request.input_format == "fasta" and quality_count != 0:
+        message = "FASTA input must not produce quality histogram counts"
+        raise ValueError(message)
+    n50, l50 = n50_l50(raw.length_counts)
     return FastxProfile(
         sample_id=request.sample_id,
         stage=request.stage,
@@ -249,8 +278,10 @@ def profile_fastx(request: ProfileRequest) -> FastxProfile:
         min_length=min(raw.length_counts) if raw.length_counts else None,
         max_length=max(raw.length_counts) if raw.length_counts else None,
         mean_length=(total_bases / sequence_count) if sequence_count else None,
+        n50=n50,
+        l50=l50,
         mean_quality=weighted_mean(raw.quality_counts),
-        format="fastq" if quality_count else "fasta_or_empty",
+        format="fastq" if request.input_format == "fastq" else "fasta_or_empty",
         length_histogram=rebin_counts(raw.length_counts, request.length_bin_size),
         quality_histogram=rebin_counts(raw.quality_counts, request.quality_bin_size),
         length_bin_size=request.length_bin_size,
@@ -310,6 +341,8 @@ def profile_json(profile: FastxProfile) -> dict[str, Any]:
             "min": profile.min_length,
             "max": profile.max_length,
             "mean": profile.mean_length,
+            "n50": profile.n50,
+            "l50": profile.l50,
             "bin_size": profile.length_bin_size,
         },
         "quality": {
@@ -398,6 +431,7 @@ def main(argv: Sequence[str] | None = None) -> None:
                 sample_id=args.sample_id,
                 stage=args.stage,
                 input_files=tuple(args.input),
+                input_format=args.input_format,
                 length_bin_size=args.length_bin_size,
                 quality_bin_size=args.quality_bin_size,
                 thresholds=tuple(

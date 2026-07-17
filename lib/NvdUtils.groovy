@@ -61,6 +61,13 @@ class NvdUtils {
         return hasTargetEnrichmentIndex(params) && !disabled
     }
 
+    /**
+     * Resolve whether host/contaminant depletion is configured.
+     */
+    public static boolean depletionEnabled(params) {
+        return params.host_index || params.host_index_url || params.host_contaminants_fasta
+    }
+
     // -------------------------------------------------------------------------
     // Private helpers
     // -------------------------------------------------------------------------

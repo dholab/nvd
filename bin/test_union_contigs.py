@@ -143,11 +143,18 @@ def test_finalize_exports_duplicate_provenance(tmp_path: Path) -> None:
     }
     assert json.loads(summary.read_text(encoding="utf-8")) == {
         "emitted_contig_count": 3,
+        "emitted_bases": 32,
         "exact_containment_count": 0,
         "exact_duplicate_count": 2,
         "representative_count": 3,
         "sample_id": "Sample 1",
+        "schema_version": "nvd.long-read-union-summary/v1",
+        "source_bases": 52,
         "source_contig_count": 5,
+        "by_assembler": [
+            {"producer": "alpha", "source_count": 3, "source_bases": 32},
+            {"producer": "zeta", "source_count": 2, "source_bases": 20},
+        ],
     }
 
 
@@ -185,11 +192,15 @@ def test_finalize_exports_empty_union_summary(tmp_path: Path) -> None:
         assert list(csv.DictReader(handle, delimiter="\t")) == []
     assert json.loads(summary.read_text(encoding="utf-8")) == {
         "emitted_contig_count": 0,
+        "emitted_bases": 0,
         "exact_containment_count": 0,
         "exact_duplicate_count": 0,
         "representative_count": 0,
         "sample_id": "empty-sample",
+        "schema_version": "nvd.long-read-union-summary/v1",
+        "source_bases": 0,
         "source_contig_count": 0,
+        "by_assembler": [],
     }
 
 
@@ -305,11 +316,18 @@ def test_finalize_drops_only_python_verified_exact_containment(tmp_path: Path) -
     assert provenance_by_header["rc contained"]["orientation"] == ("reverse_complement")
     assert json.loads(summary.read_text(encoding="utf-8")) == {
         "emitted_contig_count": 2,
+        "emitted_bases": 21,
         "exact_containment_count": 2,
         "exact_duplicate_count": 0,
         "representative_count": 4,
         "sample_id": "S1",
+        "schema_version": "nvd.long-read-union-summary/v1",
+        "source_bases": 35,
         "source_contig_count": 4,
+        "by_assembler": [
+            {"producer": "a", "source_count": 1, "source_bases": 14},
+            {"producer": "b", "source_count": 3, "source_bases": 21},
+        ],
     }
 
 
@@ -464,11 +482,15 @@ def test_prepare_and_finalize_handle_all_empty_inputs(tmp_path: Path) -> None:
     assert provenance.read_text(encoding="utf-8").count("\n") == 1
     assert json.loads(summary.read_text(encoding="utf-8")) == {
         "emitted_contig_count": 0,
+        "emitted_bases": 0,
         "exact_containment_count": 0,
         "exact_duplicate_count": 0,
         "representative_count": 0,
         "sample_id": "S1",
+        "schema_version": "nvd.long-read-union-summary/v1",
+        "source_bases": 0,
         "source_contig_count": 0,
+        "by_assembler": [],
     }
     assert json.loads(meta.read_text(encoding="utf-8")) == {
         "max_contig_length": 0,
