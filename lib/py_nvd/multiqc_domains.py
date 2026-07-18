@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Literal, TypeAlias
 
-from pydantic import BaseModel, ConfigDict, NonNegativeInt, ValidationError
+from pydantic import BaseModel, ConfigDict, NonNegativeInt, PositiveInt, ValidationError
 
 from py_nvd.multiqc_assembly import AssemblyRow, assembly_rows
 from py_nvd.multiqc_fastx import (
@@ -76,6 +76,7 @@ class LineGraphSection(SectionModel):
     data: dict[str, dict[int, int]]
     xlab: str
     ylab: str
+    smooth_points: PositiveInt
 
 
 ReportSection: TypeAlias = TableSection | LineGraphSection
@@ -192,29 +193,47 @@ def build_domain_sections(
             description="Processed-read and filtered-contig FASTX QC profiles.",
             rows=tuple(fastx_row(item) for item in fastx),
         )
-    for quality, section_id, name, xlab in (
+    for stage, section_id, name, subject in (
         (
-            False,
-            "nvd_fastx_length_distribution",
-            "Query Sequence Length Distribution",
-            "Length bin start",
+            "single_read",
+            "nvd_fastx_single_read_length_distribution",
+            "Single Read Length Distribution",
+            "single reads",
         ),
         (
-            True,
-            "nvd_fastx_quality_distribution",
-            "Read Quality Distribution",
-            "Mean quality bin start",
+            "overlap_merged_pair",
+            "nvd_fastx_overlap_merged_pair_length_distribution",
+            "Merged Pair Length Distribution",
+            "overlap-merged pairs",
+        ),
+        (
+            "filtered_contigs",
+            "nvd_fastx_filtered_contigs_length_distribution",
+            "Contig Length Distribution",
+            "filtered contigs",
         ),
     ):
-        series = histogram_series(fastx, quality=quality)
+        series = histogram_series(fastx, quality=False, stage=stage)
         if series:
             sections[section_id] = LineGraphSection(
                 section_name=name,
-                description=f"Producer histograms rebinned to at most {FASTX_MAX_POINTS} presentation points.",
+                description=f"Producer length histograms for {subject}, rebinned to at most {FASTX_MAX_POINTS} presentation points.",
                 data=series,
-                xlab=xlab,
+                xlab="Length bin start",
                 ylab="Sequence count",
+                smooth_points=FASTX_MAX_POINTS,
             )
+
+    quality_series = histogram_series(fastx, quality=True)
+    if quality_series:
+        sections["nvd_fastx_quality_distribution"] = LineGraphSection(
+            section_name="Read Quality Distribution",
+            description=f"Producer quality histograms rebinned to at most {FASTX_MAX_POINTS} presentation points.",
+            data=quality_series,
+            xlab="Mean quality bin start",
+            ylab="Sequence count",
+            smooth_points=FASTX_MAX_POINTS,
+        )
 
     assembly: tuple[ReportRow, ...] = (
         assembly_rows(

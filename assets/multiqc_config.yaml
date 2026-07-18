@@ -21,12 +21,18 @@ custom_data:
   nvd_fastx_profiles:
     section_name: "Query Sequence Profiles"
     section_order: 950
-  nvd_fastx_length_distribution:
-    section_name: "Query Sequence Length Distribution"
+  nvd_fastx_single_read_length_distribution:
+    section_name: "Single Read Length Distribution"
     section_order: 940
+  nvd_fastx_overlap_merged_pair_length_distribution:
+    section_name: "Merged Pair Length Distribution"
+    section_order: 935
+  nvd_fastx_filtered_contigs_length_distribution:
+    section_name: "Contig Length Distribution"
+    section_order: 930
   nvd_fastx_quality_distribution:
     section_name: "Read Quality Distribution"
-    section_order: 930
+    section_order: 925
   nvd_assembly:
     section_name: "Assembly Decision Metrics"
     section_order: 920
@@ -48,8 +54,12 @@ sp:
     fn: "nvd_depletion_mqc.yaml"
   nvd_fastx_profiles:
     fn: "nvd_fastx_profiles_mqc.yaml"
-  nvd_fastx_length_distribution:
-    fn: "nvd_fastx_length_distribution_mqc.yaml"
+  nvd_fastx_single_read_length_distribution:
+    fn: "nvd_fastx_single_read_length_distribution_mqc.yaml"
+  nvd_fastx_overlap_merged_pair_length_distribution:
+    fn: "nvd_fastx_overlap_merged_pair_length_distribution_mqc.yaml"
+  nvd_fastx_filtered_contigs_length_distribution:
+    fn: "nvd_fastx_filtered_contigs_length_distribution_mqc.yaml"
   nvd_fastx_quality_distribution:
     fn: "nvd_fastx_quality_distribution_mqc.yaml"
   nvd_assembly:
