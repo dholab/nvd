@@ -121,12 +121,14 @@ workflow LIMS_INTEGRATION {
 
     LABKEY_REGISTER_EXPERIMENT(ch_upload_complete)
 
-    ch_final_labkey_log = LABKEY_UPLOAD_BLAST.out.log
-        .mix(LABKEY_UPLOAD_FASTA.out.log)
-        .collectFile(
-            name: 'final_labkey_upload.log',
-            storeDir: params.labkey_uploads + '/upload_logs',
-        )
+    ch_final_labkey_log = params.labkey
+        ? LABKEY_UPLOAD_BLAST.out.log
+            .mix(LABKEY_UPLOAD_FASTA.out.log)
+            .collectFile(
+                name: 'final_labkey_upload.log',
+                storeDir: params.labkey_uploads + '/upload_logs',
+            )
+        : channel.empty()
 
     emit:
     upload_log = LABKEY_UPLOAD_BLAST.out.log.mix(LABKEY_UPLOAD_FASTA.out.log)

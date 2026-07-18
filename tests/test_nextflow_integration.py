@@ -575,6 +575,7 @@ def test_mini_sra_viral_pipeline_completes() -> None:
     )
 
     results_root = run_dir / "results" / "nvd"
+    assert not (results_root / "13_labkey_uploads").exists()
     expected_sample_ids = {
         str(run_info["sample_id"])
         for run_info in (*LOCAL_E2E_SAMPLES, *selected_sra_runs)
