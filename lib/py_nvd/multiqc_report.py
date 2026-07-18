@@ -440,7 +440,9 @@ def write_domain_sections(
         "nvd_target_enrichment": "nvd_target_enrichment_mqc.yaml",
         "nvd_depletion": "nvd_depletion_mqc.yaml",
         "nvd_fastx_profiles": "nvd_fastx_profiles_mqc.yaml",
-        "nvd_fastx_length_distribution": "nvd_fastx_length_distribution_mqc.yaml",
+        "nvd_fastx_single_read_length_distribution": "nvd_fastx_single_read_length_distribution_mqc.yaml",
+        "nvd_fastx_overlap_merged_pair_length_distribution": "nvd_fastx_overlap_merged_pair_length_distribution_mqc.yaml",
+        "nvd_fastx_filtered_contigs_length_distribution": "nvd_fastx_filtered_contigs_length_distribution_mqc.yaml",
         "nvd_fastx_quality_distribution": "nvd_fastx_quality_distribution_mqc.yaml",
         "nvd_assembly": "nvd_assembly_mqc.yaml",
     }
@@ -466,7 +468,15 @@ def write_domain_sections(
             content["data"] = rows
         elif isinstance(section, LineGraphSection):
             content["data"] = section.data
-            content["pconfig"] = {"xlab": section.xlab, "ylab": section.ylab}
+            content["pconfig"] = {
+                "xlab": section.xlab,
+                "ylab": section.ylab,
+                "style": "lines",
+                "smooth_points": section.smooth_points,
+                "xlog": False,
+                "ylog": False,
+                "logswitch": False,
+            }
         (output_dir / filenames[section_id]).write_text(
             yaml.safe_dump(content, sort_keys=False),
             encoding="utf-8",

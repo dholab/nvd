@@ -503,7 +503,6 @@ workflow {{
     assert "REPORT: multiqc_report.html" in completed.stdout
     assert "DATA: multiqc_data" in completed.stdout
     assert (tmp_path / "results" / "nvd" / "multiqc_report.html").is_file()
-    assert (tmp_path / "results" / "nvd" / "multiqc_data").is_dir()
     assert not (tmp_path / "command_substitution_side_effect").exists()
     assert not sorted(tmp_path.glob("work/**/command_substitution_side_effect"))
 

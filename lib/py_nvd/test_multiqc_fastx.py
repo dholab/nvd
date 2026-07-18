@@ -5,7 +5,11 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING
 
+import yaml
+
+from py_nvd.multiqc_domains import LineGraphSection, build_domain_sections
 from py_nvd.multiqc_fastx import (
+    FASTX_MAX_POINTS,
     InvalidFastxProfile,
     ParsedFastxProfile,
     collect_fastx_profiles,
@@ -14,6 +18,7 @@ from py_nvd.multiqc_fastx import (
     series_key,
 )
 from py_nvd.multiqc_packages import Domain, ProfileReceipt, ReportPackage, write_package
+from py_nvd.multiqc_report import write_domain_sections
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -157,3 +162,94 @@ def test_series_keys_remain_distinct_after_multiqc_sample_name_cleaning() -> Non
 
     assert series_key(first) == "sample_A | single_read"
     assert series_key(second) == "sample_B | single_read"
+
+
+def test_domain_sections_split_length_histograms_by_fastx_stage(
+    tmp_path: Path,
+) -> None:
+    packages = []
+    for index, stage in enumerate(
+        ("single_read", "overlap_merged_pair", "filtered_contigs"),
+        1,
+    ):
+        sample_id = f"sample_{index}"
+        profile = tmp_path / f"{stage}.json"
+        profile.write_text(
+            json.dumps(
+                {
+                    "sample_id": sample_id,
+                    "stage": stage,
+                    "sequence_count": 1,
+                    "total_bases": 100,
+                    "length": {
+                        "min": 100,
+                        "max": 100,
+                        "mean": 100,
+                        "n50": 100,
+                        "l50": 1,
+                    },
+                    "quality": {"mean": None},
+                    "thresholds": [],
+                },
+            ),
+            encoding="utf-8",
+        )
+        histogram = tmp_path / f"{stage}.tsv"
+        histogram.write_text(
+            "sample_id\tstage\tbin_start\tbin_end\tsequence_count\n"
+            f"{sample_id}\t{stage}\t100\t149\t1\n",
+            encoding="utf-8",
+        )
+        receipt = ProfileReceipt(
+            domain=Domain.FASTX,
+            sample_id=sample_id,
+            stage=stage,
+        )
+        package_dir = write_package(
+            receipt,
+            (profile, histogram),
+            output_root=tmp_path,
+        )
+        packages.append(ReportPackage(package_dir, receipt))
+
+    sections = build_domain_sections(
+        packages=tuple(packages),
+        sample_ids=(),
+        target_enrichment_enabled=False,
+        depletion_enabled=False,
+        assembly_enabled=False,
+    )
+
+    expected = {
+        "nvd_fastx_single_read_length_distribution": "sample_1 | single_read",
+        "nvd_fastx_overlap_merged_pair_length_distribution": (
+            "sample_2 | overlap_merged_pair"
+        ),
+        "nvd_fastx_filtered_contigs_length_distribution": (
+            "sample_3 | filtered_contigs"
+        ),
+    }
+    assert set(sections) == {"nvd_fastx_profiles", *expected}
+    for section_id, series_name in expected.items():
+        section = sections[section_id]
+        assert isinstance(section, LineGraphSection)
+        assert section.data == {series_name: {100: 1}}
+
+    rendered = tmp_path / "rendered"
+    rendered.mkdir()
+    write_domain_sections(rendered, sections)
+    assert not (rendered / "nvd_fastx_length_distribution_mqc.yaml").exists()
+    for section_id in expected:
+        filename = f"{section_id}_mqc.yaml"
+        path = rendered / filename
+        assert path.is_file()
+        content = yaml.safe_load(path.read_text(encoding="utf-8"))
+        assert content["pconfig"] == {
+            "xlab": "Length bin start",
+            "ylab": "Sequence count",
+            "style": "lines",
+            "smooth_points": FASTX_MAX_POINTS,
+            "xlog": False,
+            "ylog": False,
+            "logswitch": False,
+        }
