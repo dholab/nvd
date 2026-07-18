@@ -400,10 +400,15 @@ def assert_target_enrichment_outputs(
         assert plot.stat().st_size > 0, f"Empty target enrichment plot: {plot}"
 
 
-def assert_successful_nvd_multiqc_outputs(results_root: Path) -> None:
+def assert_successful_nvd_multiqc_outputs(
+    results_root: Path,
+    *,
+    experimental: bool,
+    skip_assembly: bool,
+) -> None:
     """Assert the healthy fixture completed ancillary reporting and publication."""
     report = results_root / "multiqc_report.html"
-    data = results_root / "multiqc_data"
+    data = results_root / "12_experiment_summary" / "multiqc_data"
     nvd_inputs = data / "nvd_inputs"
     manifest_path = nvd_inputs / "nvd_report_manifest.json"
     raw_fastqc = results_root / "00_input_preparation" / "raw_fastq_qc" / "fastqc"
@@ -416,14 +421,22 @@ def assert_successful_nvd_multiqc_outputs(results_root: Path) -> None:
         f"Missing retained NVD MultiQC manifest: {manifest_path}"
     )
     assert (nvd_inputs / "nvd_sample_roster_mqc.yaml").is_file()
-    expected_domain_inputs = (
+    expected_domain_inputs = [
         "nvd_target_enrichment_mqc.yaml",
         "nvd_depletion_mqc.yaml",
         "nvd_fastx_profiles_mqc.yaml",
-        "nvd_fastx_length_distribution_mqc.yaml",
+        "nvd_fastx_single_read_length_distribution_mqc.yaml",
         "nvd_fastx_quality_distribution_mqc.yaml",
         "nvd_assembly_mqc.yaml",
-    )
+    ]
+    if experimental:
+        expected_domain_inputs.append(
+            "nvd_fastx_overlap_merged_pair_length_distribution_mqc.yaml",
+        )
+    if not skip_assembly:
+        expected_domain_inputs.append(
+            "nvd_fastx_filtered_contigs_length_distribution_mqc.yaml",
+        )
     for filename in expected_domain_inputs:
         assert (nvd_inputs / filename).is_file(), (
             f"Missing retained NVD MultiQC input: {filename}"
@@ -629,7 +642,11 @@ def test_mini_sra_viral_pipeline_completes() -> None:
         str(run_info["sample_id"])
         for run_info in (*LOCAL_E2E_SAMPLES, *selected_sra_runs)
     }
-    assert_successful_nvd_multiqc_outputs(results_root)
+    assert_successful_nvd_multiqc_outputs(
+        results_root,
+        experimental=experimental,
+        skip_assembly=skip_assembly,
+    )
     assert_target_enrichment_outputs(results_root, expected_sample_ids)
     assert_read_profiles_respect_length_filter(results_root)
     resolved_manifest = (

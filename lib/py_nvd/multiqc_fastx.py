@@ -208,10 +208,13 @@ def histogram_series(
     profiles: tuple[ParsedFastxProfile | InvalidFastxProfile, ...],
     *,
     quality: bool,
+    stage: str | None = None,
 ) -> dict[str, dict[int, int]]:
     series: dict[str, dict[int, int]] = {}
     for item in profiles:
         if isinstance(item, InvalidFastxProfile):
+            continue
+        if stage is not None and item.receipt.stage != stage:
             continue
         rows = item.quality_histogram if quality else item.length_histogram
         if not rows:
