@@ -25,6 +25,7 @@ def main() -> None:
     parser.add_argument("--assembly-root", type=Path)
     parser.add_argument("--query-preparation-root", type=Path)
     parser.add_argument("--blast-root", type=Path)
+    parser.add_argument("--taxonomy-root", type=Path)
     parser.add_argument(
         "--experimental-enabled",
         choices=("true", "false"),
@@ -73,6 +74,7 @@ def main() -> None:
                 assembly=args.assembly_root,
                 query_preparation=args.query_preparation_root,
                 blast=args.blast_root,
+                taxonomy=args.taxonomy_root,
             ),
         ),
     )

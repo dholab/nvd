@@ -210,16 +210,94 @@ def write_megablast_partition_summary(path: Path) -> Path:
     return path
 
 
+def write_taxon_big_table(path: Path) -> Path:
+    path.write_text(
+        "sample_id\ttaxon_name\ttaxon_rank\tsupport_tier\ttaxon_crumbs\t"
+        "relative_crumbs_percent\tsupporting_query_count\ttaxid\twho_risk_group\t"
+        "total_query_span\ttotal_crumbs_score\tstrong_query_count\t"
+        "moderate_query_count\tweak_query_count\treview_query_count\t"
+        "redacted_query_count\tsupporting_genome_like_contig_count\t"
+        "supporting_long_contig_count\tsupporting_short_contig_count\t"
+        "supporting_merged_pair_count\tsupporting_single_read_count\t"
+        "support_tier_rule\tsupport_note\n"
+        "sample_A\tTaxon alpha\tspecies\tstrong\t8.5\t12.5\t4\t101\tRG3\t"
+        "4200\t35700\t3\t1\t0\t0\t0\t1\t1\t2\t0\t0\t"
+        "multi_query_strong_support\t"
+        "3 strong query assignments support Taxon alpha (species).\n"
+        "sample_A\tTaxon background\tfamily\tstrong\t50\t80\t100\t303\tRG1\t"
+        "100000\t5000000\t100\t0\t0\t0\t0\t0\t2\t98\t0\t0\t"
+        "multi_query_strong_support\t"
+        "100 strong query assignments support Taxon background (family).\n",
+        encoding="utf-8",
+    )
+    return path
+
+
 def nextflow_file(path: Path) -> str:
     escaped = str(path).replace("\\", "\\\\").replace("'", "\\'")
     return f"file('{escaped}')"
 
 
-def empty_domain_inputs(config: Path) -> str:
-    channels = ["Channel.value(false)" for _ in range(4)]
-    channels.extend("Channel.empty()" for _ in range(11))
-    channels.append(f"Channel.value(file('{config}'))")
-    return ",\n        ".join(channels) + ","
+def bundling_invocation(
+    roster: Path,
+    version: Path,
+    config: Path,
+    *,
+    raw_fastqc_packages: str = "Channel.empty()",
+    raw_fastqc_zips: str = "Channel.empty()",
+    experimental: bool = False,
+    target_enrichment: bool = False,
+    depletion: bool = False,
+    assembly: bool = True,
+    blast: bool = True,
+    target_enrichment_stats: str = "Channel.empty()",
+    depletion_stats: str = "Channel.empty()",
+    processed_read_profiles: str = "Channel.empty()",
+    processed_read_quality_histograms: str = "Channel.empty()",
+    filtered_contig_profiles: str = "Channel.empty()",
+    assembly_profiles: str = "Channel.empty()",
+    assembly_eligibility_decisions: str = "Channel.empty()",
+    long_read_eligibility_summaries: str = "Channel.empty()",
+    long_read_union_summaries: str = "Channel.empty()",
+    prepared_query_batch_summaries: str = "Channel.empty()",
+    megablast_query_partition_summaries: str = "Channel.empty()",
+    taxon_big_tables: str = "Channel.empty()",
+) -> str:
+    enabled = lambda value: str(value).lower()  # noqa: E731
+    return f"""\
+    MULTIQC_BUNDLING(
+        {raw_fastqc_packages},
+        {raw_fastqc_zips},
+        Channel.value(file('{roster}')),
+        Channel.value(file('{version}')),
+        Channel.value({enabled(experimental)}),
+        Channel.value({enabled(target_enrichment)}),
+        Channel.value({enabled(depletion)}),
+        Channel.value({enabled(assembly)}),
+        Channel.value({enabled(blast)}),
+        {target_enrichment_stats},
+        {depletion_stats},
+        {processed_read_profiles},
+        {processed_read_quality_histograms},
+        {filtered_contig_profiles},
+        {assembly_profiles},
+        {assembly_eligibility_decisions},
+        {long_read_eligibility_summaries},
+        {long_read_union_summaries},
+        {prepared_query_batch_summaries},
+        {megablast_query_partition_summaries},
+        {taxon_big_tables},
+        Channel.value(file('{config}')),
+    )"""
+
+
+def renderer_invocation() -> str:
+    return """\
+    GENERATE_MULTIQC_REPORT(
+        MULTIQC_BUNDLING.out.fastqc_zips,
+        MULTIQC_BUNDLING.out.inputs,
+        MULTIQC_BUNDLING.out.config,
+    )"""
 
 
 def write_version(path: Path) -> Path:
@@ -328,38 +406,21 @@ def test_target_enrichment_package_crosses_explicit_process_boundary(
         encoding="utf-8",
     )
     workflow = tmp_path / "main.nf"
+    target_enrichment_input = (
+        f"Channel.of(tuple('sample_A', {nextflow_file(stats)}))"
+    )
     workflow.write_text(
         f"""\
 nextflow.enable.dsl = 2
 
 include {{ MULTIQC_BUNDLING }} from '{BUNDLING_SUBWORKFLOW}'
+include {{ GENERATE_MULTIQC_REPORT }} from '{MULTIQC_MODULE}'
 
 params.results = '{tmp_path / "results"}'
 params.experimental = false
 workflow {{
-    MULTIQC_BUNDLING(
-        Channel.empty(),
-        Channel.empty(),
-        Channel.value(file('{roster}')),
-        Channel.value(file('{version}')),
-        Channel.value(false),
-        Channel.value(true),
-        Channel.value(false),
-        Channel.value(false),
-        Channel.value(true),
-        Channel.of(tuple('sample_A', {nextflow_file(stats)})),
-        Channel.empty(),
-        Channel.empty(),
-        Channel.empty(),
-        Channel.empty(),
-        Channel.empty(),
-        Channel.empty(),
-        Channel.empty(),
-        Channel.empty(),
-        Channel.empty(),
-        Channel.empty(),
-        Channel.value(file('{config}')),
-    )
+{bundling_invocation(roster, version, config, target_enrichment=True, assembly=False, target_enrichment_stats=target_enrichment_input)}
+{renderer_invocation()}
 }}
 """,
         encoding="utf-8",
@@ -393,39 +454,20 @@ def test_prepared_query_summary_crosses_explicit_package_boundary(
     version = write_version(tmp_path / "nvd_version.txt")
     summary = write_query_batch_summary(tmp_path / "sample_A.blast_query_batches.tsv")
     config = ROOT / "assets" / "multiqc_config.yaml"
+    prepared_query_input = f"Channel.of(tuple('sample_A', file('{summary}')))"
     workflow = tmp_path / "main.nf"
     workflow.write_text(
         f"""\
 nextflow.enable.dsl = 2
 
 include {{ MULTIQC_BUNDLING }} from '{BUNDLING_SUBWORKFLOW}'
+include {{ GENERATE_MULTIQC_REPORT }} from '{MULTIQC_MODULE}'
 
 params.results = '{tmp_path / "results"}'
 params.experimental = false
 workflow {{
-    MULTIQC_BUNDLING(
-        Channel.empty(),
-        Channel.empty(),
-        Channel.value(file('{roster}')),
-        Channel.value(file('{version}')),
-        Channel.value(false),
-        Channel.value(false),
-        Channel.value(false),
-        Channel.value(true),
-        Channel.value(true),
-        Channel.empty(),
-        Channel.empty(),
-        Channel.empty(),
-        Channel.empty(),
-        Channel.empty(),
-        Channel.empty(),
-        Channel.empty(),
-        Channel.empty(),
-        Channel.empty(),
-        Channel.of(tuple('sample_A', file('{summary}'))),
-        Channel.empty(),
-        Channel.value(file('{config}')),
-    )
+{bundling_invocation(roster, version, config, prepared_query_batch_summaries=prepared_query_input)}
+{renderer_invocation()}
 }}
 """,
         encoding="utf-8",
@@ -467,39 +509,22 @@ def test_megablast_partition_crosses_explicit_package_boundary(
         tmp_path / "sample_A.short_assembly_contig.megablast_query_partition.tsv",
     )
     config = ROOT / "assets" / "multiqc_config.yaml"
+    megablast_partition_input = (
+        f"Channel.of(tuple('sample_A', 'short_assembly_contig', file('{summary}')))"
+    )
     workflow = tmp_path / "main.nf"
     workflow.write_text(
         f"""\
 nextflow.enable.dsl = 2
 
 include {{ MULTIQC_BUNDLING }} from '{BUNDLING_SUBWORKFLOW}'
+include {{ GENERATE_MULTIQC_REPORT }} from '{MULTIQC_MODULE}'
 
 params.results = '{tmp_path / "results"}'
 params.experimental = false
 workflow {{
-    MULTIQC_BUNDLING(
-        Channel.empty(),
-        Channel.empty(),
-        Channel.value(file('{roster}')),
-        Channel.value(file('{version}')),
-        Channel.value(false),
-        Channel.value(false),
-        Channel.value(false),
-        Channel.value(true),
-        Channel.value(true),
-        Channel.empty(),
-        Channel.empty(),
-        Channel.empty(),
-        Channel.empty(),
-        Channel.empty(),
-        Channel.empty(),
-        Channel.empty(),
-        Channel.empty(),
-        Channel.empty(),
-        Channel.empty(),
-        Channel.of(tuple('sample_A', 'short_assembly_contig', file('{summary}'))),
-        Channel.value(file('{config}')),
-    )
+{bundling_invocation(roster, version, config, megablast_query_partition_summaries=megablast_partition_input)}
+{renderer_invocation()}
 }}
 """,
         encoding="utf-8",
@@ -533,6 +558,72 @@ workflow {{
     }
 
 
+def test_taxon_big_table_crosses_package_boundary_into_higher_risk_findings(
+    tmp_path: Path,
+) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    copy_reporting_lib(tmp_path)
+    write_tool_fakes(bin_dir, fake_multiqc=False)
+    roster = write_roster(tmp_path / "resolved_reads.jsonl")
+    version = write_version(tmp_path / "nvd_version.txt")
+    taxon_table = write_taxon_big_table(tmp_path / "sample_A.taxon_big_table.tsv")
+    config = ROOT / "assets" / "multiqc_config.yaml"
+    taxon_big_table_input = (
+        f"Channel.of(tuple('sample_A', file('{taxon_table}')))"
+    )
+    workflow = tmp_path / "main.nf"
+    workflow.write_text(
+        f"""\
+nextflow.enable.dsl = 2
+
+include {{ MULTIQC_BUNDLING }} from '{BUNDLING_SUBWORKFLOW}'
+include {{ GENERATE_MULTIQC_REPORT }} from '{MULTIQC_MODULE}'
+
+params.results = '{tmp_path / "results"}'
+params.experimental = true
+workflow {{
+{bundling_invocation(roster, version, config, experimental=True, taxon_big_tables=taxon_big_table_input)}
+{renderer_invocation()}
+}}
+""",
+        encoding="utf-8",
+    )
+
+    completed = run_nextflow(workflow, bin_dir=bin_dir)
+    diagnostics = f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}"
+    assert completed.returncode == 0, diagnostics
+    manifests = sorted(tmp_path.glob("work/**/nvd_report_manifest.json"))
+    assert manifests, diagnostics
+    manifest = json.loads(manifests[-1].read_text(encoding="utf-8"))
+    assert manifest["report_packages"] == [
+        {
+            "schema_version": "nvd.report-package/v1",
+            "domain": "taxonomy",
+            "artifact_type": "taxon_big_table",
+            "sample_id": "sample_A",
+            "table": "table.payload",
+        },
+    ]
+    sections = sorted(
+        tmp_path.glob("work/**/nvd_higher_risk_taxonomic_findings_mqc.yaml"),
+    )
+    assert sections, diagnostics
+    section = yaml.safe_load(sections[-1].read_text(encoding="utf-8"))
+    assert tuple(section["data"]) == ("sample_A | 101:species",)
+    finding = section["data"]["sample_A | 101:species"]
+    assert finding["who_risk_group"] == "RG3"
+    assert finding["support_note"] == (
+        "3 strong query assignments support Taxon alpha (species)."
+    )
+    assert finding["supporting_short_contig_count"] == 2
+    reports = sorted(tmp_path.glob("work/**/multiqc_report.html"))
+    assert reports, diagnostics
+    report_html = reports[-1].read_text(encoding="utf-8")
+    assert "Higher-Risk Taxonomic Findings" in report_html
+    assert "3 strong query assignments support Taxon alpha" in report_html
+
+
 def test_assembly_decision_without_profile_is_reported_as_absent(
     tmp_path: Path,
 ) -> None:
@@ -543,45 +634,26 @@ def test_assembly_decision_without_profile_is_reported_as_absent(
     roster = write_roster(tmp_path / "resolved_reads.jsonl")
     version = write_version(tmp_path / "nvd_version.txt")
     config = ROOT / "assets" / "multiqc_config.yaml"
+    assembly_decision_input = """Channel.of(tuple(
+        [id: 'sample_A', producer: 'spades'],
+        'run',
+        120,
+        100,
+        'short_read_minimum_sequence_count',
+    ))"""
     workflow = tmp_path / "main.nf"
     workflow.write_text(
         f"""\
 nextflow.enable.dsl = 2
 
 include {{ MULTIQC_BUNDLING }} from '{BUNDLING_SUBWORKFLOW}'
+include {{ GENERATE_MULTIQC_REPORT }} from '{MULTIQC_MODULE}'
 
 params.results = '{tmp_path / "results"}'
 params.experimental = false
 workflow {{
-    MULTIQC_BUNDLING(
-        Channel.empty(),
-        Channel.empty(),
-        Channel.value(file('{roster}')),
-        Channel.value(file('{version}')),
-        Channel.value(false),
-        Channel.value(false),
-        Channel.value(false),
-        Channel.value(true),
-        Channel.value(true),
-        Channel.empty(),
-        Channel.empty(),
-        Channel.empty(),
-        Channel.empty(),
-        Channel.empty(),
-        Channel.empty(),
-        Channel.of(tuple(
-            [id: 'sample_A', producer: 'spades'],
-            'run',
-            120,
-            100,
-            'short_read_minimum_sequence_count',
-        )),
-        Channel.empty(),
-        Channel.empty(),
-        Channel.empty(),
-        Channel.empty(),
-        Channel.value(file('{config}')),
-    )
+{bundling_invocation(roster, version, config, assembly_eligibility_decisions=assembly_decision_input)}
+{renderer_invocation()}
 }}
 """,
         encoding="utf-8",
@@ -656,19 +728,8 @@ workflow {{
     ))
     fastqc_units = reads.flatMap {{ meta, read_files -> NvdReporting.processReadyFastqcTuples(meta, read_files) }}
     FASTQC_RAW(fastqc_units)
-    MULTIQC_BUNDLING(
-        FASTQC_RAW.out.packages,
-        FASTQC_RAW.out.zips,
-        Channel.value(file('{roster}')),
-        Channel.value(file('{version}')),
-        Channel.value(false),
-        {empty_domain_inputs(config)}
-    )
-    GENERATE_MULTIQC_REPORT(
-        MULTIQC_BUNDLING.out.fastqc_zips,
-        MULTIQC_BUNDLING.out.inputs,
-        MULTIQC_BUNDLING.out.config,
-    )
+{bundling_invocation(roster, version, config, raw_fastqc_packages="FASTQC_RAW.out.packages", raw_fastqc_zips="FASTQC_RAW.out.zips")}
+{renderer_invocation()}
     GENERATE_MULTIQC_REPORT.out.report.view {{ report -> "REPORT: ${{report.name}}" }}
     GENERATE_MULTIQC_REPORT.out.data.view {{ data -> "DATA: ${{data.name}}" }}
 }}
@@ -765,19 +826,8 @@ workflow {{
     ))
     fastqc_units = reads.flatMap {{ meta, read_files -> NvdReporting.processReadyFastqcTuples(meta, read_files) }}
     FASTQC_RAW(fastqc_units)
-    MULTIQC_BUNDLING(
-        FASTQC_RAW.out.packages,
-        FASTQC_RAW.out.zips,
-        Channel.value(file('{roster}')),
-        Channel.value(file('{version}')),
-        Channel.value(false),
-        {empty_domain_inputs(config)}
-    )
-    GENERATE_MULTIQC_REPORT(
-        MULTIQC_BUNDLING.out.fastqc_zips,
-        MULTIQC_BUNDLING.out.inputs,
-        MULTIQC_BUNDLING.out.config,
-    )
+{bundling_invocation(roster, version, config, raw_fastqc_packages="FASTQC_RAW.out.packages", raw_fastqc_zips="FASTQC_RAW.out.zips")}
+{renderer_invocation()}
     GENERATE_MULTIQC_REPORT.out.report.view {{ report -> "REPORT: ${{report.name}}" }}
 }}
 """,
@@ -842,19 +892,8 @@ workflow {{
     ))
     fastqc_units = reads.flatMap {{ meta, read_files -> NvdReporting.processReadyFastqcTuples(meta, read_files) }}
     FASTQC_RAW(fastqc_units)
-    MULTIQC_BUNDLING(
-        FASTQC_RAW.out.packages,
-        FASTQC_RAW.out.zips,
-        Channel.value(file('{roster}')),
-        Channel.value(file('{version}')),
-        Channel.value(false),
-        {empty_domain_inputs(config)}
-    )
-    GENERATE_MULTIQC_REPORT(
-        MULTIQC_BUNDLING.out.fastqc_zips,
-        MULTIQC_BUNDLING.out.inputs,
-        MULTIQC_BUNDLING.out.config,
-    )
+{bundling_invocation(roster, version, config, raw_fastqc_packages="FASTQC_RAW.out.packages", raw_fastqc_zips="FASTQC_RAW.out.zips")}
+{renderer_invocation()}
     GENERATE_MULTIQC_REPORT.out.report.view {{ report -> "REPORT: ${{report.name}}" }}
     GENERATE_MULTIQC_REPORT.out.data.view {{ data -> "DATA: ${{data.name}}" }}
 }}
@@ -931,19 +970,8 @@ params.results = '{tmp_path / "results"}'
 params.experimental = false
 workflow {{
     sentinel = Channel.value('scientific-complete')
-    MULTIQC_BUNDLING(
-        Channel.empty(),
-        Channel.empty(),
-        Channel.value(file('{roster}')),
-        Channel.value(file('{version}')),
-        Channel.value(false),
-        {empty_domain_inputs(config)}
-    )
-    GENERATE_MULTIQC_REPORT(
-        MULTIQC_BUNDLING.out.fastqc_zips,
-        MULTIQC_BUNDLING.out.inputs,
-        MULTIQC_BUNDLING.out.config,
-    )
+{bundling_invocation(roster, version, config)}
+{renderer_invocation()}
     GENERATE_MULTIQC_REPORT.out.report.view {{ report -> "REPORT: ${{report.name}}" }}
     GENERATE_MULTIQC_REPORT.out.data.view {{ data -> "DATA: ${{data.name}}" }}
     sentinel.view {{ value -> "SENTINEL: ${{value}}" }}
@@ -990,19 +1018,14 @@ def test_compiler_failure_remains_ancillary_to_independent_sentinel(
 nextflow.enable.dsl = 2
 
 include {{ MULTIQC_BUNDLING }} from '{BUNDLING_SUBWORKFLOW}'
+include {{ GENERATE_MULTIQC_REPORT }} from '{MULTIQC_MODULE}'
 
 params.results = '{tmp_path / "results"}'
 params.experimental = false
 workflow {{
     sentinel = Channel.value('scientific-complete')
-    MULTIQC_BUNDLING(
-        Channel.empty(),
-        Channel.empty(),
-        Channel.value(file('{bad_roster}')),
-        Channel.value(file('{version}')),
-        Channel.value(false),
-        {empty_domain_inputs(config)}
-    )
+{bundling_invocation(bad_roster, version, config)}
+{renderer_invocation()}
     sentinel.view {{ value -> "SENTINEL: ${{value}}" }}
 }}
 """,
