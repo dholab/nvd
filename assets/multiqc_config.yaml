@@ -5,49 +5,58 @@ fn_clean_exts:
     pattern: '\.(?:fastq|fq)(?:\.gz)?$'
     module: fastqc
 fn_clean_trim: []
+skip_generalstats: true
 custom_data:
   nvd_higher_risk_taxonomic_findings:
     section_name: "Higher-Risk Taxonomic Findings"
-    section_order: 1100
+  nvd_strongest_taxonomic_signals:
+    section_name: "Strongest Taxonomic Signals"
+  nvd_faintest_taxonomic_signals:
+    section_name: "Faintest Taxonomic Signals"
   nvd_sample_roster:
     section_name: "Sample Roster"
-    section_order: 990
   nvd_raw_fastqc_inventory:
     section_name: "Raw FastQC Inventory"
-    section_order: 980
   nvd_target_enrichment:
     section_name: "Target Enrichment"
-    section_order: 970
   nvd_depletion:
     section_name: "Depletion"
-    section_order: 960
   nvd_fastx_profiles:
     section_name: "Query Sequence Profiles"
-    section_order: 950
   nvd_fastx_single_read_length_distribution:
     section_name: "Single Read Length Distribution"
-    section_order: 940
   nvd_fastx_overlap_merged_pair_length_distribution:
     section_name: "Merged Pair Length Distribution"
-    section_order: 935
   nvd_fastx_filtered_contigs_length_distribution:
     section_name: "Contig Length Distribution"
-    section_order: 930
   nvd_fastx_quality_distribution:
     section_name: "Read Quality Distribution"
-    section_order: 925
   nvd_assembly:
     section_name: "Assembly Decision Metrics"
-    section_order: 920
   nvd_prepared_blast_query_batches:
     section_name: "Prepared BLAST Query Batches"
-    section_order: 915
   nvd_blast_task_breakdown:
     section_name: "BLAST Task Breakdown"
-    section_order: 912
   nvd_experimental_capabilities:
     section_name: "Experimental Capabilities"
-    section_order: 910
+custom_content:
+  order:
+    - nvd_higher_risk_taxonomic_findings
+    - nvd_strongest_taxonomic_signals
+    - nvd_faintest_taxonomic_signals
+    - nvd_sample_roster
+    - nvd_raw_fastqc_inventory
+    - nvd_target_enrichment
+    - nvd_depletion
+    - nvd_fastx_profiles
+    - nvd_fastx_single_read_length_distribution
+    - nvd_fastx_overlap_merged_pair_length_distribution
+    - nvd_fastx_filtered_contigs_length_distribution
+    - nvd_fastx_quality_distribution
+    - nvd_assembly
+    - nvd_prepared_blast_query_batches
+    - nvd_blast_task_breakdown
+    - nvd_experimental_capabilities
 module_order:
   - custom_content
   - fastqc:
@@ -55,6 +64,10 @@ module_order:
 sp:
   nvd_higher_risk_taxonomic_findings:
     fn: "nvd_higher_risk_taxonomic_findings_mqc.yaml"
+  nvd_strongest_taxonomic_signals:
+    fn: "nvd_strongest_taxonomic_signals_mqc.yaml"
+  nvd_faintest_taxonomic_signals:
+    fn: "nvd_faintest_taxonomic_signals_mqc.yaml"
   nvd_sample_roster:
     fn: "nvd_sample_roster_mqc.yaml"
   nvd_raw_fastqc_inventory:

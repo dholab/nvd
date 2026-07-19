@@ -161,7 +161,7 @@ workflow NVD_MAIN {
     ch_sequence_flow_inputs,
     PREPROCESS_READS.out.raw_fastqc_packages,
     PREPROCESS_READS.out.raw_fastqc_zips,
-    GATHER_READS.out.resolved_manifest,
+    GATHER_READS.out.resolved_reads,
     ch_nvd_version_file,
     PREPROCESS_READS.out.depletion_stats,
     PREPROCESS_READS.out.processed_read_profiles,

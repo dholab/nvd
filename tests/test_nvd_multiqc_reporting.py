@@ -406,9 +406,7 @@ def test_target_enrichment_package_crosses_explicit_process_boundary(
         encoding="utf-8",
     )
     workflow = tmp_path / "main.nf"
-    target_enrichment_input = (
-        f"Channel.of(tuple('sample_A', {nextflow_file(stats)}))"
-    )
+    target_enrichment_input = f"Channel.of(tuple('sample_A', {nextflow_file(stats)}))"
     workflow.write_text(
         f"""\
 nextflow.enable.dsl = 2
@@ -569,9 +567,7 @@ def test_taxon_big_table_crosses_package_boundary_into_higher_risk_findings(
     version = write_version(tmp_path / "nvd_version.txt")
     taxon_table = write_taxon_big_table(tmp_path / "sample_A.taxon_big_table.tsv")
     config = ROOT / "assets" / "multiqc_config.yaml"
-    taxon_big_table_input = (
-        f"Channel.of(tuple('sample_A', file('{taxon_table}')))"
-    )
+    taxon_big_table_input = f"Channel.of(tuple('sample_A', file('{taxon_table}')))"
     workflow = tmp_path / "main.nf"
     workflow.write_text(
         f"""\
@@ -610,8 +606,9 @@ workflow {{
     )
     assert sections, diagnostics
     section = yaml.safe_load(sections[-1].read_text(encoding="utf-8"))
-    assert tuple(section["data"]) == ("sample_A | 101:species",)
-    finding = section["data"]["sample_A | 101:species"]
+    assert section["pconfig"]["col1_header"] == "Finding"
+    assert tuple(section["data"]) == ("sample_A · Taxon alpha",)
+    finding = section["data"]["sample_A · Taxon alpha"]
     assert finding["who_risk_group"] == "RG3"
     assert finding["support_note"] == (
         "3 strong query assignments support Taxon alpha (species)."
@@ -621,6 +618,19 @@ workflow {{
     assert reports, diagnostics
     report_html = reports[-1].read_text(encoding="utf-8")
     assert "Higher-Risk Taxonomic Findings" in report_html
+    assert "Strongest Taxonomic Signals" in report_html
+    assert "Faintest Taxonomic Signals" in report_html
+    assert (
+        report_html.index("Higher-Risk Taxonomic Findings")
+        < report_html.index(
+            "Strongest Taxonomic Signals",
+        )
+        < report_html.index("Faintest Taxonomic Signals")
+        < report_html.index(
+            "Sample Roster",
+        )
+    )
+    assert not sorted(tmp_path.glob("work/**/multiqc_general_stats.*"))
     assert "3 strong query assignments support Taxon alpha" in report_html
 
 

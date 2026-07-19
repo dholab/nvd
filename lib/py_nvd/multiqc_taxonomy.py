@@ -1,8 +1,9 @@
-"""Typed Taxon Big Table parsing and higher-risk findings presentation."""
+"""Typed Taxon Big Table parsing and bounded findings presentation."""
 
 from __future__ import annotations
 
 import csv
+from collections import Counter
 from dataclasses import dataclass
 from typing import Annotated, Literal, TypeAlias
 
@@ -23,6 +24,8 @@ SupportTier: TypeAlias = Literal["strong", "moderate", "review", "weak", "redact
 RiskGroup: TypeAlias = Literal["RG1", "RG2", "RG3", "RG4"]
 HIGHER_RISK_GROUPS = frozenset(("RG2", "RG3", "RG4"))
 HIGHER_RISK_FINDINGS_MAX_ROWS = 100
+STRONGEST_SIGNALS_MAX_ROWS_PER_SAMPLE = 10
+FAINTEST_SIGNALS_MAX_ROWS_PER_SAMPLE = 5
 SUPPORT_TIER_ORDER = {
     "strong": 0,
     "moderate": 1,
@@ -42,13 +45,13 @@ class TaxonProducerRow(BaseModel):
     taxon_name: NonEmptyString
     taxon_rank: NonEmptyString
     support_tier: SupportTier
-    taxon_crumbs: NonNegativeFloat | None
-    relative_crumbs_percent: NonNegativeFloat | None
+    taxon_crumbs: NonNegativeFloat | None = None
+    relative_crumbs_percent: NonNegativeFloat | None = None
     supporting_query_count: NonNegativeInt
     taxid: NonNegativeInt
-    who_risk_group: RiskGroup | None
+    who_risk_group: RiskGroup | None = None
     total_query_span: NonNegativeInt
-    total_crumbs_score: NonNegativeFloat | None
+    total_crumbs_score: NonNegativeFloat | None = None
     strong_query_count: NonNegativeInt
     moderate_query_count: NonNegativeInt
     weak_query_count: NonNegativeInt
@@ -64,7 +67,7 @@ class TaxonProducerRow(BaseModel):
 
 
 class TaxonFindingRow(TaxonProducerRow):
-    """One higher-risk taxonomic finding presented in MultiQC."""
+    """One taxonomic finding presented in a bounded MultiQC projection."""
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
@@ -138,7 +141,7 @@ def parse_taxon_big_table_package(package: ReportPackage) -> ParsedTaxonBigTable
             "who_risk_group",
         ):
             if normalized[field_name] == "":
-                normalized[field_name] = None
+                del normalized[field_name]
         row = TaxonProducerRow.model_validate_strings(normalized, strict=True)
         if row.sample_id != receipt.sample_id:
             message = "Taxon Big Table sample does not match its receipt"
@@ -218,11 +221,115 @@ def higher_risk_taxon_rows(
         )
 
     eligible.sort(key=higher_risk_sort_key)
-    selected = tuple(
+    selected = finding_rows(eligible[:max_rows])
+    return ((*selected, *sorted(invalid, key=lambda row: row.sample_id)), len(eligible))
+
+
+def finding_rows(rows: list[TaxonProducerRow]) -> tuple[TaxonFindingRow, ...]:
+    label_counts = Counter((row.sample_id, row.taxon_name) for row in rows)
+    return tuple(
         TaxonFindingRow(
             **row.model_dump(),
-            taxon_key=f"{row.taxid}:{row.taxon_rank}",
+            taxon_key=(
+                row.taxon_name
+                if label_counts[(row.sample_id, row.taxon_name)] == 1
+                else f"{row.taxon_name} (TaxID {row.taxid})"
+            ),
         )
-        for row in eligible[:max_rows]
+        for row in rows
     )
-    return ((*selected, *sorted(invalid, key=lambda row: row.sample_id)), len(eligible))
+
+
+def signal_sort_key(
+    row: TaxonProducerRow,
+    *,
+    strongest_first: bool,
+) -> tuple[float, float, int, float, int, str, int]:
+    direction = -1 if strongest_first else 1
+    return (
+        direction * float(row.taxon_crumbs or 0.0),
+        (
+            direction * float(row.total_crumbs_score)
+            if row.total_crumbs_score is not None
+            else float("inf")
+        ),
+        direction * int(row.supporting_query_count),
+        (
+            direction * float(row.relative_crumbs_percent)
+            if row.relative_crumbs_percent is not None
+            else float("inf")
+        ),
+        SUPPORT_TIER_ORDER[row.support_tier],
+        row.taxon_name,
+        row.taxid,
+    )
+
+
+def bounded_signal_rows(
+    tables: tuple[TaxonBigTableInput, ...],
+    *,
+    max_rows_per_sample: int,
+    strongest_first: bool,
+) -> tuple[tuple[TaxonReportRow, ...], int]:
+    if max_rows_per_sample < 1:
+        message = "Taxon signal row budget must be positive"
+        raise ValueError(message)
+
+    eligible_by_sample: dict[str, list[TaxonProducerRow]] = {}
+    invalid: list[InvalidTaxonFindingRow] = []
+    for table in tables:
+        if isinstance(table, InvalidTaxonBigTable):
+            invalid.append(
+                InvalidTaxonFindingRow(
+                    sample_id=table.receipt.sample_id,
+                    validation_details=str(table.error),
+                ),
+            )
+            continue
+        for row in table.rows:
+            if row.taxon_crumbs is not None and row.taxon_crumbs > 0:
+                eligible_by_sample.setdefault(row.sample_id, []).append(row)
+
+    selected: list[TaxonProducerRow] = []
+    for sample_id in sorted(eligible_by_sample):
+        sample_rows = sorted(
+            eligible_by_sample[sample_id],
+            key=lambda row: signal_sort_key(
+                row,
+                strongest_first=strongest_first,
+            ),
+        )
+        selected.extend(sample_rows[:max_rows_per_sample])
+
+    eligible_count = sum(len(rows) for rows in eligible_by_sample.values())
+    return (
+        (
+            *finding_rows(selected),
+            *sorted(invalid, key=lambda row: row.sample_id),
+        ),
+        eligible_count,
+    )
+
+
+def strongest_taxon_rows(
+    tables: tuple[TaxonBigTableInput, ...],
+    *,
+    max_rows_per_sample: int = STRONGEST_SIGNALS_MAX_ROWS_PER_SAMPLE,
+) -> tuple[tuple[TaxonReportRow, ...], int]:
+    return bounded_signal_rows(
+        tables,
+        max_rows_per_sample=max_rows_per_sample,
+        strongest_first=True,
+    )
+
+
+def faintest_taxon_rows(
+    tables: tuple[TaxonBigTableInput, ...],
+    *,
+    max_rows_per_sample: int = FAINTEST_SIGNALS_MAX_ROWS_PER_SAMPLE,
+) -> tuple[tuple[TaxonReportRow, ...], int]:
+    return bounded_signal_rows(
+        tables,
+        max_rows_per_sample=max_rows_per_sample,
+        strongest_first=False,
+    )

@@ -35,10 +35,14 @@ from py_nvd.multiqc_query_preparation import (
     prepared_query_rows,
 )
 from py_nvd.multiqc_taxonomy import (
+    FAINTEST_SIGNALS_MAX_ROWS_PER_SAMPLE,
+    STRONGEST_SIGNALS_MAX_ROWS_PER_SAMPLE,
     InvalidTaxonFindingRow,
     TaxonFindingRow,
     collect_taxon_big_tables,
+    faintest_taxon_rows,
     higher_risk_taxon_rows,
+    strongest_taxon_rows,
 )
 
 
@@ -110,6 +114,7 @@ class TableSection(SectionModel):
     plot_type: Literal["table"] = "table"
     rows: tuple[ReportRow, ...]
     headers: dict[str, TableColumn] = Field(default_factory=dict)
+    first_column_title: str | None = None
 
 
 class LineGraphSection(SectionModel):
@@ -150,7 +155,7 @@ def report_row_label(row: ReportRow) -> str:
     ):
         parts.append(row.query_class_code)
     elif isinstance(row, (TaxonFindingRow, InvalidTaxonFindingRow)):
-        parts.append(row.taxon_key)
+        return f"{row.sample_id} · {row.taxon_key}"
     return " | ".join(parts)
 
 
@@ -251,67 +256,129 @@ def blast_task_breakdown_section(
     )
 
 
+def taxon_table_headers() -> dict[str, TableColumn]:
+    return {
+        "taxon_name": TableColumn(title="Taxon"),
+        "taxon_rank": TableColumn(title="Rank"),
+        "support_tier": TableColumn(title="Support"),
+        "taxon_crumbs": TableColumn(title="Taxon CRUMBS"),
+        "relative_crumbs_percent": TableColumn(
+            title="CRUMBS share (%)",
+            format="{:,.2f}",
+        ),
+        "supporting_query_count": TableColumn(title="Supporting queries"),
+        "taxid": TableColumn(title="TaxID"),
+        "who_risk_group": TableColumn(title="WHO risk group"),
+        "total_query_span": TableColumn(title="Total query span"),
+        "total_crumbs_score": TableColumn(title="Total CRUMBS score"),
+        "strong_query_count": TableColumn(title="Strong queries"),
+        "moderate_query_count": TableColumn(title="Moderate queries"),
+        "weak_query_count": TableColumn(title="Weak queries"),
+        "review_query_count": TableColumn(title="Review queries"),
+        "redacted_query_count": TableColumn(title="Redacted queries"),
+        "supporting_genome_like_contig_count": TableColumn(
+            title="Genome-like contigs",
+        ),
+        "supporting_long_contig_count": TableColumn(title="Long contigs"),
+        "supporting_short_contig_count": TableColumn(title="Short contigs"),
+        "supporting_merged_pair_count": TableColumn(title="Merged pairs"),
+        "supporting_single_read_count": TableColumn(title="Single reads"),
+        "support_tier_rule": TableColumn(title="Support rule"),
+        "support_note": TableColumn(title="Support note"),
+        "problem": TableColumn(title="Problem"),
+        "validation_details": TableColumn(
+            title="Validation details",
+            hidden=True,
+        ),
+    }
+
+
+def taxon_projection_section(
+    *,
+    section_name: str,
+    description: str,
+    rows: tuple[TaxonFindingRow | InvalidTaxonFindingRow, ...],
+) -> TableSection | None:
+    if not rows:
+        return None
+    return TableSection(
+        section_name=section_name,
+        description=description,
+        rows=rows,
+        headers=taxon_table_headers(),
+        first_column_title="Finding",
+    )
+
+
 def higher_risk_taxonomic_findings_section(
     packages: tuple[ReportPackage, ...],
 ) -> TableSection | None:
-    tables = collect_taxon_big_tables(packages)
-    if not tables:
-        return None
-    rows, eligible_count = higher_risk_taxon_rows(tables)
-    if not rows:
-        return None
-    displayed_count = sum(isinstance(row, TaxonFindingRow) for row in rows)
-    return TableSection(
-        section_name="Higher-Risk Taxonomic Findings",
-        description=(
-            f"Showing {displayed_count} of {eligible_count} WHO risk group 2-4 "
-            "findings. Complete results: taxon_big_table.tsv."
-        ),
-        rows=rows,
-        headers={
-            "taxon_name": TableColumn(title="Taxon"),
-            "taxid": TableColumn(title="TaxID"),
-            "taxon_rank": TableColumn(title="Rank"),
-            "who_risk_group": TableColumn(title="WHO risk group"),
-            "support_tier": TableColumn(title="Support"),
-            "support_note": TableColumn(title="Support note"),
-            "taxon_crumbs": TableColumn(title="Taxon CRUMBS"),
-            "relative_crumbs_percent": TableColumn(
-                title="CRUMBS share (%)",
-                format="{:,.2f}",
-            ),
-            "total_crumbs_score": TableColumn(title="Total CRUMBS score"),
-            "supporting_query_count": TableColumn(title="Supporting queries"),
-            "total_query_span": TableColumn(title="Total query span"),
-            "strong_query_count": TableColumn(title="Strong queries"),
-            "moderate_query_count": TableColumn(title="Moderate queries"),
-            "weak_query_count": TableColumn(title="Weak queries"),
-            "review_query_count": TableColumn(title="Review queries"),
-            "redacted_query_count": TableColumn(title="Redacted queries"),
-            "supporting_genome_like_contig_count": TableColumn(
-                title="Genome-like contigs",
-            ),
-            "supporting_long_contig_count": TableColumn(title="Long contigs"),
-            "supporting_short_contig_count": TableColumn(title="Short contigs"),
-            "supporting_merged_pair_count": TableColumn(title="Merged pairs"),
-            "supporting_single_read_count": TableColumn(title="Single reads"),
-            "support_tier_rule": TableColumn(title="Support rule"),
-            "problem": TableColumn(title="Problem"),
-            "validation_details": TableColumn(
-                title="Validation details",
-                hidden=True,
-            ),
-        },
-    )
+    section = taxonomy_sections(packages).get("nvd_higher_risk_taxonomic_findings")
+    return section if isinstance(section, TableSection) else None
 
 
 def taxonomy_sections(
     packages: tuple[ReportPackage, ...],
 ) -> dict[str, ReportSection]:
-    section = higher_risk_taxonomic_findings_section(packages)
-    if section is None:
+    tables = collect_taxon_big_tables(packages)
+    if not tables:
         return {}
-    return {"nvd_higher_risk_taxonomic_findings": section}
+
+    higher_risk_rows, higher_risk_eligible = higher_risk_taxon_rows(tables)
+    strongest_rows, strongest_eligible = strongest_taxon_rows(tables)
+    faintest_rows, faintest_eligible = faintest_taxon_rows(tables)
+    big_table_guidance = (
+        "All taxon signals are detailed in the Taxon Big Table. Queries supporting "
+        "each taxon are detailed in the Query Big Table."
+    )
+    projections = (
+        (
+            "nvd_higher_risk_taxonomic_findings",
+            "Higher-Risk Taxonomic Findings",
+            (
+                f"Showing {sum(isinstance(row, TaxonFindingRow) for row in higher_risk_rows)} "
+                f"of {higher_risk_eligible} WHO risk group 2-4 findings. Rows may "
+                f"also appear in the signal-strength views. {big_table_guidance}"
+            ),
+            higher_risk_rows,
+        ),
+        (
+            "nvd_strongest_taxonomic_signals",
+            "Strongest Taxonomic Signals",
+            (
+                f"Showing {sum(isinstance(row, TaxonFindingRow) for row in strongest_rows)} "
+                f"of {strongest_eligible} taxon signals with Taxon CRUMBS greater "
+                f"than zero, limited to the {STRONGEST_SIGNALS_MAX_ROWS_PER_SAMPLE} "
+                "strongest per sample. "
+                "Taxon CRUMBS is normalized support per assigned query base, not "
+                f"genome-copy abundance. Rows may appear in multiple views. {big_table_guidance}"
+            ),
+            strongest_rows,
+        ),
+        (
+            "nvd_faintest_taxonomic_signals",
+            "Faintest Taxonomic Signals",
+            (
+                f"Showing {sum(isinstance(row, TaxonFindingRow) for row in faintest_rows)} "
+                f"of {faintest_eligible} taxon signals with Taxon CRUMBS greater "
+                f"than zero, limited to the {FAINTEST_SIGNALS_MAX_ROWS_PER_SAMPLE} "
+                "faintest per sample. Taxon "
+                "CRUMBS is normalized support per assigned query base, not genome-copy "
+                f"abundance. Rows may appear in multiple views. {big_table_guidance}"
+            ),
+            faintest_rows,
+        ),
+    )
+    sections: dict[str, ReportSection] = {}
+    for section_id, section_name, description, rows in projections:
+        section = taxon_projection_section(
+            section_name=section_name,
+            description=description,
+            rows=rows,
+        )
+        if section is not None:
+            sections[section_id] = section
+    return sections
 
 
 def build_domain_sections(
