@@ -24,6 +24,7 @@ def main() -> None:
     parser.add_argument("--fastx-root", type=Path)
     parser.add_argument("--assembly-root", type=Path)
     parser.add_argument("--query-preparation-root", type=Path)
+    parser.add_argument("--blast-root", type=Path)
     parser.add_argument(
         "--experimental-enabled",
         choices=("true", "false"),
@@ -45,6 +46,11 @@ def main() -> None:
         choices=("true", "false"),
         required=True,
     )
+    parser.add_argument(
+        "--blast-enabled",
+        choices=("true", "false"),
+        required=True,
+    )
     args = parser.parse_args()
 
     build_multiqc_inputs(
@@ -58,6 +64,7 @@ def main() -> None:
                 target_enrichment_enabled=args.target_enrichment_enabled == "true",
                 depletion_enabled=args.depletion_enabled == "true",
                 assembly_enabled=args.assembly_enabled == "true",
+                blast_enabled=args.blast_enabled == "true",
             ),
             report_roots=ReportRoots(
                 target_enrichment=args.target_enrichment_root,
@@ -65,6 +72,7 @@ def main() -> None:
                 fastx=args.fastx_root,
                 assembly=args.assembly_root,
                 query_preparation=args.query_preparation_root,
+                blast=args.blast_root,
             ),
         ),
     )

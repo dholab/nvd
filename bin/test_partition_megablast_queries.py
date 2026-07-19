@@ -22,16 +22,17 @@ def test_partitions_stable_query_ids_from_annotated_fasta_headers(
     )
     queries = tmp_path / "queries.fasta"
     queries.write_text(
-        ">nvdContig1_sample-1.2_000001 query_class=assembly_contig producer=spades contig_id=NODE_1\n"
+        ">nvdContig1_sample-1.2_000001 query_class=short_assembly_contig producer=spades contig_id=NODE_1\n"
         "AAAA\n"
-        ">nvdContig1_sample-1.2_000002 query_class=assembly_contig producer=spades contig_id=NODE_2\n"
+        ">nvdContig1_sample-1.2_000002 query_class=short_assembly_contig producer=spades contig_id=NODE_2\n"
         "CCCC\n"
-        ">nvdContig1_sample-1.2_0000010 query_class=assembly_contig producer=spades contig_id=NODE_10\n"
+        ">nvdContig1_sample-1.2_0000010 query_class=short_assembly_contig producer=spades contig_id=NODE_10\n"
         "GGGG\n",
         encoding="utf-8",
     )
     accounted_query_ids = tmp_path / "accounted_query_ids.txt"
     blastn_candidates = tmp_path / "blastn_candidates.fasta"
+    partition_summary = tmp_path / "partition_summary.tsv"
     with patch.object(
         sys,
         "argv",
@@ -45,6 +46,12 @@ def test_partitions_stable_query_ids_from_annotated_fasta_headers(
             str(accounted_query_ids),
             "--blastn-candidate-fasta",
             str(blastn_candidates),
+            "--sample-id",
+            "sample-1.2",
+            "--query-class",
+            "short_assembly_contig",
+            "--summary-tsv",
+            str(partition_summary),
         ],
     ):
         main()
@@ -53,8 +60,12 @@ def test_partitions_stable_query_ids_from_annotated_fasta_headers(
         "nvdContig1_sample-1.2_000001\n"
     )
     assert blastn_candidates.read_text(encoding="utf-8") == (
-        ">nvdContig1_sample-1.2_000002 query_class=assembly_contig producer=spades contig_id=NODE_2\n"
+        ">nvdContig1_sample-1.2_000002 query_class=short_assembly_contig producer=spades contig_id=NODE_2\n"
         "CCCC\n"
-        ">nvdContig1_sample-1.2_0000010 query_class=assembly_contig producer=spades contig_id=NODE_10\n"
+        ">nvdContig1_sample-1.2_0000010 query_class=short_assembly_contig producer=spades contig_id=NODE_10\n"
         "GGGG\n"
+    )
+    assert partition_summary.read_text(encoding="utf-8") == (
+        "sample_id\tquery_class\tqueries_in\tmegablast_accounted\tblastn_candidates\n"
+        "sample-1.2\tshort_assembly_contig\t3\t1\t2\n"
     )
