@@ -7,10 +7,11 @@ authors = [
   { name = "William Gardner", email = "wkgardner@wisc.edu" },
 ]
 requires-python = ">= 3.11, < 3.14"
-version = "3.1.0"
+version = "3.2.0"
 dependencies = [
   "altair>=6.1.0",
   "biopython>=1.85",
+  "duckdb>=1.2.2",
   "jsonschema>=4.23.0",
   "labkey>=3.4.0",
   "loguru>=0.7.3",
@@ -41,11 +42,14 @@ bbmap = ">=39.19,<40"
 blast = ">=2.16.0,<3"
 deacon = ">=0.15.0,<0.16"
 fastp = ">=1.0.1,<2"
+flye = ">=2.9.6,<3"
+metamdbg = ">=1.2,<2"
 minimap2 = ">=2.22,<3"
+mmseqs2 = ">=18.8cc5c,<19"
+myloasm = ">=0.5.1,<0.7"
 samtools = ">=1.5,<2"
 seqkit = ">=2.10.0,<3"
 spades = ">=4.1.0,<5"
-vsearch = ">=2.30.0,<3"
 rust = ">=1.94.0,<1.95"
 
 # System Dependencies

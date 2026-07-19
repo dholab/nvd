@@ -241,6 +241,16 @@ def preset_register(
         "--filter-reads/--no-filter-reads",
         help="Filter reads",
     ),
+    filter_low_complexity_reads: bool | None = typer.Option(
+        None,
+        "--filter-low-complexity-reads/--no-filter-low-complexity-reads",
+        help="Filter reads with low normalized 5-mer entropy",
+    ),
+    min_read_entropy: float | None = typer.Option(
+        None,
+        "--min-read-entropy",
+        help="Minimum normalized 5-mer entropy over 50-base windows",
+    ),
     max_blast_targets: int | None = typer.Option(
         None,
         "--max-blast-targets",
@@ -299,6 +309,8 @@ def preset_register(
         "virus_abs_threshold": virus_abs_threshold,
         "virus_rel_threshold": virus_rel_threshold,
         "filter_reads": filter_reads,
+        "filter_low_complexity_reads": filter_low_complexity_reads,
+        "min_read_entropy": min_read_entropy,
         "max_blast_targets": max_blast_targets,
         "blast_retention_count": blast_retention_count,
     }

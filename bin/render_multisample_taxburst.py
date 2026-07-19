@@ -6,9 +6,15 @@ from __future__ import annotations
 import argparse
 import csv
 import html
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from export_crumbs_taxonomic_reports import (
+    CrumbsReportExportError,
+    TaxonProfileRow,
+    read_positive_taxa,
+)
 from taxburst.output import env
 
 RANKS = (
@@ -21,6 +27,7 @@ RANKS = (
     "species",
     "strain",
 )
+INPUT_FORMATS = ("csv_summary", "crumbs")
 
 
 @dataclass
@@ -31,7 +38,7 @@ class TreeNode:
     children: dict[str, TreeNode] = field(default_factory=dict)
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Render one multi-sample Krona-style sunburst from summary CSVs.",
     )
@@ -47,7 +54,18 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         help="Output HTML path.",
     )
-    return parser.parse_args()
+    parser.add_argument(
+        "--input-format",
+        choices=INPUT_FORMATS,
+        default="csv_summary",
+        help="Input taxonomy summary format.",
+    )
+    parser.add_argument(
+        "--output-json",
+        type=Path,
+        help="Optional TaxBurst-compatible JSON output for one sample.",
+    )
+    return parser.parse_args(argv)
 
 
 def parse_summary_arg(value: str) -> tuple[str, Path]:
@@ -96,9 +114,61 @@ def add_lineage(
     node.counts[sample_index] = count
 
 
-def build_tree(samples: list[tuple[str, Path]]) -> TreeNode:
+def add_crumbs_taxon(
+    root: TreeNode,
+    *,
+    row: TaxonProfileRow,
+    sample_index: int,
+) -> None:
+    node = root
+    for taxon_id, taxon_name, rank in zip(
+        row.taxpath,
+        row.taxpathsn,
+        row.rankpath,
+        strict=True,
+    ):
+        node = node.children.setdefault(
+            taxon_id,
+            TreeNode(
+                name=taxon_name,
+                rank=rank,
+                counts=[0.0] * len(root.counts),
+            ),
+        )
+        if node.name != taxon_name or node.rank != rank:
+            message = f"taxon_id {taxon_id} has conflicting lineage metadata"
+            raise CrumbsReportExportError(message)
+    node.counts[sample_index] += row.percentage_emitted * 10
+
+
+def aggregate_child_counts(node: TreeNode) -> list[float]:
+    for child in node.children.values():
+        aggregate_child_counts(child)
+
+    node.counts = [
+        node.counts[sample_index]
+        + sum(child.counts[sample_index] for child in node.children.values())
+        for sample_index in range(len(node.counts))
+    ]
+    return node.counts
+
+
+def build_tree(
+    samples: list[tuple[str, Path]],
+    *,
+    input_format: str = "csv_summary",
+) -> TreeNode:
     root = TreeNode(name="all samples", rank="root", counts=[0.0] * len(samples))
-    for sample_index, (_sample_id, summary_path) in enumerate(samples):
+    for sample_index, (sample_id, summary_path) in enumerate(samples):
+        if input_format == "crumbs":
+            for row in read_positive_taxa(summary_path, sample_id):
+                add_crumbs_taxon(
+                    root,
+                    row=row,
+                    sample_index=sample_index,
+                )
+            continue
+
         with summary_path.open(newline="", encoding="utf-8") as handle:
             for row in csv.DictReader(handle):
                 if taxburst_ignores(row):
@@ -110,6 +180,10 @@ def build_tree(samples: list[tuple[str, Path]]) -> TreeNode:
                     count=row_count(row),
                     sample_index=sample_index,
                 )
+
+    if input_format == "crumbs":
+        for child in root.children.values():
+            aggregate_child_counts(child)
     root.counts = [
         sum(child.counts[sample_index] for child in root.children.values())
         for sample_index in range(len(samples))
@@ -161,23 +235,65 @@ def render_krona_body(root: TreeNode, sample_ids: list[str]) -> str:
 """
 
 
-def render_html(samples: list[tuple[str, Path]]) -> str:
-    root = build_tree(samples)
+def render_tree_html(root: TreeNode, sample_ids: list[str]) -> str:
     header = env.get_template("krona-header.html").render()
     footer = env.get_template("krona-footer.html").render()
     return (
         header
         + "\n<style>#lastDataset { font: 11px sans-serif !important; }</style>\n"
         + "\n"
-        + render_krona_body(root, [sample[0] for sample in samples])
+        + render_krona_body(root, sample_ids)
         + footer
     )
 
 
-def main() -> None:
-    args = parse_args()
+def render_html(
+    samples: list[tuple[str, Path]],
+    *,
+    input_format: str = "csv_summary",
+) -> str:
+    root = build_tree(samples, input_format=input_format)
+    return render_tree_html(root, [sample[0] for sample in samples])
+
+
+def taxburst_json_node(node: TreeNode, *, sample_index: int) -> dict[str, object]:
+    result: dict[str, object] = {
+        "name": node.name,
+        "rank": node.rank,
+        "count": node.counts[sample_index],
+    }
+    children = [
+        taxburst_json_node(child, sample_index=sample_index)
+        for child in sorted(node.children.values(), key=lambda child: child.name)
+    ]
+    if children:
+        result["children"] = children
+    return result
+
+
+def taxburst_json_tree(root: TreeNode, *, sample_index: int) -> list[dict[str, object]]:
+    return [
+        taxburst_json_node(child, sample_index=sample_index)
+        for child in sorted(root.children.values(), key=lambda child: child.name)
+    ]
+
+
+def main(argv: list[str] | None = None) -> None:
+    args = parse_args(argv)
     samples = [parse_summary_arg(value) for value in args.summary]
-    args.output.write_text(render_html(samples), encoding="utf-8")
+    if args.output_json is not None and len(samples) != 1:
+        msg = "TaxBurst JSON output requires exactly one sample"
+        raise ValueError(msg)
+    root = build_tree(samples, input_format=args.input_format)
+    args.output.write_text(
+        render_tree_html(root, [sample[0] for sample in samples]),
+        encoding="utf-8",
+    )
+    if args.output_json is not None:
+        args.output_json.write_text(
+            json.dumps(taxburst_json_tree(root, sample_index=0), indent=2) + "\n",
+            encoding="utf-8",
+        )
 
 
 if __name__ == "__main__":

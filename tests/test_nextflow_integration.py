@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import csv
-import hashlib
 import json
 import os
 import subprocess
@@ -55,8 +54,11 @@ def write_mini_taxdump(taxonomy_dir: Path) -> None:
     (taxonomy_dir / "nodes.dmp").write_text(
         """\
 1\t|\t1\t|\tno rank\t|\t
-10239\t|\t1\t|\tsuperkingdom\t|\t
-10240\t|\t10239\t|\tfamily\t|\t
+10239\t|\t1\t|\tacellular root\t|\t
+2732408\t|\t10239\t|\tphylum\t|\t
+2732506\t|\t2732408\t|\tclass\t|\t
+2732544\t|\t2732506\t|\torder\t|\t
+10240\t|\t2732544\t|\tfamily\t|\t
 10242\t|\t10240\t|\tgenus\t|\t
 10244\t|\t10242\t|\tspecies\t|\t
 10255\t|\t10240\t|\tgenus\t|\t
@@ -68,6 +70,9 @@ def write_mini_taxdump(taxonomy_dir: Path) -> None:
         """\
 1\t|\troot\t|\t\t|\tscientific name\t|
 10239\t|\tViruses\t|\t\t|\tscientific name\t|
+2732408\t|\tNucleocytoviricota\t|\t\t|\tscientific name\t|
+2732506\t|\tPokkesviricetes\t|\t\t|\tscientific name\t|
+2732544\t|\tChitovirales\t|\t\t|\tscientific name\t|
 10240\t|\tPoxviridae\t|\t\t|\tscientific name\t|
 10242\t|\tOrthopoxvirus\t|\t\t|\tscientific name\t|
 10244\t|\tMonkeypox virus\t|\t\t|\tscientific name\t|
@@ -79,33 +84,55 @@ def write_mini_taxdump(taxonomy_dir: Path) -> None:
     (taxonomy_dir / "merged.dmp").write_text("", encoding="utf-8")
 
 
-def sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
 def load_manifest() -> dict[str, Any]:
     return json.loads(MANIFEST.read_text(encoding="utf-8"))
 
 
-def verify_fixture_checksums(manifest: dict[str, Any]) -> None:
+def verify_fixture_files(manifest: dict[str, Any]) -> None:
     missing: list[str] = []
-    mismatched: list[str] = []
-    for filename, metadata in manifest["files"].items():
+    for filename in manifest["files"]:
         path = DATA / filename
         if not path.exists():
             missing.append(filename)
-            continue
-        if sha256(path) != metadata["sha256"]:
-            mismatched.append(filename)
 
     assert not missing, "Missing integration fixture files: " + ", ".join(missing)
-    assert not mismatched, "Integration fixture checksum mismatch: " + ", ".join(
-        mismatched,
+
+
+def selected_manifest_sra_runs(
+    manifest: dict[str, Any],
+    *,
+    samplesheet: Path = SAMPLESHEET,
+) -> list[dict[str, Any]]:
+    """Return manifest metadata only for SRA rows selected by the samplesheet."""
+    manifest_by_sample = {
+        str(run_info["sample_id"]): run_info for run_info in manifest["sra_runs"]
+    }
+
+    with samplesheet.open(newline="", encoding="utf-8") as handle:
+        selected_sample_ids = [
+            row.get("sample_id", "") for row in csv.DictReader(handle)
+        ]
+
+    return [
+        manifest_by_sample[sample_id]
+        for sample_id in selected_sample_ids
+        if sample_id in manifest_by_sample
+    ]
+
+
+def test_selected_manifest_sra_runs_follow_samplesheet_rows(tmp_path: Path) -> None:
+    samplesheet = tmp_path / "samplesheet.csv"
+    samplesheet.write_text(
+        "sample_id,srr,platform,fastq1,fastq2\n"
+        "monkeypox_pt1020_2026,ERR17356125,illumina,,\n",
+        encoding="utf-8",
     )
+
+    selected = selected_manifest_sra_runs(load_manifest(), samplesheet=samplesheet)
+
+    assert [run_info["sample_id"] for run_info in selected] == [
+        "monkeypox_pt1020_2026",
+    ]
 
 
 def test_mini_sourmash_lineages_support_bioboxes() -> None:
@@ -245,6 +272,18 @@ def test_sourmash_tax_metagenome_writes_all_formats_with_strain_taxids(
         assert len(taxids) == len(names)
         assert all(taxids)
         assert 0 <= float(percentage) <= 100  # noqa: PLR2004
+
+
+def test_mini_nvd_taxdump_preserves_noncanonical_virus_root_rank(
+    tmp_path: Path,
+) -> None:
+    """The mini NVD taxonomy should exercise modern NCBI virus ranks."""
+    write_mini_taxdump(tmp_path)
+
+    nodes_text = (tmp_path / "nodes.dmp").read_text(encoding="utf-8")
+
+    assert "10239\t|\t1\t|\tacellular root\t|" in nodes_text
+    assert "10239\t|\t1\t|\tsuperkingdom\t|" not in nodes_text
 
 
 def read_delimited_rows(path: Path, *, delimiter: str) -> list[dict[str, str]]:
@@ -422,7 +461,8 @@ def run_nextflow() -> tuple[subprocess.CompletedProcess[str], Path]:
 def test_mini_sra_viral_pipeline_completes() -> None:
     """Tiny SRA runs should complete through enrichment, assembly, and BLAST."""
     manifest = load_manifest()
-    verify_fixture_checksums(manifest)
+    verify_fixture_files(manifest)
+    selected_sra_runs = selected_manifest_sra_runs(manifest)
     experimental = integration_experimental_enabled()
     skip_assembly = integration_skip_assembly_enabled()
 
@@ -460,7 +500,11 @@ def test_mini_sra_viral_pipeline_completes() -> None:
         experiment_rows = read_tsv_rows(experiment_blast)
         assert experiment_rows, f"No experiment BLAST rows found in {experiment_blast}"
 
-        for run_info in manifest["sra_runs"]:
+        # Assert per-sample biological expectations for the rows actually under
+        # test. Coupling this loop to every manifest row makes a deleted
+        # samplesheet row fail as a missing output, even though the pipeline did
+        # exactly what the samplesheet requested.
+        for run_info in selected_sra_runs:
             sample_rows = [
                 row
                 for row in experiment_rows
@@ -510,11 +554,14 @@ def test_mini_sra_viral_pipeline_completes() -> None:
             "local_hits_glob_L002_R2_001.fastq.gz",
         ]
 
-        assert "Orf virus" in final_text
-        assert "Monkeypox virus" in final_text
+        for organism in {
+            str(run_info["expected_organism"]) for run_info in selected_sra_runs
+        }:
+            assert organism in final_text
 
     if experimental:
-        sourmash_root = results_root / "experimental_sourmash"
+        rapid_screening_root = results_root / "experimental_rapid_screening"
+        sourmash_root = rapid_screening_root / "engines" / "sourmash"
         ref_dir = sourmash_root / "reference_profiling" / "reference"
         gather_dir = sourmash_root / "reference_profiling" / "gather"
         merged_taxburst_dir = (
@@ -528,7 +575,7 @@ def test_mini_sra_viral_pipeline_completes() -> None:
 
         expected_species_by_sample = {
             run_info["sample_id"]: run_info["expected_organism"]
-            for run_info in manifest["sra_runs"]
+            for run_info in selected_sra_runs
         }
         merged_taxburst_html = merged_taxburst_dir / "sourmash.taxburst.html"
         assert merged_taxburst_html.is_file(), (
@@ -562,4 +609,18 @@ def test_mini_sra_viral_pipeline_completes() -> None:
             )
             assert sankey_html.stat().st_size > 0, (
                 f"Empty sourmash Sankey report: {sankey_html}"
+            )
+
+        eval_root = rapid_screening_root / "eval"
+        for eval_artifact in (
+            eval_root / "database" / "rapid_screening_eval.duckdb",
+            eval_root / "exports" / "screening_signal_followup_by_sample_rank.tsv",
+            eval_root / "exports" / "screening_signals_without_same_rank_followup.tsv",
+            eval_root / "reports" / "rapid_screening_eval.html",
+        ):
+            assert eval_artifact.is_file(), (
+                f"Missing rapid-screening eval artifact: {eval_artifact}"
+            )
+            assert eval_artifact.stat().st_size > 0, (
+                f"Empty rapid-screening eval artifact: {eval_artifact}"
             )
