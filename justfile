@@ -1,7 +1,7 @@
 set shell := ["bash", "-cu"]
 
 PYTHON_CI_PATHS := "lib/ scripts/"
-REPORTING_TYPECHECK_PATHS := "lib/py_nvd/read_inputs.py lib/py_nvd/multiqc_report.py lib/py_nvd/multiqc_packages.py lib/py_nvd/multiqc_fastx.py lib/py_nvd/multiqc_assembly.py lib/py_nvd/multiqc_query_preparation.py lib/py_nvd/multiqc_domains.py bin/write_nvd_fastqc_receipt.py bin/package_nvd_report.py bin/assess_long_read_assembly.py"
+REPORTING_TYPECHECK_PATHS := "lib/py_nvd/read_inputs.py lib/py_nvd/multiqc_report.py lib/py_nvd/multiqc_packages.py lib/py_nvd/multiqc_fastx.py lib/py_nvd/multiqc_assembly.py lib/py_nvd/multiqc_query_preparation.py lib/py_nvd/multiqc_blast.py lib/py_nvd/multiqc_domains.py bin/write_nvd_fastqc_receipt.py bin/package_nvd_report.py bin/assess_long_read_assembly.py"
 NCBI_VIRUS_SOURMASH_SIG_URL := "https://farm.cse.ucdavis.edu/~ctbrown/sourmash-db.new/ncbi-viruses-2025.01/ncbi-viruses-2025.01.dna.k=31.sig.zip"
 NCBI_VIRUS_SOURMASH_LINEAGES_URL := "https://farm.cse.ucdavis.edu/~ctbrown/sourmash-db.new/ncbi-viruses-2025.01/ncbi-viruses.2025.01.lineages.csv"
 WVDB_FASTA_URL := "https://zenodo.org/records/20276352/files/WVDB_v1.0.fasta?download=1"

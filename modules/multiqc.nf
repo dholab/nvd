@@ -13,10 +13,12 @@ process BUILD_MULTIQC_INPUTS {
     path "fastx_packages/*"
     path "assembly_packages/*"
     path "query_preparation_packages/*"
+    path "blast_packages/*"
     val experimental_enabled
     val target_enrichment_enabled
     val depletion_enabled
     val assembly_enabled
+    val blast_enabled
 
     output:
     path "nvd_inputs", emit: inputs
@@ -24,7 +26,7 @@ process BUILD_MULTIQC_INPUTS {
     script:
     """
     mkdir -p fastqc_packages
-    mkdir -p target_enrichment_packages depletion_packages fastx_packages assembly_packages query_preparation_packages
+    mkdir -p target_enrichment_packages depletion_packages fastx_packages assembly_packages query_preparation_packages blast_packages
     build_nvd_multiqc_inputs.py \
         --resolved-reads '${resolved_reads}' \
         --nvd-version '${nvd_version}' \
@@ -34,10 +36,12 @@ process BUILD_MULTIQC_INPUTS {
         --fastx-root fastx_packages \
         --assembly-root assembly_packages \
         --query-preparation-root query_preparation_packages \
+        --blast-root blast_packages \
         --experimental-enabled '${experimental_enabled}' \
         --target-enrichment-enabled '${target_enrichment_enabled}' \
         --depletion-enabled '${depletion_enabled}' \
         --assembly-enabled '${assembly_enabled}' \
+        --blast-enabled '${blast_enabled}' \
         --output-dir nvd_inputs
     """
 }
@@ -195,6 +199,27 @@ process PACKAGE_NVD_PREPARED_QUERY_BATCHES_REPORT {
     """
     package_nvd_report.py prepared-query-batches \
         --sample-id='${sample_id}' \
+        --summary=summary.input
+    """
+}
+
+process PACKAGE_NVD_MEGABLAST_QUERY_PARTITION_REPORT {
+    label "low"
+
+    errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
+    maxRetries 2
+
+    input:
+    tuple val(sample_id), val(query_class), path(summary, stageAs: "summary.input")
+
+    output:
+    path "*.pkg", arity: '1', emit: packages
+
+    script:
+    """
+    package_nvd_report.py megablast-query-partition \
+        --sample-id='${sample_id}' \
+        --query-class='${query_class}' \
         --summary=summary.input
     """
 }

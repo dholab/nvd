@@ -39,6 +39,9 @@ custom_data:
   nvd_prepared_blast_query_batches:
     section_name: "Prepared BLAST Query Batches"
     section_order: 915
+  nvd_blast_task_breakdown:
+    section_name: "BLAST Task Breakdown"
+    section_order: 912
   nvd_experimental_capabilities:
     section_name: "Experimental Capabilities"
     section_order: 910
@@ -69,5 +72,7 @@ sp:
     fn: "nvd_assembly_mqc.yaml"
   nvd_prepared_blast_query_batches:
     fn: "nvd_prepared_blast_query_batches_mqc.yaml"
+  nvd_blast_task_breakdown:
+    fn: "nvd_blast_task_breakdown_mqc.yaml"
   nvd_experimental_capabilities:
     fn: "nvd_experimental_capabilities_mqc.yaml"

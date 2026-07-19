@@ -154,6 +154,7 @@ workflow NVD_MAIN {
     channel.value(target_enrichment_enabled),
     channel.value(depletion_enabled),
     channel.value(!params.skip_assembly),
+    channel.value(!params.skip_blast),
     PREPROCESS_READS.out.target_enrichment_stats,
     PREPROCESS_READS.out.depletion_stats,
     PREPROCESS_READS.out.processed_read_profiles,
@@ -164,6 +165,7 @@ workflow NVD_MAIN {
     LONG_READ_DENOVO_ENSEMBLY.out.eligibility_summaries,
     LONG_READ_DENOVO_ENSEMBLY.out.union_summaries,
     PREPARE_BLAST_QUERIES.out.blast_query_summaries,
+    CLASSIFY_WITH_MEGABLAST.out.megablast_query_partition.map { sample_id, query_class, _accounted_ids, _blastn_candidates, summary -> tuple(sample_id, query_class, summary) },
     channel.value(file("${projectDir}/assets/multiqc_config.yaml")),
   )
 

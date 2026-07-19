@@ -1,4 +1,4 @@
-include { BUILD_MULTIQC_INPUTS; PACKAGE_NVD_DEACON_REPORT as PACKAGE_TARGET_ENRICHMENT_REPORT; PACKAGE_NVD_DEACON_REPORT as PACKAGE_DEPLETION_REPORT; PACKAGE_NVD_PROFILE_REPORT as PACKAGE_FASTX_REPORT; PACKAGE_NVD_PROFILE_WITH_QUALITY_REPORT as PACKAGE_FASTX_QUALITY_REPORT; PACKAGE_NVD_PROFILE_REPORT as PACKAGE_ASSEMBLY_PROFILE_REPORT; PACKAGE_NVD_ELIGIBILITY_REPORT as PACKAGE_ASSEMBLY_ELIGIBILITY_REPORT; PACKAGE_NVD_LONG_READ_ELIGIBILITY_REPORT as PACKAGE_ASSEMBLY_LONG_READ_ELIGIBILITY_REPORT; PACKAGE_NVD_UNION_REPORT as PACKAGE_ASSEMBLY_UNION_REPORT; PACKAGE_NVD_PREPARED_QUERY_BATCHES_REPORT } from "../modules/multiqc"
+include { BUILD_MULTIQC_INPUTS; PACKAGE_NVD_DEACON_REPORT as PACKAGE_TARGET_ENRICHMENT_REPORT; PACKAGE_NVD_DEACON_REPORT as PACKAGE_DEPLETION_REPORT; PACKAGE_NVD_PROFILE_REPORT as PACKAGE_FASTX_REPORT; PACKAGE_NVD_PROFILE_WITH_QUALITY_REPORT as PACKAGE_FASTX_QUALITY_REPORT; PACKAGE_NVD_PROFILE_REPORT as PACKAGE_ASSEMBLY_PROFILE_REPORT; PACKAGE_NVD_ELIGIBILITY_REPORT as PACKAGE_ASSEMBLY_ELIGIBILITY_REPORT; PACKAGE_NVD_LONG_READ_ELIGIBILITY_REPORT as PACKAGE_ASSEMBLY_LONG_READ_ELIGIBILITY_REPORT; PACKAGE_NVD_UNION_REPORT as PACKAGE_ASSEMBLY_UNION_REPORT; PACKAGE_NVD_PREPARED_QUERY_BATCHES_REPORT; PACKAGE_NVD_MEGABLAST_QUERY_PARTITION_REPORT } from "../modules/multiqc"
 
 workflow MULTIQC_BUNDLING {
     take:
@@ -10,6 +10,7 @@ workflow MULTIQC_BUNDLING {
     ch_target_enrichment_enabled
     ch_depletion_enabled
     ch_assembly_enabled
+    ch_blast_enabled
     ch_target_enrichment_stats
     ch_depletion_stats
     ch_processed_read_profiles
@@ -20,6 +21,7 @@ workflow MULTIQC_BUNDLING {
     ch_long_read_eligibility_summaries
     ch_long_read_union_summaries
     ch_prepared_query_batch_summaries
+    ch_megablast_query_partition_summaries
     ch_multiqc_config
 
     main:
@@ -89,6 +91,10 @@ workflow MULTIQC_BUNDLING {
         ch_prepared_query_batch_summaries
     )
 
+    PACKAGE_NVD_MEGABLAST_QUERY_PARTITION_REPORT(
+        ch_megablast_query_partition_summaries
+    )
+
     ch_target_enrichment_packages = PACKAGE_TARGET_ENRICHMENT_REPORT.out.packages.toList()
     ch_depletion_packages = PACKAGE_DEPLETION_REPORT.out.packages.toList()
     ch_fastx_packages = PACKAGE_FASTX_REPORT.out.packages.mix(PACKAGE_FASTX_QUALITY_REPORT.out.packages).toList()
@@ -98,6 +104,7 @@ workflow MULTIQC_BUNDLING {
         .mix(PACKAGE_ASSEMBLY_UNION_REPORT.out.packages)
         .toList()
     ch_query_preparation_packages = PACKAGE_NVD_PREPARED_QUERY_BATCHES_REPORT.out.packages.toList()
+    ch_blast_packages = PACKAGE_NVD_MEGABLAST_QUERY_PARTITION_REPORT.out.packages.toList()
 
     BUILD_MULTIQC_INPUTS(
         ch_resolved_reads,
@@ -108,10 +115,12 @@ workflow MULTIQC_BUNDLING {
         ch_fastx_packages,
         ch_assembly_packages,
         ch_query_preparation_packages,
+        ch_blast_packages,
         ch_experimental_enabled,
         ch_target_enrichment_enabled,
         ch_depletion_enabled,
         ch_assembly_enabled,
+        ch_blast_enabled,
     )
 
     emit:
