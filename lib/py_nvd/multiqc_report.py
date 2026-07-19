@@ -256,7 +256,11 @@ def build_multiqc_inputs(request: CompileRequest) -> Path:
         request.output_dir / "nvd_mqc_versions.yaml",
         source_identity,
     )
-    write_roster(request.output_dir / "nvd_sample_roster_mqc.yaml", samples)
+    write_roster(
+        request.output_dir / "nvd_sample_roster_mqc.yaml",
+        samples,
+        raw_fastqc,
+    )
     if raw_fastqc:
         write_fastqc_inventory(
             request.output_dir / "nvd_raw_fastqc_inventory_mqc.yaml",
@@ -405,20 +409,44 @@ def write_software_versions(path: Path, source_identity: SourceIdentity) -> None
     )
 
 
-def write_roster(path: Path, samples: Sequence[RosterSample]) -> None:
+def write_roster(
+    path: Path,
+    samples: Sequence[RosterSample],
+    raw_fastqc: Sequence[FastqcReceipt],
+) -> None:
+    read_ends_by_sample: dict[str, set[ReadEnd]] = {}
+    for unit in raw_fastqc:
+        read_ends_by_sample.setdefault(unit.sample_id, set()).add(unit.read_end)
+
+    data: dict[str, dict[str, object]] = {}
+    for sample in samples:
+        row = sample.model_dump(mode="json", exclude={"sample_id"})
+        read_ends = read_ends_by_sample.get(sample.sample_id, set())
+        may_refine_sra_structure = (
+            sample.source is ReadSource.SRA and sample.read_structure == "unknown"
+        )
+        if may_refine_sra_structure and {
+            ReadEnd.R1,
+            ReadEnd.R2,
+        }.issubset(read_ends):
+            row["read_structure"] = "paired"
+        elif may_refine_sra_structure and read_ends == {ReadEnd.SINGLE}:
+            row["read_structure"] = "single"
+        data[sample.sample_id] = row
+
     path.write_text(
         yaml.safe_dump(
             {
                 "id": "nvd_sample_roster",
                 "section_name": "Sample Roster",
-                "description": "Resolved sample roster from input resolution.",
+                "description": "Samples and read inputs for this run.",
                 "plot_type": "table",
-                "data": {
-                    sample.sample_id: sample.model_dump(
-                        mode="json",
-                        exclude={"sample_id"},
-                    )
-                    for sample in samples
+                "data": data,
+                "headers": {
+                    "read_structure": {
+                        "title": "Read structure",
+                        "scale": False,
+                    },
                 },
             },
             sort_keys=False,
@@ -455,6 +483,8 @@ def write_domain_sections(
 ) -> None:
     filenames = {
         "nvd_higher_risk_taxonomic_findings": "nvd_higher_risk_taxonomic_findings_mqc.yaml",
+        "nvd_strongest_taxonomic_signals": "nvd_strongest_taxonomic_signals_mqc.yaml",
+        "nvd_faintest_taxonomic_signals": "nvd_faintest_taxonomic_signals_mqc.yaml",
         "nvd_target_enrichment": "nvd_target_enrichment_mqc.yaml",
         "nvd_depletion": "nvd_depletion_mqc.yaml",
         "nvd_fastx_profiles": "nvd_fastx_profiles_mqc.yaml",
@@ -491,6 +521,8 @@ def write_domain_sections(
                     column: header.model_dump(mode="json", exclude_none=True)
                     for column, header in section.headers.items()
                 }
+            if section.first_column_title is not None:
+                content["pconfig"] = {"col1_header": section.first_column_title}
         elif isinstance(section, LineGraphSection):
             content["data"] = section.data
             content["pconfig"] = {

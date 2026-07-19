@@ -4,11 +4,17 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from py_nvd.multiqc_domains import higher_risk_taxonomic_findings_section
+from py_nvd.multiqc_domains import (
+    higher_risk_taxonomic_findings_section,
+    taxonomy_sections,
+)
 from py_nvd.multiqc_packages import ReportPackage, TaxonBigTableReceipt
 from py_nvd.multiqc_taxonomy import (
+    ParsedTaxonBigTable,
     collect_taxon_big_tables,
+    faintest_taxon_rows,
     higher_risk_taxon_rows,
+    strongest_taxon_rows,
 )
 
 if TYPE_CHECKING:
@@ -41,6 +47,41 @@ def write_taxon_package(
     return ReportPackage(
         root=root,
         receipt=TaxonBigTableReceipt(sample_id=sample_id),
+    )
+
+
+def taxon_row(
+    sample_id: str,
+    taxon_name: str,
+    *,
+    taxid: int,
+    taxon_crumbs: str,
+    risk_group: str = "",
+) -> tuple[str, ...]:
+    return (
+        sample_id,
+        taxon_name,
+        "species",
+        "strong",
+        taxon_crumbs,
+        taxon_crumbs,
+        "2",
+        str(taxid),
+        risk_group,
+        "200",
+        "400",
+        "2",
+        "0",
+        "0",
+        "0",
+        "0",
+        "0",
+        "0",
+        "2",
+        "0",
+        "0",
+        "multi_query_strong_support",
+        f"2 strong query assignments support {taxon_name} (species).",
     )
 
 
@@ -210,20 +251,21 @@ def test_higher_risk_section_exposes_the_taxon_big_table_columns(
     assert section.section_name == "Higher-Risk Taxonomic Findings"
     assert section.description == (
         "Showing 1 of 1 WHO risk group 2-4 findings. "
-        "Complete results: taxon_big_table.tsv."
+        "Rows may also appear in the signal-strength views. "
+        "All taxon signals are detailed in the Taxon Big Table. "
+        "Queries supporting each taxon are detailed in the Query Big Table."
     )
     assert tuple(section.headers) == (
         "taxon_name",
-        "taxid",
         "taxon_rank",
-        "who_risk_group",
         "support_tier",
-        "support_note",
         "taxon_crumbs",
         "relative_crumbs_percent",
-        "total_crumbs_score",
         "supporting_query_count",
+        "taxid",
+        "who_risk_group",
         "total_query_span",
+        "total_crumbs_score",
         "strong_query_count",
         "moderate_query_count",
         "weak_query_count",
@@ -235,6 +277,195 @@ def test_higher_risk_section_exposes_the_taxon_big_table_columns(
         "supporting_merged_pair_count",
         "supporting_single_read_count",
         "support_tier_rule",
+        "support_note",
         "problem",
         "validation_details",
     )
+
+
+def test_blank_optional_risk_group_does_not_invalidate_higher_risk_rows(
+    tmp_path: Path,
+) -> None:
+    package = write_taxon_package(
+        tmp_path / "sample_a",
+        sample_id="sample_A",
+        rows=(
+            taxon_row(
+                "sample_A",
+                "Higher-risk taxon",
+                taxid=101,
+                taxon_crumbs="12.0",
+                risk_group="RG2",
+            ),
+            taxon_row(
+                "sample_A",
+                "Unannotated family",
+                taxid=202,
+                taxon_crumbs="3.0",
+            ),
+        ),
+    )
+
+    tables = collect_taxon_big_tables((package,))
+    rows, eligible_count = higher_risk_taxon_rows(tables)
+
+    assert isinstance(tables[0], ParsedTaxonBigTable)
+    assert eligible_count == 1
+    assert [row.taxon_name for row in rows] == ["Higher-risk taxon"]
+
+
+def test_strongest_and_faintest_taxon_rows_are_bounded_per_sample(
+    tmp_path: Path,
+) -> None:
+    sample_a = write_taxon_package(
+        tmp_path / "sample_a",
+        sample_id="sample_A",
+        rows=(
+            taxon_row(
+                "sample_A",
+                "A strongest",
+                taxid=101,
+                taxon_crumbs="20.0",
+            ),
+            taxon_row(
+                "sample_A",
+                "A faintest",
+                taxid=102,
+                taxon_crumbs="1.0",
+            ),
+            taxon_row(
+                "sample_A",
+                "A zero",
+                taxid=103,
+                taxon_crumbs="0.0",
+            ),
+            taxon_row(
+                "sample_A",
+                "A unknown",
+                taxid=104,
+                taxon_crumbs="",
+            ),
+        ),
+    )
+    sample_b = write_taxon_package(
+        tmp_path / "sample_b",
+        sample_id="sample_B",
+        rows=(
+            taxon_row(
+                "sample_B",
+                "B strongest",
+                taxid=201,
+                taxon_crumbs="8.0",
+            ),
+            taxon_row(
+                "sample_B",
+                "B faintest",
+                taxid=202,
+                taxon_crumbs="0.5",
+            ),
+        ),
+    )
+    tables = collect_taxon_big_tables((sample_a, sample_b))
+
+    strongest, strongest_eligible = strongest_taxon_rows(
+        tables,
+        max_rows_per_sample=1,
+    )
+    faintest, faintest_eligible = faintest_taxon_rows(
+        tables,
+        max_rows_per_sample=1,
+    )
+
+    assert strongest_eligible == 4
+    assert [row.taxon_name for row in strongest] == ["A strongest", "B strongest"]
+    assert faintest_eligible == 4
+    assert [row.taxon_name for row in faintest] == ["A faintest", "B faintest"]
+
+
+def test_taxonomy_sections_lead_with_risk_strongest_and_faintest_views(
+    tmp_path: Path,
+) -> None:
+    package = write_taxon_package(
+        tmp_path / "sample_a",
+        sample_id="sample_A",
+        rows=(
+            taxon_row(
+                "sample_A",
+                "Taxon alpha",
+                taxid=101,
+                taxon_crumbs="8.5",
+                risk_group="RG3",
+            ),
+        ),
+    )
+
+    sections = taxonomy_sections((package,))
+
+    assert tuple(sections) == (
+        "nvd_higher_risk_taxonomic_findings",
+        "nvd_strongest_taxonomic_signals",
+        "nvd_faintest_taxonomic_signals",
+    )
+    assert sections["nvd_strongest_taxonomic_signals"].section_name == (
+        "Strongest Taxonomic Signals"
+    )
+    assert sections["nvd_faintest_taxonomic_signals"].section_name == (
+        "Faintest Taxonomic Signals"
+    )
+    for section in sections.values():
+        assert "taxon_big_table.tsv" not in section.description
+        assert "All taxon signals are detailed in the Taxon Big Table." in (
+            section.description
+        )
+        assert (
+            "Queries supporting each taxon are detailed in the Query Big Table."
+            in section.description
+        )
+    for section_id in (
+        "nvd_strongest_taxonomic_signals",
+        "nvd_faintest_taxonomic_signals",
+    ):
+        assert "Taxon CRUMBS greater than zero" in sections[section_id].description
+        assert "positive taxon signals" not in sections[section_id].description
+
+
+def test_default_signal_budgets_keep_ten_strongest_and_five_faintest(
+    tmp_path: Path,
+) -> None:
+    package = write_taxon_package(
+        tmp_path / "sample_a",
+        sample_id="sample_A",
+        rows=tuple(
+            taxon_row(
+                "sample_A",
+                f"Signal {signal}",
+                taxid=100 + signal,
+                taxon_crumbs=str(signal),
+            )
+            for signal in range(1, 13)
+        ),
+    )
+    tables = collect_taxon_big_tables((package,))
+
+    strongest, _strongest_eligible = strongest_taxon_rows(tables)
+    faintest, _faintest_eligible = faintest_taxon_rows(tables)
+
+    assert [row.taxon_name for row in strongest] == [
+        "Signal 12",
+        "Signal 11",
+        "Signal 10",
+        "Signal 9",
+        "Signal 8",
+        "Signal 7",
+        "Signal 6",
+        "Signal 5",
+        "Signal 4",
+        "Signal 3",
+    ]
+    assert [row.taxon_name for row in faintest] == [
+        "Signal 1",
+        "Signal 2",
+        "Signal 3",
+        "Signal 4",
+        "Signal 5",
+    ]
