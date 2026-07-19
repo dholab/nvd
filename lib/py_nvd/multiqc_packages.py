@@ -38,6 +38,7 @@ class Domain(StrEnum):
     DEPLETION = "depletion"
     FASTX = "fastx"
     ASSEMBLY = "assembly"
+    QUERY_PREPARATION = "query_preparation"
 
 
 class ArtifactType(StrEnum):
@@ -48,6 +49,7 @@ class ArtifactType(StrEnum):
     ELIGIBILITY = "eligibility"
     LONG_READ_ELIGIBILITY = "long_read_eligibility"
     UNION_SUMMARY = "union_summary"
+    PREPARED_QUERY_BATCHES = "prepared_query_batches"
 
 
 DeaconDomain: TypeAlias = Literal[Domain.TARGET_ENRICHMENT, Domain.DEPLETION]
@@ -184,12 +186,31 @@ class UnionReceipt(ReceiptBase):
         return (self.summary,)
 
 
+class PreparedQueryBatchesReceipt(ReceiptBase):
+    """One producer summary of prepared query batches for a sample."""
+
+    domain: Literal["query_preparation"] = Domain.QUERY_PREPARATION.value
+    artifact_type: Literal["prepared_query_batches"] = (
+        ArtifactType.PREPARED_QUERY_BATCHES.value
+    )
+    summary: Literal["summary.payload"] = "summary.payload"
+
+    @property
+    def logical_key(self) -> tuple[str, ...]:
+        return (self.domain, self.artifact_type, self.sample_id)
+
+    @property
+    def payload_names(self) -> tuple[str, ...]:
+        return (self.summary,)
+
+
 ReportReceipt: TypeAlias = Annotated[
     DeaconReceipt
     | ProfileReceipt
     | EligibilityReceipt
     | LongReadEligibilityReceipt
-    | UnionReceipt,
+    | UnionReceipt
+    | PreparedQueryBatchesReceipt,
     Field(discriminator="artifact_type"),
 ]
 REPORT_RECEIPT = TypeAdapter(ReportReceipt)

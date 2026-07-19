@@ -58,6 +58,57 @@ def run_nextflow(
     )
 
 
+def test_standard_mode_emits_prepared_query_summary_for_no_contig_sample(
+    tmp_path: Path,
+) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    lib = tmp_path / "lib"
+    lib.mkdir()
+    shutil.copy2(ROOT / "lib" / "NvdUtils.groovy", lib / "NvdUtils.groovy")
+    target_index = tmp_path / "target.idx"
+    target_index.touch()
+    depletion_index = tmp_path / "depletion.idx"
+    depletion_index.touch()
+
+    workflow = tmp_path / "main.nf"
+    workflow.write_text(
+        f"""\
+nextflow.enable.dsl = 2
+
+include {{ PREPARE_BLAST_QUERIES }} from '{PREPARE_BLAST_QUERIES}'
+
+params.experimental = false
+
+workflow {{
+    PREPARE_BLAST_QUERIES(
+        Channel.empty(),
+        Channel.of(tuple('sample_A', 'illumina')),
+        Channel.empty(),
+        Channel.empty(),
+        Channel.value(file('{target_index}')),
+        Channel.value(tuple(false, file('{depletion_index}'))),
+    )
+
+    PREPARE_BLAST_QUERIES.out.blast_query_summaries.view {{ sample_id, summary ->
+        "SUMMARY: ${{sample_id}}:${{summary.name}}"
+    }}
+}}
+""",
+        encoding="utf-8",
+    )
+
+    completed = run_nextflow(workflow, bin_dir=bin_dir)
+    diagnostics = f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}"
+    assert completed.returncode == 0, diagnostics
+    assert "SUMMARY: sample_A:sample_A.blast_query_batches.tsv" in completed.stdout
+    summaries = sorted(tmp_path.glob("work/**/sample_A.blast_query_batches.tsv"))
+    assert summaries, diagnostics
+    rows = summaries[-1].read_text(encoding="utf-8").splitlines()
+    assert len(rows) == 5
+    assert all("\t0\tfalse\tfalse\t" in row for row in rows[1:])
+
+
 def write_process_contig_fakes(bin_dir: Path) -> None:
     write_executable(
         bin_dir / "collect_contigs.py",

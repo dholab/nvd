@@ -9,9 +9,11 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
+from py_nvd.multiqc_packages import PreparedQueryBatchesReceipt, write_package
 from py_nvd.multiqc_report import (
     CompileRequest,
     ReportConfiguration,
+    ReportRoots,
     build_multiqc_inputs,
     parse_fastqc_packages,
     parse_roster,
@@ -213,6 +215,83 @@ def test_no_observed_fastqc_is_valid_and_invents_no_state(tmp_path: Path) -> Non
     assert "missing" not in generated_text.lower()
     assert "failed" not in generated_text.lower()
     assert "skipped" not in generated_text.lower()
+
+
+def test_compiler_renders_prepared_query_batches_and_localizes_invalid_payload(
+    tmp_path: Path,
+) -> None:
+    fastqc_root = tmp_path / "fastqc_packages"
+    fastqc_root.mkdir()
+    package_root = tmp_path / "query_preparation_packages"
+    package_root.mkdir()
+
+    valid_summary = tmp_path / "sample_A.blast_query_batches.tsv"
+    valid_summary.write_text(
+        "sample_id\tplatform\tquery_class\tquery_source\tn_query_sequences\tquery_fasta_present\tquery_lookup_present\tproducer_note\n"
+        "sample_A\tillumina\tshort_assembly_contig\tcontig\t2\ttrue\ttrue\tignored\n"
+        "sample_A\tillumina\tlong_assembly_contig\tcontig\t0\ttrue\ttrue\tignored\n"
+        "sample_A\tillumina\toverlap_merged_pair\tread_query\t0\tfalse\tfalse\tignored\n"
+        "sample_A\tillumina\tsingle_read\tread_query\t0\tfalse\tfalse\tignored\n",
+        encoding="utf-8",
+    )
+    valid_receipt = PreparedQueryBatchesReceipt(sample_id="sample_A")
+    write_package(valid_receipt, (valid_summary,), output_root=package_root)
+
+    invalid_summary = tmp_path / "sample_B.blast_query_batches.tsv"
+    invalid_summary.write_text("wrong\nvalue\n", encoding="utf-8")
+    invalid_receipt = PreparedQueryBatchesReceipt(sample_id="sample_B.label")
+    write_package(invalid_receipt, (invalid_summary,), output_root=package_root)
+
+    output_dir = build_multiqc_inputs(
+        CompileRequest(
+            roster_path=write_roster(tmp_path / "resolved_reads.jsonl"),
+            version_path=write_version(tmp_path / "nvd_version.txt"),
+            fastqc_root=fastqc_root,
+            output_dir=tmp_path / "nvd_inputs",
+            configuration=ReportConfiguration(experimental_enabled=False),
+            report_roots=ReportRoots(query_preparation=package_root),
+        ),
+    )
+
+    manifest = read_manifest(output_dir)
+    assert {
+        (receipt["domain"], receipt["artifact_type"], receipt["sample_id"])
+        for receipt in manifest["report_packages"]
+    } == {
+        ("query_preparation", "prepared_query_batches", "sample_A"),
+        ("query_preparation", "prepared_query_batches", "sample_B.label"),
+    }
+    assert "nvd_prepared_blast_query_batches" in manifest["sections"]
+
+    section = yaml.safe_load(
+        (output_dir / "nvd_prepared_blast_query_batches_mqc.yaml").read_text(
+            encoding="utf-8",
+        ),
+    )
+    assert section["section_name"] == "Prepared BLAST Query Batches"
+    assert section["headers"]["platform"]["hidden"] is True
+    assert section["headers"]["validation_details"]["hidden"] is True
+    assert section["data"]["sample_A | short_assembly_contig"] == {
+        "query_class": "Short assembly contig",
+        "sequence_type": "Assembly contig",
+        "availability": "enabled",
+        "query_sequences": 2,
+        "platform": "illumina",
+    }
+    assert section["data"]["sample_A | long_assembly_contig"]["query_sequences"] == 0
+    assert section["data"]["sample_A | single_read"] == {
+        "query_class": "Single read",
+        "sequence_type": "Unassembled read",
+        "availability": "disabled",
+        "platform": "illumina",
+    }
+    assert section["data"]["sample_B.label"]["availability"] == "invalid"
+    assert section["data"]["sample_B.label"]["problem"] == (
+        "Prepared query summary could not be read"
+    )
+    assert section["data"]["sample_B.label"]["validation_details"]
+    assert "SUMMARIZE_BLAST_QUERY_BATCHES" in section["description"]
+    assert "producer_note" not in json.dumps(section)
 
 
 def test_compiler_rejects_duplicate_logical_key_unknown_sample_and_malformed_receipt(

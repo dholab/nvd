@@ -428,6 +428,7 @@ def assert_successful_nvd_multiqc_outputs(
         "nvd_fastx_single_read_length_distribution_mqc.yaml",
         "nvd_fastx_quality_distribution_mqc.yaml",
         "nvd_assembly_mqc.yaml",
+        "nvd_prepared_blast_query_batches_mqc.yaml",
     ]
     if experimental:
         expected_domain_inputs.append(

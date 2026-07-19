@@ -23,6 +23,7 @@ def main() -> None:
     parser.add_argument("--depletion-root", type=Path)
     parser.add_argument("--fastx-root", type=Path)
     parser.add_argument("--assembly-root", type=Path)
+    parser.add_argument("--query-preparation-root", type=Path)
     parser.add_argument(
         "--experimental-enabled",
         choices=("true", "false"),
@@ -63,6 +64,7 @@ def main() -> None:
                 depletion=args.depletion_root,
                 fastx=args.fastx_root,
                 assembly=args.assembly_root,
+                query_preparation=args.query_preparation_root,
             ),
         ),
     )

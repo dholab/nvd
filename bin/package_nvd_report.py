@@ -11,6 +11,7 @@ from py_nvd.multiqc_packages import (
     Domain,
     EligibilityReceipt,
     LongReadEligibilityReceipt,
+    PreparedQueryBatchesReceipt,
     ProfileReceipt,
     UnionReceipt,
     write_package,
@@ -62,6 +63,10 @@ def build_parser() -> argparse.ArgumentParser:
     union = commands.add_parser("union")
     union.add_argument("--sample-id", required=True)
     union.add_argument("--summary", type=Path, required=True)
+
+    prepared_query_batches = commands.add_parser("prepared-query-batches")
+    prepared_query_batches.add_argument("--sample-id", required=True)
+    prepared_query_batches.add_argument("--summary", type=Path, required=True)
     return parser
 
 
@@ -103,8 +108,11 @@ def main() -> None:
     elif args.command == "long-read-eligibility":
         receipt = LongReadEligibilityReceipt(sample_id=args.sample_id)
         payloads = (args.summary,)
-    else:
+    elif args.command == "union":
         receipt = UnionReceipt(sample_id=args.sample_id)
+        payloads = (args.summary,)
+    else:
+        receipt = PreparedQueryBatchesReceipt(sample_id=args.sample_id)
         payloads = (args.summary,)
     write_package(receipt, payloads, output_root=Path.cwd())
 

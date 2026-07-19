@@ -163,6 +163,7 @@ workflow NVD_MAIN {
     SHORT_READ_DENOVO_ASSEMBLY.out.eligibility_decisions.mix(LONG_READ_DENOVO_ENSEMBLY.out.eligibility_decisions),
     LONG_READ_DENOVO_ENSEMBLY.out.eligibility_summaries,
     LONG_READ_DENOVO_ENSEMBLY.out.union_summaries,
+    PREPARE_BLAST_QUERIES.out.blast_query_summaries,
     channel.value(file("${projectDir}/assets/multiqc_config.yaml")),
   )
 

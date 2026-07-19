@@ -2,9 +2,17 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Literal, TypeAlias
 
-from pydantic import BaseModel, ConfigDict, NonNegativeInt, PositiveInt, ValidationError
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    NonNegativeInt,
+    PositiveInt,
+    ValidationError,
+)
 
 from py_nvd.multiqc_assembly import AssemblyRow, assembly_rows
 from py_nvd.multiqc_fastx import (
@@ -15,6 +23,11 @@ from py_nvd.multiqc_fastx import (
     histogram_series,
 )
 from py_nvd.multiqc_packages import DeaconReceipt, ReportPackage
+from py_nvd.multiqc_query_preparation import (
+    PreparedQueryRow,
+    collect_prepared_query_summaries,
+    prepared_query_rows,
+)
 
 
 class SectionModel(BaseModel):
@@ -59,7 +72,15 @@ class ConfiguredSkipRow(SectionModel):
     reason: str
 
 
-ReportRow: TypeAlias = DeaconRow | FastxRow | AssemblyRow | ConfiguredSkipRow
+ReportRow: TypeAlias = (
+    DeaconRow | FastxRow | AssemblyRow | ConfiguredSkipRow | PreparedQueryRow
+)
+
+
+class TableColumn(SectionModel):
+    title: str
+    description: str | None = None
+    hidden: bool = False
 
 
 class TableSection(SectionModel):
@@ -67,6 +88,7 @@ class TableSection(SectionModel):
     description: str
     plot_type: Literal["table"] = "table"
     rows: tuple[ReportRow, ...]
+    headers: dict[str, TableColumn] = Field(default_factory=dict)
 
 
 class LineGraphSection(SectionModel):
@@ -82,6 +104,14 @@ class LineGraphSection(SectionModel):
 ReportSection: TypeAlias = TableSection | LineGraphSection
 
 
+@dataclass(frozen=True, slots=True)
+class DomainConfiguration:
+    experimental_enabled: bool
+    target_enrichment_enabled: bool
+    depletion_enabled: bool
+    assembly_enabled: bool
+
+
 def report_row_label(row: ReportRow) -> str:
     parts = [row.sample_id]
     if isinstance(row, DeaconRow) and row.query_class is not None:
@@ -92,6 +122,8 @@ def report_row_label(row: ReportRow) -> str:
                 parts.append(part)
     elif isinstance(row, AssemblyRow):
         parts.append(row.producer)
+    elif isinstance(row, PreparedQueryRow) and row.query_class_code is not None:
+        parts.append(row.query_class_code)
     return " | ".join(parts)
 
 
@@ -148,22 +180,21 @@ def build_domain_sections(
     *,
     packages: tuple[ReportPackage, ...],
     sample_ids: tuple[str, ...],
-    target_enrichment_enabled: bool,
-    depletion_enabled: bool,
-    assembly_enabled: bool,
+    sample_platforms: dict[str, str],
+    configuration: DomainConfiguration,
 ) -> dict[str, ReportSection]:
     sections: dict[str, ReportSection] = {}
     for domain, enabled, section_id, name, description in (
         (
             "target_enrichment",
-            target_enrichment_enabled,
+            configuration.target_enrichment_enabled,
             "nvd_target_enrichment",
             "Target Enrichment",
             "Target enrichment reads and bases retained or removed.",
         ),
         (
             "depletion",
-            depletion_enabled,
+            configuration.depletion_enabled,
             "nvd_depletion",
             "Depletion",
             "Depletion reads and bases retained or removed.",
@@ -242,7 +273,7 @@ def build_domain_sections(
                 sample_id: index for index, sample_id in enumerate(sample_ids)
             },
         )
-        if assembly_enabled
+        if configuration.assembly_enabled
         else configured_skip_rows(sample_ids, "assembly")
     )
     if assembly:
@@ -250,5 +281,44 @@ def build_domain_sections(
             section_name="Assembly Decision Metrics",
             description="Assembly eligibility, producer profiles, and union contribution.",
             rows=assembly,
+        )
+
+    prepared_query_summaries = collect_prepared_query_summaries(packages)
+    if prepared_query_summaries:
+        rows = prepared_query_rows(
+            prepared_query_summaries,
+            sample_order={
+                sample_id: index for index, sample_id in enumerate(sample_ids)
+            },
+            sample_platforms=sample_platforms,
+            assembly_enabled=configuration.assembly_enabled,
+            unassembled_read_querying_enabled=configuration.experimental_enabled,
+        )
+        sections["nvd_prepared_blast_query_batches"] = TableSection(
+            section_name="Prepared BLAST Query Batches",
+            description=(
+                "Prepared query batches observed for each sample and query class. "
+                "BLAST querying of unassembled reads alongside assembly contigs is "
+                "currently only available in experimental mode. Resume the run if "
+                "a summary is invalid; if the problem recurs, inspect the "
+                "SUMMARIZE_BLAST_QUERY_BATCHES process and include its logs when "
+                "reporting the issue."
+            ),
+            rows=rows,
+            headers={
+                "query_class": TableColumn(title="Query class"),
+                "sequence_type": TableColumn(title="Sequence type"),
+                "availability": TableColumn(title="Availability"),
+                "query_sequences": TableColumn(
+                    title="Prepared queries",
+                    description="Number of sequences in the prepared BLAST query batch.",
+                ),
+                "platform": TableColumn(title="Platform", hidden=True),
+                "problem": TableColumn(title="Problem"),
+                "validation_details": TableColumn(
+                    title="Validation details",
+                    hidden=True,
+                ),
+            },
         )
     return sections
