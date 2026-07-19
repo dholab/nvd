@@ -437,7 +437,7 @@ class NvdParams(BaseModel):
 
     date: str | None = Field(
         None,
-        description="Run date (computed by Nextflow)",
+        description="Deprecated compatibility parameter; ignored by the pipeline",
         json_schema_extra={"category": "Internal"},
     )
     resources: Path | None = Field(
