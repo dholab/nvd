@@ -20,12 +20,17 @@ def parse_args() -> argparse.Namespace:
 
 
 def query_ids(path: Path) -> set[str]:
-    with path.open(encoding="utf-8") as handle:
-        return {
-            fields[0]
-            for line in handle
-            if line.strip() and (fields := line.rstrip("\n").split("\t"))
-        }
+    if path.stat().st_size == 0:
+        return set()
+
+    with path.open(newline="", encoding="utf-8") as handle:
+        reader = csv.DictReader(handle, delimiter="\t")
+        if reader.fieldnames is None or "qseqid" not in reader.fieldnames:
+            message = (
+                f"annotated BLAST TSV {path.name!r} is missing required column 'qseqid'"
+            )
+            raise ValueError(message)
+        return {row["qseqid"] for row in reader}
 
 
 def main() -> None:
