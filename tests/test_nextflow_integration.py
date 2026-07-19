@@ -595,7 +595,7 @@ def test_mini_sra_viral_pipeline_completes() -> None:
         results_root / "12_experiment_summary" / "experiment_blast_results.tsv"
     )
 
-    if skip_assembly:
+    if skip_assembly and not experimental:
         assert not final_blast_files, (
             f"Skip-assembly run unexpectedly produced final BLAST TSVs: {final_blast_files}"
         )

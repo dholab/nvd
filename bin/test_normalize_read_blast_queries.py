@@ -139,6 +139,44 @@ IIII
     assert collapsed_row["sha256"] == hashlib.sha256(collapsed_sequence).hexdigest()
 
 
+def test_normalizes_paired_sra_spot_ids_without_colliding(tmp_path: Path) -> None:
+    read_1 = tmp_path / "reads_1.fastq"
+    read_1.write_text(
+        "@SRR38321624.90946 1 length=4\nACGT\n+\nIIII\n",
+        encoding="utf-8",
+    )
+    read_2 = tmp_path / "reads_2.fastq"
+    read_2.write_text(
+        "@SRR38321624.90946 2 length=4\nTGCA\n+\nIIII\n",
+        encoding="utf-8",
+    )
+
+    main(
+        [
+            "--sample-id",
+            "sample-1",
+            "--query-class",
+            "single_read",
+            "--producer",
+            "source_read",
+            "--fastq",
+            str(read_1),
+            "--fastq",
+            str(read_2),
+            "--support-count-policy",
+            "abundance",
+            "--output-dir",
+            str(tmp_path),
+        ],
+    )
+
+    rows = lookup_rows(tmp_path / "sample-1.single_read.query_sequences.sqlite")
+    assert {row["source_id"] for row in rows} == {
+        "SRR38321624.90946/1",
+        "SRR38321624.90946/2",
+    }
+
+
 def test_preserves_existing_mate_suffixes_in_casava_labels(tmp_path: Path) -> None:
     vsearch_fasta = tmp_path / "uniques.fasta"
     vsearch_fasta.write_text(
@@ -154,6 +192,78 @@ def test_preserves_existing_mate_suffixes_in_casava_labels(tmp_path: Path) -> No
         "LH00642:196:23L3KYLT3:2:2282:37185:27261/1",
         "LH00642:196:23L3KYLT3:2:2282:37185:27261/2",
     ]
+
+
+def test_preserves_sra_read_ordinals_from_vsearch_representative_comments(
+    tmp_path: Path,
+) -> None:
+    vsearch_fasta = tmp_path / "uniques.fasta"
+    vsearch_fasta.write_text(
+        ">SRR38321624.90946 1 length=4;size=1\nACGT\n"
+        ">SRR38321624.90946 2 length=4;size=1\nTGCA\n",
+        encoding="utf-8",
+    )
+
+    with vsearch_fasta.open(encoding="utf-8") as handle:
+        uniques = parse_vsearch_fasta(handle)
+
+    assert [unique.source_id for unique in uniques] == [
+        "SRR38321624.90946/1",
+        "SRR38321624.90946/2",
+    ]
+    expected_query_count = 2
+    assert (
+        len(
+            normalize_unique_reads(
+                uniques,
+                sample_id="sample-1",
+                query_class="single_read",
+                producer="source_read",
+                support_count_policy="abundance",
+            ),
+        )
+        == expected_query_count
+    )
+
+
+def test_preserves_ena_original_name_mates_from_vsearch_comments(
+    tmp_path: Path,
+) -> None:
+    vsearch_fasta = tmp_path / "uniques.fasta"
+    vsearch_fasta.write_text(
+        ">ERR17363849.10102 instrument:run:flowcell:1/1;size=1\nACGT\n"
+        ">ERR17363849.10102 instrument:run:flowcell:1/2;size=1\nTGCA\n",
+        encoding="utf-8",
+    )
+
+    with vsearch_fasta.open(encoding="utf-8") as handle:
+        uniques = parse_vsearch_fasta(handle)
+
+    assert [unique.source_id for unique in uniques] == [
+        "ERR17363849.10102/1",
+        "ERR17363849.10102/2",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("header", "expected_source_id"),
+    [
+        ("custom-read 1 length=4;size=1", "custom-read"),
+        ("SRR38321624.90946 original-name;size=1", "SRR38321624.90946"),
+    ],
+)
+def test_does_not_infer_sra_mates_without_an_explicit_archive_ordinal(
+    tmp_path: Path,
+    header: str,
+    expected_source_id: str,
+) -> None:
+    vsearch_fasta = tmp_path / "uniques.fasta"
+    vsearch_fasta.write_text(f">{header}\nACGT\n", encoding="utf-8")
+
+    with vsearch_fasta.open(encoding="utf-8") as handle:
+        uniques = parse_vsearch_fasta(handle)
+
+    assert uniques[0].source_id == expected_source_id
 
 
 def test_discards_non_casava_comments_from_source_ids(tmp_path: Path) -> None:
@@ -188,6 +298,23 @@ def test_rejects_conflicting_suffix_and_casava_mate(tmp_path: Path) -> None:
     vsearch_fasta = tmp_path / "uniques.fasta"
     vsearch_fasta.write_text(
         ">LH00642:196:23L3KYLT3:2:2282:37185:27261/1 2:N:0:INDEX;size=1\nACGT\n",
+        encoding="utf-8",
+    )
+
+    with (
+        vsearch_fasta.open(encoding="utf-8") as handle,
+        pytest.raises(
+            ReadQueryNormalizationError,
+            match="conflicting mate annotations",
+        ),
+    ):
+        parse_vsearch_fasta(handle)
+
+
+def test_rejects_conflicting_sra_mate_annotations(tmp_path: Path) -> None:
+    vsearch_fasta = tmp_path / "uniques.fasta"
+    vsearch_fasta.write_text(
+        ">SRR38321624.90946/1 2 length=4;size=1\nACGT\n",
         encoding="utf-8",
     )
 
