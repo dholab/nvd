@@ -101,10 +101,6 @@ def test_read_only_sample_accepts_empty_count_and_coverage_lists(
         ],
     )
 
-    lib = tmp_path / "lib"
-    lib.mkdir()
-    shutil.copy2(ROOT / "lib" / "NvdUtils.groovy", lib / "NvdUtils.groovy")
-
     workflow = tmp_path / "main.nf"
     workflow.write_text(
         f"""\
@@ -112,8 +108,6 @@ nextflow.enable.dsl = 2
 
 include {{ ADD_READ_COUNTS_TO_BLAST }} from '{UTILS_MODULE}'
 include {{ ESTIMATE_CRUMBS_PROFILE }} from '{CRUMBS_MODULE}'
-
-params.no_enrichment = true
 
 workflow {{
     ADD_READ_COUNTS_TO_BLAST(
@@ -125,6 +119,8 @@ workflow {{
             [file('{lookup}')],
         )),
         Channel.value('run-test'),
+        Channel.value('blast-test'),
+        Channel.value('not_used'),
     )
 
     ESTIMATE_CRUMBS_PROFILE(
