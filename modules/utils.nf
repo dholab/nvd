@@ -124,12 +124,13 @@ process ADD_READ_COUNTS_TO_BLAST {
   input:
   tuple val(sample_id), path(blast_tsv), val(total_reads), path(contig_count_files), path(query_lookups)
   val run_id
+  val blast_db_version
+  val virus_index_version
 
   output:
   tuple val(sample_id), path("${sample_id}_blast.final.tsv")
 
   script:
-  def virus_index_version = NvdUtils.targetEnrichmentEnabled(params) ? params.virus_index_version : "not_used"
   def count_files = contig_count_files instanceof List ? contig_count_files : [contig_count_files]
   assert count_files.size() <= 1 : "Expected at most one mapped-count file for ${sample_id}, received ${count_files.size()}"
   def count_arg = count_files ? "--contig-counts ${count_files[0]}" : ""
@@ -142,7 +143,7 @@ process ADD_READ_COUNTS_TO_BLAST {
       ${lookup_args} \\
       --output ${sample_id}_blast.final.tsv \\
       --total-reads ${total_reads} \\
-      --blast-db-version '${params.blast_db_version}' \\
+      --blast-db-version '${blast_db_version}' \\
       --virus-index-version '${virus_index_version}' \\
       --run-id '${run_id}'
   """

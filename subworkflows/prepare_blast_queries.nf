@@ -13,11 +13,42 @@ workflow PREPARE_BLAST_QUERIES {
     ch_depletion_index  // tuple(use_depletion, path): resolved host/contaminant depletion index or sentinel
 
     main:
-    DEACON_FILTER_CONTIGS(
-        ch_contigs
-            .combine(ch_target_index)
-            .combine(ch_depletion_index)
-    )
+    def target_enrichment_enabled = NvdUtils.targetEnrichmentEnabled(params)
+    ch_contig_filter_inputs = ch_contigs
+        .combine(ch_target_index)
+        .combine(ch_depletion_index)
+        .map {
+            sample_id,
+            platform,
+            read_structure,
+            fasta,
+            query_lookup,
+            target_index,
+            use_depletion,
+            depletion_index ->
+
+            def policy = [
+                target_enrichment_enabled: target_enrichment_enabled,
+                target_abs_threshold: params.virus_abs_threshold,
+                target_rel_threshold: params.virus_rel_threshold,
+                depletion_enabled: use_depletion,
+                depletion_abs_threshold: use_depletion ? params.host_abs_threshold : null,
+                depletion_rel_threshold: use_depletion ? params.host_rel_threshold : null,
+            ].asImmutable()
+
+            tuple(
+                sample_id,
+                platform,
+                read_structure,
+                fasta,
+                query_lookup,
+                target_index,
+                policy,
+                depletion_index,
+            )
+        }
+
+    DEACON_FILTER_CONTIGS(ch_contig_filter_inputs)
 
     ch_deacon_by_content = DEACON_FILTER_CONTIGS.out.contigs.branch { _sample_id, _platform, _read_structure, fasta, _lookup ->
         nonempty: file(fasta).size() > 0

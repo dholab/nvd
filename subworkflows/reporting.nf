@@ -38,7 +38,17 @@ workflow REPORTING {
         .join(ch_contig_read_counts, by: 0)
         .join(ch_query_lookups, by: 0)
 
-    ADD_READ_COUNTS_TO_BLAST(ch_blast_finalize, run_id)
+    def target_enrichment_enabled = NvdUtils.targetEnrichmentEnabled(params)
+    ch_blast_db_version = Channel.value(params.blast_db_version)
+    ch_virus_index_version = Channel.value(
+        target_enrichment_enabled ? params.virus_index_version : "not_used"
+    )
+    ADD_READ_COUNTS_TO_BLAST(
+        ch_blast_finalize,
+        run_id,
+        ch_blast_db_version,
+        ch_virus_index_version,
+    )
 
     ch_split_blast_results = ADD_READ_COUNTS_TO_BLAST.out
         .multiMap { sample_id, blast_tsv ->
