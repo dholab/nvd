@@ -11,6 +11,7 @@ from py_nvd.multiqc_packages import (
     Domain,
     EligibilityReceipt,
     LongReadEligibilityReceipt,
+    MegablastQueryPartitionReceipt,
     PreparedQueryBatchesReceipt,
     ProfileReceipt,
     UnionReceipt,
@@ -56,6 +57,13 @@ if TYPE_CHECKING:
         (LongReadEligibilityReceipt(sample_id="sample_A"), 1),
         (UnionReceipt(sample_id="sample_A"), 1),
         (PreparedQueryBatchesReceipt(sample_id="sample_A"), 1),
+        (
+            MegablastQueryPartitionReceipt(
+                sample_id="sample_A",
+                query_class="short_assembly_contig",
+            ),
+            1,
+        ),
     ],
 )
 def test_receipts_round_trip_through_materialized_packages(
@@ -65,7 +73,8 @@ def test_receipts_round_trip_through_materialized_packages(
     | EligibilityReceipt
     | LongReadEligibilityReceipt
     | UnionReceipt
-    | PreparedQueryBatchesReceipt,
+    | PreparedQueryBatchesReceipt
+    | MegablastQueryPartitionReceipt,
     payload_count: int,
 ) -> None:
     payloads = tuple(tmp_path / f"source_{index}" for index in range(payload_count))

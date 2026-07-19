@@ -11,6 +11,7 @@ from py_nvd.multiqc_packages import (
     Domain,
     EligibilityReceipt,
     LongReadEligibilityReceipt,
+    MegablastQueryPartitionReceipt,
     PreparedQueryBatchesReceipt,
     ProfileReceipt,
     UnionReceipt,
@@ -67,6 +68,11 @@ def build_parser() -> argparse.ArgumentParser:
     prepared_query_batches = commands.add_parser("prepared-query-batches")
     prepared_query_batches.add_argument("--sample-id", required=True)
     prepared_query_batches.add_argument("--summary", type=Path, required=True)
+
+    megablast_query_partition = commands.add_parser("megablast-query-partition")
+    megablast_query_partition.add_argument("--sample-id", required=True)
+    megablast_query_partition.add_argument("--query-class", required=True)
+    megablast_query_partition.add_argument("--summary", type=Path, required=True)
     return parser
 
 
@@ -111,8 +117,14 @@ def main() -> None:
     elif args.command == "union":
         receipt = UnionReceipt(sample_id=args.sample_id)
         payloads = (args.summary,)
-    else:
+    elif args.command == "prepared-query-batches":
         receipt = PreparedQueryBatchesReceipt(sample_id=args.sample_id)
+        payloads = (args.summary,)
+    else:
+        receipt = MegablastQueryPartitionReceipt(
+            sample_id=args.sample_id,
+            query_class=args.query_class,
+        )
         payloads = (args.summary,)
     write_package(receipt, payloads, output_root=Path.cwd())
 

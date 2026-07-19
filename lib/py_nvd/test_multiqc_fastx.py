@@ -225,6 +225,7 @@ def test_domain_sections_split_length_histograms_by_fastx_stage(
             target_enrichment_enabled=False,
             depletion_enabled=False,
             assembly_enabled=False,
+            blast_enabled=True,
         ),
     )
 

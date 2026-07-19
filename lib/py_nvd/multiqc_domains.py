@@ -15,6 +15,12 @@ from pydantic import (
 )
 
 from py_nvd.multiqc_assembly import AssemblyRow, assembly_rows
+from py_nvd.multiqc_blast import (
+    BlastDisabledRow,
+    BlastTaskRow,
+    blast_task_rows,
+    collect_megablast_query_partitions,
+)
 from py_nvd.multiqc_fastx import (
     FASTX_MAX_POINTS,
     FastxRow,
@@ -73,7 +79,13 @@ class ConfiguredSkipRow(SectionModel):
 
 
 ReportRow: TypeAlias = (
-    DeaconRow | FastxRow | AssemblyRow | ConfiguredSkipRow | PreparedQueryRow
+    DeaconRow
+    | FastxRow
+    | AssemblyRow
+    | ConfiguredSkipRow
+    | PreparedQueryRow
+    | BlastTaskRow
+    | BlastDisabledRow
 )
 
 
@@ -81,6 +93,7 @@ class TableColumn(SectionModel):
     title: str
     description: str | None = None
     hidden: bool = False
+    format: str | None = None
 
 
 class TableSection(SectionModel):
@@ -110,6 +123,7 @@ class DomainConfiguration:
     target_enrichment_enabled: bool
     depletion_enabled: bool
     assembly_enabled: bool
+    blast_enabled: bool
 
 
 def report_row_label(row: ReportRow) -> str:
@@ -122,7 +136,10 @@ def report_row_label(row: ReportRow) -> str:
                 parts.append(part)
     elif isinstance(row, AssemblyRow):
         parts.append(row.producer)
-    elif isinstance(row, PreparedQueryRow) and row.query_class_code is not None:
+    elif (
+        isinstance(row, (PreparedQueryRow, BlastTaskRow))
+        and row.query_class_code is not None
+    ):
         parts.append(row.query_class_code)
     return " | ".join(parts)
 
@@ -173,6 +190,54 @@ def configured_skip_rows(
             reason=f"{label} disabled by configuration",
         )
         for sample_id in sample_ids
+    )
+
+
+def blast_task_breakdown_section(
+    packages: tuple[ReportPackage, ...],
+    *,
+    sample_ids: tuple[str, ...],
+    blast_enabled: bool,
+) -> TableSection | None:
+    description = (
+        "Queries are searched first with MEGABLAST. Queries without a MEGABLAST "
+        "match are forwarded to BLASTN."
+    )
+    if not blast_enabled:
+        return TableSection(
+            section_name="BLAST Task Breakdown",
+            description=description,
+            rows=(BlastDisabledRow(),),
+            headers={"notice": TableColumn(title="Run configuration")},
+        )
+
+    partitions = collect_megablast_query_partitions(packages)
+    if not partitions:
+        return None
+    return TableSection(
+        section_name="BLAST Task Breakdown",
+        description=description,
+        rows=blast_task_rows(
+            partitions,
+            sample_order={
+                sample_id: index for index, sample_id in enumerate(sample_ids)
+            },
+        ),
+        headers={
+            "query_class": TableColumn(title="Query class"),
+            "queries_searched": TableColumn(title="Queries searched"),
+            "matched_by_megablast": TableColumn(title="Matched by MEGABLAST"),
+            "forwarded_to_blastn": TableColumn(title="Forwarded to BLASTN"),
+            "forwarded_to_blastn_percentage": TableColumn(
+                title="Forwarded to BLASTN (%)",
+                format="{:,.1f}",
+            ),
+            "problem": TableColumn(title="Problem"),
+            "validation_details": TableColumn(
+                title="Validation details",
+                hidden=True,
+            ),
+        },
     )
 
 
@@ -321,4 +386,12 @@ def build_domain_sections(
                 ),
             },
         )
+
+    blast_section = blast_task_breakdown_section(
+        packages,
+        sample_ids=sample_ids,
+        blast_enabled=configuration.blast_enabled,
+    )
+    if blast_section is not None:
+        sections["nvd_blast_task_breakdown"] = blast_section
     return sections

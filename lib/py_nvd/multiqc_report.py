@@ -122,6 +122,7 @@ class ReportPlan(FrozenModel):
     target_enrichment_enabled: bool = True
     depletion_enabled: bool = True
     assembly_enabled: bool = True
+    blast_enabled: bool = True
 
 
 class PackageWarning(FrozenModel):
@@ -151,6 +152,7 @@ class ReportRoots:
     fastx: Path | None = None
     assembly: Path | None = None
     query_preparation: Path | None = None
+    blast: Path | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -159,6 +161,7 @@ class ReportConfiguration:
     target_enrichment_enabled: bool = True
     depletion_enabled: bool = True
     assembly_enabled: bool = True
+    blast_enabled: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -186,6 +189,7 @@ def build_multiqc_inputs(request: CompileRequest) -> Path:
             Domain.FASTX: request.report_roots.fastx,
             Domain.ASSEMBLY: request.report_roots.assembly,
             Domain.QUERY_PREPARATION: request.report_roots.query_preparation,
+            Domain.BLAST: request.report_roots.blast,
         },
         roster,
     )
@@ -206,6 +210,7 @@ def build_multiqc_inputs(request: CompileRequest) -> Path:
             target_enrichment_enabled=request.configuration.target_enrichment_enabled,
             depletion_enabled=request.configuration.depletion_enabled,
             assembly_enabled=request.configuration.assembly_enabled,
+            blast_enabled=request.configuration.blast_enabled,
         ),
     )
     sections = ["nvd_sample_roster"]
@@ -221,6 +226,7 @@ def build_multiqc_inputs(request: CompileRequest) -> Path:
             target_enrichment_enabled=request.configuration.target_enrichment_enabled,
             depletion_enabled=request.configuration.depletion_enabled,
             assembly_enabled=request.configuration.assembly_enabled,
+            blast_enabled=request.configuration.blast_enabled,
         ),
         source_identity=source_identity,
         samples=samples,
@@ -455,6 +461,7 @@ def write_domain_sections(
         "nvd_fastx_quality_distribution": "nvd_fastx_quality_distribution_mqc.yaml",
         "nvd_assembly": "nvd_assembly_mqc.yaml",
         "nvd_prepared_blast_query_batches": "nvd_prepared_blast_query_batches_mqc.yaml",
+        "nvd_blast_task_breakdown": "nvd_blast_task_breakdown_mqc.yaml",
     }
     for section_id, section in sections.items():
         content = {

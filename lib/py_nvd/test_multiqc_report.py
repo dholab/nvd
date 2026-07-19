@@ -9,7 +9,11 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
-from py_nvd.multiqc_packages import PreparedQueryBatchesReceipt, write_package
+from py_nvd.multiqc_packages import (
+    MegablastQueryPartitionReceipt,
+    PreparedQueryBatchesReceipt,
+    write_package,
+)
 from py_nvd.multiqc_report import (
     CompileRequest,
     ReportConfiguration,
@@ -134,6 +138,7 @@ def test_compiler_generates_minimal_manifest_and_custom_content(tmp_path: Path) 
             "target_enrichment_enabled": True,
             "depletion_enabled": True,
             "assembly_enabled": True,
+            "blast_enabled": True,
         },
         "source_identity": {"version": "3.3.0", "revision": "abc123"},
         "samples": [
@@ -292,6 +297,137 @@ def test_compiler_renders_prepared_query_batches_and_localizes_invalid_payload(
     assert section["data"]["sample_B.label"]["validation_details"]
     assert "SUMMARIZE_BLAST_QUERY_BATCHES" in section["description"]
     assert "producer_note" not in json.dumps(section)
+
+
+def test_compiler_renders_blast_task_breakdown_and_localizes_invalid_payload(
+    tmp_path: Path,
+) -> None:
+    fastqc_root = tmp_path / "fastqc_packages"
+    fastqc_root.mkdir()
+    package_root = tmp_path / "blast_packages"
+    package_root.mkdir()
+
+    valid_summary = tmp_path / "sample_A.megablast_query_partition.tsv"
+    valid_summary.write_text(
+        "sample_id\tquery_class\tqueries_in\tmegablast_accounted\tblastn_candidates\tproducer_note\n"
+        "sample_A\tshort_assembly_contig\t4\t2\t2\tignored\n",
+        encoding="utf-8",
+    )
+    valid_receipt = MegablastQueryPartitionReceipt(
+        sample_id="sample_A",
+        query_class="short_assembly_contig",
+    )
+    write_package(valid_receipt, (valid_summary,), output_root=package_root)
+
+    invalid_summary = tmp_path / "sample_B.megablast_query_partition.tsv"
+    invalid_summary.write_text("wrong\nvalue\n", encoding="utf-8")
+    invalid_receipt = MegablastQueryPartitionReceipt(
+        sample_id="sample_B.label",
+        query_class="long_assembly_contig",
+    )
+    write_package(invalid_receipt, (invalid_summary,), output_root=package_root)
+
+    output_dir = build_multiqc_inputs(
+        CompileRequest(
+            roster_path=write_roster(tmp_path / "resolved_reads.jsonl"),
+            version_path=write_version(tmp_path / "nvd_version.txt"),
+            fastqc_root=fastqc_root,
+            output_dir=tmp_path / "nvd_inputs",
+            configuration=ReportConfiguration(
+                experimental_enabled=False,
+                blast_enabled=True,
+            ),
+            report_roots=ReportRoots(blast=package_root),
+        ),
+    )
+
+    manifest = read_manifest(output_dir)
+    assert {
+        (
+            receipt["domain"],
+            receipt["artifact_type"],
+            receipt["sample_id"],
+            receipt["query_class"],
+        )
+        for receipt in manifest["report_packages"]
+    } == {
+        (
+            "blast",
+            "megablast_query_partition",
+            "sample_A",
+            "short_assembly_contig",
+        ),
+        (
+            "blast",
+            "megablast_query_partition",
+            "sample_B.label",
+            "long_assembly_contig",
+        ),
+    }
+    assert "nvd_blast_task_breakdown" in manifest["sections"]
+
+    section = yaml.safe_load(
+        (output_dir / "nvd_blast_task_breakdown_mqc.yaml").read_text(
+            encoding="utf-8",
+        ),
+    )
+    assert section["section_name"] == "BLAST Task Breakdown"
+    assert section["data"]["sample_A | short_assembly_contig"] == {
+        "query_class": "Short assembly contig",
+        "queries_searched": 4,
+        "matched_by_megablast": 2,
+        "forwarded_to_blastn": 2,
+        "forwarded_to_blastn_percentage": 50.0,
+    }
+    assert section["data"]["sample_B.label | long_assembly_contig"]["problem"] == (
+        "BLAST task breakdown could not be read"
+    )
+    assert section["headers"]["forwarded_to_blastn_percentage"]["title"] == (
+        "Forwarded to BLASTN (%)"
+    )
+    assert section["headers"]["forwarded_to_blastn_percentage"]["format"] == ("{:,.1f}")
+    assert section["headers"]["validation_details"]["hidden"] is True
+    assert section["description"] == (
+        "Queries are searched first with MEGABLAST. Queries without a MEGABLAST "
+        "match are forwarded to BLASTN."
+    )
+    assert "producer_note" not in json.dumps(section)
+
+
+def test_compiler_reports_blast_disabled_once_without_synthesizing_sample_rows(
+    tmp_path: Path,
+) -> None:
+    fastqc_root = tmp_path / "fastqc_packages"
+    fastqc_root.mkdir()
+
+    output_dir = build_multiqc_inputs(
+        CompileRequest(
+            roster_path=write_roster(tmp_path / "resolved_reads.jsonl"),
+            version_path=write_version(tmp_path / "nvd_version.txt"),
+            fastqc_root=fastqc_root,
+            output_dir=tmp_path / "nvd_inputs",
+            configuration=ReportConfiguration(
+                experimental_enabled=False,
+                blast_enabled=False,
+            ),
+        ),
+    )
+
+    manifest = read_manifest(output_dir)
+    assert manifest["report_plan"]["blast_enabled"] is False
+    assert "nvd_blast_task_breakdown" in manifest["sections"]
+    section = yaml.safe_load(
+        (output_dir / "nvd_blast_task_breakdown_mqc.yaml").read_text(
+            encoding="utf-8",
+        ),
+    )
+    assert section["data"] == {
+        "Run configuration": {
+            "notice": "BLAST searching was disabled for this run.",
+        },
+    }
+    assert "sample_A" not in section["data"]
+    assert "sample_B.label" not in section["data"]
 
 
 def test_compiler_rejects_duplicate_logical_key_unknown_sample_and_malformed_receipt(

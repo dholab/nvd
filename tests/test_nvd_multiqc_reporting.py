@@ -201,14 +201,23 @@ def write_query_batch_summary(path: Path) -> Path:
     return path
 
 
+def write_megablast_partition_summary(path: Path) -> Path:
+    path.write_text(
+        "sample_id\tquery_class\tqueries_in\tmegablast_accounted\tblastn_candidates\n"
+        "sample_A\tshort_assembly_contig\t4\t2\t2\n",
+        encoding="utf-8",
+    )
+    return path
+
+
 def nextflow_file(path: Path) -> str:
     escaped = str(path).replace("\\", "\\\\").replace("'", "\\'")
     return f"file('{escaped}')"
 
 
 def empty_domain_inputs(config: Path) -> str:
-    channels = ["Channel.value(false)" for _ in range(3)]
-    channels.extend("Channel.empty()" for _ in range(10))
+    channels = ["Channel.value(false)" for _ in range(4)]
+    channels.extend("Channel.empty()" for _ in range(11))
     channels.append(f"Channel.value(file('{config}'))")
     return ",\n        ".join(channels) + ","
 
@@ -337,7 +346,9 @@ workflow {{
         Channel.value(true),
         Channel.value(false),
         Channel.value(false),
+        Channel.value(true),
         Channel.of(tuple('sample_A', {nextflow_file(stats)})),
+        Channel.empty(),
         Channel.empty(),
         Channel.empty(),
         Channel.empty(),
@@ -401,6 +412,7 @@ workflow {{
         Channel.value(false),
         Channel.value(false),
         Channel.value(true),
+        Channel.value(true),
         Channel.empty(),
         Channel.empty(),
         Channel.empty(),
@@ -411,6 +423,7 @@ workflow {{
         Channel.empty(),
         Channel.empty(),
         Channel.of(tuple('sample_A', file('{summary}'))),
+        Channel.empty(),
         Channel.value(file('{config}')),
     )
 }}
@@ -438,12 +451,86 @@ workflow {{
     )
     assert sections, diagnostics
     section = yaml.safe_load(sections[-1].read_text(encoding="utf-8"))
-    assert section["data"]["sample_A | short_assembly_contig"][
-        "query_sequences"
-    ] == 2
-    assert section["data"]["sample_A | single_read"]["availability"] == (
-        "disabled"
+    assert section["data"]["sample_A | short_assembly_contig"]["query_sequences"] == 2
+    assert section["data"]["sample_A | single_read"]["availability"] == ("disabled")
+
+
+def test_megablast_partition_crosses_explicit_package_boundary(
+    tmp_path: Path,
+) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    copy_reporting_lib(tmp_path)
+    roster = write_roster(tmp_path / "resolved_reads.jsonl")
+    version = write_version(tmp_path / "nvd_version.txt")
+    summary = write_megablast_partition_summary(
+        tmp_path / "sample_A.short_assembly_contig.megablast_query_partition.tsv",
     )
+    config = ROOT / "assets" / "multiqc_config.yaml"
+    workflow = tmp_path / "main.nf"
+    workflow.write_text(
+        f"""\
+nextflow.enable.dsl = 2
+
+include {{ MULTIQC_BUNDLING }} from '{BUNDLING_SUBWORKFLOW}'
+
+params.results = '{tmp_path / "results"}'
+params.experimental = false
+workflow {{
+    MULTIQC_BUNDLING(
+        Channel.empty(),
+        Channel.empty(),
+        Channel.value(file('{roster}')),
+        Channel.value(file('{version}')),
+        Channel.value(false),
+        Channel.value(false),
+        Channel.value(false),
+        Channel.value(true),
+        Channel.value(true),
+        Channel.empty(),
+        Channel.empty(),
+        Channel.empty(),
+        Channel.empty(),
+        Channel.empty(),
+        Channel.empty(),
+        Channel.empty(),
+        Channel.empty(),
+        Channel.empty(),
+        Channel.empty(),
+        Channel.of(tuple('sample_A', 'short_assembly_contig', file('{summary}'))),
+        Channel.value(file('{config}')),
+    )
+}}
+""",
+        encoding="utf-8",
+    )
+
+    completed = run_nextflow(workflow, bin_dir=bin_dir)
+    diagnostics = f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}"
+    assert completed.returncode == 0, diagnostics
+    manifests = sorted(tmp_path.glob("work/**/nvd_report_manifest.json"))
+    assert manifests, diagnostics
+    manifest = json.loads(manifests[-1].read_text(encoding="utf-8"))
+    assert manifest["report_packages"] == [
+        {
+            "schema_version": "nvd.report-package/v1",
+            "domain": "blast",
+            "artifact_type": "megablast_query_partition",
+            "sample_id": "sample_A",
+            "query_class": "short_assembly_contig",
+            "summary": "summary.payload",
+        },
+    ]
+    sections = sorted(tmp_path.glob("work/**/nvd_blast_task_breakdown_mqc.yaml"))
+    assert sections, diagnostics
+    section = yaml.safe_load(sections[-1].read_text(encoding="utf-8"))
+    assert section["data"]["sample_A | short_assembly_contig"] == {
+        "query_class": "Short assembly contig",
+        "queries_searched": 4,
+        "matched_by_megablast": 2,
+        "forwarded_to_blastn": 2,
+        "forwarded_to_blastn_percentage": 50.0,
+    }
 
 
 def test_assembly_decision_without_profile_is_reported_as_absent(
@@ -475,6 +562,7 @@ workflow {{
         Channel.value(false),
         Channel.value(false),
         Channel.value(true),
+        Channel.value(true),
         Channel.empty(),
         Channel.empty(),
         Channel.empty(),
@@ -488,6 +576,7 @@ workflow {{
             100,
             'short_read_minimum_sequence_count',
         )),
+        Channel.empty(),
         Channel.empty(),
         Channel.empty(),
         Channel.empty(),
@@ -797,13 +886,21 @@ workflow {{
     data_dirs = sorted(tmp_path.glob("work/**/multiqc_data"))
     assert data_dirs, diagnostics
     assert "sample_A.fastq.raw.single.001" in read_native_fastqc_data(data_dirs[-1])
-    fastqc_rows = (data_dirs[-1] / "multiqc_fastqc.txt").read_text(
-        encoding="utf-8",
-    ).splitlines()
+    fastqc_rows = (
+        (data_dirs[-1] / "multiqc_fastqc.txt")
+        .read_text(
+            encoding="utf-8",
+        )
+        .splitlines()
+    )
     assert fastqc_rows[1].split("\t", 1)[0] == "sample_A.fastq.raw.single.001"
-    roster_rows = (data_dirs[-1] / "multiqc_nvd_sample_roster.txt").read_text(
-        encoding="utf-8",
-    ).splitlines()
+    roster_rows = (
+        (data_dirs[-1] / "multiqc_nvd_sample_roster.txt")
+        .read_text(
+            encoding="utf-8",
+        )
+        .splitlines()
+    )
     assert "sample_id" not in roster_rows[0].split("\t")
     assert roster_rows[1].split("\t", 1)[0] == sample_id
 

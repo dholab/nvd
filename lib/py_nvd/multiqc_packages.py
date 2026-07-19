@@ -39,6 +39,7 @@ class Domain(StrEnum):
     FASTX = "fastx"
     ASSEMBLY = "assembly"
     QUERY_PREPARATION = "query_preparation"
+    BLAST = "blast"
 
 
 class ArtifactType(StrEnum):
@@ -50,6 +51,7 @@ class ArtifactType(StrEnum):
     LONG_READ_ELIGIBILITY = "long_read_eligibility"
     UNION_SUMMARY = "union_summary"
     PREPARED_QUERY_BATCHES = "prepared_query_batches"
+    MEGABLAST_QUERY_PARTITION = "megablast_query_partition"
 
 
 DeaconDomain: TypeAlias = Literal[Domain.TARGET_ENRICHMENT, Domain.DEPLETION]
@@ -204,13 +206,33 @@ class PreparedQueryBatchesReceipt(ReceiptBase):
         return (self.summary,)
 
 
+class MegablastQueryPartitionReceipt(ReceiptBase):
+    """One MEGABLAST query partition summary for a query class."""
+
+    domain: Literal["blast"] = Domain.BLAST.value
+    artifact_type: Literal["megablast_query_partition"] = (
+        ArtifactType.MEGABLAST_QUERY_PARTITION.value
+    )
+    query_class: SafeName
+    summary: Literal["summary.payload"] = "summary.payload"
+
+    @property
+    def logical_key(self) -> tuple[str, ...]:
+        return (self.domain, self.artifact_type, self.sample_id, self.query_class)
+
+    @property
+    def payload_names(self) -> tuple[str, ...]:
+        return (self.summary,)
+
+
 ReportReceipt: TypeAlias = Annotated[
     DeaconReceipt
     | ProfileReceipt
     | EligibilityReceipt
     | LongReadEligibilityReceipt
     | UnionReceipt
-    | PreparedQueryBatchesReceipt,
+    | PreparedQueryBatchesReceipt
+    | MegablastQueryPartitionReceipt,
     Field(discriminator="artifact_type"),
 ]
 REPORT_RECEIPT = TypeAdapter(ReportReceipt)
