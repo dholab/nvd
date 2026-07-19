@@ -55,10 +55,13 @@ process NORMALIZE_READ_BLAST_QUERIES {
 }
 
 process SUMMARIZE_BLAST_QUERY_BATCHES {
-  /* Summarize experimental BLAST query batches, including absent query classes. */
+  /* Summarize prepared BLAST query batches, including absent query classes. */
 
   tag "${sample_id}"
   label "low"
+
+  errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
+  maxRetries 2
 
   input:
   tuple val(sample_id), val(platform), val(query_classes), path(query_fastas, stageAs: "query_fastas??????/*"), path(query_lookups, stageAs: "query_lookups??????/*")
@@ -89,6 +92,9 @@ process SUMMARIZE_EMPTY_BLAST_QUERY_BATCHES {
 
   tag "${sample_id}"
   label "low"
+
+  errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
+  maxRetries 2
 
   input:
   tuple val(sample_id), val(platform)

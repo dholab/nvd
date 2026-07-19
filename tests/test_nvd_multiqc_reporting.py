@@ -9,6 +9,8 @@ import stat
 import subprocess
 from pathlib import Path
 
+import yaml
+
 ROOT = Path(__file__).resolve().parents[1]
 BUNDLING_SUBWORKFLOW = ROOT / "subworkflows" / "multiqc_bundling"
 FASTQC_MODULE = ROOT / "modules" / "fastqc"
@@ -187,6 +189,18 @@ def write_roster(
     return path
 
 
+def write_query_batch_summary(path: Path) -> Path:
+    path.write_text(
+        "sample_id\tplatform\tquery_class\tquery_source\tn_query_sequences\tquery_fasta_present\tquery_lookup_present\n"
+        "sample_A\tillumina\tshort_assembly_contig\tcontig\t2\ttrue\ttrue\n"
+        "sample_A\tillumina\tlong_assembly_contig\tcontig\t0\tfalse\tfalse\n"
+        "sample_A\tillumina\toverlap_merged_pair\tread_query\t0\tfalse\tfalse\n"
+        "sample_A\tillumina\tsingle_read\tread_query\t0\tfalse\tfalse\n",
+        encoding="utf-8",
+    )
+    return path
+
+
 def nextflow_file(path: Path) -> str:
     escaped = str(path).replace("\\", "\\\\").replace("'", "\\'")
     return f"file('{escaped}')"
@@ -194,7 +208,7 @@ def nextflow_file(path: Path) -> str:
 
 def empty_domain_inputs(config: Path) -> str:
     channels = ["Channel.value(false)" for _ in range(3)]
-    channels.extend("Channel.empty()" for _ in range(9))
+    channels.extend("Channel.empty()" for _ in range(10))
     channels.append(f"Channel.value(file('{config}'))")
     return ",\n        ".join(channels) + ","
 
@@ -332,6 +346,7 @@ workflow {{
         Channel.empty(),
         Channel.empty(),
         Channel.empty(),
+        Channel.empty(),
         Channel.value(file('{config}')),
     )
 }}
@@ -355,6 +370,80 @@ workflow {{
     assert "\n  sample_A:\n" in section_text
     assert "row_0001" not in section_text
     assert "sample_id:" not in section_text
+
+
+def test_prepared_query_summary_crosses_explicit_package_boundary(
+    tmp_path: Path,
+) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    copy_reporting_lib(tmp_path)
+    roster = write_roster(tmp_path / "resolved_reads.jsonl")
+    version = write_version(tmp_path / "nvd_version.txt")
+    summary = write_query_batch_summary(tmp_path / "sample_A.blast_query_batches.tsv")
+    config = ROOT / "assets" / "multiqc_config.yaml"
+    workflow = tmp_path / "main.nf"
+    workflow.write_text(
+        f"""\
+nextflow.enable.dsl = 2
+
+include {{ MULTIQC_BUNDLING }} from '{BUNDLING_SUBWORKFLOW}'
+
+params.results = '{tmp_path / "results"}'
+params.experimental = false
+workflow {{
+    MULTIQC_BUNDLING(
+        Channel.empty(),
+        Channel.empty(),
+        Channel.value(file('{roster}')),
+        Channel.value(file('{version}')),
+        Channel.value(false),
+        Channel.value(false),
+        Channel.value(false),
+        Channel.value(true),
+        Channel.empty(),
+        Channel.empty(),
+        Channel.empty(),
+        Channel.empty(),
+        Channel.empty(),
+        Channel.empty(),
+        Channel.empty(),
+        Channel.empty(),
+        Channel.empty(),
+        Channel.of(tuple('sample_A', file('{summary}'))),
+        Channel.value(file('{config}')),
+    )
+}}
+""",
+        encoding="utf-8",
+    )
+
+    completed = run_nextflow(workflow, bin_dir=bin_dir)
+    diagnostics = f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}"
+    assert completed.returncode == 0, diagnostics
+    manifests = sorted(tmp_path.glob("work/**/nvd_report_manifest.json"))
+    assert manifests, diagnostics
+    manifest = json.loads(manifests[-1].read_text(encoding="utf-8"))
+    assert manifest["report_packages"] == [
+        {
+            "schema_version": "nvd.report-package/v1",
+            "domain": "query_preparation",
+            "artifact_type": "prepared_query_batches",
+            "sample_id": "sample_A",
+            "summary": "summary.payload",
+        },
+    ]
+    sections = sorted(
+        tmp_path.glob("work/**/nvd_prepared_blast_query_batches_mqc.yaml"),
+    )
+    assert sections, diagnostics
+    section = yaml.safe_load(sections[-1].read_text(encoding="utf-8"))
+    assert section["data"]["sample_A | short_assembly_contig"][
+        "query_sequences"
+    ] == 2
+    assert section["data"]["sample_A | single_read"]["availability"] == (
+        "disabled"
+    )
 
 
 def test_assembly_decision_without_profile_is_reported_as_absent(
@@ -399,6 +488,7 @@ workflow {{
             100,
             'short_read_minimum_sequence_count',
         )),
+        Channel.empty(),
         Channel.empty(),
         Channel.empty(),
         Channel.value(file('{config}')),
