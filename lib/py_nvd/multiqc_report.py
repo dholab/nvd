@@ -153,6 +153,7 @@ class ReportRoots:
     assembly: Path | None = None
     query_preparation: Path | None = None
     blast: Path | None = None
+    taxonomy: Path | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -190,6 +191,7 @@ def build_multiqc_inputs(request: CompileRequest) -> Path:
             Domain.ASSEMBLY: request.report_roots.assembly,
             Domain.QUERY_PREPARATION: request.report_roots.query_preparation,
             Domain.BLAST: request.report_roots.blast,
+            Domain.TAXONOMY: request.report_roots.taxonomy,
         },
         roster,
     )
@@ -452,6 +454,7 @@ def write_domain_sections(
     sections: dict[str, ReportSection],
 ) -> None:
     filenames = {
+        "nvd_higher_risk_taxonomic_findings": "nvd_higher_risk_taxonomic_findings_mqc.yaml",
         "nvd_target_enrichment": "nvd_target_enrichment_mqc.yaml",
         "nvd_depletion": "nvd_depletion_mqc.yaml",
         "nvd_fastx_profiles": "nvd_fastx_profiles_mqc.yaml",

@@ -6,6 +6,7 @@ include { LIMS_INTEGRATION } from "./lims_integration"
 include { RENDER_CONTIG_COVERAGE_HISTOGRAM } from "../modules/samtools"
 include { ANNOTATE_BLAST_RISK_GROUPS } from "../modules/risk_groups"
 include { GENERATE_MULTIQC_REPORT } from "../modules/multiqc"
+include { MULTIQC_BUNDLING } from "./multiqc_bundling"
 
 workflow REPORTING {
     take:
@@ -23,8 +24,20 @@ workflow REPORTING {
     ch_sourmash_tax_reports
     ch_risk_group_lookup
     ch_sequence_flow_inputs
-    ch_multiqc_fastqc_zips
-    ch_multiqc_inputs
+    ch_raw_fastqc_packages
+    ch_raw_fastqc_zips
+    ch_resolved_reads
+    ch_nvd_version
+    ch_depletion_stats
+    ch_processed_read_profiles
+    ch_processed_read_quality_histograms
+    ch_filtered_contig_profiles
+    ch_assembly_profiles
+    ch_assembly_eligibility_decisions
+    ch_long_read_eligibility_summaries
+    ch_long_read_union_summaries
+    ch_prepared_query_batch_summaries
+    ch_megablast_query_partition_summaries
     ch_multiqc_config
     run_id
 
@@ -116,6 +129,35 @@ workflow REPORTING {
         )
     }
 
+    ch_taxon_big_tables_for_multiqc = params.experimental
+        ? BUILD_TAXON_BIG_TABLE.out
+        : channel.empty()
+
+    MULTIQC_BUNDLING(
+        ch_raw_fastqc_packages,
+        ch_raw_fastqc_zips,
+        ch_resolved_reads,
+        ch_nvd_version,
+        channel.value(params.experimental == true),
+        channel.value(target_enrichment_enabled),
+        channel.value(NvdUtils.depletionEnabled(params)),
+        channel.value(!params.skip_assembly),
+        channel.value(!params.skip_blast),
+        ch_target_enrichment_stats,
+        ch_depletion_stats,
+        ch_processed_read_profiles,
+        ch_processed_read_quality_histograms,
+        ch_filtered_contig_profiles,
+        ch_assembly_profiles,
+        ch_assembly_eligibility_decisions,
+        ch_long_read_eligibility_summaries,
+        ch_long_read_union_summaries,
+        ch_prepared_query_batch_summaries,
+        ch_megablast_query_partition_summaries,
+        ch_taxon_big_tables_for_multiqc,
+        ch_multiqc_config,
+    )
+
     TARGET_ENRICHMENT_REPORT(
         ch_target_enrichment_stats.map { _sample_id, json -> json }.collect()
     )
@@ -164,9 +206,9 @@ workflow REPORTING {
     )
 
     GENERATE_MULTIQC_REPORT(
-        ch_multiqc_fastqc_zips,
-        ch_multiqc_inputs,
-        ch_multiqc_config,
+        MULTIQC_BUNDLING.out.fastqc_zips,
+        MULTIQC_BUNDLING.out.inputs,
+        MULTIQC_BUNDLING.out.config,
     )
 
     emit:

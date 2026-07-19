@@ -6,6 +6,9 @@ fn_clean_exts:
     module: fastqc
 fn_clean_trim: []
 custom_data:
+  nvd_higher_risk_taxonomic_findings:
+    section_name: "Higher-Risk Taxonomic Findings"
+    section_order: 1100
   nvd_sample_roster:
     section_name: "Sample Roster"
     section_order: 990
@@ -50,6 +53,8 @@ module_order:
   - fastqc:
       name: "Raw Read Statistics"
 sp:
+  nvd_higher_risk_taxonomic_findings:
+    fn: "nvd_higher_risk_taxonomic_findings_mqc.yaml"
   nvd_sample_roster:
     fn: "nvd_sample_roster_mqc.yaml"
   nvd_raw_fastqc_inventory:

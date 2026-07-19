@@ -34,6 +34,12 @@ from py_nvd.multiqc_query_preparation import (
     collect_prepared_query_summaries,
     prepared_query_rows,
 )
+from py_nvd.multiqc_taxonomy import (
+    InvalidTaxonFindingRow,
+    TaxonFindingRow,
+    collect_taxon_big_tables,
+    higher_risk_taxon_rows,
+)
 
 
 class SectionModel(BaseModel):
@@ -86,6 +92,8 @@ ReportRow: TypeAlias = (
     | PreparedQueryRow
     | BlastTaskRow
     | BlastDisabledRow
+    | TaxonFindingRow
+    | InvalidTaxonFindingRow
 )
 
 
@@ -141,6 +149,8 @@ def report_row_label(row: ReportRow) -> str:
         and row.query_class_code is not None
     ):
         parts.append(row.query_class_code)
+    elif isinstance(row, (TaxonFindingRow, InvalidTaxonFindingRow)):
+        parts.append(row.taxon_key)
     return " | ".join(parts)
 
 
@@ -241,6 +251,69 @@ def blast_task_breakdown_section(
     )
 
 
+def higher_risk_taxonomic_findings_section(
+    packages: tuple[ReportPackage, ...],
+) -> TableSection | None:
+    tables = collect_taxon_big_tables(packages)
+    if not tables:
+        return None
+    rows, eligible_count = higher_risk_taxon_rows(tables)
+    if not rows:
+        return None
+    displayed_count = sum(isinstance(row, TaxonFindingRow) for row in rows)
+    return TableSection(
+        section_name="Higher-Risk Taxonomic Findings",
+        description=(
+            f"Showing {displayed_count} of {eligible_count} WHO risk group 2-4 "
+            "findings. Complete results: taxon_big_table.tsv."
+        ),
+        rows=rows,
+        headers={
+            "taxon_name": TableColumn(title="Taxon"),
+            "taxid": TableColumn(title="TaxID"),
+            "taxon_rank": TableColumn(title="Rank"),
+            "who_risk_group": TableColumn(title="WHO risk group"),
+            "support_tier": TableColumn(title="Support"),
+            "support_note": TableColumn(title="Support note"),
+            "taxon_crumbs": TableColumn(title="Taxon CRUMBS"),
+            "relative_crumbs_percent": TableColumn(
+                title="CRUMBS share (%)",
+                format="{:,.2f}",
+            ),
+            "total_crumbs_score": TableColumn(title="Total CRUMBS score"),
+            "supporting_query_count": TableColumn(title="Supporting queries"),
+            "total_query_span": TableColumn(title="Total query span"),
+            "strong_query_count": TableColumn(title="Strong queries"),
+            "moderate_query_count": TableColumn(title="Moderate queries"),
+            "weak_query_count": TableColumn(title="Weak queries"),
+            "review_query_count": TableColumn(title="Review queries"),
+            "redacted_query_count": TableColumn(title="Redacted queries"),
+            "supporting_genome_like_contig_count": TableColumn(
+                title="Genome-like contigs",
+            ),
+            "supporting_long_contig_count": TableColumn(title="Long contigs"),
+            "supporting_short_contig_count": TableColumn(title="Short contigs"),
+            "supporting_merged_pair_count": TableColumn(title="Merged pairs"),
+            "supporting_single_read_count": TableColumn(title="Single reads"),
+            "support_tier_rule": TableColumn(title="Support rule"),
+            "problem": TableColumn(title="Problem"),
+            "validation_details": TableColumn(
+                title="Validation details",
+                hidden=True,
+            ),
+        },
+    )
+
+
+def taxonomy_sections(
+    packages: tuple[ReportPackage, ...],
+) -> dict[str, ReportSection]:
+    section = higher_risk_taxonomic_findings_section(packages)
+    if section is None:
+        return {}
+    return {"nvd_higher_risk_taxonomic_findings": section}
+
+
 def build_domain_sections(
     *,
     packages: tuple[ReportPackage, ...],
@@ -248,7 +321,7 @@ def build_domain_sections(
     sample_platforms: dict[str, str],
     configuration: DomainConfiguration,
 ) -> dict[str, ReportSection]:
-    sections: dict[str, ReportSection] = {}
+    sections = taxonomy_sections(packages)
     for domain, enabled, section_id, name, description in (
         (
             "target_enrichment",
