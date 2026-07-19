@@ -40,6 +40,7 @@ class Domain(StrEnum):
     ASSEMBLY = "assembly"
     QUERY_PREPARATION = "query_preparation"
     BLAST = "blast"
+    TAXONOMY = "taxonomy"
 
 
 class ArtifactType(StrEnum):
@@ -52,6 +53,7 @@ class ArtifactType(StrEnum):
     UNION_SUMMARY = "union_summary"
     PREPARED_QUERY_BATCHES = "prepared_query_batches"
     MEGABLAST_QUERY_PARTITION = "megablast_query_partition"
+    TAXON_BIG_TABLE = "taxon_big_table"
 
 
 DeaconDomain: TypeAlias = Literal[Domain.TARGET_ENRICHMENT, Domain.DEPLETION]
@@ -225,6 +227,22 @@ class MegablastQueryPartitionReceipt(ReceiptBase):
         return (self.summary,)
 
 
+class TaxonBigTableReceipt(ReceiptBase):
+    """One per-sample Taxon Big Table."""
+
+    domain: Literal["taxonomy"] = Domain.TAXONOMY.value
+    artifact_type: Literal["taxon_big_table"] = ArtifactType.TAXON_BIG_TABLE.value
+    table: Literal["table.payload"] = "table.payload"
+
+    @property
+    def logical_key(self) -> tuple[str, ...]:
+        return (self.domain, self.artifact_type, self.sample_id)
+
+    @property
+    def payload_names(self) -> tuple[str, ...]:
+        return (self.table,)
+
+
 ReportReceipt: TypeAlias = Annotated[
     DeaconReceipt
     | ProfileReceipt
@@ -232,7 +250,8 @@ ReportReceipt: TypeAlias = Annotated[
     | LongReadEligibilityReceipt
     | UnionReceipt
     | PreparedQueryBatchesReceipt
-    | MegablastQueryPartitionReceipt,
+    | MegablastQueryPartitionReceipt
+    | TaxonBigTableReceipt,
     Field(discriminator="artifact_type"),
 ]
 REPORT_RECEIPT = TypeAdapter(ReportReceipt)

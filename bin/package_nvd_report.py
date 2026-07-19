@@ -14,6 +14,7 @@ from py_nvd.multiqc_packages import (
     MegablastQueryPartitionReceipt,
     PreparedQueryBatchesReceipt,
     ProfileReceipt,
+    TaxonBigTableReceipt,
     UnionReceipt,
     write_package,
 )
@@ -73,6 +74,10 @@ def build_parser() -> argparse.ArgumentParser:
     megablast_query_partition.add_argument("--sample-id", required=True)
     megablast_query_partition.add_argument("--query-class", required=True)
     megablast_query_partition.add_argument("--summary", type=Path, required=True)
+
+    taxon_big_table = commands.add_parser("taxon-big-table")
+    taxon_big_table.add_argument("--sample-id", required=True)
+    taxon_big_table.add_argument("--table", type=Path, required=True)
     return parser
 
 
@@ -120,12 +125,15 @@ def main() -> None:
     elif args.command == "prepared-query-batches":
         receipt = PreparedQueryBatchesReceipt(sample_id=args.sample_id)
         payloads = (args.summary,)
-    else:
+    elif args.command == "megablast-query-partition":
         receipt = MegablastQueryPartitionReceipt(
             sample_id=args.sample_id,
             query_class=args.query_class,
         )
         payloads = (args.summary,)
+    else:
+        receipt = TaxonBigTableReceipt(sample_id=args.sample_id)
+        payloads = (args.table,)
     write_package(receipt, payloads, output_root=Path.cwd())
 
 
