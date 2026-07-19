@@ -91,18 +91,18 @@ process DEACON_DEPLETE {
      * between filtering and compression automatically.
      */
 
-    tag "${sample_id}"
+    tag "${meta.id}, ${meta.query_class}"
     label "medium"
 
     errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
     maxRetries 2
 
     input:
-    tuple val(sample_id), val(platform), val(read_structure), path(reads), path(index)
+    tuple val(meta), path(reads), path(index)
 
     output:
-    tuple val(sample_id), val(platform), val(read_structure), path("${sample_id}.depleted.fastq.gz"), emit: reads
-    tuple val(sample_id), path("${sample_id}.deacon.json"), emit: stats
+    tuple val(meta), path("${meta.id}.${meta.query_class}.depleted.fastq.gz"), emit: reads
+    tuple val(meta), path("${meta.id}.${meta.query_class}.deacon.json"), emit: stats
 
     script:
     """
@@ -111,16 +111,16 @@ process DEACON_DEPLETE {
         --threads ${task.cpus} \
         --abs-threshold ${params.host_abs_threshold} \
         --rel-threshold ${params.host_rel_threshold} \
-        --summary ${sample_id}.deacon.json \
-        --output ${sample_id}.depleted.fastq.gz \
+        --summary ${meta.id}.${meta.query_class}.deacon.json \
+        --output ${meta.id}.${meta.query_class}.depleted.fastq.gz \
         ${index} \
         ${reads}
     """
 }
 
-process DEACON_BUILD_VIRUS_INDEX_FROM_FASTA {
+process DEACON_BUILD_TARGET_INDEX_FROM_FASTA {
     /*
-     * Build a deacon virus index from a reference FASTA file.
+     * Build a deacon target index from a reference FASTA file.
      *
      * Use this when providing virus_reference_fasta instead of a
      * pre-built index (virus_index) or URL (virus_index_url).
@@ -133,18 +133,18 @@ process DEACON_BUILD_VIRUS_INDEX_FROM_FASTA {
     label "medium"
 
     input:
-    path virus_fasta
+    path target_fasta
 
     output:
-    path "virus_reference.k${params.virus_kmer_size}w${params.virus_window_size}.idx", emit: index
+    path "target_reference.k${params.virus_kmer_size}w${params.virus_window_size}.idx", emit: index
 
     script:
     """
     deacon index build \
         -k ${params.virus_kmer_size} \
         -w ${params.virus_window_size} \
-        -o virus_reference.k${params.virus_kmer_size}w${params.virus_window_size}.idx \
-        ${virus_fasta}
+        -o target_reference.k${params.virus_kmer_size}w${params.virus_window_size}.idx \
+        ${target_fasta}
     """
 }
 
@@ -161,7 +161,7 @@ process DEACON_ENRICH_TARGET_READS {
     tuple val(meta), path(read_files, stageAs: "reads??????/*"), path(deacon_idx), val(target_enrichment_enabled)
 
     output:
-    tuple val(meta.id), val(meta.platform), val(meta.deacon_read_structure), path("${meta.id}.human_virus.fastq.gz"), emit: reads
+    tuple val(meta.id), val(meta.platform), val(meta.deacon_read_structure), path("${meta.id}.target_enriched.fastq.gz"), emit: reads
     tuple val(meta.id), path("${meta.id}.deacon_filter.json"), emit: stats
 
     script:
@@ -178,7 +178,7 @@ process DEACON_ENRICH_TARGET_READS {
             --abs-threshold ${params.virus_abs_threshold} \
             --rel-threshold ${params.virus_rel_threshold} \
             --summary ${meta.id}.deacon_filter.json \
-            --output ${meta.id}.human_virus.fastq.gz \
+            --output ${meta.id}.target_enriched.fastq.gz \
             ${deacon_idx} \
             ${r1_files[0]}
         """
@@ -190,7 +190,7 @@ process DEACON_ENRICH_TARGET_READS {
             --abs-threshold ${params.virus_abs_threshold} \
             --rel-threshold ${params.virus_rel_threshold} \
             --summary ${meta.id}.deacon_filter.json \
-            --output ${meta.id}.human_virus.fastq.gz \
+            --output ${meta.id}.target_enriched.fastq.gz \
             ${deacon_idx} \
             ${r1_files[0]} ${r2_files[0]}
         """
@@ -208,7 +208,7 @@ process DEACON_ENRICH_TARGET_READS {
             --abs-threshold ${params.virus_abs_threshold} \
             --rel-threshold ${params.virus_rel_threshold} \
             --summary ${meta.id}.deacon_filter.json \
-            --output ${meta.id}.human_virus.fastq.gz
+            --output ${meta.id}.target_enriched.fastq.gz
         """
     else
         """
@@ -226,20 +226,20 @@ process DEACON_ENRICH_TARGET_READS {
             --abs-threshold ${params.virus_abs_threshold} \
             --rel-threshold ${params.virus_rel_threshold} \
             --summary ${meta.id}.deacon_filter.json \
-            --output ${meta.id}.human_virus.fastq.gz
+            --output ${meta.id}.target_enriched.fastq.gz
         """
 }
 
 process DEACON_FILTER_CONTIGS {
     /*
-     * Extract human virus contigs using deacon filter on assembled FASTA.
+     * Retain target contigs using deacon filter on assembled FASTA.
      *
      * Replaces the 5-process STAT contig classification chain:
      * CLASSIFY_CONTIGS_FIRST_PASS → GENERATE_CONTIGS_TAXA_LIST →
      * CLASSIFY_CONTIGS_SECOND_PASS → IDENTIFY_HUMAN_VIRUS_FAMILY_CONTIGS →
      * EXTRACT_HUMAN_VIRUS_CONTIGS
      *
-     * Uses the same virus index as read extraction so no additional reference
+     * Uses the same target index as read extraction so no additional reference
      * is needed. Contigs are already ≥200 bp (FILTER_SHORT_CONTIGS), so
      * incidental single k-mer matches are rare — the signal-to-noise ratio
      * improves vs reads because contigs have far more k-mers per sequence.
@@ -252,10 +252,11 @@ process DEACON_FILTER_CONTIGS {
     maxRetries 2
 
     input:
-    tuple val(sample_id), val(platform), val(read_structure), path(fasta), path(deacon_idx), val(use_depletion), path(depletion_idx)
+    tuple val(sample_id), val(platform), val(read_structure), path(fasta), path(query_lookup), path(deacon_idx), val(use_depletion), path(depletion_idx)
 
     output:
-    tuple val(sample_id), path("${sample_id}.human_virus.fasta")
+    tuple val(sample_id), val(platform), val(read_structure), path("${sample_id}.target_filtered.fasta"), path(query_lookup), emit: contigs
+    tuple val(sample_id), path("${sample_id}.contig_target_filtering.tsv"), emit: decisions
 
     script:
     def target_deplete_arg = NvdUtils.targetEnrichmentEnabled(params) ? "" : "--deplete"
@@ -268,6 +269,7 @@ process DEACON_FILTER_CONTIGS {
             --threads ${task.cpus} \
             --abs-threshold ${params.virus_abs_threshold} \
             --rel-threshold ${params.virus_rel_threshold} \
+            --summary ${sample_id}.target_filter.deacon.json \
             ${deacon_idx} \
             ${fasta} \
         | deacon filter \
@@ -275,9 +277,16 @@ process DEACON_FILTER_CONTIGS {
             --threads ${task.cpus} \
             --abs-threshold ${params.host_abs_threshold} \
             --rel-threshold ${params.host_rel_threshold} \
-            --output ${sample_id}.human_virus.fasta \
+            --summary ${sample_id}.host_depletion.deacon.json \
+            --output ${sample_id}.target_filtered.fasta \
             ${depletion_idx} \
             -
+
+        summarize_contig_filtering.py \
+            --sample-id '${sample_id}' \
+            --target-summary ${sample_id}.target_filter.deacon.json \
+            --depletion-summary ${sample_id}.host_depletion.deacon.json \
+            --output ${sample_id}.contig_target_filtering.tsv
         """
     else
         """
@@ -286,8 +295,14 @@ process DEACON_FILTER_CONTIGS {
             --threads ${task.cpus} \
             --abs-threshold ${params.virus_abs_threshold} \
             --rel-threshold ${params.virus_rel_threshold} \
-            --output ${sample_id}.human_virus.fasta \
+            --summary ${sample_id}.target_filter.deacon.json \
+            --output ${sample_id}.target_filtered.fasta \
             ${deacon_idx} \
             ${fasta}
+
+        summarize_contig_filtering.py \
+            --sample-id '${sample_id}' \
+            --target-summary ${sample_id}.target_filter.deacon.json \
+            --output ${sample_id}.contig_target_filtering.tsv
         """
 }

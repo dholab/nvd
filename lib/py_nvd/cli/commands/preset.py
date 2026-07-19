@@ -181,6 +181,11 @@ def preset_register(
         "--trim-adapters/--no-trim-adapters",
         help="Trim adapters",
     ),
+    merge_pairs: bool | None = typer.Option(
+        None,
+        "--merge-pairs/--no-merge-pairs",
+        help="Merge overlapping paired-end reads before contig mapback",
+    ),
     host_index: Path | None = typer.Option(
         None,
         "--host-index",
@@ -241,6 +246,16 @@ def preset_register(
         "--filter-reads/--no-filter-reads",
         help="Filter reads",
     ),
+    filter_low_complexity_reads: bool | None = typer.Option(
+        None,
+        "--filter-low-complexity-reads/--no-filter-low-complexity-reads",
+        help="Filter reads with low normalized 5-mer entropy",
+    ),
+    min_read_entropy: float | None = typer.Option(
+        None,
+        "--min-read-entropy",
+        help="Minimum normalized 5-mer entropy over 50-base windows",
+    ),
     max_blast_targets: int | None = typer.Option(
         None,
         "--max-blast-targets",
@@ -287,6 +302,7 @@ def preset_register(
         "dedup_seq": dedup_seq,
         "dedup_pos": dedup_pos,
         "trim_adapters": trim_adapters,
+        "merge_pairs": merge_pairs,
         "host_index": host_index,
         "host_index_url": host_index_url,
         "host_contaminants_fasta": host_contaminants_fasta,
@@ -299,6 +315,8 @@ def preset_register(
         "virus_abs_threshold": virus_abs_threshold,
         "virus_rel_threshold": virus_rel_threshold,
         "filter_reads": filter_reads,
+        "filter_low_complexity_reads": filter_low_complexity_reads,
+        "min_read_entropy": min_read_entropy,
         "max_blast_targets": max_blast_targets,
         "blast_retention_count": blast_retention_count,
     }

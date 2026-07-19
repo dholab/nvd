@@ -1,24 +1,27 @@
 /*
  * NVD main workflow
  *
- * Human virus detection pipeline: deacon-based virus read extraction,
+ * Human virus detection pipeline: deacon-based target read enrichment,
  * preprocessing, SPAdes assembly, and two-phase BLAST verification.
  *
- * Architecture: deacon virus extraction runs first on raw R1/R2 reads
+ * Architecture: deacon target enrichment runs first on raw R1/R2 reads
  * (outputting interleaved), then preprocessing (dedup, trim, optional host depletion, filter)
- * operates on the tiny virus subset, then SPAdes and BLAST.
+ * operates on the enriched subset, then SPAdes and BLAST.
  */
 
 nextflow.enable.dsl = 2
 
 include { GATHER_READS            } from "../subworkflows/gather_reads"
 include { PREPROCESS_READS        } from "../subworkflows/preprocess_reads"
-include { PREPROCESS_CONTIGS      } from "../subworkflows/preprocess_contigs"
-include { EXTRACT_HUMAN_VIRUSES   } from "../subworkflows/extract_human_virus_contigs"
+include { SHORT_READ_DENOVO_ASSEMBLY } from "../subworkflows/short_read_denovo_assembly"
+include { LONG_READ_DENOVO_ENSEMBLY  } from "../subworkflows/long_read_denovo_ensembly"
+include { PROCESS_CONTIGS         } from "../subworkflows/process_contigs"
+include { PREPARE_BLAST_QUERIES } from "../subworkflows/prepare_blast_queries"
 include { CLASSIFY_WITH_MEGABLAST } from "../subworkflows/classify_with_megablast"
 include { CLASSIFY_WITH_BLASTN    } from "../subworkflows/classify_with_blastn"
-include { METAGENOME_PROFILING    } from "../subworkflows/metagenome_profiling"
+include { RAPID_SCREENING         } from "../subworkflows/rapid_screening"
 include { SAMPLE_SIMILARITY_QC    } from "../subworkflows/sample_similarity_qc"
+include { RAPID_SCREENING_EVAL    } from "../subworkflows/rapid_screening_eval"
 include { REPORTING               } from "../subworkflows/reporting"
 include { COMPUTE_RUN_CONTEXT ; ENSURE_TAXONOMY } from "../modules/utils"
 
@@ -29,15 +32,15 @@ workflow NVD_MAIN {
 
   main:
 
-  // Validate required params. BLAST DB is only required when assembled contigs
-  // can reach BLAST classification.
-  def requires_blast_db = !(params.skip_assembly || params.skip_blast)
+  // BLAST needs its database when contig queries may run or experimental
+  // direct-read querying remains enabled while assembly is skipped.
+  def requires_blast_db = !params.skip_blast && (!params.skip_assembly || params.experimental)
   def target_enrichment_enabled = NvdUtils.targetEnrichmentEnabled(params)
   def has_target_enrichment_index = NvdUtils.hasTargetEnrichmentIndex(params)
   assert (!requires_blast_db || (params.blast_db && file(params.blast_db).isDirectory())) && (!target_enrichment_enabled || has_target_enrichment_index) : """
     One or more required parameters are missing or point to non-existent files:
 
-      blast_db                        -> ${requires_blast_db ? params.blast_db : 'not required when skip_assembly or skip_blast is enabled'}
+      blast_db                        -> ${requires_blast_db ? params.blast_db : 'not required by the enabled assembly/BLAST routes'}
       target enrichment index source  -> ${target_enrichment_enabled ? 'virus_index / virus_index_url / virus_reference_fasta: at least one must be set' : 'not required when target enrichment is disabled'}
 
     Please supply the above in your `-c nextflow.config` or via `-params-file`.
@@ -60,49 +63,110 @@ workflow NVD_MAIN {
 
   PREPROCESS_READS(GATHER_READS.out.reads)
 
+  ch_sourmash_gather_csv = channel.empty()
+  ch_sourmash_lineages = channel.empty()
   ch_sourmash_tax_reports = channel.empty()
 
   if (params.experimental == true) {
-    metagenome_profiling = METAGENOME_PROFILING(PREPROCESS_READS.out.reads)
-    SAMPLE_SIMILARITY_QC(metagenome_profiling.query_sketches)
-    ch_sourmash_tax_reports = metagenome_profiling.tax_reports
+    rapid_screening = RAPID_SCREENING(PREPROCESS_READS.out.profiled_batches_by_sample)
+    SAMPLE_SIMILARITY_QC(rapid_screening.query_sketches)
+    ch_sourmash_gather_csv = rapid_screening.gather_csv
+    ch_sourmash_lineages = rapid_screening.lineages
+    ch_sourmash_tax_reports = rapid_screening.tax_reports
   }
 
-  PREPROCESS_CONTIGS(PREPROCESS_READS.out.reads)
+  // Short reads retain their minimum-count gate; experimental long-read
+  // assemblers use tool-specific length evidence from each cached profile.
+  ch_short_read_batches_by_sample_for_assembly = PREPROCESS_READS.out.profiled_batches_by_sample
+    .filter { meta, _batches -> !params.skip_assembly && meta.platform == "illumina" }
+
+  ch_long_read_profiles_for_assembly = PREPROCESS_READS.out.profiled_read_batches
+    .filter { meta, _reads, _profile_json, _length_histogram -> !params.skip_assembly && meta.platform != "illumina" }
+
+  SHORT_READ_DENOVO_ASSEMBLY(ch_short_read_batches_by_sample_for_assembly)
+  LONG_READ_DENOVO_ENSEMBLY(ch_long_read_profiles_for_assembly)
+
+  ch_assembly_disabled = params.skip_assembly
+    ? PREPROCESS_READS.out.profiled_batches_by_sample.map { meta, _batches ->
+        log.debug "nvd.contig_route sample_id=${meta.id} platform=${meta.platform} outcome=no_contigs stage=assembly_disabled"
+        tuple(meta.id, meta.platform)
+      }
+    : channel.empty()
+
+  ch_assembled_contigs = SHORT_READ_DENOVO_ASSEMBLY.out.contigs
+    .mix(LONG_READ_DENOVO_ENSEMBLY.out.contigs)
+
+  PROCESS_CONTIGS(ch_assembled_contigs)
+
+  ch_no_contig_samples = SHORT_READ_DENOVO_ASSEMBLY.out.no_contigs
+    .mix(LONG_READ_DENOVO_ENSEMBLY.out.no_contigs)
+    .mix(PROCESS_CONTIGS.out.no_contigs)
+    .mix(ch_assembly_disabled)
 
   ch_run_context = COMPUTE_RUN_CONTEXT.out.run_context
   ch_taxonomy_dir = ENSURE_TAXONOMY.out.taxonomy_dir
-  EXTRACT_HUMAN_VIRUSES(
-    PREPROCESS_CONTIGS.out.contigs,
-    PREPROCESS_CONTIGS.out.viral_reads,
-    PREPROCESS_READS.out.virus_index,
+
+  PREPARE_BLAST_QUERIES(
+    PROCESS_CONTIGS.out.contigs,
+    ch_no_contig_samples,
+    PREPROCESS_READS.out.paired_reads_for_mapback,
+    PREPROCESS_READS.out.single_reads_for_mapback,
+    PREPROCESS_READS.out.target_index,
     PREPROCESS_READS.out.depletion_index,
   )
 
   CLASSIFY_WITH_MEGABLAST(
-    EXTRACT_HUMAN_VIRUSES.out.contigs,
+    PREPARE_BLAST_QUERIES.out.queries,
     ch_blast_db_files,
     ch_taxonomy_dir,
   )
 
   CLASSIFY_WITH_BLASTN(
     CLASSIFY_WITH_MEGABLAST.out.filtered_megablast,
-    CLASSIFY_WITH_MEGABLAST.out.megablast_contigs,
+    CLASSIFY_WITH_MEGABLAST.out.megablast_query_partition,
     ch_blast_db_files,
     ch_taxonomy_dir,
   )
 
+  ch_sequence_flow_evidence = LONG_READ_DENOVO_ENSEMBLY.out.assembly_eligibility
+    .map { _sample_id, report -> report }
+    .mix(LONG_READ_DENOVO_ENSEMBLY.out.union_provenance.map { _sample_id, _provenance, summary -> summary })
+    .mix(PREPARE_BLAST_QUERIES.out.contig_filter_decisions.map { _sample_id, decision -> decision })
+    .mix(PREPARE_BLAST_QUERIES.out.mapback_count_files.map { _sample_id, counts -> counts })
+    .mix(PREPARE_BLAST_QUERIES.out.blast_query_summaries.map { _sample_id, summary -> summary })
+    .mix(CLASSIFY_WITH_MEGABLAST.out.megablast_query_partition.map { _sample_id, _query_class, _accounted_ids, _blastn_candidates, summary -> summary })
+    .mix(CLASSIFY_WITH_MEGABLAST.out.filter_decisions.map { _sample_id, _query_class, decision -> decision })
+    .mix(CLASSIFY_WITH_BLASTN.out.filter_decisions.map { _sample_id, _query_class, decision -> decision })
+
   REPORTING(
     CLASSIFY_WITH_BLASTN.out.merged_results,
     PREPROCESS_READS.out.read_counts,
-    EXTRACT_HUMAN_VIRUSES.out.contigs,
-    EXTRACT_HUMAN_VIRUSES.out.contig_read_counts,
-    PREPROCESS_READS.out.virus_enrichment_stats,
+    PREPARE_BLAST_QUERIES.out.contig_sequences,
+    PREPARE_BLAST_QUERIES.out.query_lookups,
+    PREPARE_BLAST_QUERIES.out.contig_read_counts,
+    PREPARE_BLAST_QUERIES.out.filtered_bam,
+    PREPARE_BLAST_QUERIES.out.no_contigs,
+    PREPROCESS_READS.out.target_enrichment_stats,
+    ch_taxonomy_dir,
     COMPUTE_RUN_CONTEXT.out.ready,
     ch_run_context,
     ch_sourmash_tax_reports,
+    ch_sequence_flow_evidence,
     workflow.runName,
   )
+
+  if (params.experimental == true) {
+    RAPID_SCREENING_EVAL(
+      PREPROCESS_READS.out.read_counts,
+      ch_sourmash_gather_csv,
+      ch_sourmash_tax_reports,
+      ch_sourmash_lineages,
+      REPORTING.out.blast_results,
+      REPORTING.out.crumbs_taxa,
+      REPORTING.out.crumbs_queries,
+      workflow.runName,
+    )
+  }
 
   emit:
   completion = REPORTING.out.blast_results.count().map { n -> "NVD main workflow complete: ${n} samples processed" }

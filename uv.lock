@@ -1724,11 +1724,12 @@ wheels = [
 
 [[package]]
 name = "nvd"
-version = "3.1.0"
+version = "3.3.0"
 source = { editable = "." }
 dependencies = [
     { name = "altair" },
     { name = "biopython" },
+    { name = "duckdb" },
     { name = "jsonschema" },
     { name = "labkey" },
     { name = "loguru" },
@@ -1767,6 +1768,7 @@ dev = [
 requires-dist = [
     { name = "altair", specifier = ">=6.1.0" },
     { name = "biopython", specifier = ">=1.85" },
+    { name = "duckdb", specifier = ">=1.2.2" },
     { name = "jsonschema", specifier = ">=4.23.0" },
     { name = "labkey", specifier = ">=3.4.0" },
     { name = "loguru", specifier = ">=0.7.3" },

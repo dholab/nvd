@@ -81,31 +81,32 @@ process ENSURE_TAXONOMY {
 
 process ANNOTATE_LEAST_COMMON_ANCESTORS {
 
-  tag "${sample_id}"
+  tag "${sample_id}, ${query_class}"
   label "low"
 
   errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
   maxRetries 2
 
   input:
-  tuple val(sample_id), path(all_blast_hits)
+  tuple val(sample_id), val(query_class), path(all_blast_hits)
   val taxonomy_dir
 
   output:
-  tuple val(sample_id), path("${sample_id}_blast.merged_with_lca.tsv")
+  tuple val(sample_id), val(query_class), path("${sample_id}.${query_class}.blast.merged_with_lca.tsv")
 
   script:
   def taxonomy_dir_arg = taxonomy_dir ? "--taxonomy-dir '${taxonomy_dir}'" : ""
   def taxonomy_mode_arg = params.taxonomy_mode ? "--taxonomy-mode '${params.taxonomy_mode}'" : ""
   def taxonomy_max_age_arg = params.taxonomy_max_age_days ? "--taxonomy-max-age-days ${params.taxonomy_max_age_days}" : ""
   """
-  annotate_blast_lca.py -i ${all_blast_hits} -o ${sample_id}_blast.merged_with_lca.tsv ${taxonomy_dir_arg} ${taxonomy_mode_arg} ${taxonomy_max_age_arg}
+  annotate_blast_lca.py -i ${all_blast_hits} -o ${sample_id}.${query_class}.blast.merged_with_lca.tsv ${taxonomy_dir_arg} ${taxonomy_mode_arg} ${taxonomy_max_age_arg}
   """
 }
 
 process ADD_READ_COUNTS_TO_BLAST {
   /*
    * Enrich merged BLAST results with pipeline metadata columns:
+   *   query_class / producer / source_id — collected query sequence metadata
    *   mapped_reads  — per-contig read count (joined by qseqid)
    *   total_reads   — sample-level total input reads
    *   blast_db_version — BLAST database version
@@ -121,7 +122,7 @@ process ADD_READ_COUNTS_TO_BLAST {
   label "low"
 
   input:
-  tuple val(sample_id), path(blast_tsv), val(total_reads), path(contig_counts)
+  tuple val(sample_id), path(blast_tsv), val(total_reads), path(contig_count_files), path(query_lookups)
   val run_id
 
   output:
@@ -129,15 +130,67 @@ process ADD_READ_COUNTS_TO_BLAST {
 
   script:
   def virus_index_version = NvdUtils.targetEnrichmentEnabled(params) ? params.virus_index_version : "not_used"
+  def count_files = contig_count_files instanceof List ? contig_count_files : [contig_count_files]
+  assert count_files.size() <= 1 : "Expected at most one mapped-count file for ${sample_id}, received ${count_files.size()}"
+  def count_arg = count_files ? "--contig-counts ${count_files[0]}" : ""
+  def lookup_files = query_lookups instanceof List ? query_lookups : [query_lookups]
+  def lookup_args = lookup_files.collect { lookup -> "--query-lookup ${lookup}" }.join(" ")
   """
   finalize_blast_results.py \\
       --blast-tsv ${blast_tsv} \\
-      --contig-counts ${contig_counts} \\
+      ${count_arg} \\
+      ${lookup_args} \\
       --output ${sample_id}_blast.final.tsv \\
       --total-reads ${total_reads} \\
       --blast-db-version '${params.blast_db_version}' \\
       --virus-index-version '${virus_index_version}' \\
       --run-id '${run_id}'
+  """
+}
+
+process BUILD_QUERY_BIG_TABLE {
+  /*
+   * Build the featured one-row-per-query Big Table artifact from final BLAST rows.
+   */
+
+  tag "${sample_id}"
+  label "low"
+
+  input:
+  tuple val(sample_id), path(blast_tsv), path(crumbs_tsv)
+
+  output:
+  tuple val(sample_id), path("${sample_id}.query_big_table.tsv")
+
+  script:
+  """
+  build_query_big_table.py \
+      --blast-tsv ${blast_tsv} \
+      --crumbs-tsv ${crumbs_tsv} \
+      --output ${sample_id}.query_big_table.tsv
+  """
+}
+
+process BUILD_TAXON_BIG_TABLE {
+  /*
+   * Build the per-sample one-row-per-taxon Big Table artifact from query Big Tables.
+   */
+
+  tag "${sample_id}"
+  label "low"
+
+  input:
+  tuple val(sample_id), path(query_big_table), path(crumbs_taxa_tsv)
+
+  output:
+  tuple val(sample_id), path("${sample_id}.taxon_big_table.tsv")
+
+  script:
+  """
+  build_taxon_big_table.py \
+      --query-big-table ${query_big_table} \
+      --crumbs-taxa-tsv ${crumbs_taxa_tsv} \
+      --output ${sample_id}.taxon_big_table.tsv
   """
 }
 
@@ -183,42 +236,84 @@ process CONCATENATE_EXPERIMENT_BLAST {
   """
 }
 
-process VIRUS_ENRICHMENT_REPORT {
+process CONCATENATE_QUERY_BIG_TABLE {
   /*
-   * Build run-level visualizations from per-sample human-virus enrichment
+   * Concatenate per-sample query Big Tables into the featured all-sample artifact.
+   */
+
+  label "low"
+
+  input:
+  path "sample_big_tables/*"
+
+  output:
+  path "query_big_table.tsv", emit: concatenated_tsv
+
+  script:
+  """
+  stack_big_tables.py \
+      --input-dir sample_big_tables \
+      --output query_big_table.tsv
+  """
+}
+
+process CONCATENATE_TAXON_BIG_TABLE {
+  /*
+   * Concatenate per-sample taxon Big Tables into the featured all-sample artifact.
+   */
+
+  label "low"
+
+  input:
+  path "sample_big_tables/*"
+
+  output:
+  path "taxon_big_table.tsv", emit: concatenated_tsv
+
+  script:
+  """
+  stack_big_tables.py \
+      --input-dir sample_big_tables \
+      --output taxon_big_table.tsv
+  """
+}
+
+process TARGET_ENRICHMENT_REPORT {
+  /*
+   * Build run-level visualizations from per-sample target enrichment
    * summaries emitted by deacon filter on the raw input reads.
    */
 
   label "low"
 
   input:
-  path "virus_enrichment_summaries/*"
+  path "target_enrichment_summaries/*"
 
   output:
-  path "virus_enrichment_summary.tsv", emit: summary_tsv
-  path "virus_enriched_bases_ranked.png", emit: enriched_bases_ranked_png
-  path "virus_enriched_bases_ranked.html", emit: enriched_bases_ranked_html
-  path "virus_retained_vs_filtered_stacked.png", emit: retained_vs_filtered_stacked_png
-  path "virus_retained_vs_filtered_stacked.html", emit: retained_vs_filtered_stacked_html
-  path "virus_reads_vs_bases_scatter.png", emit: reads_vs_bases_scatter_png
-  path "virus_reads_vs_bases_scatter.html", emit: reads_vs_bases_scatter_html
+  path "target_enrichment_summary.tsv", emit: summary_tsv
+  path "target_enriched_bases_ranked.png", emit: enriched_bases_ranked_png
+  path "target_enriched_bases_ranked.html", emit: enriched_bases_ranked_html
+  path "target_retained_vs_filtered_stacked.png", emit: retained_vs_filtered_stacked_png
+  path "target_retained_vs_filtered_stacked.html", emit: retained_vs_filtered_stacked_html
+  path "target_reads_vs_bases_scatter.png", emit: reads_vs_bases_scatter_png
+  path "target_reads_vs_bases_scatter.html", emit: reads_vs_bases_scatter_html
 
   script:
   """
-  plot_virus_enrichment_summaries.py \\
-      --summaries virus_enrichment_summaries/*.json \\
+  plot_target_enrichment_summaries.py \\
+      --summaries target_enrichment_summaries/*.json \\
       --outdir .
   """
 
   stub:
   """
-  touch virus_enrichment_summary.tsv
-  touch virus_enriched_bases_ranked.png
-  touch virus_enriched_bases_ranked.html
-  touch virus_retained_vs_filtered_stacked.png
-  touch virus_retained_vs_filtered_stacked.html
-  touch virus_reads_vs_bases_scatter.png
-  touch virus_reads_vs_bases_scatter.html
+  touch target_enrichment_summary.tsv
+  touch target_enriched_bases_ranked.png
+  touch target_enriched_bases_ranked.html
+  touch target_retained_vs_filtered_stacked.png
+  touch target_retained_vs_filtered_stacked.html
+  touch target_reads_vs_bases_scatter.png
+  touch target_reads_vs_bases_scatter.html
   """
 }
 

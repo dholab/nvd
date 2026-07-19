@@ -22,7 +22,7 @@ import yaml
 SCHEMA_FILENAME = "nvd-params.latest.schema.json"
 
 # GitHub raw URL for schema (fallback and for generated templates)
-SCHEMA_URL = "https://raw.githubusercontent.com/dholab/nvd/main/schemas/nvd-params.v3.1.0.schema.json"
+SCHEMA_URL = "https://raw.githubusercontent.com/dholab/nvd/main/schemas/nvd-params.v3.3.0.schema.json"
 
 
 def _find_schema_path() -> Path:
@@ -279,7 +279,10 @@ def _yaml_analysis_section(
         "dedup_seq",
         "dedup_pos",
         "trim_adapters",
+        "merge_pairs",
         "filter_reads",
+        "filter_low_complexity_reads",
+        "min_read_entropy",
     ]
     for name in preprocess_params:
         if name in properties:

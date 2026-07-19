@@ -51,3 +51,27 @@ process COUNT_MAPPED_READS {
     """
     
 }
+
+process SUMMARIZE_CONTIG_COVERAGE {
+
+    tag "${sample_id}"
+    label "medium"
+
+    errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
+    maxRetries 2
+
+    cpus 4
+
+    input:
+    tuple val(sample_id), path(bam), path(bai)
+
+    output:
+    tuple val(sample_id), path("${sample_id}.crumbs.coverage.tsv"), emit: coverage_summary
+
+    script:
+    """
+    samtools depth -aa ${bam} \
+    | summarize_contig_coverage.py --sample-id ${sample_id} --depth-tsv - --output ${sample_id}.crumbs.coverage.tsv
+    """
+
+}
