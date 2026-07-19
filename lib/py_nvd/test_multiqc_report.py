@@ -191,6 +191,10 @@ def test_compiler_generates_minimal_manifest_and_custom_content(tmp_path: Path) 
         (output_dir / "nvd_sample_roster_mqc.yaml").read_text(encoding="utf-8"),
     )
     assert all("sample_id" not in row for row in roster_section["data"].values())
+    assert roster_section["headers"]["read_structure"] == {
+        "title": "Read structure",
+        "scale": False,
+    }
 
     generated_text = "\n".join(path.read_text() for path in output_dir.iterdir())
     assert "/secret/source" not in generated_text
@@ -220,6 +224,84 @@ def test_no_observed_fastqc_is_valid_and_invents_no_state(tmp_path: Path) -> Non
     assert "missing" not in generated_text.lower()
     assert "failed" not in generated_text.lower()
     assert "skipped" not in generated_text.lower()
+
+
+def test_roster_uses_fastqc_read_ends_when_sra_structure_was_unknown(
+    tmp_path: Path,
+) -> None:
+    roster = tmp_path / "resolved_reads.jsonl"
+    roster.write_text(
+        "\n".join(
+            json.dumps(
+                {
+                    "sample_id": sample_id,
+                    "platform": "illumina",
+                    "source": "sra",
+                    "read_structure": "unknown",
+                    "read_counts": None,
+                    "warnings": [],
+                },
+            )
+            for sample_id in (
+                "paired_sra",
+                "single_sra",
+                "incomplete_sra",
+            )
+        )
+        + "\n"
+        + json.dumps(
+            {
+                "sample_id": "known_paired_sra",
+                "platform": "illumina",
+                "source": "sra",
+                "read_structure": "paired",
+                "read_counts": None,
+                "warnings": [],
+            },
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    fastqc_root = tmp_path / "fastqc_packages"
+    for sample_id, read_end in (
+        ("paired_sra", "R1"),
+        ("paired_sra", "R2"),
+        ("single_sra", "single"),
+        ("incomplete_sra", "R1"),
+        ("known_paired_sra", "single"),
+    ):
+        alias = f"{sample_id}.raw.{read_end}.001"
+        write_fastqc_package(
+            fastqc_root,
+            alias=alias,
+            receipt_overrides={
+                "sample_id": sample_id,
+                "source": "sra",
+                "read_end": read_end,
+            },
+        )
+    output_dir = tmp_path / "nvd_inputs"
+
+    build_inputs(
+        roster_path=roster,
+        version_path=write_version(tmp_path / "nvd_version.txt"),
+        fastqc_root=fastqc_root,
+        output_dir=output_dir,
+        experimental_enabled=False,
+    )
+
+    roster_section = yaml.safe_load(
+        (output_dir / "nvd_sample_roster_mqc.yaml").read_text(encoding="utf-8"),
+    )
+    assert {
+        sample_id: row["read_structure"]
+        for sample_id, row in roster_section["data"].items()
+    } == {
+        "paired_sra": "paired",
+        "single_sra": "single",
+        "incomplete_sra": "unknown",
+        "known_paired_sra": "paired",
+    }
 
 
 def test_compiler_renders_prepared_query_batches_and_localizes_invalid_payload(
