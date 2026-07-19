@@ -18,6 +18,7 @@ from pydantic import (
 
 from py_nvd.multiqc_domains import (
     FASTX_MAX_POINTS,
+    DomainConfiguration,
     LineGraphSection,
     ReportSection,
     TableSection,
@@ -149,6 +150,7 @@ class ReportRoots:
     depletion: Path | None = None
     fastx: Path | None = None
     assembly: Path | None = None
+    query_preparation: Path | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -183,6 +185,7 @@ def build_multiqc_inputs(request: CompileRequest) -> Path:
             Domain.DEPLETION: request.report_roots.depletion,
             Domain.FASTX: request.report_roots.fastx,
             Domain.ASSEMBLY: request.report_roots.assembly,
+            Domain.QUERY_PREPARATION: request.report_roots.query_preparation,
         },
         roster,
     )
@@ -195,9 +198,15 @@ def build_multiqc_inputs(request: CompileRequest) -> Path:
     domain_sections = build_domain_sections(
         packages=packages,
         sample_ids=tuple(roster),
-        target_enrichment_enabled=request.configuration.target_enrichment_enabled,
-        depletion_enabled=request.configuration.depletion_enabled,
-        assembly_enabled=request.configuration.assembly_enabled,
+        sample_platforms={
+            sample_id: sample.platform for sample_id, sample in roster.items()
+        },
+        configuration=DomainConfiguration(
+            experimental_enabled=request.configuration.experimental_enabled,
+            target_enrichment_enabled=request.configuration.target_enrichment_enabled,
+            depletion_enabled=request.configuration.depletion_enabled,
+            assembly_enabled=request.configuration.assembly_enabled,
+        ),
     )
     sections = ["nvd_sample_roster"]
     if raw_fastqc:
@@ -445,6 +454,7 @@ def write_domain_sections(
         "nvd_fastx_filtered_contigs_length_distribution": "nvd_fastx_filtered_contigs_length_distribution_mqc.yaml",
         "nvd_fastx_quality_distribution": "nvd_fastx_quality_distribution_mqc.yaml",
         "nvd_assembly": "nvd_assembly_mqc.yaml",
+        "nvd_prepared_blast_query_batches": "nvd_prepared_blast_query_batches_mqc.yaml",
     }
     for section_id, section in sections.items():
         content = {
@@ -466,6 +476,11 @@ def write_domain_sections(
                     exclude_none=True,
                 )
             content["data"] = rows
+            if section.headers:
+                content["headers"] = {
+                    column: header.model_dump(mode="json", exclude_none=True)
+                    for column, header in section.headers.items()
+                }
         elif isinstance(section, LineGraphSection):
             content["data"] = section.data
             content["pconfig"] = {

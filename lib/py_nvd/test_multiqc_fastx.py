@@ -7,7 +7,11 @@ from typing import TYPE_CHECKING
 
 import yaml
 
-from py_nvd.multiqc_domains import LineGraphSection, build_domain_sections
+from py_nvd.multiqc_domains import (
+    DomainConfiguration,
+    LineGraphSection,
+    build_domain_sections,
+)
 from py_nvd.multiqc_fastx import (
     FASTX_MAX_POINTS,
     InvalidFastxProfile,
@@ -215,9 +219,13 @@ def test_domain_sections_split_length_histograms_by_fastx_stage(
     sections = build_domain_sections(
         packages=tuple(packages),
         sample_ids=(),
-        target_enrichment_enabled=False,
-        depletion_enabled=False,
-        assembly_enabled=False,
+        sample_platforms={},
+        configuration=DomainConfiguration(
+            experimental_enabled=False,
+            target_enrichment_enabled=False,
+            depletion_enabled=False,
+            assembly_enabled=False,
+        ),
     )
 
     expected = {
