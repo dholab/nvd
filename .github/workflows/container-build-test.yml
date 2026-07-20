@@ -61,21 +61,88 @@ jobs:
           docker run --rm nvd:test \
             bash -c 'echo "Container started successfully"'
       
-      - name: Test PATH includes Pixi tools
+      - name: Test Pixi runtime precedence
         run: |
-          docker run --rm nvd:test \
-            bash -c 'echo $PATH | grep /opt/.pixi/envs/default/bin || exit 1'
+          docker run --rm --env TERM=dumb nvd:test \
+            bash -euo pipefail -c '
+              [ "${PATH%%:*}" = "/opt/.pixi/envs/default/bin" ]
+              [ "$(command -v perl)" = "/opt/.pixi/envs/default/bin/perl" ]
+              perl -MFindBin -e 1
+              [ "$(command -v nextflow)" = "/opt/.pixi/envs/default/bin/nextflow" ]
+              nextflow -version
+              fastqc --version
+            '
+
+      - name: Test FastQC on a minimal FASTQ
+        run: |
+          docker run --rm --env TERM=dumb nvd:test \
+            bash -euo pipefail -c '
+              tmp_dir=/tmp/fastqc-smoke
+              mkdir "$tmp_dir"
+              printf "@smoke\nACGTACGT\n+\nIIIIIIII\n" > "$tmp_dir/smoke.fastq"
+              fastqc --quiet --outdir "$tmp_dir" "$tmp_dir/smoke.fastq"
+              test -s "$tmp_dir/smoke_fastqc.zip"
+              test -s "$tmp_dir/smoke_fastqc.html"
+              unzip -t "$tmp_dir/smoke_fastqc.zip"
+              grep -q "<html" "$tmp_dir/smoke_fastqc.html"
+            '
+
+      - name: Test HTTPS with Pixi curl
+        run: |
+          docker run --rm --env TERM=dumb nvd:test \
+            bash -euo pipefail -c '
+              [ "$(command -v curl)" = "/opt/.pixi/envs/default/bin/curl" ]
+              curl --fail --silent --show-error --location \
+                --proto "=https" \
+                --output /tmp/nvd-checksums.txt \
+                "https://dholk.primate.wisc.edu/_webdav/dho/projects/lungfish/InfinitePath/public/%40files/release-v3.0.0/v3.0.0/checksums_v3_0.txt"
+              test -s /tmp/nvd-checksums.txt
+            '
       
       - name: Test bioinformatics tools available
         run: |
-          docker run --rm nvd:test \
-            bash -c '
-              which samtools && samtools --version &&
-              which blastn && blastn -version &&
-              which nextflow && nextflow -version &&
-              which minimap2 && minimap2 --version &&
-              which alignoth && alignoth --version &&
-              which seqkit && seqkit version
+          docker run --rm --env TERM=dumb nvd:test \
+            bash -euo pipefail -c '
+              for command_name in \
+                bbmap.sh blastn deacon fastp flye metaMDBG minimap2 mmseqs \
+                myloasm samtools seqkit spades.py sracha sourmash taxburst \
+                vsearch alignoth fastqc multiqc; do
+                [ "$(command -v "$command_name")" = "/opt/.pixi/envs/default/bin/$command_name" ]
+              done
+
+              bbmap.sh --version
+              blastn -version
+              deacon --version
+              fastp --version
+              flye --version
+              metaMDBG --version
+              minimap2 --version
+              mmseqs version
+              myloasm --version
+              samtools --version
+              seqkit version
+              spades.py --version
+              sracha --version
+              sourmash --version
+              taxburst --help
+              vsearch --version
+              alignoth --version
+              fastqc --version
+              multiqc --version
+            '
+
+      - name: Test Pixi-managed system tools available
+        run: |
+          docker run --rm --env TERM=dumb nvd:test \
+            bash -euo pipefail -c '
+              for command_name in openssl sqlite3 unzip zstd; do
+                [ "$(command -v "$command_name")" = "/opt/.pixi/envs/default/bin/$command_name" ]
+              done
+
+              openssl version
+              sqlite3 --version
+              unzip -v
+              zstd --version
             '
       
       - name: Test Python environment
