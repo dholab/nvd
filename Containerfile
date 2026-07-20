@@ -32,8 +32,8 @@ COPY nextflow.config $HOME/nextflow.config
 # 2) install pixi
 RUN cd $HOME && PIXI_ARCH=x86_64 curl -fsSL https://pixi.sh/install.sh | bash
 
-# 3) make sure pixi and pixi installs are on the $PATH
-ENV PATH=$PATH:$HOME/.pixi/bin
+# 3) make sure pixi is on the $PATH
+ENV PATH="${HOME}/.pixi/bin:${PATH}"
 
 # 4) install everything else with pixi. The container runtime does not need
 # host-side build and container-management tooling from the full developer
@@ -48,8 +48,8 @@ RUN cd $HOME && \
     pixi clean cache --assume-yes && \
     rm -rf $HOME/.cache $HOME/.pixi/cache
 
-# 5) Add pixi environment to PATH (works in Docker, Podman, AND Apptainer)
-ENV PATH=$PATH:/opt/.pixi/envs/default/bin
+# 5) Activate the locked pixi environment (works in Docker, Podman, AND Apptainer)
+ENV PATH="/opt/.pixi/envs/default/bin:${PATH}"
 
 # 6) Set Nextflow environment variables (works in all container runtimes)
 ENV NXF_CACHE_DIR=/scratch
