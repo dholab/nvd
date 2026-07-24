@@ -160,6 +160,7 @@ def test_run_accepts_skip_stage_flags(tmp_path: Path) -> None:
             str(samplesheet),
             "--skip-assembly",
             "--skip-blast",
+            "--skip-fastqc",
             "--dry-run",
         ],
     )
@@ -167,8 +168,10 @@ def test_run_accepts_skip_stage_flags(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.output
     assert "--skip_assembly" in result.output
     assert "--skip_blast" in result.output
+    assert "--skip_fastqc" in result.output
     assert "--skip-assembly" not in result.output
     assert "--skip-blast" not in result.output
+    assert "--skip-fastqc" not in result.output
 
 
 def test_run_accepts_no_enrichment_flag(tmp_path: Path) -> None:

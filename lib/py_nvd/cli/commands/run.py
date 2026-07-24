@@ -165,6 +165,12 @@ def run(
         help="Skip MEGABLAST and BLASTN contig search.",
         rich_help_panel=PANEL_CORE,
     ),
+    skip_fastqc: bool | None = typer.Option(
+        None,
+        "--skip-fastqc",
+        help="Skip per-file raw-read FastQC.",
+        rich_help_panel=PANEL_CORE,
+    ),
     # -------------------------------------------------------------------------
     # Reference Paths
     # -------------------------------------------------------------------------
@@ -614,6 +620,7 @@ def run(
         "experimental": experimental,
         "skip_assembly": skip_assembly,
         "skip_blast": skip_blast,
+        "skip_fastqc": skip_fastqc,
         # Reference paths
         "blast_db": blast_db,
         "blast_db_prefix": blast_db_prefix,

@@ -18,7 +18,9 @@ workflow PREPROCESS_READS {
     // Raw-read QC is an ancillary preprocessing branch. Each physical FASTQ
     // remains an independent task so failures, retries, memory, and cache reuse
     // stay bounded without delaying target enrichment.
-    ch_fastqc_units = ch_read_bundles.flatMap { meta, reads -> NvdReporting.processReadyFastqcTuples(meta, reads) }
+    ch_fastqc_units = ch_read_bundles.flatMap { meta, reads ->
+        NvdReporting.processReadyFastqcTuples(meta, reads, params.skip_fastqc == true)
+    }
     FASTQC_RAW(ch_fastqc_units)
 
     // -------------------------------------------------------------------------

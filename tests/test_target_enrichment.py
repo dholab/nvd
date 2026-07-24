@@ -138,6 +138,7 @@ def test_zero_target_reads_stop_before_preprocessing(tmp_path: Path) -> None:
     lib_dir = tmp_path / "lib"
     lib_dir.mkdir()
     shutil.copy2(ROOT / "lib" / "NvdUtils.groovy", lib_dir)
+    shutil.copy2(ROOT / "lib" / "NvdReporting.groovy", lib_dir)
     assets_dir = tmp_path / "assets"
     assets_dir.mkdir()
     (assets_dir / "README.md").write_text("test placeholder", encoding="utf-8")
@@ -154,6 +155,8 @@ def test_zero_target_reads_stop_before_preprocessing(tmp_path: Path) -> None:
 nextflow.enable.dsl = 2
 
 params.no_enrichment = false
+params.skip_fastqc = true
+params.merge_pairs = false
 params.virus_index = '{target_index}'
 params.virus_index_url = null
 params.virus_reference_fasta = null
