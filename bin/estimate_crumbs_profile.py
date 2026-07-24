@@ -208,6 +208,7 @@ def read_inputs(
 
 def collapse_assignments(blast: pl.DataFrame, sample_id: str) -> pl.DataFrame:
     """Collapse repeated BLAST hit rows to one assignment per contig."""
+    input_is_empty = blast.is_empty()
     if "sample" in blast.columns:
         blast = blast.filter(pl.col("sample").cast(pl.String) == sample_id)
 
@@ -222,7 +223,7 @@ def collapse_assignments(blast: pl.DataFrame, sample_id: str) -> pl.DataFrame:
         *[pl.col(column).cast(pl.String) for column in ASSIGNMENT_COLUMNS],
     )
 
-    if assignments.is_empty():
+    if assignments.is_empty() and not input_is_empty:
         message = f"no BLAST assignments found for sample {sample_id}"
         raise CrumbsProfileError(message)
 
@@ -289,10 +290,6 @@ def prepare_coverage(coverage: pl.DataFrame, sample_id: str) -> pl.DataFrame:
     prepared = coverage.filter(pl.col("sample_id") == sample_id).select(
         COVERAGE_COLUMNS,
     )
-    if prepared.is_empty():
-        message = f"no coverage rows found for sample {sample_id}"
-        raise CrumbsProfileError(message)
-
     duplicates = prepared.group_by("qseqid").len().filter(pl.col("len") > 1)
     if duplicates.height > 0:
         qseqids = duplicates.get_column("qseqid").to_list()
