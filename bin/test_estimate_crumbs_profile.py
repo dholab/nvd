@@ -215,6 +215,43 @@ def query_evidence_row(
     }
 
 
+def test_header_only_blast_writes_empty_profile_artifacts(tmp_path: Path) -> None:
+    _, coverage, taxonomy = write_minimal_inputs(
+        tmp_path,
+        blast_rows=[],
+        coverage_rows=[],
+        taxonomy_rows=[],
+    )
+    blast = write_tsv(
+        tmp_path / "sample-1.blast.final.tsv",
+        [
+            *BLAST_FIELDS,
+            "bitscore",
+            "evalue",
+            "query_class",
+            "support_record_count",
+            "qlen",
+        ],
+        [],
+    )
+
+    run_estimator(tmp_path, blast, coverage, taxonomy)
+
+    queries = tmp_path / "sample-1.crumbs.queries.tsv"
+    taxa = tmp_path / "sample-1.crumbs.taxa.tsv"
+    bioboxes = tmp_path / "sample-1.crumbs.bioboxes.profile.tsv"
+    assert read_lines(queries)[0].startswith("sample_id\tqseqid\t")
+    assert read_tsv(queries) == []
+    assert read_lines(taxa)[0].startswith("sample_id\ttaxon_id\t")
+    assert read_tsv(taxa) == []
+    assert read_lines(bioboxes)[-1] == "@@TAXID\tRANK\tTAXPATH\tTAXPATHSN\tPERCENTAGE"
+    assert bioboxes_data_rows(bioboxes) == []
+    qc = json.loads((tmp_path / "sample-1.crumbs.qc.json").read_text(encoding="utf-8"))
+    assert qc["n_queries"] == 0
+    assert qc["n_taxa"] == 0
+    assert qc["n_bioboxes_taxa"] == 0
+
+
 def test_estimates_taxon_crumbs_and_bioboxes_profile(tmp_path: Path) -> None:
     blast = write_tsv(
         tmp_path / "sample-1.blast.final.tsv",
