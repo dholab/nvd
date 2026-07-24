@@ -123,6 +123,11 @@ class NvdParams(BaseModel):
         description="Skip MEGABLAST and BLASTN contig search.",
         json_schema_extra={"category": "Core"},
     )
+    skip_fastqc: bool = Field(
+        default=False,
+        description="Skip per-file raw-read FastQC.",
+        json_schema_extra={"category": "Core"},
+    )
 
     blast_db_version: str | None = Field(
         None,

@@ -345,6 +345,12 @@ workflow {{
         tuple([id: 'sra_sample', platform: 'illumina', source: 'sra', read_mode: 'paired', r1_count: 1], [{nextflow_file(sra_r1)}, {nextflow_file(sra_r2)}]),
     ).flatMap {{ meta, reads -> NvdReporting.processReadyFastqcTuples(meta, reads) }}
      .view {{ planned -> "UNIT: ${{planned[0].sample_id}}:${{planned[0].source}}:${{planned[0].read_end}}:${{planned[0].input_ordinal}}:${{planned[0].alias}}:${{planned[0].staged_filename}}:${{planned[0].package_name}}" }}
+
+    Channel.of(
+        tuple([id: 'skipped_sample', platform: 'ont', source: 'single_file', read_mode: 'single', r1_count: 1], [{nextflow_file(single)}]),
+    ).flatMap {{ meta, reads -> NvdReporting.processReadyFastqcTuples(meta, reads, true) }}
+     .ifEmpty('no_fastqc_units')
+     .view {{ planned -> "SKIP: ${{planned}}" }}
 }}
 """,
         encoding="utf-8",
@@ -374,6 +380,7 @@ workflow {{
     assert sum(":sra:R2:1:" in line for line in unit_lines) == 1
     aliases = [line.split(":")[-3] for line in unit_lines]
     assert len(aliases) == len(set(aliases))
+    assert "SKIP: no_fastqc_units" in completed.stdout
 
 
 def test_target_enrichment_package_crosses_explicit_process_boundary(

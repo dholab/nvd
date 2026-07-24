@@ -1,7 +1,10 @@
 import nextflow.util.ArrayTuple
 
 class NvdReporting {
-    static List processReadyFastqcTuples(meta, readsValue) {
+    static List processReadyFastqcTuples(meta, readsValue, boolean skipFastqc = false) {
+        if (skipFastqc) {
+            return []
+        }
         return expandFastqcUnits(meta, readsValue).collect { planned ->
             new ArrayTuple([planned.unit, planned.read])
         }
