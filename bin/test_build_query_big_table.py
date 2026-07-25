@@ -28,6 +28,13 @@ BLAST_COLUMNS = [
     "bitscore",
     "sscinames",
     "staxids",
+    "saccver",
+    "qstart",
+    "qend",
+    "slen",
+    "sstart",
+    "send",
+    "sstrand",
     "rank",
     "adjusted_taxid",
     "adjusted_taxid_name",
@@ -69,7 +76,15 @@ EXPECTED_LEFT_TO_RIGHT_COLUMNS = [
     "mapped_reads",
     "producer",
     "source_id",
+    "best_hit_reference_accession",
+    "best_hit_reference_title",
     "best_hit_alignment_length",
+    "best_hit_query_start_1based",
+    "best_hit_query_end_1based",
+    "best_hit_reference_length",
+    "best_hit_reference_start_1based",
+    "best_hit_reference_end_1based",
+    "best_hit_reference_strand",
     "blast_db_version",
     "virus_index_version",
     "nextflow_run_id",
@@ -102,6 +117,13 @@ def base_hit(**overrides: str) -> dict[str, str]:
         "bitscore": "100",
         "sscinames": "Alpha virus",
         "staxids": "111",
+        "saccver": "NC_000001.1",
+        "qstart": "1",
+        "qend": "180",
+        "slen": "1000",
+        "sstart": "101",
+        "send": "280",
+        "sstrand": "plus",
         "rank": "acellular root:Viruses; family:Alpha; genus:Alphavirus; species:Alpha virus",
         "adjusted_taxid": "111",
         "adjusted_taxid_name": "Alpha virus",
@@ -433,7 +455,34 @@ def test_query_big_table_selects_best_hit_with_all_tie_breakers(
         base_hit(sseqid="ref-worse-evalue", evalue="1e-40", pident="100", length="200"),
         base_hit(sseqid="ref-worse-pident", evalue="1e-50", pident="98", length="200"),
         base_hit(sseqid="ref-shorter", evalue="1e-50", pident="99", length="170"),
-        base_hit(sseqid="ref-best", evalue="1e-50", pident="99", length="180"),
+        base_hit(
+            sseqid="ref-z-exact-tie",
+            saccver="NC_888888.1",
+            stitle="Later exact-tie reference",
+            evalue="1e-50",
+            pident="99",
+            length="180",
+            qstart="1",
+            qend="180",
+            slen="1000",
+            sstart="100",
+            send="279",
+            sstrand="plus",
+        ),
+        base_hit(
+            sseqid="ref-a-selected",
+            saccver="NC_999999.1",
+            stitle="Selected reverse-strand reference",
+            evalue="1e-50",
+            pident="99",
+            length="180",
+            qstart="190",
+            qend="11",
+            slen="1000",
+            sstart="900",
+            send="721",
+            sstrand="minus",
+        ),
     ]
     write_tsv(blast_tsv, rows, BLAST_COLUMNS)
 
@@ -443,6 +492,14 @@ def test_query_big_table_selects_best_hit_with_all_tie_breakers(
     assert row["best_hit_evalue"] == "1e-50"
     assert row["best_hit_pident"] == "99"
     assert row["best_hit_alignment_length"] == "180"
+    assert row["best_hit_reference_accession"] == "NC_999999.1"
+    assert row["best_hit_reference_title"] == "Selected reverse-strand reference"
+    assert row["best_hit_query_start_1based"] == "11"
+    assert row["best_hit_query_end_1based"] == "190"
+    assert row["best_hit_reference_length"] == "1000"
+    assert row["best_hit_reference_start_1based"] == "721"
+    assert row["best_hit_reference_end_1based"] == "900"
+    assert row["best_hit_reference_strand"] == "minus"
 
 
 def test_query_big_table_collapses_conflicting_crumbs_scores_to_absence(

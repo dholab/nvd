@@ -1381,6 +1381,27 @@ def test_mini_sra_viral_pipeline_completes() -> None:
                 "assigned_taxid" if filename == "query_big_table.tsv" else "taxid"
             )
             assert columns.index("who_risk_group") == columns.index(taxid_column) + 1
+            if filename == "query_big_table.tsv":
+                placement_columns = {
+                    "best_hit_reference_accession",
+                    "best_hit_reference_title",
+                    "best_hit_alignment_length",
+                    "best_hit_query_start_1based",
+                    "best_hit_query_end_1based",
+                    "best_hit_reference_length",
+                    "best_hit_reference_start_1based",
+                    "best_hit_reference_end_1based",
+                    "best_hit_reference_strand",
+                }
+                assert placement_columns <= set(columns)
+                for row in rows:
+                    assert row["best_hit_reference_accession"]
+                    assert int(row["best_hit_query_start_1based"]) <= int(
+                        row["best_hit_query_end_1based"],
+                    )
+                    assert int(row["best_hit_reference_start_1based"]) <= int(
+                        row["best_hit_reference_end_1based"],
+                    )
 
         sourmash_root = (
             results_root

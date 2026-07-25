@@ -19,7 +19,7 @@ Key features:
 - Handles semicolon-delimited staxids correctly
 - Configurable retention count (default: top 5 hits per query)
 - Per-query ranking within each staged BLAST result file
-- Explicit ten-field parsing with malformed-row failures
+- Explicit BLAST field parsing with malformed-row failures
 
 Usage:
     python select_top_blast_hits.py -i blast_results.txt -o top_hits.txt \\
@@ -41,11 +41,30 @@ from pathlib import Path
 
 import polars as pl
 
-EXPECTED_BLAST_FIELDS = 10
+BLAST_SCHEMA = {
+    "qseqid": pl.String,
+    "qlen": pl.Int64,
+    "sseqid": pl.String,
+    "stitle": pl.String,
+    "length": pl.Int64,
+    "pident": pl.Float64,
+    "evalue": pl.Float64,
+    "bitscore": pl.Float64,
+    "sscinames": pl.String,
+    "staxids": pl.String,
+    "saccver": pl.String,
+    "qstart": pl.Int64,
+    "qend": pl.Int64,
+    "slen": pl.Int64,
+    "sstart": pl.Int64,
+    "send": pl.Int64,
+    "sstrand": pl.String,
+}
+EXPECTED_BLAST_FIELDS = len(BLAST_SCHEMA)
 
 
 def require_blast_row_width(path: str | Path) -> None:
-    """Require every headerless BLAST row to contain exactly ten fields."""
+    """Require every headerless BLAST row to match the configured field count."""
     with Path(path).open(newline="", encoding="utf-8") as handle:
         for line_number, row in enumerate(
             csv.reader(handle, delimiter="\t", quoting=csv.QUOTE_NONE),
@@ -140,24 +159,35 @@ def select_top_hits(blast_txt: str | Path, top_k: int = 5) -> pl.LazyFrame:
             separator="\t",
             quote_char=None,
             has_header=False,
-            schema={
-                "qseqid": pl.String,
-                "qlen": pl.Int64,
-                "sseqid": pl.String,
-                "stitle": pl.String,
-                "length": pl.Int64,
-                "pident": pl.Float64,
-                "evalue": pl.Float64,
-                "bitscore": pl.Float64,
-                "sscinames": pl.String,
-                "staxids": pl.String,
-            },
+            schema=BLAST_SCHEMA,
         )
         # One reference can have multiple HSP rows. Represent it by the best
         # row before assigning retention positions.
         .sort(
-            ["qseqid", "bitscore", "evalue", "pident", "length"],
-            descending=[False, True, False, True, True],
+            [
+                "qseqid",
+                "bitscore",
+                "evalue",
+                "pident",
+                "length",
+                "qstart",
+                "qend",
+                "sstart",
+                "send",
+                "sstrand",
+            ],
+            descending=[
+                False,
+                True,
+                False,
+                True,
+                True,
+                False,
+                False,
+                False,
+                False,
+                False,
+            ],
         )
         .unique(subset=["qseqid", "sseqid"], keep="first", maintain_order=True)
         # Minimum ranking gives every tied reference the first ordinal position
@@ -171,7 +201,7 @@ def select_top_hits(blast_txt: str | Path, top_k: int = 5) -> pl.LazyFrame:
         .filter(pl.col("_rank") <= top_k)
         # Expand multi-taxid references only after reference retention.
         .with_columns(pl.col("staxids").cast(pl.Utf8).str.split(by=";").alias("_taxid"))
-        .explode("_taxid")
+        .explode("_taxid", empty_as_null=True)
         .with_columns(pl.col("_taxid").str.to_integer(strict=False).alias("staxids"))
         .unique(maintain_order=True)
         .drop("_rank", "_taxid")

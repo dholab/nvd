@@ -15,6 +15,14 @@ def blast_row(
     bitscore: int,
     staxids: str,
     stitle: str | None = None,
+    *,
+    saccver: str | None = None,
+    qstart: int = 1,
+    qend: int = 214,
+    slen: int = 1_000,
+    sstart: int = 101,
+    send: int = 314,
+    sstrand: str = "plus",
 ) -> str:
     """Build one headerless BLAST outfmt-6 row."""
     return "\t".join(
@@ -29,6 +37,13 @@ def blast_row(
             str(bitscore),
             f"Taxon {staxids}",
             staxids,
+            saccver if saccver is not None else sseqid,
+            str(qstart),
+            str(qend),
+            str(slen),
+            str(sstart),
+            str(send),
+            sstrand,
         ],
     )
 
@@ -118,8 +133,31 @@ def test_repeated_hsps_collapse_to_the_best_reference_row(tmp_path: Path) -> Non
     input_file = tmp_path / "blast.tsv"
     output_file = tmp_path / "retained.tsv"
     rows = [
-        blast_row("query-1", "ref-1", 100, "1"),
-        blast_row("query-1", "ref-1", 90, "1"),
+        blast_row(
+            "query-1",
+            "ref-1",
+            100,
+            "1",
+            saccver="NC_000001.1",
+            qstart=3,
+            qend=210,
+            slen=2_000,
+            sstart=900,
+            send=693,
+            sstrand="minus",
+        ),
+        blast_row(
+            "query-1",
+            "ref-1",
+            90,
+            "1",
+            saccver="NC_000001.1",
+            qstart=10,
+            qend=100,
+            slen=2_000,
+            sstart=400,
+            send=491,
+        ),
         blast_row("query-1", "ref-2", 99, "2"),
         blast_row("query-1", "ref-3", 98, "3"),
     ]
@@ -132,6 +170,59 @@ def test_repeated_hsps_collapse_to_the_best_reference_row(tmp_path: Path) -> Non
     assert retained.filter(pl.col("sseqid") == "ref-1")["bitscore"].to_list() == [
         100.0,
     ]
+    best_reference = retained.filter(pl.col("sseqid") == "ref-1").row(
+        0,
+        named=True,
+    )
+    assert best_reference["saccver"] == "NC_000001.1"
+    assert best_reference["qstart"] == 3
+    assert best_reference["qend"] == 210
+    assert best_reference["slen"] == 2_000
+    assert best_reference["sstart"] == 900
+    assert best_reference["send"] == 693
+    assert best_reference["sstrand"] == "minus"
+
+
+def test_fully_tied_hsps_use_coordinates_as_a_stable_tiebreaker(
+    tmp_path: Path,
+) -> None:
+    input_file = tmp_path / "blast.tsv"
+    output_file = tmp_path / "retained.tsv"
+    input_file.write_text(
+        "\n".join(
+            [
+                blast_row(
+                    "query-1",
+                    "ref-1",
+                    100,
+                    "1",
+                    qstart=20,
+                    qend=119,
+                    sstart=500,
+                    send=599,
+                ),
+                blast_row(
+                    "query-1",
+                    "ref-1",
+                    100,
+                    "1",
+                    qstart=10,
+                    qend=109,
+                    sstart=700,
+                    send=799,
+                ),
+            ],
+        )
+        + "\n",
+    )
+
+    run_selection(input_file, output_file, 1)
+
+    [retained] = pl.read_csv(output_file, separator="\t").iter_rows(named=True)
+    assert retained["qstart"] == 10
+    assert retained["qend"] == 109
+    assert retained["sstart"] == 700
+    assert retained["send"] == 799
 
 
 def test_literal_quotes_in_blast_titles_survive_selection(tmp_path: Path) -> None:
@@ -172,7 +263,7 @@ def test_ragged_blast_row_fails_explicitly(tmp_path: Path) -> None:
     output_file = tmp_path / "retained.tsv"
     input_file.write_text(blast_row("query-1", "ref-1", 100, "1") + "\textra\n")
 
-    with pytest.raises(ValueError, match="11 fields"):
+    with pytest.raises(ValueError, match="18 fields"):
         run_selection(input_file, output_file, 1)
 
 
@@ -182,7 +273,7 @@ def test_short_blast_row_fails_explicitly(tmp_path: Path) -> None:
     short_row = blast_row("query-1", "ref-1", 100, "1").rsplit("\t", 1)[0]
     input_file.write_text(short_row + "\n")
 
-    with pytest.raises(ValueError, match="9 fields"):
+    with pytest.raises(ValueError, match="16 fields"):
         run_selection(input_file, output_file, 1)
 
 

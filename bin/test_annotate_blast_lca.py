@@ -15,15 +15,11 @@ from pathlib import Path
 
 import polars as pl
 import pytest
-from annotate_blast_lca import (
-    OUTPUT_COLUMNS,
-    main,
-    parse_args,
-)
+from annotate_blast_lca import OUTPUT_COLUMNS, main, parse_args
 from concatenate_tsvs import main as concatenate_tsvs
 from py_nvd import taxonomy
 
-EXPECTED_OUTPUT_COLUMNS = [
+BLAST_INPUT_COLUMNS = [
     "task",
     "sample",
     "qseqid",
@@ -36,7 +32,17 @@ EXPECTED_OUTPUT_COLUMNS = [
     "bitscore",
     "sscinames",
     "staxids",
+    "saccver",
+    "qstart",
+    "qend",
+    "slen",
+    "sstart",
+    "send",
+    "sstrand",
     "rank",
+]
+EXPECTED_OUTPUT_COLUMNS = [
+    *BLAST_INPUT_COLUMNS,
     "adjusted_taxid",
     "adjusted_taxid_name",
     "adjusted_taxid_rank",
@@ -47,7 +53,6 @@ EXPECTED_OUTPUT_COLUMNS = [
 def read_tsv_header(path: Path) -> list[str]:
     with path.open(newline="", encoding="utf-8") as handle:
         return next(csv.reader(handle, delimiter="\t"))
-
 
 @pytest.fixture
 def test_taxonomy_sqlite(tmp_path: Path) -> Path:
@@ -168,12 +173,12 @@ class TestEndToEnd:
         blast_file = tmp_path / "close_scoring_taxids.tsv"
         blast_file.write_text(
             """\
-task\tsample\tqseqid\tqlen\tsseqid\tstitle\tlength\tpident\tevalue\tbitscore\tsscinames\tstaxids\trank
-megablast\tsample1\tcontig_edge\t216\tref|human-best\tHuman best\t214\t100\t1e-100\t396\tHomo sapiens\t9606\tspecies:Homo sapiens
-megablast\tsample1\tcontig_edge\t216\tref|chimp-close\tChimp close\t214\t99.5\t1e-99\t390\tPan troglodytes\t9598\tspecies:Pan troglodytes
-megablast\tsample1\tcontig_edge\t216\tref|sparse-close\tSparse close\t10\t20.0\t1\t390\tSparse-lineage test species\t6001\tspecies:Sparse-lineage test species
-megablast\tsample1\tcontig_edge\t216\tref|test-close\tTest close\t214\t99.0\t1e-98\t385\tTest species one\t5001\tspecies:Test species one
-megablast\tsample1\tcontig_edge\t216\tref|human-distant\tHuman distant\t214\t98.0\t1e-90\t374\tHomo sapiens\t9606\tspecies:Homo sapiens
+task\tsample\tqseqid\tqlen\tsseqid\tstitle\tlength\tpident\tevalue\tbitscore\tsscinames\tstaxids\tsaccver\tqstart\tqend\tslen\tsstart\tsend\tsstrand\trank
+megablast\tsample1\tcontig_edge\t216\tref|human-best\tHuman best\t214\t100\t1e-100\t396\tHomo sapiens\t9606\tNC_000001.1\t2\t215\t1000\t900\t687\tminus\tspecies:Homo sapiens
+megablast\tsample1\tcontig_edge\t216\tref|chimp-close\tChimp close\t214\t99.5\t1e-99\t390\tPan troglodytes\t9598\tNC_000002.1\t1\t214\t1000\t100\t313\tplus\tspecies:Pan troglodytes
+megablast\tsample1\tcontig_edge\t216\tref|sparse-close\tSparse close\t10\t20.0\t1\t390\tSparse-lineage test species\t6001\tNC_000003.1\t1\t10\t1000\t200\t209\tplus\tspecies:Sparse-lineage test species
+megablast\tsample1\tcontig_edge\t216\tref|test-close\tTest close\t214\t99.0\t1e-98\t385\tTest species one\t5001\tNC_000004.1\t1\t214\t1000\t300\t513\tplus\tspecies:Test species one
+megablast\tsample1\tcontig_edge\t216\tref|human-distant\tHuman distant\t214\t98.0\t1e-90\t374\tHomo sapiens\t9606\tNC_000005.1\t1\t214\t1000\t400\t613\tplus\tspecies:Homo sapiens
 """,
         )
         output_file = tmp_path / "output.tsv"
@@ -201,6 +206,14 @@ megablast\tsample1\tcontig_edge\t216\tref|human-distant\tHuman distant\t214\t98.
             "ref|test-close",
             "ref|human-distant",
         }
+        best = output.filter(pl.col("sseqid") == "ref|human-best").row(0, named=True)
+        assert best["saccver"] == "NC_000001.1"
+        assert best["qstart"] == 2
+        assert best["qend"] == 215
+        assert best["slen"] == 1000
+        assert best["sstart"] == 900
+        assert best["send"] == 687
+        assert best["sstrand"] == "minus"
         [assignment] = (
             output.select("adjusted_taxid", "adjustment_method")
             .unique()
@@ -220,15 +233,16 @@ megablast\tsample1\tcontig_edge\t216\tref|human-distant\tHuman distant\t214\t98.
         """Populated and no-hit outputs expose one canonical downstream schema."""
         populated_input = tmp_path / "populated-input.tsv"
         populated_input.write_text(
-            "\t".join(EXPECTED_OUTPUT_COLUMNS[:13])
+            "\t".join(BLAST_INPUT_COLUMNS)
             + "\n"
             + "megablast\tsample1\tcontig1\t500\tref|human\tHuman\t450\t99.5"
-            "\t1e-100\t800\tHomo sapiens\t9606\tspecies:Homo sapiens\n",
+            "\t1e-100\t800\tHomo sapiens\t9606\tNC_000001.1\t1\t450\t500"
+            "\t1\t450\tplus\tspecies:Homo sapiens\n",
             encoding="utf-8",
         )
         no_hit_input = tmp_path / "no-hit-input.tsv"
         no_hit_input.write_text(
-            "\t".join(EXPECTED_OUTPUT_COLUMNS[:13]) + "\n",
+            "\t".join(BLAST_INPUT_COLUMNS) + "\n",
             encoding="utf-8",
         )
         populated_output = tmp_path / "a-populated-output.tsv"
@@ -284,11 +298,11 @@ class TestTaxonomicConsensus:
         """A reference at 95% participates while one below 95% does not."""
         blast_file = tmp_path / "threshold_test.txt"
         content = """\
-task\tsample\tqseqid\tqlen\tsseqid\tstitle\tlength\tpident\tevalue\tbitscore\tsscinames\tstaxids\trank
-megablast\tsample1\tcontig_at_boundary\t500\tref|NC_001\tHuman\t450\t99.5\t1e-100\t100\tHomo sapiens\t9606\tspecies:Homo sapiens
-megablast\tsample1\tcontig_at_boundary\t500\tref|NC_002\tChimp\t450\t99.0\t1e-90\t95\tPan troglodytes\t9598\tspecies:Pan troglodytes
-megablast\tsample1\tcontig_below_boundary\t500\tref|NC_003\tHuman\t450\t99.5\t1e-100\t100\tHomo sapiens\t9606\tspecies:Homo sapiens
-megablast\tsample1\tcontig_below_boundary\t500\tref|NC_004\tChimp\t450\t99.0\t1e-90\t94.9\tPan troglodytes\t9598\tspecies:Pan troglodytes
+task\tsample\tqseqid\tqlen\tsseqid\tstitle\tlength\tpident\tevalue\tbitscore\tsscinames\tstaxids\tsaccver\tqstart\tqend\tslen\tsstart\tsend\tsstrand\trank
+megablast\tsample1\tcontig_at_boundary\t500\tref|NC_001\tHuman\t450\t99.5\t1e-100\t100\tHomo sapiens\t9606\tNC_001\t1\t450\t500\t1\t450\tplus\tspecies:Homo sapiens
+megablast\tsample1\tcontig_at_boundary\t500\tref|NC_002\tChimp\t450\t99.0\t1e-90\t95\tPan troglodytes\t9598\tNC_002\t1\t450\t500\t1\t450\tplus\tspecies:Pan troglodytes
+megablast\tsample1\tcontig_below_boundary\t500\tref|NC_003\tHuman\t450\t99.5\t1e-100\t100\tHomo sapiens\t9606\tNC_003\t1\t450\t500\t1\t450\tplus\tspecies:Homo sapiens
+megablast\tsample1\tcontig_below_boundary\t500\tref|NC_004\tChimp\t450\t99.0\t1e-90\t94.9\tPan troglodytes\t9598\tNC_004\t1\t450\t500\t1\t450\tplus\tspecies:Pan troglodytes
 """
         blast_file.write_text(content)
 
@@ -331,9 +345,9 @@ megablast\tsample1\tcontig_below_boundary\t500\tref|NC_004\tChimp\t450\t99.0\t1e
         """Merged taxids are canonicalized before method selection."""
         blast_file = tmp_path / "merged_test.txt"
         content = """\
-task\tsample\tqseqid\tqlen\tsseqid\tstitle\tlength\tpident\tevalue\tbitscore\tsscinames\tstaxids\trank
-megablast\tsample1\tcontig_merged\t500\tref|NC_001\tOld Human ID\t450\t99.5\t1e-100\t800\tHomo sapiens\t12345\tspecies:Homo sapiens
-megablast\tsample1\tcontig_merged\t500\tref|NC_001\tOld Human ID\t450\t99.5\t1e-100\t800\tHomo sapiens\t9606\tspecies:Homo sapiens
+task\tsample\tqseqid\tqlen\tsseqid\tstitle\tlength\tpident\tevalue\tbitscore\tsscinames\tstaxids\tsaccver\tqstart\tqend\tslen\tsstart\tsend\tsstrand\trank
+megablast\tsample1\tcontig_merged\t500\tref|NC_001\tOld Human ID\t450\t99.5\t1e-100\t800\tHomo sapiens\t12345\tNC_001\t1\t450\t500\t1\t450\tplus\tspecies:Homo sapiens
+megablast\tsample1\tcontig_merged\t500\tref|NC_001\tOld Human ID\t450\t99.5\t1e-100\t800\tHomo sapiens\t9606\tNC_001\t1\t450\t500\t1\t450\tplus\tspecies:Homo sapiens
 """
         blast_file.write_text(content)
 
@@ -356,8 +370,7 @@ megablast\tsample1\tcontig_merged\t500\tref|NC_001\tOld Human ID\t450\t99.5\t1e-
         assert output.height == 1
         assert output["staxids"].to_list() == [9606]
         [assignment] = (
-            output
-            .select("adjusted_taxid", "adjustment_method")
+            output.select("adjusted_taxid", "adjustment_method")
             .unique()
             .iter_rows(named=True)
         )
@@ -376,9 +389,9 @@ megablast\tsample1\tcontig_merged\t500\tref|NC_001\tOld Human ID\t450\t99.5\t1e-
         blast_file = tmp_path / "invalid_taxid.tsv"
         blast_file.write_text(
             """\
-task\tsample\tqseqid\tqlen\tsseqid\tstitle\tlength\tpident\tevalue\tbitscore\tsscinames\tstaxids\trank
-megablast\tsample1\tcontig_invalid\t500\tref|valid\tHuman\t450\t99.5\t1e-100\t800\tHomo sapiens\t9606\tspecies:Homo sapiens
-megablast\tsample1\tcontig_invalid\t500\tref|invalid\tUnknown\t450\t99.5\t1e-100\t800\tUnknown\t999999999\tno rank:Unknown
+task\tsample\tqseqid\tqlen\tsseqid\tstitle\tlength\tpident\tevalue\tbitscore\tsscinames\tstaxids\tsaccver\tqstart\tqend\tslen\tsstart\tsend\tsstrand\trank
+megablast\tsample1\tcontig_invalid\t500\tref|valid\tHuman\t450\t99.5\t1e-100\t800\tHomo sapiens\t9606\tNC_valid\t1\t450\t500\t1\t450\tplus\tspecies:Homo sapiens
+megablast\tsample1\tcontig_invalid\t500\tref|invalid\tUnknown\t450\t99.5\t1e-100\t800\tUnknown\t999999999\tNC_invalid\t1\t450\t500\t1\t450\tplus\tno rank:Unknown
 """,
         )
         output_file = tmp_path / "output.tsv"
@@ -398,12 +411,11 @@ megablast\tsample1\tcontig_invalid\t500\tref|invalid\tUnknown\t450\t99.5\t1e-100
 
         output = pl.read_csv(output_file, separator="\t")
         assert output.filter(pl.col("sseqid") == "ref|valid")["staxids"].item() == 9606
-        assert output.filter(pl.col("sseqid") == "ref|invalid")[
-            "staxids"
-        ].item() is None
+        assert (
+            output.filter(pl.col("sseqid") == "ref|invalid")["staxids"].item() is None
+        )
         [assignment] = (
-            output
-            .select("adjusted_taxid", "adjustment_method")
+            output.select("adjusted_taxid", "adjustment_method")
             .unique()
             .iter_rows(named=True)
         )
@@ -422,9 +434,9 @@ megablast\tsample1\tcontig_invalid\t500\tref|invalid\tUnknown\t450\t99.5\t1e-100
         blast_file = tmp_path / "unranked_lca.tsv"
         blast_file.write_text(
             """\
-task\tsample\tqseqid\tqlen\tsseqid\tstitle\tlength\tpident\tevalue\tbitscore\tsscinames\tstaxids\trank
-megablast\tsample1\tcontig_unranked\t500\tref|one\tOne\t450\t99.5\t1e-100\t800\tTest species one\t5001\tspecies:Test species one
-megablast\tsample1\tcontig_unranked\t500\tref|two\tTwo\t450\t99.5\t1e-100\t800\tTest species two\t5002\tspecies:Test species two
+task\tsample\tqseqid\tqlen\tsseqid\tstitle\tlength\tpident\tevalue\tbitscore\tsscinames\tstaxids\tsaccver\tqstart\tqend\tslen\tsstart\tsend\tsstrand\trank
+megablast\tsample1\tcontig_unranked\t500\tref|one\tOne\t450\t99.5\t1e-100\t800\tTest species one\t5001\tNC_one\t1\t450\t500\t1\t450\tplus\tspecies:Test species one
+megablast\tsample1\tcontig_unranked\t500\tref|two\tTwo\t450\t99.5\t1e-100\t800\tTest species two\t5002\tNC_two\t1\t450\t500\t1\t450\tplus\tspecies:Test species two
 """,
         )
         output_file = tmp_path / "output.tsv"
@@ -469,8 +481,8 @@ megablast\tsample1\tcontig_unranked\t500\tref|two\tTwo\t450\t99.5\t1e-100\t800\t
         blast_file = tmp_path / "unavailable_taxids.tsv"
         blast_file.write_text(
             """\
-task\tsample\tqseqid\tqlen\tsseqid\tstitle\tlength\tpident\tevalue\tbitscore\tsscinames\tstaxids\trank
-megablast\tsample1\tcontig_unavailable\t500\tref|invalid\tUnknown\t450\t99.5\t1e-100\t800\tUnknown\t999999999\tno rank:Unknown
+task\tsample\tqseqid\tqlen\tsseqid\tstitle\tlength\tpident\tevalue\tbitscore\tsscinames\tstaxids\tsaccver\tqstart\tqend\tslen\tsstart\tsend\tsstrand\trank
+megablast\tsample1\tcontig_unavailable\t500\tref|invalid\tUnknown\t450\t99.5\t1e-100\t800\tUnknown\t999999999\tNC_invalid\t1\t450\t500\t1\t450\tplus\tno rank:Unknown
 """,
         )
         output_file = tmp_path / "output.tsv"
@@ -532,9 +544,7 @@ megablast\tsample1\tcontig_unavailable\t500\tref|invalid\tUnknown\t450\t99.5\t1e
     ):
         """Header-only merged BLAST tables are valid no-hit sentinels."""
         blast_file = tmp_path / "header_only.txt"
-        blast_file.write_text(
-            "task\tsample\tqseqid\tqlen\tsseqid\tstitle\tlength\tpident\tevalue\tbitscore\tsscinames\tstaxids\trank\n",
-        )
+        blast_file.write_text("\t".join(BLAST_INPUT_COLUMNS) + "\n")
 
         output_file = tmp_path / "output.txt"
 
