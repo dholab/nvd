@@ -23,6 +23,7 @@ include { RAPID_SCREENING         } from "../subworkflows/rapid_screening"
 include { SAMPLE_SIMILARITY_QC    } from "../subworkflows/sample_similarity_qc"
 include { RAPID_SCREENING_EVAL    } from "../subworkflows/rapid_screening_eval"
 include { REPORTING               } from "../subworkflows/reporting"
+include { NOTIFY_RUN_COMPLETION_SLACK } from "../modules/notifications"
 include { COMPUTE_RUN_CONTEXT ; ENSURE_TAXONOMY } from "../modules/utils"
 
 
@@ -163,6 +164,8 @@ workflow NVD_MAIN {
     workflow.runName,
   )
 
+  ch_run_completed_results = REPORTING.out.completed_results
+
   if (params.experimental == true) {
     RAPID_SCREENING_EVAL(
       PREPROCESS_READS.out.read_counts,
@@ -174,13 +177,26 @@ workflow NVD_MAIN {
       REPORTING.out.crumbs_queries,
       workflow.runName,
     )
+
+    ch_run_completed_results = ch_run_completed_results
+      .combine(SAMPLE_SIMILARITY_QC.out.completion)
+      .combine(RAPID_SCREENING_EVAL.out.completion)
+      .map { experiment_results, _sample_similarity_ready, _evaluation_ready -> experiment_results }
   }
 
   ch_completed_sample_ids = REPORTING.out.blast_results
     .map { sample_id, _blast_results -> sample_id }
     .mix(PREPROCESS_READS.out.complete_empty_samples.map { sample_id, _platform -> sample_id })
 
+  NOTIFY_RUN_COMPLETION_SLACK(
+    ch_run_completed_results,
+    ch_run_context,
+    workflow.runName,
+  )
+
   emit:
-  completion = ch_completed_sample_ids.count().map { n -> "NVD main workflow complete: ${n} samples processed" }
+  completion = ch_run_completed_results
+    .combine(ch_completed_sample_ids.count())
+    .map { _results, n -> "NVD main workflow complete: ${n} samples processed" }
   labkey_log = REPORTING.out.labkey_log
 }

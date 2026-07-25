@@ -339,6 +339,8 @@ def test_blast_results_add_risk_group_by_consensus_taxid(tmp_path: Path) -> None
         "adjusted_taxid_name",
         "adjusted_taxid_rank",
         "who_risk_group",
+        "who_risk_group_source_taxid",
+        "who_risk_group_source_name",
         "adjustment_method",
     ]
     assert [row["adjusted_taxid"] for row in rows] == [
@@ -354,6 +356,18 @@ def test_blast_results_add_risk_group_by_consensus_taxid(tmp_path: Path) -> None
         "dominant",
     ]
     assert [row["who_risk_group"] for row in rows] == ["RG2", "", "", ""]
+    assert [row["who_risk_group_source_taxid"] for row in rows] == [
+        "123",
+        "",
+        "",
+        "",
+    ]
+    assert [row["who_risk_group_source_name"] for row in rows] == [
+        "Example virus",
+        "",
+        "",
+        "",
+    ]
     assert [
         {key: value for key, value in row.items() if key not in RISK_ANNOTATION_COLUMNS}
         for row in rows
@@ -447,6 +461,11 @@ def test_nearest_classified_ancestor_is_inherited_and_descendant_overrides(
 
     rows = read_table(output, delimiter="\t")
     assert [row["who_risk_group"] for row in rows] == ["RG2", "RG3"]
+    assert [row["who_risk_group_source_taxid"] for row in rows] == ["123", "125"]
+    assert [row["who_risk_group_source_name"] for row in rows] == [
+        "Example virus",
+        "Exceptional strain",
+    ]
 
 
 def test_descendant_classification_does_not_flow_to_ancestor(tmp_path: Path) -> None:

@@ -186,17 +186,6 @@ def highest_risk_group(groups: set[str], *, tax_id: int) -> str | None:
     return selected
 
 
-def resolve_taxid_path(
-    taxid_path: Sequence[int],
-    classifications: Mapping[int, set[str]],
-) -> str | None:
-    for tax_id in reversed(taxid_path):
-        groups = classifications.get(tax_id)
-        if groups:
-            return highest_risk_group(groups, tax_id=tax_id)
-    return None
-
-
 def load_bioboxes_paths(path: Path) -> dict[str, set[TaxonPath]]:
     lines = path.read_text(encoding="utf-8").splitlines()
     header_index = next(
@@ -372,6 +361,25 @@ def blast_taxid_path(tax_id: int, tax: TaxonomyDB | None) -> list[int]:
     return lineage or [tax_id]
 
 
+def resolve_blast_risk_group(
+    tax_id: int,
+    classifications: Mapping[int, set[str]],
+    tax: TaxonomyDB | None,
+) -> RiskGroupResolution | None:
+    for source_taxid in reversed(blast_taxid_path(tax_id, tax)):
+        groups = classifications.get(source_taxid)
+        if not groups:
+            continue
+        group = highest_risk_group(groups, tax_id=source_taxid)
+        if group is not None:
+            return RiskGroupResolution(
+                group=group,
+                source_taxid=source_taxid,
+                source_name=tax.get_name(source_taxid) or "" if tax is not None else "",
+            )
+    return None
+
+
 def annotate_blast(
     input_path: Path,
     classifications: Mapping[int, set[str]],
@@ -388,10 +396,12 @@ def annotate_blast(
     )
     input_columns = blast.collect_schema().names()
     output_columns = input_columns.copy()
-    output_columns.insert(
-        output_columns.index("adjusted_taxid_rank") + 1,
+    risk_column_index = output_columns.index("adjusted_taxid_rank") + 1
+    output_columns[risk_column_index:risk_column_index] = [
         RISK_GROUP_COLUMN,
-    )
+        RISK_GROUP_SOURCE_TAXID_COLUMN,
+        RISK_GROUP_SOURCE_NAME_COLUMN,
+    ]
     parsed_taxid_expr = (
         pl.col("adjusted_taxid").str.strip_chars().cast(pl.Int64, strict=False)
     )
@@ -417,15 +427,31 @@ def annotate_blast(
         .get_column(JOIN_KEY_COLUMN)
         .to_list()
     )
+    resolutions = [
+        resolve_blast_risk_group(tax_id, classifications, tax) for tax_id in taxids
+    ]
     lookup = pl.DataFrame(
         {
             JOIN_KEY_COLUMN: taxids,
             RISK_GROUP_COLUMN: [
-                resolve_taxid_path(blast_taxid_path(tax_id, tax), classifications)
-                for tax_id in taxids
+                resolution.group if resolution is not None else None
+                for resolution in resolutions
+            ],
+            RISK_GROUP_SOURCE_TAXID_COLUMN: [
+                resolution.source_taxid if resolution is not None else None
+                for resolution in resolutions
+            ],
+            RISK_GROUP_SOURCE_NAME_COLUMN: [
+                resolution.source_name if resolution is not None else None
+                for resolution in resolutions
             ],
         },
-        schema={JOIN_KEY_COLUMN: pl.Int64, RISK_GROUP_COLUMN: pl.String},
+        schema={
+            JOIN_KEY_COLUMN: pl.Int64,
+            RISK_GROUP_COLUMN: pl.String,
+            RISK_GROUP_SOURCE_TAXID_COLUMN: pl.Int64,
+            RISK_GROUP_SOURCE_NAME_COLUMN: pl.String,
+        },
     ).lazy()
     return blast.pipe(
         left_join_risk_groups,
