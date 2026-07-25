@@ -176,7 +176,9 @@ workflow NVD_MAIN {
     LONG_READ_DENOVO_ENSEMBLY.out.eligibility_summaries,
     LONG_READ_DENOVO_ENSEMBLY.out.union_summaries,
     PREPARE_BLAST_QUERIES.out.blast_query_summaries,
+    PREPARE_BLAST_QUERIES.out.queries,
     CLASSIFY_WITH_MEGABLAST.out.megablast_query_partition.map { sample_id, query_class, _accounted_ids, _blastn_candidates, summary -> tuple(sample_id, query_class, summary) },
+    ch_blast_db_files,
     channel.value(file("${projectDir}/assets/multiqc_config.yaml")),
     workflow.runName,
   )

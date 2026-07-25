@@ -333,6 +333,92 @@ def assert_concatenated_tsv(output: Path, inputs: list[Path]) -> None:
     assert output_rows == expected_rows
 
 
+def read_fasta_records(path: Path) -> dict[str, str]:
+    records: dict[str, str] = {}
+    current_id: str | None = None
+    sequence_lines = 0
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        if raw_line.startswith(">"):
+            current_id = raw_line[1:].split(maxsplit=1)[0]
+            assert current_id not in records, (
+                f"Duplicate FASTA ID {current_id} in {path}"
+            )
+            records[current_id] = ""
+            sequence_lines = 0
+        else:
+            assert current_id is not None, f"Sequence before FASTA header in {path}"
+            sequence_lines += 1
+            assert sequence_lines == 1, (
+                f"Wrapped FASTA sequence for {current_id} in {path}"
+            )
+            records[current_id] += raw_line
+    return records
+
+
+def assert_best_hit_sequence_evidence_outputs(results_root: Path) -> None:
+    best_hit_sequences_dir = results_root / "11_best_hit_sequences"
+    expected_artifacts = {
+        "query_sequences.fasta",
+        "selected_references.fasta",
+        "best_hit_placements.bed",
+    }
+    assert best_hit_sequences_dir.is_dir(), (
+        f"Missing best-hit sequence evidence directory: {best_hit_sequences_dir}"
+    )
+    assert {
+        path.name
+        for path in best_hit_sequences_dir.iterdir()
+        if path.is_file() and path.name != "versions.yml"
+    } == expected_artifacts
+    qbt_rows = read_tsv_rows(results_root / "query_big_table.tsv")
+    assert qbt_rows, "Missing Query Big Table rows for best-hit sequence evidence"
+    query_fasta_ids = set(
+        read_fasta_records(best_hit_sequences_dir / "query_sequences.fasta"),
+    )
+    reference_fasta_ids = set(
+        read_fasta_records(best_hit_sequences_dir / "selected_references.fasta"),
+    )
+    expected_query_ids = {f"{row['sample_id']}|{row['qseqid']}" for row in qbt_rows}
+    expected_reference_ids = {row["best_hit_reference_accession"] for row in qbt_rows}
+    assert query_fasta_ids == expected_query_ids
+    assert reference_fasta_ids == expected_reference_ids
+
+    strand_map = {"plus": "+", "minus": "-", "+": "+", "-": "-"}
+    expected_bed_rows = sorted(
+        [
+            [
+                row["best_hit_reference_accession"],
+                str(
+                    min(
+                        int(row["best_hit_reference_start_1based"]),
+                        int(row["best_hit_reference_end_1based"]),
+                    )
+                    - 1,
+                ),
+                str(
+                    max(
+                        int(row["best_hit_reference_start_1based"]),
+                        int(row["best_hit_reference_end_1based"]),
+                    ),
+                ),
+                f"{row['sample_id']}|{row['qseqid']}",
+                "0",
+                strand_map[row["best_hit_reference_strand"]],
+            ]
+            for row in qbt_rows
+        ],
+        key=lambda row: (row[0], int(row[1]), int(row[2]), row[3], row[5]),
+    )
+    observed_bed_rows = [
+        line.split("\t")
+        for line in (best_hit_sequences_dir / "best_hit_placements.bed")
+        .read_text(encoding="utf-8")
+        .splitlines()
+        if line
+    ]
+    assert observed_bed_rows == expected_bed_rows
+
+
 def assert_long_read_assembly_outputs(
     results_root: Path,
     selected_sra_runs: list[dict[str, Any]],
@@ -437,7 +523,7 @@ def assert_successful_nvd_multiqc_outputs(
 ) -> None:
     """Assert the healthy fixture completed ancillary reporting and publication."""
     report = results_root / "multiqc_report.html"
-    data = results_root / "12_experiment_summary" / "multiqc_data"
+    data = results_root / "13_experiment_summary" / "multiqc_data"
     nvd_inputs = data / "nvd_inputs"
     manifest_path = nvd_inputs / "nvd_report_manifest.json"
     raw_fastqc = results_root / "00_input_preparation" / "raw_fastq_qc" / "fastqc"
@@ -923,9 +1009,9 @@ def test_lims_enabled_pipeline_uploads_eagerly_and_dedups() -> None:
             )
 
             results_root = run_dir / "results" / "nvd"
-            assert (results_root / "13_labkey_uploads").exists(), (
-                f"Missing LabKey uploads results dir under {results_root}"
-            )
+            assert (
+                results_root / "14_labkey_uploads" / "upload_logs" / "final_labkey_upload.log"
+            ).exists(), f"Missing final LabKey upload log under {results_root}"
 
             first_hits = data_hits_inserts(mock)
             assert first_hits, "no eager per-batch hits insert carrying query_class"
@@ -1239,7 +1325,7 @@ def test_mini_sra_viral_pipeline_completes() -> None:
     )
 
     results_root = run_dir / "results" / "nvd"
-    assert not (results_root / "13_labkey_uploads").exists()
+    assert not (results_root / "14_labkey_uploads").exists()
     expected_sample_ids = {
         str(run_info["sample_id"])
         for run_info in (*LOCAL_E2E_SAMPLES, *selected_sra_runs)
@@ -1280,7 +1366,7 @@ def test_mini_sra_viral_pipeline_completes() -> None:
     final_blast_files = sorted(final_dir.glob("*_blast.final.tsv"))
 
     experiment_blast = (
-        results_root / "12_experiment_summary" / "experiment_blast_results.tsv"
+        results_root / "13_experiment_summary" / "experiment_blast_results.tsv"
     )
 
     if skip_assembly and not experimental:
@@ -1355,7 +1441,7 @@ def test_mini_sra_viral_pipeline_completes() -> None:
         if not skip_assembly:
             assert_long_read_assembly_outputs(results_root, selected_sra_runs)
 
-        big_tables_dir = results_root / "11_big_tables"
+        big_tables_dir = results_root / "12_big_tables"
         table_inputs = {
             "query_big_table.tsv": big_tables_dir / "query" / "per_sample",
             "taxon_big_table.tsv": big_tables_dir / "taxon" / "per_sample",
@@ -1402,6 +1488,8 @@ def test_mini_sra_viral_pipeline_completes() -> None:
                     assert int(row["best_hit_reference_start_1based"]) <= int(
                         row["best_hit_reference_end_1based"],
                     )
+
+        assert_best_hit_sequence_evidence_outputs(results_root)
 
         sourmash_root = (
             results_root

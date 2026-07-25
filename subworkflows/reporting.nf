@@ -1,4 +1,4 @@
-include { ADD_READ_COUNTS_TO_BLAST; CONCATENATE_SAMPLE_BLAST_RESULTS; BUILD_QUERY_BIG_TABLE; BUILD_TAXON_BIG_TABLE; CONCATENATE_QUERY_BIG_TABLE; CONCATENATE_TAXON_BIG_TABLE; CONCATENATE_EXPERIMENT_BLAST_RESULTS; TARGET_ENRICHMENT_REPORT } from "../modules/utils"
+include { ADD_READ_COUNTS_TO_BLAST; CONCATENATE_SAMPLE_BLAST_RESULTS; BUILD_QUERY_BIG_TABLE; BUILD_TAXON_BIG_TABLE; CONCATENATE_QUERY_BIG_TABLE; EMIT_BEST_HIT_SEQUENCE_EVIDENCE; CONCATENATE_TAXON_BIG_TABLE; CONCATENATE_EXPERIMENT_BLAST_RESULTS; TARGET_ENRICHMENT_REPORT } from "../modules/utils"
 include { BUILD_SEQUENCE_FLOW; RENDER_CONTIG_ALIGNMENT_PLOTS; RENDER_MERGED_TAXON_ABUNDANCE_SUNBURST; RENDER_TAXON_ABUNDANCE_SUNBURST; RENDER_SOURMASH_SANKEY } from "../modules/reporting"
 include { CRUMBS_PROFILING } from "./crumbs_profiling"
 include { LIMS_INTEGRATION } from "./lims_integration"
@@ -37,11 +37,15 @@ workflow REPORTING {
     ch_long_read_eligibility_summaries
     ch_long_read_union_summaries
     ch_prepared_query_batch_summaries
+    ch_prepared_query_batches
     ch_megablast_query_partition_summaries
+    ch_blast_db_files
     ch_multiqc_config
     run_id
 
     main:
+    def best_hit_sequences_enabled = params.experimental == true && !params.skip_blast
+
     if (params.labkey) {
         NvdUtils.validateLabkeyBlast(params)
     }
@@ -135,6 +139,24 @@ workflow REPORTING {
         CONCATENATE_QUERY_BIG_TABLE(
             BUILD_QUERY_BIG_TABLE.out.map { _sample_id, tsv -> tsv }.collect()
         )
+
+        if (best_hit_sequences_enabled) {
+            ch_best_hit_query_samples = ch_prepared_query_batches
+                .map { sample_id, _platform, _query_class, _query_fasta, _query_lookup -> sample_id }
+                .collect()
+                .ifEmpty { [] }
+            ch_best_hit_query_fastas = ch_prepared_query_batches
+                .map { _sample_id, _platform, _query_class, query_fasta, _query_lookup -> query_fasta }
+                .collect()
+                .ifEmpty { [] }
+
+            EMIT_BEST_HIT_SEQUENCE_EVIDENCE(
+                CONCATENATE_QUERY_BIG_TABLE.out.concatenated_tsv,
+                ch_best_hit_query_samples,
+                ch_best_hit_query_fastas,
+                ch_blast_db_files,
+            )
+        }
 
         ch_taxon_big_table_inputs = BUILD_QUERY_BIG_TABLE.out
             .join(CRUMBS_PROFILING.out.taxa, by: 0)
@@ -238,6 +260,10 @@ workflow REPORTING {
             .mix(RENDER_SOURMASH_SANKEY.out.report)
             .mix(RENDER_MERGED_TAXON_ABUNDANCE_SUNBURST.out.report)
     }
+    if (best_hit_sequences_enabled) {
+        ch_reporting_terminal_outputs = ch_reporting_terminal_outputs
+            .mix(EMIT_BEST_HIT_SEQUENCE_EVIDENCE.out.best_hit_placements)
+    }
 
     if (params.labkey) {
         ch_reporting_terminal_outputs = ch_reporting_terminal_outputs
@@ -259,6 +285,9 @@ workflow REPORTING {
     blast_results = ch_sample_blast_results.for_emit
     query_big_tables = params.experimental ? BUILD_QUERY_BIG_TABLE.out : channel.empty()
     query_big_table = params.experimental ? CONCATENATE_QUERY_BIG_TABLE.out.concatenated_tsv : channel.empty()
+    best_hit_query_sequences = best_hit_sequences_enabled ? EMIT_BEST_HIT_SEQUENCE_EVIDENCE.out.query_sequences : channel.empty()
+    best_hit_selected_references = best_hit_sequences_enabled ? EMIT_BEST_HIT_SEQUENCE_EVIDENCE.out.selected_references : channel.empty()
+    best_hit_placements = best_hit_sequences_enabled ? EMIT_BEST_HIT_SEQUENCE_EVIDENCE.out.best_hit_placements : channel.empty()
     taxon_big_tables = params.experimental ? BUILD_TAXON_BIG_TABLE.out : channel.empty()
     taxon_big_table = params.experimental ? CONCATENATE_TAXON_BIG_TABLE.out.concatenated_tsv : channel.empty()
     experiment_blast = CONCATENATE_EXPERIMENT_BLAST_RESULTS.out.concatenated_tsv
