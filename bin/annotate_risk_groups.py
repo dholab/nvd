@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import sqlite3
+from dataclasses import dataclass
 from io import StringIO
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -29,12 +30,27 @@ if TYPE_CHECKING:
     from py_nvd.taxonomy import TaxonomyDB
 
 RISK_GROUP_COLUMN = "who_risk_group"
+RISK_GROUP_SOURCE_TAXID_COLUMN = "who_risk_group_source_taxid"
+RISK_GROUP_SOURCE_NAME_COLUMN = "who_risk_group_source_name"
 JOIN_KEY_COLUMN = "_risk_group_join_key"
 RISK_GROUPS = ("RG1", "RG2", "RG3", "RG4")
 RISK_GROUP_PRIORITY = {
     risk_group: priority for priority, risk_group in enumerate(RISK_GROUPS, 1)
 }
 RiskGroupsByTaxid = dict[int, set[str]]
+
+
+@dataclass(frozen=True)
+class TaxonPath:
+    taxids: tuple[int, ...]
+    names: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class RiskGroupResolution:
+    group: str
+    source_taxid: int
+    source_name: str
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -75,7 +91,12 @@ def require_columns(
 
 
 def require_new_risk_group_column(frame: pl.LazyFrame, *, label: str) -> pl.LazyFrame:
-    reserved = {RISK_GROUP_COLUMN, JOIN_KEY_COLUMN}
+    reserved = {
+        RISK_GROUP_COLUMN,
+        RISK_GROUP_SOURCE_TAXID_COLUMN,
+        RISK_GROUP_SOURCE_NAME_COLUMN,
+        JOIN_KEY_COLUMN,
+    }
     collisions = sorted(reserved.intersection(frame.collect_schema().names()))
     if collisions:
         message = f"{label} already contains reserved columns: {', '.join(collisions)}"
@@ -176,7 +197,7 @@ def resolve_taxid_path(
     return None
 
 
-def load_bioboxes_paths(path: Path) -> dict[str, set[tuple[int, ...]]]:
+def load_bioboxes_paths(path: Path) -> dict[str, set[TaxonPath]]:
     lines = path.read_text(encoding="utf-8").splitlines()
     header_index = next(
         (index for index, line in enumerate(lines) if line.startswith("@@TAXID\t")),
@@ -196,7 +217,7 @@ def load_bioboxes_paths(path: Path) -> dict[str, set[tuple[int, ...]]]:
         message = f"{path} missing required columns: {', '.join(missing)}"
         raise ValueError(message)
 
-    paths: dict[str, set[tuple[int, ...]]] = {}
+    paths: dict[str, set[TaxonPath]] = {}
     for row in (
         rows.select("@@TAXID", "TAXPATH", "TAXPATHSN")
         .drop_nulls()
@@ -233,15 +254,17 @@ def load_bioboxes_paths(path: Path) -> dict[str, set[tuple[int, ...]]]:
                 row["TAXPATHSN"],
             )
             continue
-        paths.setdefault(lineage, set()).add(taxid_path)
+        paths.setdefault(lineage, set()).add(
+            TaxonPath(taxids=taxid_path, names=tuple(raw_names)),
+        )
     return paths
 
 
 def resolve_sourmash_lineage(
     lineage: str,
-    paths: Mapping[str, set[tuple[int, ...]]],
+    paths: Mapping[str, set[TaxonPath]],
     classifications: Mapping[int, set[str]],
-) -> str | None:
+) -> RiskGroupResolution | None:
     taxid_paths = paths.get(lineage)
     if not taxid_paths:
         return None
@@ -252,7 +275,20 @@ def resolve_sourmash_lineage(
             sorted(taxid_paths),
         )
         return None
-    return resolve_taxid_path(next(iter(taxid_paths)), classifications)
+    taxon_path = next(iter(taxid_paths))
+    for tax_id, taxon_name in reversed(
+        tuple(zip(taxon_path.taxids, taxon_path.names, strict=True)),
+    ):
+        groups = classifications.get(tax_id)
+        if groups:
+            group = highest_risk_group(groups, tax_id=tax_id)
+            if group is not None:
+                return RiskGroupResolution(
+                    group=group,
+                    source_taxid=tax_id,
+                    source_name=taxon_name,
+                )
+    return None
 
 
 def left_join_risk_groups(
@@ -280,7 +316,12 @@ def annotate_sourmash_summary(
     )
     input_columns = summary.collect_schema().names()
     output_columns = input_columns.copy()
-    output_columns.insert(output_columns.index("lineage") + 1, RISK_GROUP_COLUMN)
+    risk_column_index = output_columns.index("lineage") + 1
+    output_columns[risk_column_index:risk_column_index] = [
+        RISK_GROUP_COLUMN,
+        RISK_GROUP_SOURCE_TAXID_COLUMN,
+        RISK_GROUP_SOURCE_NAME_COLUMN,
+    ]
     lineages = (
         summary.select("lineage")
         .drop_nulls()
@@ -290,15 +331,32 @@ def annotate_sourmash_summary(
         .to_list()
     )
     paths = load_bioboxes_paths(bioboxes_path)
+    resolutions = [
+        resolve_sourmash_lineage(lineage, paths, classifications)
+        for lineage in lineages
+    ]
     lookup = pl.DataFrame(
         {
             JOIN_KEY_COLUMN: lineages,
             RISK_GROUP_COLUMN: [
-                resolve_sourmash_lineage(lineage, paths, classifications)
-                for lineage in lineages
+                resolution.group if resolution is not None else None
+                for resolution in resolutions
+            ],
+            RISK_GROUP_SOURCE_TAXID_COLUMN: [
+                resolution.source_taxid if resolution is not None else None
+                for resolution in resolutions
+            ],
+            RISK_GROUP_SOURCE_NAME_COLUMN: [
+                resolution.source_name if resolution is not None else None
+                for resolution in resolutions
             ],
         },
-        schema={JOIN_KEY_COLUMN: pl.String, RISK_GROUP_COLUMN: pl.String},
+        schema={
+            JOIN_KEY_COLUMN: pl.String,
+            RISK_GROUP_COLUMN: pl.String,
+            RISK_GROUP_SOURCE_TAXID_COLUMN: pl.Int64,
+            RISK_GROUP_SOURCE_NAME_COLUMN: pl.String,
+        },
     ).lazy()
     return summary.pipe(
         left_join_risk_groups,
