@@ -88,8 +88,8 @@ jobs:
             .e2e/runs/*/results/nvd/08_metagenomic_profiles/**/*.tsv
             .e2e/runs/*/results/nvd/09_sample_similarity_qc/**/*.tsv
             .e2e/runs/*/results/nvd/10_rapid_screening_eval/**/*.tsv
-            .e2e/runs/*/results/nvd/11_big_tables/**/*.tsv
-            .e2e/runs/*/results/nvd/12_experiment_summary/*.tsv
+            .e2e/runs/*/results/nvd/12_big_tables/**/*.tsv
+            .e2e/runs/*/results/nvd/13_experiment_summary/*.tsv
             .e2e/runs/*/work/**/.command.err
             .e2e/runs/*/work/**/.command.out
             .e2e/runs/*/work/**/.command.log

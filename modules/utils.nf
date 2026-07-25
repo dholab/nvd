@@ -264,6 +264,42 @@ process CONCATENATE_QUERY_BIG_TABLE {
   """
 }
 
+process EMIT_BEST_HIT_SEQUENCE_EVIDENCE {
+  /*
+   * Emit query/reference FASTA and BED6 placement evidence for the all-sample
+   * Query Big Table representative best-hit HSP envelopes.
+   */
+
+  label "low"
+
+  input:
+  path query_big_table
+  val query_samples
+  path query_fastas, stageAs: "query_fastas??????/*", arity: '0..*'
+  path blast_db
+
+  output:
+  path "query_sequences.fasta", emit: query_sequences
+  path "selected_references.fasta", emit: selected_references
+  path "best_hit_placements.bed", emit: best_hit_placements
+
+  script:
+  def samples = query_samples instanceof List ? query_samples : [query_samples]
+  def fastas = query_fastas instanceof List ? query_fastas : [query_fastas]
+  assert samples.size() == fastas.size()
+  def query_args = samples.withIndex().collect { sample_id, index ->
+    "--query-fasta '${sample_id}' \"${fastas[index]}\""
+  }.join(" ")
+  """
+  emit_best_hit_sequence_evidence.py \
+      --query-big-table "${query_big_table}" \
+      ${query_args} \
+      --blast-db "${blast_db}" \
+      --blast-db-prefix '${params.blast_db_prefix}' \
+      --output-dir "."
+  """
+}
+
 process CONCATENATE_TAXON_BIG_TABLE {
   /*
    * Concatenate per-sample taxon Big Tables into the featured all-sample artifact.
