@@ -198,9 +198,10 @@ def test_query_big_table_collapses_retained_hits_to_one_auditable_assignment_row
     assert row["support_tier_rule"] == "long_contig_dominant_high_qcov"
     threshold = f"{ASSIGNMENT_BITSCORE_FRACTION:.0%}"
     assert row["support_note"] == (
-        "The best alignment spans 180 of 200 query bases (90.0%). Of 2 retained "
-        f"references, 1 has a bitscore at least {threshold} of the best bitscore; the "
-        "available taxid from those references resolves to Alpha virus (species)."
+        "The best alignment to NC_000001.1 spans 180 of 200 query bases (90.0%). "
+        f"Of 2 retained references, 1 has a bitscore at least {threshold} of the best "
+        "bitscore; the available taxid from those references resolves to Alpha virus "
+        "(species)."
     )
     assert "adjusted_taxid" not in row
     assert not any(column.startswith("second_") for column in row)
@@ -326,9 +327,9 @@ def test_query_big_table_describes_low_coverage_lca_assignment(
     assert row["support_tier"] == "weak"
     assert row["support_tier_rule"] == "short_contig_lca_low_qcov"
     assert row["support_note"] == (
-        "The best alignment spans 60 of 200 query bases (30.0%). Of 2 retained "
-        "references, 2 have bitscores at least 95% of the best bitscore and map "
-        "to 2 taxids; their LCA is Viruses (superkingdom)."
+        "The best alignment to NC_000001.1 spans 60 of 200 query bases (30.0%). "
+        "Of 2 retained references, 2 have bitscores at least 95% of the best "
+        "bitscore and map to 2 taxids; their LCA is Viruses (superkingdom)."
     )
 
 
@@ -425,9 +426,10 @@ def test_query_big_table_excludes_null_normalized_taxids_from_assignment_count(
     assert row["assignment_reference_count"] == "2"
     assert row["assignment_taxid_count"] == "1"
     assert row["support_note"] == (
-        "The best alignment spans 180 of 200 query bases (90.0%). Of 2 retained "
-        "references, 2 have bitscores at least 95% of the best bitscore; the "
-        "available taxid from those references resolves to Alpha virus (species)."
+        "The best alignment to NC_000001.1 spans 180 of 200 query bases (90.0%). "
+        "Of 2 retained references, 2 have bitscores at least 95% of the best "
+        "bitscore; the available taxid from those references resolves to Alpha virus "
+        "(species)."
     )
 
 
