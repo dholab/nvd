@@ -324,39 +324,3 @@ process TARGET_ENRICHMENT_REPORT {
   touch target_reads_vs_bases_scatter.html
   """
 }
-
-/*
- * Send a minimal Slack notification for run completion without workflow state.
- */
-process NOTIFY_SLACK {
-
-  tag "${workflow.runName}"
-  label "low"
-  cache false
-
-  errorStrategy 'ignore'
-
-  secret 'SLACK_BOT_TOKEN'
-
-  input:
-  val ready
-  val sample_set_id
-  val labkey_url
-
-  output:
-  val true, emit: done
-
-  when:
-  params.slack_enabled && params.slack_channel
-
-  script:
-  """
-  notify_slack.py \
-      --run-id '${workflow.runName}' \
-      --experiment-id '${params.experiment_id}' \
-      --channel '${params.slack_channel}' \
-      --sample-set-id '${sample_set_id}' \
-      --labkey-url '${labkey_url}' \
-      -v || echo "Slack notification failed (non-fatal)"
-  """
-}

@@ -1,5 +1,4 @@
 include { ADD_READ_COUNTS_TO_BLAST; CONCATENATE_SAMPLE_BLAST_RESULTS; BUILD_QUERY_BIG_TABLE; BUILD_TAXON_BIG_TABLE; CONCATENATE_QUERY_BIG_TABLE; CONCATENATE_TAXON_BIG_TABLE; CONCATENATE_EXPERIMENT_BLAST_RESULTS; TARGET_ENRICHMENT_REPORT } from "../modules/utils"
-include { NOTIFY_SLACK } from "../modules/utils"
 include { BUILD_SEQUENCE_FLOW; RENDER_CONTIG_ALIGNMENT_PLOTS; RENDER_MERGED_TAXON_ABUNDANCE_SUNBURST; RENDER_TAXON_ABUNDANCE_SUNBURST; RENDER_SOURMASH_SANKEY } from "../modules/reporting"
 include { CRUMBS_PROFILING } from "./crumbs_profiling"
 include { LIMS_INTEGRATION } from "./lims_integration"
@@ -166,19 +165,42 @@ workflow REPORTING {
         ch_run_ready,
     )
 
-    ch_labkey_url = channel.value(
-        "https://${params.labkey_server}/${params.labkey_project_name}/list-grid.view?name=${params.labkey_blast_meta_hits_list}"
-    )
+    // Completion means every reporting leaf has settled. Keep this terminal
+    // inventory local to REPORTING so adding a report does not spread another
+    // synchronization channel through the composition root.
+    ch_reporting_terminal_outputs = CONCATENATE_EXPERIMENT_BLAST_RESULTS.out.concatenated_tsv
+        .mix(RENDER_CONTIG_COVERAGE_HISTOGRAM.out.histogram)
+        .mix(RENDER_CONTIG_ALIGNMENT_PLOTS.out.plots)
+        .mix(TARGET_ENRICHMENT_REPORT.out.summary_tsv)
 
-    ch_slack_trigger = params.slack_enabled && params.slack_channel && params.labkey
+    if (params.experimental == true) {
+        ch_reporting_terminal_outputs = ch_reporting_terminal_outputs
+            .mix(BUILD_SEQUENCE_FLOW.out.sequence_flow)
+            .mix(CONCATENATE_QUERY_BIG_TABLE.out.concatenated_tsv)
+            .mix(CONCATENATE_TAXON_BIG_TABLE.out.concatenated_tsv)
+            .mix(CRUMBS_PROFILING.out.krona)
+            .mix(CRUMBS_PROFILING.out.taxburst)
+            .mix(CRUMBS_PROFILING.out.merged_taxburst)
+            .mix(RENDER_TAXON_ABUNDANCE_SUNBURST.out.reports)
+            .mix(RENDER_SOURMASH_SANKEY.out.report)
+            .mix(RENDER_MERGED_TAXON_ABUNDANCE_SUNBURST.out.report)
+    }
+
+    if (params.labkey) {
+        ch_reporting_terminal_outputs = ch_reporting_terminal_outputs
+            .mix(LIMS_INTEGRATION.out.final_labkey_log)
+    }
+
+    ch_reporting_ready = ch_reporting_terminal_outputs
+        .collect()
+        .map { _outputs -> true }
+    ch_labkey_ready = params.labkey
         ? LIMS_INTEGRATION.out.uploads_done
-        : channel.empty()
-
-    NOTIFY_SLACK(
-        ch_slack_trigger,
-        ch_run_context,
-        ch_labkey_url,
-    )
+        : channel.value(true)
+    ch_completed_results = CONCATENATE_EXPERIMENT_BLAST_RESULTS.out.concatenated_tsv
+        .combine(ch_reporting_ready)
+        .combine(ch_labkey_ready)
+        .map { experiment_results, _reporting_ready, _labkey_ready -> experiment_results }
 
     emit:
     blast_results = ch_sample_blast_results.for_emit
@@ -187,6 +209,7 @@ workflow REPORTING {
     taxon_big_tables = params.experimental ? BUILD_TAXON_BIG_TABLE.out : channel.empty()
     taxon_big_table = params.experimental ? CONCATENATE_TAXON_BIG_TABLE.out.concatenated_tsv : channel.empty()
     experiment_blast = CONCATENATE_EXPERIMENT_BLAST_RESULTS.out.concatenated_tsv
+    completed_results = ch_completed_results
     sequence_flow = params.experimental ? BUILD_SEQUENCE_FLOW.out.sequence_flow : channel.empty()
     target_enrichment_report = TARGET_ENRICHMENT_REPORT.out.summary_tsv
     taxon_abundance_sunbursts = params.experimental ? RENDER_TAXON_ABUNDANCE_SUNBURST.out.reports : channel.empty()
