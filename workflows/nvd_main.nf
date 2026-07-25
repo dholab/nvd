@@ -72,11 +72,13 @@ workflow NVD_MAIN {
     rapid_screening = RAPID_SCREENING(
       PREPROCESS_READS.out.profiled_batches_by_sample,
       ch_risk_group_lookup,
+      PREPROCESS_READS.out.target_enrichment_stats,
     )
     SAMPLE_SIMILARITY_QC(rapid_screening.query_sketches)
     ch_sourmash_gather_csv = rapid_screening.gather_csv
     ch_sourmash_lineages = rapid_screening.lineages
     ch_sourmash_tax_reports = rapid_screening.tax_reports
+
   }
 
   // Short reads retain their minimum-count gate; experimental long-read

@@ -1,11 +1,13 @@
 include { SOURMASH_SKETCH_QUERY_METAGENOME ; SOURMASH_FETCH_REF_SKETCH ; SOURMASH_SKETCH_REF_FASTA ; SOURMASH_GATHER_QUERY_METAGENOME ; SOURMASH_FETCH_LINEAGES ; SOURMASH_STAGE_REFERENCE ; SOURMASH_TAX_METAGENOME } from "../modules/sourmash"
 include { CONCAT_READS_AS_FASTA } from "../modules/seqkit"
 include { ANNOTATE_SOURMASH_RISK_GROUPS } from "../modules/risk_groups"
+include { NOTIFY_RAPID_SCREENING_SLACK } from "../modules/notifications"
 
 workflow RAPID_SCREENING {
     take:
     ch_profiled_batches_by_sample  // tuple(sample_meta, batches); each batch contains meta and reads
     ch_risk_group_lookup
+    ch_target_enrichment_stats
 
     main:
     def is_http_url = { value -> value && value ==~ /(?i)^https?:\/\/.+/ }
@@ -93,6 +95,18 @@ workflow RAPID_SCREENING {
     ANNOTATE_SOURMASH_RISK_GROUPS(
         ch_risk_group_inputs,
         ch_risk_group_lookup,
+    )
+
+    ch_notification_inputs = ANNOTATE_SOURMASH_RISK_GROUPS.out
+        .join(ch_target_enrichment_stats, by: 0)
+        .map { sample_id, platform, read_structure, risk_summary, enrichment_summary ->
+            tuple(sample_id, risk_summary, enrichment_summary)
+        }
+
+    NOTIFY_RAPID_SCREENING_SLACK(
+        ch_notification_inputs,
+        NvdUtils.targetEnrichmentEnabled(params),
+        workflow.runName,
     )
 
     emit:

@@ -11,6 +11,12 @@ from py_nvd import taxonomy
 if TYPE_CHECKING:
     from pathlib import Path
 
+RISK_ANNOTATION_COLUMNS = {
+    "who_risk_group",
+    "who_risk_group_source_taxid",
+    "who_risk_group_source_name",
+}
+
 
 def write_table(
     path: Path,
@@ -198,9 +204,23 @@ def test_sourmash_summary_adds_risk_group_without_dropping_unmatched_rows(
         "fraction",
         "lineage",
         "who_risk_group",
+        "who_risk_group_source_taxid",
+        "who_risk_group_source_name",
         "query_md5",
     ]
     assert [row["who_risk_group"] for row in rows] == ["RG2", "RG2", "RG3", ""]
+    assert [row["who_risk_group_source_taxid"] for row in rows] == [
+        "123",
+        "123",
+        "125",
+        "",
+    ]
+    assert [row["who_risk_group_source_name"] for row in rows] == [
+        "Example virus",
+        "Example virus",
+        "Exceptional strain",
+        "",
+    ]
 
 
 def test_sourmash_descendant_does_not_classify_ancestor_or_malformed_path(
@@ -242,7 +262,7 @@ def test_sourmash_descendant_does_not_classify_ancestor_or_malformed_path(
     rows = read_table(output, delimiter=",")
     assert [row["who_risk_group"] for row in rows] == ["", "RG3", ""]
     assert [
-        {key: value for key, value in row.items() if key != "who_risk_group"}
+        {key: value for key, value in row.items() if key not in RISK_ANNOTATION_COLUMNS}
         for row in rows
     ] == input_rows
 
@@ -335,7 +355,7 @@ def test_blast_results_add_risk_group_by_consensus_taxid(tmp_path: Path) -> None
     ]
     assert [row["who_risk_group"] for row in rows] == ["RG2", "", "", ""]
     assert [
-        {key: value for key, value in row.items() if key != "who_risk_group"}
+        {key: value for key, value in row.items() if key not in RISK_ANNOTATION_COLUMNS}
         for row in rows
     ] == input_rows
 
