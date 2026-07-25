@@ -29,6 +29,13 @@ BLAST_HEADER = [
     "bitscore",
     "sscinames",
     "staxids",
+    "saccver",
+    "qstart",
+    "qend",
+    "slen",
+    "sstart",
+    "send",
+    "sstrand",
     "rank",
     "adjusted_taxid",
     "adjusted_taxid_name",
@@ -61,6 +68,13 @@ def write_blast_tsv(path: Path) -> None:
                 "bitscore": "42.0",
                 "sscinames": "Virus example",
                 "staxids": "10239",
+                "saccver": "NC_000001.1",
+                "qstart": "1",
+                "qend": "4",
+                "slen": "1000",
+                "sstart": "900",
+                "send": "897",
+                "sstrand": "minus",
                 "rank": "superkingdom",
                 "adjusted_taxid": "10239",
                 "adjusted_taxid_name": "Viruses",
@@ -90,6 +104,13 @@ def write_query_blast_tsv(path: Path, qseqids: tuple[str, ...]) -> None:
                     "bitscore": "42.0",
                     "sscinames": "Virus example",
                     "staxids": "10239",
+                    "saccver": "NC_000001.1",
+                    "qstart": "1",
+                    "qend": "4",
+                    "slen": "1000",
+                    "sstart": "900",
+                    "send": "897",
+                    "sstrand": "minus",
                     "rank": "superkingdom",
                     "adjusted_taxid": "10239",
                     "adjusted_taxid_name": "Viruses",
@@ -226,6 +247,13 @@ def test_final_blast_rows_include_collected_contig_metadata(tmp_path: Path) -> N
     assert row["support_record_count"] == "1"
     assert row["mapped_reads"] == "7"
     assert row["who_risk_group"] == "Risk Group 2"
+    assert row["saccver"] == "NC_000001.1"
+    assert row["qstart"] == "1"
+    assert row["qend"] == "4"
+    assert row["slen"] == "1000"
+    assert row["sstart"] == "900"
+    assert row["send"] == "897"
+    assert row["sstrand"] == "minus"
     assert "evidence_length" not in row
 
 
