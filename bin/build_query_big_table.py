@@ -261,7 +261,9 @@ def coverage_band(thresholds: Thresholds) -> pl.Expr:
 def support_note() -> pl.Expr:
     alignment = pl.concat_str(
         [
-            pl.lit("The best alignment spans "),
+            pl.lit("The best alignment to "),
+            pl.col("saccver"),
+            pl.lit(" spans "),
             pl.col("length"),
             pl.lit(" of "),
             pl.col("qlen"),
