@@ -112,13 +112,13 @@ def test_preprocess_param_is_gone() -> None:
     assert "preprocess" not in NvdParams.model_fields
 
 
-def test_latest_params_schema_points_to_v3_4() -> None:
-    """The rolling schema link should expose the v3.4 parameter contract."""
+def test_latest_params_schema_points_to_v3_5() -> None:
+    """The rolling schema link should expose the v3.5 parameter contract."""
     latest_schema = ROOT / "schemas" / "nvd-params.latest.schema.json"
 
     assert latest_schema.is_symlink()
-    assert latest_schema.readlink() == Path("nvd-params.v3.4.0.schema.json")
-    assert SCHEMA_URL.endswith("/nvd-params.v3.4.0.schema.json")
+    assert latest_schema.readlink() == Path("nvd-params.v3.5.0.schema.json")
+    assert SCHEMA_URL.endswith("/nvd-params.v3.5.0.schema.json")
 
 
 def test_v3_3_2_schema_corrects_only_the_read_entropy_default() -> None:
