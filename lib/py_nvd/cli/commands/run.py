@@ -153,6 +153,12 @@ def run(
         help="Enable experimental release-candidate features",
         rich_help_panel=PANEL_CORE,
     ),
+    skip_rapid_screen: bool | None = typer.Option(
+        None,
+        "--skip-rapid-screen",
+        help="Disable experimental rapid screening for sensitive targets with sourmash",
+        rich_help_panel=PANEL_CORE,
+    ),
     skip_assembly: bool | None = typer.Option(
         None,
         "--skip-assembly",
@@ -624,6 +630,7 @@ def run(
         "taxonomy_refresh": taxonomy_refresh,
         "taxonomy_max_age_days": taxonomy_max_age_days,
         "experimental": experimental,
+        "skip_rapid_screen": skip_rapid_screen,
         "skip_assembly": skip_assembly,
         "skip_blast": skip_blast,
         "skip_fastqc": skip_fastqc,

@@ -113,6 +113,11 @@ class NvdParams(BaseModel):
         description="Enable experimental release-candidate features",
         json_schema_extra={"category": "Core"},
     )
+    skip_rapid_screen: bool = Field(
+        default=False,
+        description="Disable experimental rapid screening for sensitive targets with sourmash",
+        json_schema_extra={"category": "Core"},
+    )
     skip_assembly: bool = Field(
         default=False,
         description="Skip SPAdes assembly and all downstream contig classification",

@@ -72,6 +72,11 @@
       "default": false,
       "description": "Enable experimental release-candidate features that may change or be removed."
     },
+    "skip_rapid_screen": {
+      "type": "boolean",
+      "default": false,
+      "description": "Disable experimental rapid screening for sensitive targets with sourmash."
+    },
     "skip_assembly": {
       "type": "boolean",
       "default": false,
