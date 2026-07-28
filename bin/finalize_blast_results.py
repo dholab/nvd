@@ -98,7 +98,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument(
         "--virus-index-version",
         required=True,
-        help="STAT k-mer database version used for virus enrichment index",
+        help="Target-enrichment index version",
     )
     parser.add_argument(
         "--run-id",
