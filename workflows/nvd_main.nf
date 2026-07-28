@@ -40,6 +40,7 @@ workflow NVD_MAIN {
   def target_enrichment_enabled = NvdUtils.targetEnrichmentEnabled(params)
   def depletion_enabled = NvdUtils.depletionEnabled(params)
   def has_target_enrichment_index = NvdUtils.hasTargetEnrichmentIndex(params)
+  def rapid_screening_enabled = params.experimental == true && !params.skip_rapid_screen
   assert !(params.stream_sra && !params.experimental) : """
     SRA Toolkit streaming is available only when experimental features are enabled.
 
@@ -99,7 +100,7 @@ workflow NVD_MAIN {
   ch_sourmash_tax_reports = channel.empty()
   ch_risk_group_lookup = Channel.value(file("${projectDir}/assets/human_virus_risk_group_lookup.tsv"))
 
-  if (params.experimental == true) {
+  if (rapid_screening_enabled) {
     rapid_screening = RAPID_SCREENING(
       PREPROCESS_READS.out.profiled_batches_by_sample,
       ch_risk_group_lookup,
@@ -211,7 +212,7 @@ workflow NVD_MAIN {
 
   ch_run_completed_results = REPORTING.out.completed_results
 
-  if (params.experimental == true) {
+  if (rapid_screening_enabled) {
     RAPID_SCREENING_EVAL(
       PREPROCESS_READS.out.read_counts,
       ch_sourmash_gather_csv,

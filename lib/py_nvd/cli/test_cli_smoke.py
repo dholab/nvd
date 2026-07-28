@@ -198,6 +198,28 @@ def test_run_accepts_sra_streaming_flag(tmp_path: Path) -> None:
     assert "--stream-sra" not in result.output
 
 
+def test_run_accepts_skip_rapid_screen_flag(tmp_path: Path) -> None:
+    """The rapid-screen opt-out maps to the underscore Nextflow parameter."""
+    samplesheet = tmp_path / "samples.csv"
+    samplesheet.write_text("sample_id,srr,platform,fastq1,fastq2\n", encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        [
+            "run",
+            "--samplesheet",
+            str(samplesheet),
+            "--experimental",
+            "--skip-rapid-screen",
+            "--dry-run",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "--skip_rapid_screen" in result.output
+    assert "--skip-rapid-screen" not in result.output
+
+
 def test_run_accepts_no_enrichment_flag(tmp_path: Path) -> None:
     """Hyphenated CLI flag maps to the underscore Nextflow param."""
     samplesheet = tmp_path / "samples.csv"

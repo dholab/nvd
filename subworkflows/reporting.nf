@@ -45,6 +45,7 @@ workflow REPORTING {
 
     main:
     def best_hit_sequences_enabled = params.experimental == true && !params.skip_blast
+    def rapid_screening_enabled = params.experimental == true && !params.skip_rapid_screen
 
     if (params.labkey) {
         NvdUtils.validateLabkeyBlast(params)
@@ -202,7 +203,7 @@ workflow REPORTING {
         ch_target_enrichment_stats.map { _sample_id, json -> json }.collect()
     )
 
-    if (params.experimental == true) {
+    if (rapid_screening_enabled) {
         ch_sourmash_profile_summaries = ch_sourmash_tax_reports
             .map { sample_id, platform, read_structure, tax_reports ->
                 def report_files = tax_reports instanceof List ? tax_reports : [tax_reports]
@@ -256,6 +257,9 @@ workflow REPORTING {
             .mix(CRUMBS_PROFILING.out.krona)
             .mix(CRUMBS_PROFILING.out.taxburst)
             .mix(CRUMBS_PROFILING.out.merged_taxburst)
+    }
+    if (rapid_screening_enabled) {
+        ch_reporting_terminal_outputs = ch_reporting_terminal_outputs
             .mix(RENDER_TAXON_ABUNDANCE_SUNBURST.out.reports)
             .mix(RENDER_SOURMASH_SANKEY.out.report)
             .mix(RENDER_MERGED_TAXON_ABUNDANCE_SUNBURST.out.report)
@@ -294,9 +298,9 @@ workflow REPORTING {
     completed_results = ch_completed_results
     sequence_flow = params.experimental ? BUILD_SEQUENCE_FLOW.out.sequence_flow : channel.empty()
     target_enrichment_report = TARGET_ENRICHMENT_REPORT.out.summary_tsv
-    taxon_abundance_sunbursts = params.experimental ? RENDER_TAXON_ABUNDANCE_SUNBURST.out.reports : channel.empty()
-    merged_taxon_abundance_sunburst = params.experimental ? RENDER_MERGED_TAXON_ABUNDANCE_SUNBURST.out.report : channel.empty()
-    sourmash_sankey_reports = params.experimental ? RENDER_SOURMASH_SANKEY.out.report : channel.empty()
+    taxon_abundance_sunbursts = rapid_screening_enabled ? RENDER_TAXON_ABUNDANCE_SUNBURST.out.reports : channel.empty()
+    merged_taxon_abundance_sunburst = rapid_screening_enabled ? RENDER_MERGED_TAXON_ABUNDANCE_SUNBURST.out.report : channel.empty()
+    sourmash_sankey_reports = rapid_screening_enabled ? RENDER_SOURMASH_SANKEY.out.report : channel.empty()
     labkey_log = LIMS_INTEGRATION.out.upload_log
     final_labkey_log = LIMS_INTEGRATION.out.final_labkey_log
     labkey_uploads_done = LIMS_INTEGRATION.out.uploads_done

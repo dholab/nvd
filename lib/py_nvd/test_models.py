@@ -494,6 +494,15 @@ class TestNvdParamsToNextflowArgs:
         experimental_idx = cmd.index("--experimental")
         assert cmd[experimental_idx + 1] == "true"
 
+    def test_skip_rapid_screen_param(self) -> None:
+        """The rapid-screen opt-out reaches Nextflow with underscore naming."""
+        p = NvdParams(experimental=True, skip_rapid_screen=True)
+        cmd = p.to_nextflow_args(Path("/pipeline"))
+
+        skip_rapid_screen_idx = cmd.index("--skip_rapid_screen")
+        assert cmd[skip_rapid_screen_idx + 1] == "true"
+        assert "--skip-rapid-screen" not in cmd
+
     def test_skip_stage_params(self) -> None:
         """Stage-skip params are propagated with Nextflow underscore names."""
         p = NvdParams(skip_assembly=True, skip_blast=True, skip_fastqc=True)
@@ -618,6 +627,10 @@ class TestNvdParamsDefaults:
     def test_default_experimental(self) -> None:
         """Default experimental gate matches nextflow.config."""
         assert NvdParams().experimental is False
+
+    def test_default_rapid_screening(self) -> None:
+        """Experimental mode retains rapid screening unless explicitly disabled."""
+        assert NvdParams().skip_rapid_screen is False
 
     def test_default_skip_stage_params(self) -> None:
         """Stage-skip params are disabled by default."""
