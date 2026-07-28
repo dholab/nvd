@@ -74,7 +74,8 @@ process BUILD_SEQUENCE_FLOW {
   path "sequence_flow.tsv", emit: sequence_flow
 
   script:
-  def input_args = input_files.collect { input -> "--input '${input}'" }.join(" ")
+  def files = input_files instanceof List ? input_files : [input_files]
+  def input_args = files.collect { input -> "--input '${input}'" }.join(" ")
   """
   build_sequence_flow.py \
       ${input_args} \

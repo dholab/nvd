@@ -131,7 +131,7 @@ workflow NVD_MAIN {
   )
 
   CLASSIFY_WITH_BLASTN(
-    CLASSIFY_WITH_MEGABLAST.out.filtered_megablast,
+    CLASSIFY_WITH_MEGABLAST.out.annotated_hits,
     CLASSIFY_WITH_MEGABLAST.out.megablast_query_partition,
     ch_blast_db_files,
     ch_taxonomy_dir,
@@ -144,8 +144,6 @@ workflow NVD_MAIN {
     .mix(PREPARE_BLAST_QUERIES.out.mapback_count_files.map { _sample_id, counts -> counts })
     .mix(PREPARE_BLAST_QUERIES.out.blast_query_summaries.map { _sample_id, summary -> summary })
     .mix(CLASSIFY_WITH_MEGABLAST.out.megablast_query_partition.map { _sample_id, _query_class, _accounted_ids, _blastn_candidates, summary -> summary })
-    .mix(CLASSIFY_WITH_MEGABLAST.out.filter_decisions.map { _sample_id, _query_class, decision -> decision })
-    .mix(CLASSIFY_WITH_BLASTN.out.filter_decisions.map { _sample_id, _query_class, decision -> decision })
 
   REPORTING(
     CLASSIFY_WITH_BLASTN.out.merged_results,

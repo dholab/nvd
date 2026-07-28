@@ -204,17 +204,17 @@ def preset_register(
     virus_index: Path | None = typer.Option(
         None,
         "--virus-index",
-        help="Path to prebuilt vertebrate-infecting virus deacon index (.idx file)",
+        help="Path to a prebuilt Deacon target-enrichment index (.idx file)",
     ),
     virus_index_url: str | None = typer.Option(
         None,
         "--virus-index-url",
-        help="URL to download a prebuilt vertebrate-infecting virus deacon index",
+        help="URL to download a prebuilt Deacon target-enrichment index",
     ),
     virus_reference_fasta: Path | None = typer.Option(
         None,
         "--virus-reference-fasta",
-        help="Custom vertebrate-infecting virus FASTA for enrichment",
+        help="Custom target FASTA for building a Deacon enrichment index",
     ),
     no_enrichment: bool | None = typer.Option(
         None,
@@ -224,22 +224,22 @@ def preset_register(
     virus_kmer_size: int | None = typer.Option(
         None,
         "--virus-kmer-size",
-        help="K-mer size for building a custom virus enrichment index",
+        help="K-mer size for building a custom target-enrichment index",
     ),
     virus_window_size: int | None = typer.Option(
         None,
         "--virus-window-size",
-        help="Minimizer window size for building a custom virus enrichment index",
+        help="Minimizer window size for building a custom target-enrichment index",
     ),
     virus_abs_threshold: int | None = typer.Option(
         None,
         "--virus-abs-threshold",
-        help="Minimum absolute minimizer hits for virus read enrichment",
+        help="Minimum absolute minimizer hits for target enrichment",
     ),
     virus_rel_threshold: float | None = typer.Option(
         None,
         "--virus-rel-threshold",
-        help="Minimum relative minimizer proportion for virus read enrichment",
+        help="Minimum relative minimizer proportion for target enrichment",
     ),
     filter_reads: bool | None = typer.Option(
         None,
