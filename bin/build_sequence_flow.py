@@ -181,22 +181,6 @@ def megablast_partition_rows(path: Path) -> list[LedgerRow]:
     return rows
 
 
-def blast_filter_rows(path: Path) -> list[LedgerRow]:
-    return [
-        LedgerRow(
-            sample_id=source["sample_id"],
-            stage=source["stage"],
-            input_class=source["query_class"],
-            output_class="virus_only_hits",
-            decision="retain",
-            reason="viral_taxonomy_match",
-            sequences_in=source["queries_in"],
-            sequences_out=source["queries_retained"],
-        )
-        for source in read_tsv(path)
-    ]
-
-
 def rows_for_input(path: Path) -> list[LedgerRow]:
     name = path.name
     adapters = (
@@ -206,10 +190,6 @@ def rows_for_input(path: Path) -> list[LedgerRow]:
         (("_mapped_counts.txt",), mapback_rows),
         ((".blast_query_batches.tsv",), query_batch_rows),
         ((".megablast_query_partition.tsv",), megablast_partition_rows),
-        (
-            (".megablast_query_filtering.tsv", ".blastn_query_filtering.tsv"),
-            blast_filter_rows,
-        ),
     )
     for suffixes, adapter in adapters:
         if name.endswith(suffixes):
