@@ -58,7 +58,15 @@ workflow GATHER_READS {
                 tuple(meta, r1 + r2)
             }
 
-        FETCH_FASTQ(ch_sra_accessions)
+        ch_sra_accessions_to_download = params.stream_sra
+            ? Channel.empty()
+            : ch_sra_accessions
+
+        ch_sra_accessions_to_stream = params.stream_sra
+            ? ch_sra_accessions
+            : Channel.empty()
+
+        FETCH_FASTQ(ch_sra_accessions_to_download)
 
         ch_sra_bundles = FETCH_FASTQ.out
             .map { sample_id, platform, fastq_files ->
@@ -82,6 +90,7 @@ workflow GATHER_READS {
 
         emit:
         reads = ch_raw_reads
+        sra_accessions = ch_sra_accessions_to_stream
         resolved_reads = RESOLVE_READ_INPUTS.out.jsonl
 
 }

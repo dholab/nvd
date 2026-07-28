@@ -5,10 +5,10 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, Self
 from urllib.parse import urlparse
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from pydantic.dataclasses import dataclass
 
 
@@ -95,7 +95,7 @@ class NvdParams(BaseModel):
     )
     max_concurrent_downloads: int = Field(
         3,
-        description="Maximum concurrent SRA downloads",
+        description="Maximum concurrent SRA or ENA retrieval tasks",
         json_schema_extra={"category": "Core"},
     )
     cleanup: bool | None = Field(
@@ -126,6 +126,11 @@ class NvdParams(BaseModel):
     skip_fastqc: bool = Field(
         default=False,
         description="Skip per-file raw-read FastQC.",
+        json_schema_extra={"category": "Core"},
+    )
+    stream_sra: bool = Field(
+        default=False,
+        description="Experimentally stream paired ENA FASTQs for SRA run accessions directly into Deacon.",
         json_schema_extra={"category": "Core"},
     )
 
@@ -519,6 +524,26 @@ class NvdParams(BaseModel):
             msg = f"Must be >= 0, got {v}"
             raise ValueError(msg)
         return v
+
+    @model_validator(mode="after")
+    def validate_sra_streaming_fastqc(self) -> Self:
+        """Reject raw FastQC when ENA reads are streamed directly to Deacon."""
+        if self.stream_sra and not self.experimental:
+            message = (
+                "ENA streaming for SRA run accessions is available only with "
+                "experimental features enabled. "
+                "Set experimental=true to use stream_sra=true, or set "
+                "stream_sra=false."
+            )
+            raise ValueError(message)
+        if self.stream_sra and not self.skip_fastqc:
+            message = (
+                "ENA streaming cannot run with raw FastQC enabled. "
+                "Set skip_fastqc=true to keep stream_sra=true, or set "
+                "stream_sra=false to retain raw FastQC."
+            )
+            raise ValueError(message)
+        return self
 
     @field_validator("sourmash_threshold_bp")
     @classmethod

@@ -236,6 +236,51 @@ process DEACON_ENRICH_TARGET_READS {
         """
 }
 
+process DEACON_ENRICH_SRA_READS {
+    /* Stream one paired ENA run through nuclease into deacon without writing raw FASTQ files. */
+
+    tag "${id}, ${run_accession}"
+    label "medium"
+
+    errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
+    maxRetries 2
+    maxForks params.max_concurrent_downloads
+
+    input:
+    tuple val(id), val(platform), val(run_accession), path(deacon_idx), val(target_enrichment_enabled)
+
+    output:
+    tuple val(id), val(platform), path("${id}.sra_read_structure.txt"), path("${id}.target_enriched.fastq.gz"), emit: reads
+    tuple val(id), path("${id}.deacon_filter.json"), emit: stats
+    tuple val(id), path("${id}.nuclease.json"), emit: nuclease_stats
+
+    script:
+    def deplete_arg = target_enrichment_enabled ? "" : "--deplete"
+    def deacon_threads = Math.max(1, task.cpus as int - 1)
+    """
+    set -o pipefail
+
+    printf 'interleaved\\n' > ${id}.sra_read_structure.txt
+    printf 'nvd.ena_stream accession=%s platform=%s producer=nuclease mode=passthrough layout=interleaved\\n' \
+        '${run_accession}' '${platform}' >&2
+
+    nuclease \
+        --ena ${run_accession} \
+        --passthrough \
+        --output-encoding plain \
+        --summary ${id}.nuclease.json \
+    | deacon filter \
+        ${deplete_arg} \
+        --threads ${deacon_threads} \
+        --abs-threshold ${params.virus_abs_threshold} \
+        --rel-threshold ${params.virus_rel_threshold} \
+        --summary ${id}.deacon_filter.json \
+        --output ${id}.target_enriched.fastq.gz \
+        ${deacon_idx} \
+        - -
+    """
+}
+
 process DEACON_FILTER_CONTIGS {
     /*
      * Retain target contigs using deacon filter on assembled FASTA.
