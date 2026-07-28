@@ -427,15 +427,22 @@ def assert_long_read_assembly_outputs(
     eligibility_report = (
         assembly_root / "decisions" / "long_read_assembly_eligibility.tsv"
     )
-    assert eligibility_report.is_file(), (
-        f"Missing long-read assembly eligibility report: {eligibility_report}"
-    )
-    eligibility_rows = read_tsv_rows(eligibility_report)
     expected_long_read_samples = {
         run_info["sample_id"]
         for run_info in selected_sra_runs
         if run_info["platform"] != "illumina"
     }
+    assert not (assembly_root / "long_read_assemblers").exists()
+    if not expected_long_read_samples:
+        assert not eligibility_report.exists()
+        for assembler in ("metamdbg", "myloasm", "metaflye"):
+            assert not (assembly_root / assembler).exists()
+        return
+
+    assert eligibility_report.is_file(), (
+        f"Missing long-read assembly eligibility report: {eligibility_report}"
+    )
+    eligibility_rows = read_tsv_rows(eligibility_report)
     assert {row["sample_id"] for row in eligibility_rows} == (
         expected_long_read_samples
     )
@@ -446,12 +453,20 @@ def assert_long_read_assembly_outputs(
             assert decision in {"run", "skip"}
             assert (decision == "run") == (qualifying_reads > 0)
 
-    assert not (assembly_root / "long_read_assemblers").exists()
     for assembler in ("metamdbg", "myloasm", "metaflye"):
         assembler_dir = assembly_root / assembler
         assert assembler_dir.is_dir(), (
             f"Missing {assembler} output directory: {assembler_dir}"
         )
+
+
+def test_long_read_assembly_outputs_are_absent_without_long_read_inputs(
+    tmp_path: Path,
+) -> None:
+    assert_long_read_assembly_outputs(
+        tmp_path,
+        [{"sample_id": "paired_illumina", "platform": "illumina"}],
+    )
 
 
 def assert_read_profiles_respect_length_filter(results_root: Path) -> None:
@@ -520,6 +535,7 @@ def assert_successful_nvd_multiqc_outputs(
     *,
     experimental: bool,
     skip_assembly: bool,
+    expect_raw_fastqc: bool,
 ) -> None:
     """Assert the healthy fixture completed ancillary reporting and publication."""
     report = results_root / "multiqc_report.html"
@@ -557,9 +573,15 @@ def assert_successful_nvd_multiqc_outputs(
         assert (nvd_inputs / filename).is_file(), (
             f"Missing retained NVD MultiQC input: {filename}"
         )
-    assert raw_fastqc.is_dir(), f"Missing retained raw FastQC directory: {raw_fastqc}"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     raw_units = manifest.get("raw_fastqc")
+    if not expect_raw_fastqc:
+        assert raw_units == []
+        assert not list(raw_fastqc.glob("*.raw.*_fastqc.zip"))
+        assert not list(raw_fastqc.glob("*.raw.*_fastqc.html"))
+        return
+
+    assert raw_fastqc.is_dir(), f"Missing retained raw FastQC directory: {raw_fastqc}"
     assert raw_units, (
         f"No observed raw FastQC units in retained manifest: {manifest_path}"
     )
@@ -615,7 +637,7 @@ def local_sample_row(sample: dict[str, Any], local_fastq_dir: Path) -> dict[str,
     }
 
 
-def write_augmented_samplesheet(run_dir: Path) -> Path:
+def write_augmented_samplesheet(run_dir: Path, *, paired_ena_only: bool) -> Path:
     """Write the e2e samplesheet with portable SRA rows plus absolute local FASTQs."""
     local_fastq_dir = run_dir / "local_fastqs"
     local_fastq_dir.mkdir(parents=True, exist_ok=True)
@@ -644,10 +666,13 @@ def write_augmented_samplesheet(run_dir: Path) -> Path:
     ]
     rows: list[dict[str, str]] = []
     with SAMPLESHEET.open(newline="", encoding="utf-8") as handle:
-        rows.extend(
+        sra_rows = [
             {column: row.get(column, "") for column in fieldnames}
             for row in csv.DictReader(handle)
-        )
+        ]
+    if paired_ena_only:
+        sra_rows = [row for row in sra_rows if row["platform"] == "illumina"]
+    rows.extend(sra_rows)
 
     rows.extend(
         local_sample_row(sample, local_fastq_dir) for sample in LOCAL_E2E_SAMPLES
@@ -673,7 +698,10 @@ def run_nextflow() -> tuple[subprocess.CompletedProcess[str], Path]:
     print(f"NVD e2e run directory: {run_dir}", flush=True)
     print(f"NVD e2e results directory: {results_dir}", flush=True)
     print(f"NVD e2e work directory: {work_dir}", flush=True)
-    samplesheet = write_augmented_samplesheet(run_dir)
+    samplesheet = write_augmented_samplesheet(
+        run_dir,
+        paired_ena_only=experimental,
+    )
     write_mini_taxdump(taxonomy_dir)
     command = [
         "nextflow",
@@ -704,6 +732,10 @@ def run_nextflow() -> tuple[subprocess.CompletedProcess[str], Path]:
         command.extend(
             [
                 "--experimental",
+                "true",
+                "--stream_sra",
+                "true",
+                "--skip_fastqc",
                 "true",
                 "--merge_pairs",
                 "true",
@@ -1312,9 +1344,15 @@ def test_mini_sra_viral_pipeline_completes() -> None:
     """Tiny SRA runs should complete through enrichment, assembly, and BLAST."""
     manifest = load_manifest()
     verify_fixture_files(manifest)
-    selected_sra_runs = selected_manifest_sra_runs(manifest)
     experimental = integration_experimental_enabled()
     skip_assembly = integration_skip_assembly_enabled()
+    selected_sra_runs = selected_manifest_sra_runs(manifest)
+    if experimental:
+        selected_sra_runs = [
+            run_info
+            for run_info in selected_sra_runs
+            if run_info["platform"] == "illumina"
+        ]
 
     completed, run_dir = run_nextflow()
     assert completed.returncode == 0, (
@@ -1334,6 +1372,7 @@ def test_mini_sra_viral_pipeline_completes() -> None:
         results_root,
         experimental=experimental,
         skip_assembly=skip_assembly,
+        expect_raw_fastqc=not experimental,
     )
     assert_target_enrichment_outputs(results_root, expected_sample_ids)
     assert_read_profiles_respect_length_filter(results_root)

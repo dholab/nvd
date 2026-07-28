@@ -46,6 +46,7 @@ environments:
       - conda: https://conda.anaconda.org/bioconda/linux-64/mmseqs2-18.8cc5c-hd6d6fdc_0.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/linux-64/myloasm-0.6.0-hdcadc20_0.conda
       - conda: https://conda.anaconda.org/bioconda/linux-64/ncbi-vdb-3.4.1-hd63eeec_0.conda
+      - conda: https://conda.anaconda.org/bioconda/linux-64/nuclease-0.6.0-hfa8f182_0.conda
       - conda: https://conda.anaconda.org/bioconda/linux-64/perl-io-compress-2.216-pl5321h503566f_0.conda
       - conda: https://conda.anaconda.org/bioconda/linux-64/perl-json-xs-4.04-pl5321h9948957_0.conda
       - conda: https://conda.anaconda.org/bioconda/linux-64/perl-list-moreutils-xs-0.430-pl5321h7b50bb2_5.tar.bz2
@@ -418,6 +419,7 @@ environments:
       - conda: https://conda.anaconda.org/bioconda/linux-aarch64/mmseqs2-18.8cc5c-h7645e38_0.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/linux-aarch64/myloasm-0.5.1-h6789a04_1.conda
       - conda: https://conda.anaconda.org/bioconda/linux-aarch64/ncbi-vdb-3.4.1-h4ba1498_0.conda
+      - conda: https://conda.anaconda.org/bioconda/linux-aarch64/nuclease-0.6.0-hb05d258_0.conda
       - conda: https://conda.anaconda.org/bioconda/linux-aarch64/perl-io-compress-2.216-pl5321h80f0ee0_0.conda
       - conda: https://conda.anaconda.org/bioconda/linux-aarch64/perl-json-xs-4.04-pl5321h163da20_0.conda
       - conda: https://conda.anaconda.org/bioconda/linux-aarch64/perl-list-moreutils-xs-0.430-pl5321h661a7b0_5.tar.bz2
@@ -798,6 +800,7 @@ environments:
       - conda: https://conda.anaconda.org/bioconda/osx-64/mmseqs2-18.8cc5c-h8b377d6_0.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/osx-64/myloasm-0.6.0-hd9fa903_0.conda
       - conda: https://conda.anaconda.org/bioconda/osx-64/ncbi-vdb-3.4.1-haa61c75_0.conda
+      - conda: https://conda.anaconda.org/bioconda/osx-64/nuclease-0.6.0-h87b00fb_0.conda
       - conda: https://conda.anaconda.org/bioconda/osx-64/perl-io-compress-2.216-pl5321h5eaf441_0.conda
       - conda: https://conda.anaconda.org/bioconda/osx-64/perl-json-xs-4.04-pl5321h5fa12a8_0.conda
       - conda: https://conda.anaconda.org/bioconda/osx-64/perl-list-moreutils-xs-0.430-pl5321h18d8cf3_5.tar.bz2
@@ -1121,6 +1124,7 @@ environments:
       - conda: https://conda.anaconda.org/bioconda/osx-arm64/mmseqs2-18.8cc5c-h44b2af9_0.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/osx-arm64/myloasm-0.6.0-h9b6882e_0.conda
       - conda: https://conda.anaconda.org/bioconda/osx-arm64/ncbi-vdb-3.4.1-hfc726f9_0.conda
+      - conda: https://conda.anaconda.org/bioconda/osx-arm64/nuclease-0.6.0-hfc06a8d_0.conda
       - conda: https://conda.anaconda.org/bioconda/osx-arm64/perl-io-compress-2.216-pl5321haef7865_0.conda
       - conda: https://conda.anaconda.org/bioconda/osx-arm64/perl-json-xs-4.04-pl5321h4675bf2_0.conda
       - conda: https://conda.anaconda.org/bioconda/osx-arm64/perl-list-moreutils-xs-0.430-pl5321hbdacb55_5.tar.bz2
@@ -1444,6 +1448,7 @@ environments:
       - conda: https://conda.anaconda.org/bioconda/linux-64/mmseqs2-18.8cc5c-hd6d6fdc_0.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/linux-64/myloasm-0.6.0-hdcadc20_0.conda
       - conda: https://conda.anaconda.org/bioconda/linux-64/ncbi-vdb-3.4.1-hd63eeec_0.conda
+      - conda: https://conda.anaconda.org/bioconda/linux-64/nuclease-0.6.0-hfa8f182_0.conda
       - conda: https://conda.anaconda.org/bioconda/linux-64/perl-io-compress-2.216-pl5321h503566f_0.conda
       - conda: https://conda.anaconda.org/bioconda/linux-64/perl-json-xs-4.04-pl5321h9948957_0.conda
       - conda: https://conda.anaconda.org/bioconda/linux-64/perl-list-moreutils-xs-0.430-pl5321h7b50bb2_5.tar.bz2
@@ -1914,6 +1919,7 @@ environments:
       - conda: https://conda.anaconda.org/bioconda/linux-aarch64/mmseqs2-18.8cc5c-h7645e38_0.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/linux-aarch64/myloasm-0.5.1-h6789a04_1.conda
       - conda: https://conda.anaconda.org/bioconda/linux-aarch64/ncbi-vdb-3.4.1-h4ba1498_0.conda
+      - conda: https://conda.anaconda.org/bioconda/linux-aarch64/nuclease-0.6.0-hb05d258_0.conda
       - conda: https://conda.anaconda.org/bioconda/linux-aarch64/perl-io-compress-2.216-pl5321h80f0ee0_0.conda
       - conda: https://conda.anaconda.org/bioconda/linux-aarch64/perl-json-xs-4.04-pl5321h163da20_0.conda
       - conda: https://conda.anaconda.org/bioconda/linux-aarch64/perl-list-moreutils-xs-0.430-pl5321h661a7b0_5.tar.bz2
@@ -2392,6 +2398,7 @@ environments:
       - conda: https://conda.anaconda.org/bioconda/osx-64/mmseqs2-18.8cc5c-h8b377d6_0.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/osx-64/myloasm-0.6.0-hd9fa903_0.conda
       - conda: https://conda.anaconda.org/bioconda/osx-64/ncbi-vdb-3.4.1-haa61c75_0.conda
+      - conda: https://conda.anaconda.org/bioconda/osx-64/nuclease-0.6.0-h87b00fb_0.conda
       - conda: https://conda.anaconda.org/bioconda/osx-64/perl-io-compress-2.216-pl5321h5eaf441_0.conda
       - conda: https://conda.anaconda.org/bioconda/osx-64/perl-json-xs-4.04-pl5321h5fa12a8_0.conda
       - conda: https://conda.anaconda.org/bioconda/osx-64/perl-list-moreutils-xs-0.430-pl5321h18d8cf3_5.tar.bz2
@@ -2814,6 +2821,7 @@ environments:
       - conda: https://conda.anaconda.org/bioconda/osx-arm64/mmseqs2-18.8cc5c-h44b2af9_0.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/osx-arm64/myloasm-0.6.0-h9b6882e_0.conda
       - conda: https://conda.anaconda.org/bioconda/osx-arm64/ncbi-vdb-3.4.1-hfc726f9_0.conda
+      - conda: https://conda.anaconda.org/bioconda/osx-arm64/nuclease-0.6.0-hfc06a8d_0.conda
       - conda: https://conda.anaconda.org/bioconda/osx-arm64/perl-io-compress-2.216-pl5321haef7865_0.conda
       - conda: https://conda.anaconda.org/bioconda/osx-arm64/perl-json-xs-4.04-pl5321h4675bf2_0.conda
       - conda: https://conda.anaconda.org/bioconda/osx-arm64/perl-list-moreutils-xs-0.430-pl5321hbdacb55_5.tar.bz2
@@ -3452,6 +3460,21 @@ packages:
     - ncbi-vdb >=3.4.1,<4.0a0
   size: 9227191
   timestamp: 1774474370894
+- conda: https://conda.anaconda.org/bioconda/linux-64/nuclease-0.6.0-hfa8f182_0.conda
+  sha256: 78994af2c0bd3f7c3f6ab1e2576fbe900c2f84fbe199cceaea663673eac5919b
+  md5: d9fdbf67e9c1413dc60c78e463707e47
+  depends:
+  - __glibc >=2.17,<3.0.a0
+  - libgcc >=14
+  constrains:
+  - __glibc >=2.17
+  license: MIT
+  purls: []
+  run_exports:
+    weak:
+    - nuclease >=0.6.0,<0.7.0a0
+  size: 2121451
+  timestamp: 1782694362040
 - conda: https://conda.anaconda.org/bioconda/linux-64/perl-io-compress-2.216-pl5321h503566f_0.conda
   sha256: 5241c33cf55ba0cbfc0ccab96b4a31123761db00310eab4fedd7a95226c4fca7
   md5: 0784cb3c120f934a5fe61961c8238330
@@ -3813,6 +3836,20 @@ packages:
     - ncbi-vdb >=3.4.1,<4.0a0
   size: 8349546
   timestamp: 1774474237098
+- conda: https://conda.anaconda.org/bioconda/linux-aarch64/nuclease-0.6.0-hb05d258_0.conda
+  sha256: e33088ffeed3a73fd157662cc0a203787804aac13b577eaa08c3651da1d375a6
+  md5: bf1687e9e409609c1b38e92db654df07
+  depends:
+  - libgcc >=14
+  constrains:
+  - __glibc >=2.17
+  license: MIT
+  purls: []
+  run_exports:
+    weak:
+    - nuclease >=0.6.0,<0.7.0a0
+  size: 2034087
+  timestamp: 1782694100188
 - conda: https://conda.anaconda.org/bioconda/linux-aarch64/perl-io-compress-2.216-pl5321h80f0ee0_0.conda
   sha256: e3b08da45be6608d51e20eb95832a505d6334f457a2d17857a905b114b6465dc
   md5: 279724b023ac1c97903397f28de43f98
@@ -4354,6 +4391,20 @@ packages:
     - ncbi-vdb >=3.4.1,<4.0a0
   size: 4689904
   timestamp: 1774475475338
+- conda: https://conda.anaconda.org/bioconda/osx-64/nuclease-0.6.0-h87b00fb_0.conda
+  sha256: 01be9c749ff95f7fe6657b6e9c00d915a1b836f3b63fb7f1c78620e1dd2188b4
+  md5: 4db14c9916813d1c5017e8b8a7f9acac
+  depends:
+  - __osx >=10.13
+  constrains:
+  - __osx >=10.13
+  license: MIT
+  purls: []
+  run_exports:
+    weak:
+    - nuclease >=0.6.0,<0.7.0a0
+  size: 2035236
+  timestamp: 1782695298599
 - conda: https://conda.anaconda.org/bioconda/osx-64/perl-io-compress-2.216-pl5321h5eaf441_0.conda
   sha256: a053f0721aa5718227e4dde2ea394d57f09cf0fd0454e522bc1865ff537483b9
   md5: 5475f28718f06211952ba02a4ae26245
@@ -4716,6 +4767,20 @@ packages:
     - ncbi-vdb >=3.4.1,<4.0a0
   size: 4729608
   timestamp: 1774474005378
+- conda: https://conda.anaconda.org/bioconda/osx-arm64/nuclease-0.6.0-hfc06a8d_0.conda
+  sha256: c755ca7080f28bf640263381b060b2225438f9e141572b35fe3fc591fec66246
+  md5: ee9c9f19e463d5a5a1871cb92ea621da
+  depends:
+  - __osx >=11.0
+  constrains:
+  - __osx >=11.0
+  license: MIT
+  purls: []
+  run_exports:
+    weak:
+    - nuclease >=0.6.0,<0.7.0a0
+  size: 1882867
+  timestamp: 1782693891084
 - conda: https://conda.anaconda.org/bioconda/osx-arm64/perl-io-compress-2.216-pl5321haef7865_0.conda
   sha256: 9e7fa17e5eca67ac395b97610deefd861ee6564c8e2f06ea1bfff782551c90f9
   md5: 0431eb5b4aeea11a058a3e639b7379d7
