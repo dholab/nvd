@@ -237,7 +237,7 @@ process DEACON_ENRICH_TARGET_READS {
 }
 
 process DEACON_ENRICH_SRA_READS {
-    /* Stream one paired Illumina SRA run through fastq-dump into deacon without writing raw FASTQ files. */
+    /* Stream one paired Illumina SRA run through fasterq-dump into deacon without writing raw FASTQ files. */
 
     tag "${id}, ${run_accession}"
     label "medium"
@@ -259,12 +259,13 @@ process DEACON_ENRICH_SRA_READS {
     if (platform != "illumina")
         throw new IllegalArgumentException("stream_sra currently supports paired Illumina SRA runs only, got platform '${platform}'")
     def deplete_arg = target_enrichment_enabled ? "" : "--deplete"
-    def deacon_threads = Math.max(1, task.cpus as int - 1)
+    def fasterq_threads = Math.max(1, (task.cpus as int).intdiv(2))
+    def deacon_threads = Math.max(1, task.cpus as int - fasterq_threads)
     """
     set -euo pipefail
 
     printf 'interleaved\\n' > ${id}.sra_read_structure.txt
-    printf 'nvd.sra_stream accession=%s platform=%s producer=fastq-dump layout=interleaved\\n' \
+    printf 'nvd.sra_stream accession=%s platform=%s producer=fasterq-dump layout=interleaved\\n' \
         '${run_accession}' '${platform}' >&2
 
     mkdir -p sra
@@ -274,14 +275,14 @@ process DEACON_ENRICH_SRA_READS {
             --max-size u \
             --output-directory . \
             '${run_accession}'
-        vdb-validate './${run_accession}'
     )
 
-    fastq-dump \
+    mkdir -p fasterq-tmp
+    fasterq-dump \
         --split-spot \
-        --skip-technical \
-        --readids \
         --stdout \
+        --threads ${fasterq_threads} \
+        --temp fasterq-tmp \
         './sra/${run_accession}' \
     | deacon filter \
         ${deplete_arg} \

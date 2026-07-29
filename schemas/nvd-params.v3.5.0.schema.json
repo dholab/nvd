@@ -95,7 +95,7 @@
     "stream_sra": {
       "type": "boolean",
       "default": false,
-      "description": "Experimental: stream paired Illumina SRA reads through fastq-dump directly into Deacon. A compressed task-local SRA archive is allowed, but raw FASTQ files are never materialized. Requires experimental=true and skip_fastqc=true."
+      "description": "Experimental: stream paired Illumina SRA reads through fasterq-dump directly into Deacon. A compressed task-local SRA archive is allowed, but raw FASTQ files are never materialized. Requires experimental=true and skip_fastqc=true."
     },
     "blast_db_version": {
       "type": "string",

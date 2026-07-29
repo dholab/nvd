@@ -5,13 +5,14 @@ version=3.4.1
 private="$PREFIX/libexec/nvd-sra-tools"
 
 rm -rf "$private"
-rm -f "$PREFIX/bin/prefetch" "$PREFIX/bin/vdb-validate" "$PREFIX/bin/fastq-dump"
+rm -f "$PREFIX/bin/prefetch" "$PREFIX/bin/vdb-validate" "$PREFIX/bin/fastq-dump" "$PREFIX/bin/fasterq-dump"
 mkdir -p "$private/bin" "$private/lib" "$PREFIX/bin"
 
 case "$target_platform" in
   osx-arm64|osx-64)
     cp "$SRC_DIR/bin/prefetch-orig.$version" "$private/bin/prefetch-orig.$version"
     cp "$SRC_DIR/bin/fastq-dump-orig.$version" "$private/bin/fastq-dump-orig.$version"
+    cp "$SRC_DIR/bin/fasterq-dump-orig.$version" "$private/bin/fasterq-dump-orig.$version"
     cp "$SRC_DIR/bin/vdb-validate.$version" "$private/bin/vdb-validate.$version"
     cp -R "$SRC_DIR/bin/ncbi" "$private/bin/ncbi"
     cp -R "$SRC_DIR/schema" "$private/schema"
@@ -44,6 +45,7 @@ case "$target_platform" in
 
     cp "$rootfs/usr/local/bin/prefetch-orig.$version" "$private/bin/prefetch-orig.$version"
     cp "$rootfs/usr/local/bin/fastq-dump-orig.$version" "$private/bin/fastq-dump-orig.$version"
+    cp "$rootfs/usr/local/bin/fasterq-dump-orig.$version" "$private/bin/fasterq-dump-orig.$version"
     cp "$rootfs/usr/local/bin/vdb-validate.$version" "$private/bin/vdb-validate.$version"
     cp -R "$rootfs/usr/local/bin/ncbi" "$private/bin/ncbi"
     cp "$rootfs/lib/$loader" "$private/lib/$loader"
@@ -59,9 +61,10 @@ esac
 chmod 755 \
   "$private/bin/prefetch-orig.$version" \
   "$private/bin/fastq-dump-orig.$version" \
+  "$private/bin/fasterq-dump-orig.$version" \
   "$private/bin/vdb-validate.$version"
 
-for tool in prefetch vdb-validate fastq-dump; do
+for tool in prefetch vdb-validate fastq-dump fasterq-dump; do
   cp "$RECIPE_DIR/launcher" "$PREFIX/bin/$tool"
   chmod 755 "$PREFIX/bin/$tool"
 done

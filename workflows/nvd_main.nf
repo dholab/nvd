@@ -55,7 +55,7 @@ workflow NVD_MAIN {
   assert !(params.stream_sra && !params.skip_fastqc) : """
     SRA Toolkit streaming cannot run with raw FastQC enabled.
 
-    stream_sra sends paired Illumina SRA reads from fastq-dump directly into
+    stream_sra sends paired Illumina SRA reads from fasterq-dump directly into
     deacon, so complete raw FASTQ files are not available for FastQC.
 
     Current settings:

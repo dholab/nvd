@@ -135,7 +135,7 @@ class NvdParams(BaseModel):
     )
     stream_sra: bool = Field(
         default=False,
-        description="Experimentally stream paired Illumina SRA reads through fastq-dump directly into Deacon.",
+        description="Experimentally stream paired Illumina SRA reads through fasterq-dump directly into Deacon.",
         json_schema_extra={"category": "Core"},
     )
 
