@@ -167,7 +167,7 @@ process DEACON_ENRICH_TARGET_READS {
     tuple val(meta), path(read_files, stageAs: "reads??????/*"), path(deacon_idx), val(target_enrichment_enabled)
 
     output:
-    tuple val(meta.id), val(meta.platform), val(meta.deacon_read_structure), path("${meta.id}.target_enriched.fastq.gz"), emit: reads
+    tuple val(meta.id), val(meta.platform), val(meta.deacon_read_structure), path("${meta.id}.target_enriched.fastq.gz"), env('NVD_INPUT_READ_COUNT'), env('NVD_ENRICHED_READ_COUNT'), emit: reads
     tuple val(meta.id), path("${meta.id}.deacon_filter.json"), emit: stats
 
     script:
@@ -187,6 +187,9 @@ process DEACON_ENRICH_TARGET_READS {
             --output ${meta.id}.target_enriched.fastq.gz \
             ${deacon_idx} \
             ${r1_files[0]}
+
+        NVD_INPUT_READ_COUNT=\$(jq -er '.seqs_in | select(type == "number" and . >= 0 and . == floor)' ${meta.id}.deacon_filter.json)
+        NVD_ENRICHED_READ_COUNT=\$(jq -er '.seqs_out | select(type == "number" and . >= 0 and . == floor)' ${meta.id}.deacon_filter.json)
         """
     else if (meta.read_mode == "paired" && r1_files.size() == 1 && r2_files.size() == 1)
         """
@@ -199,6 +202,9 @@ process DEACON_ENRICH_TARGET_READS {
             --output ${meta.id}.target_enriched.fastq.gz \
             ${deacon_idx} \
             ${r1_files[0]} ${r2_files[0]}
+
+        NVD_INPUT_READ_COUNT=\$(jq -er '.seqs_in | select(type == "number" and . >= 0 and . == floor)' ${meta.id}.deacon_filter.json)
+        NVD_ENRICHED_READ_COUNT=\$(jq -er '.seqs_out | select(type == "number" and . >= 0 and . == floor)' ${meta.id}.deacon_filter.json)
         """
     else if (meta.read_mode == "single")
         """
@@ -215,6 +221,9 @@ process DEACON_ENRICH_TARGET_READS {
             --rel-threshold ${params.virus_rel_threshold} \
             --summary ${meta.id}.deacon_filter.json \
             --output ${meta.id}.target_enriched.fastq.gz
+
+        NVD_INPUT_READ_COUNT=\$(jq -er '.seqs_in | select(type == "number" and . >= 0 and . == floor)' ${meta.id}.deacon_filter.json)
+        NVD_ENRICHED_READ_COUNT=\$(jq -er '.seqs_out | select(type == "number" and . >= 0 and . == floor)' ${meta.id}.deacon_filter.json)
         """
     else
         """
@@ -233,6 +242,9 @@ process DEACON_ENRICH_TARGET_READS {
             --rel-threshold ${params.virus_rel_threshold} \
             --summary ${meta.id}.deacon_filter.json \
             --output ${meta.id}.target_enriched.fastq.gz
+
+        NVD_INPUT_READ_COUNT=\$(jq -er '.seqs_in | select(type == "number" and . >= 0 and . == floor)' ${meta.id}.deacon_filter.json)
+        NVD_ENRICHED_READ_COUNT=\$(jq -er '.seqs_out | select(type == "number" and . >= 0 and . == floor)' ${meta.id}.deacon_filter.json)
         """
 }
 
@@ -250,7 +262,7 @@ process DEACON_ENRICH_SRA_READS {
     tuple val(id), val(platform), val(run_accession), path(deacon_idx), val(target_enrichment_enabled)
 
     output:
-    tuple val(id), val(platform), path("${id}.sra_read_structure.txt"), path("${id}.target_enriched.fastq.gz"), emit: reads
+    tuple val(id), val(platform), path("${id}.sra_read_structure.txt"), path("${id}.target_enriched.fastq.gz"), env('NVD_INPUT_READ_COUNT'), env('NVD_ENRICHED_READ_COUNT'), emit: reads
     tuple val(id), path("${id}.deacon_filter.json"), emit: stats
 
     script:
@@ -292,6 +304,9 @@ process DEACON_ENRICH_SRA_READS {
         --output ${id}.target_enriched.fastq.gz \
         ${deacon_idx} \
         - -
+
+    NVD_INPUT_READ_COUNT=\$(jq -er '.seqs_in | select(type == "number" and . >= 0 and . == floor)' ${id}.deacon_filter.json)
+    NVD_ENRICHED_READ_COUNT=\$(jq -er '.seqs_out | select(type == "number" and . >= 0 and . == floor)' ${id}.deacon_filter.json)
     """
 }
 

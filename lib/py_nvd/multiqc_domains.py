@@ -179,9 +179,7 @@ def deacon_row(package: ReportPackage) -> DeaconRow:
     return DeaconRow(
         sample_id=receipt.sample_id,
         query_class=receipt.query_class,
-        status="complete_empty"
-        if stats.seqs_in == 0 and stats.bp_in == 0
-        else "observed",
+        status="complete_empty" if stats.seqs_out == 0 else "observed",
         reads_in=stats.seqs_in,
         reads_retained=stats.seqs_out,
         reads_removed=stats.seqs_removed,
