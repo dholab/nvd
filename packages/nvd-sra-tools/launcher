@@ -12,6 +12,9 @@ case "$tool" in
   fastq-dump)
     executable=fastq-dump-orig.3.4.1
     ;;
+  fasterq-dump)
+    executable=fasterq-dump-orig.3.4.1
+    ;;
   vdb-validate)
     executable=vdb-validate.3.4.1
     ;;

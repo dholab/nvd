@@ -622,7 +622,7 @@ def assert_sra_streaming_work_has_no_raw_fastqs(work_dir: Path) -> None:
     streaming_task_dirs = [
         command_file.parent
         for command_file in work_dir.rglob(".command.sh")
-        if "fastq-dump" in command_file.read_text(encoding="utf-8")
+        if "fasterq-dump" in command_file.read_text(encoding="utf-8")
     ]
     assert streaming_task_dirs, f"No SRA Toolkit streaming tasks found in {work_dir}"
 
