@@ -58,7 +58,24 @@ workflow GATHER_READS {
                 tuple(meta, r1 + r2)
             }
 
-        FETCH_FASTQ(ch_sra_accessions)
+        ch_sra_accessions_to_download = params.stream_sra
+            ? Channel.empty()
+            : ch_sra_accessions
+
+        ch_sra_accessions_to_stream = params.stream_sra
+            ? ch_sra_accessions.map { sample_id, platform, raw_accession ->
+                def accession = raw_accession.toString().toUpperCase(java.util.Locale.ROOT)
+                if (!(accession ==~ /[SED]RR[0-9]+/)) {
+                    throw new IllegalArgumentException("stream_sra requires an SRR/ERR/DRR run accession for sample '${sample_id}', got '${raw_accession}'")
+                }
+                if (platform != "illumina") {
+                    throw new IllegalArgumentException("stream_sra currently supports paired Illumina SRA runs only; sample '${sample_id}' uses platform '${platform}'")
+                }
+                tuple(sample_id, platform, accession)
+            }
+            : Channel.empty()
+
+        FETCH_FASTQ(ch_sra_accessions_to_download)
 
         ch_sra_bundles = FETCH_FASTQ.out
             .map { sample_id, platform, fastq_files ->
@@ -82,6 +99,7 @@ workflow GATHER_READS {
 
         emit:
         reads = ch_raw_reads
+        sra_accessions = ch_sra_accessions_to_stream
         resolved_reads = RESOLVE_READ_INPUTS.out.jsonl
 
 }

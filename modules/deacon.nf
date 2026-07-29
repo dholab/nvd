@@ -236,6 +236,65 @@ process DEACON_ENRICH_TARGET_READS {
         """
 }
 
+process DEACON_ENRICH_SRA_READS {
+    /* Stream one paired Illumina SRA run through fastq-dump into deacon without writing raw FASTQ files. */
+
+    tag "${id}, ${run_accession}"
+    label "medium"
+
+    errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
+    maxRetries 2
+    maxForks params.max_concurrent_downloads
+
+    input:
+    tuple val(id), val(platform), val(run_accession), path(deacon_idx), val(target_enrichment_enabled)
+
+    output:
+    tuple val(id), val(platform), path("${id}.sra_read_structure.txt"), path("${id}.target_enriched.fastq.gz"), emit: reads
+    tuple val(id), path("${id}.deacon_filter.json"), emit: stats
+
+    script:
+    if (!(run_accession ==~ /[SED]RR[0-9]+/))
+        throw new IllegalArgumentException("stream_sra requires an uppercase SRR/ERR/DRR run accession, got '${run_accession}'")
+    if (platform != "illumina")
+        throw new IllegalArgumentException("stream_sra currently supports paired Illumina SRA runs only, got platform '${platform}'")
+    def deplete_arg = target_enrichment_enabled ? "" : "--deplete"
+    def deacon_threads = Math.max(1, task.cpus as int - 1)
+    """
+    set -euo pipefail
+
+    printf 'interleaved\\n' > ${id}.sra_read_structure.txt
+    printf 'nvd.sra_stream accession=%s platform=%s producer=fastq-dump layout=interleaved\\n' \
+        '${run_accession}' '${platform}' >&2
+
+    mkdir -p sra
+    (
+        cd sra
+        prefetch \
+            --max-size u \
+            --output-directory . \
+            '${run_accession}'
+        vdb-validate './${run_accession}'
+    )
+
+    fastq-dump \
+        --split-spot \
+        --skip-technical \
+        --readids \
+        --stdout \
+        './sra/${run_accession}' \
+    | deacon filter \
+        ${deplete_arg} \
+        --threads ${deacon_threads} \
+        --abs-threshold ${params.virus_abs_threshold} \
+        --rel-threshold ${params.virus_rel_threshold} \
+        --summary ${id}.deacon_filter.json \
+        --output ${id}.target_enriched.fastq.gz \
+        ${deacon_idx} \
+        - -
+    """
+}
+
 process DEACON_FILTER_CONTIGS {
     /*
      * Retain target contigs using deacon filter on assembled FASTA.
