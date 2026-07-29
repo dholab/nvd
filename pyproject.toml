@@ -32,10 +32,14 @@ dependencies = [
 ]
 
 [tool.pixi.workspace]
+preview = ["pixi-build"]
+requires-pixi = ">=0.74.0"
 channels = ["conda-forge", "bioconda", "anaconda"]
 platforms = ["linux-64", "linux-aarch64", "osx-64", "osx-arm64"]
 
 [tool.pixi.dependencies]
+nvd-sra-tools = { path = "packages/nvd-sra-tools" }
+
 # Bioinformatics ToolKits
 # ----------------------------------------------------------------------------------- #
 bbmap = ">=39.19,<40"

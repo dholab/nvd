@@ -1,0 +1,27 @@
+#!/bin/sh
+set -eu
+
+prefix=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+private="$prefix/libexec/nvd-sra-tools"
+tool=$(basename -- "$0")
+
+case "$tool" in
+  prefetch)
+    executable=prefetch-orig.3.4.1
+    ;;
+  fastq-dump)
+    executable=fastq-dump-orig.3.4.1
+    ;;
+  vdb-validate)
+    executable=vdb-validate.3.4.1
+    ;;
+  *)
+    exit 127
+    ;;
+esac
+
+if test -x "$private/lib/ld-musl.so.1"; then
+  exec "$private/lib/ld-musl.so.1" "$private/bin/$executable" "$@"
+fi
+
+exec "$private/bin/$executable" "$@"
