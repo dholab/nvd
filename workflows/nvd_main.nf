@@ -140,6 +140,7 @@ workflow NVD_MAIN {
     .mix(LONG_READ_DENOVO_ENSEMBLY.out.no_contigs)
     .mix(PROCESS_CONTIGS.out.no_contigs)
     .mix(ch_assembly_disabled)
+    .mix(PREPROCESS_READS.out.complete_empty_samples)
 
   ch_run_context = COMPUTE_RUN_CONTEXT.out.run_context
   ch_taxonomy_dir = ENSURE_TAXONOMY.out.taxonomy_dir
