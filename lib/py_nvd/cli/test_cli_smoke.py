@@ -174,6 +174,30 @@ def test_run_accepts_skip_stage_flags(tmp_path: Path) -> None:
     assert "--skip-fastqc" not in result.output
 
 
+def test_run_accepts_sra_streaming_flag(tmp_path: Path) -> None:
+    """The opt-in CLI flag maps to the underscore Nextflow parameter."""
+    samplesheet = tmp_path / "samples.csv"
+    samplesheet.write_text("sample_id,srr,platform,fastq1,fastq2\n", encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        [
+            "run",
+            "--samplesheet",
+            str(samplesheet),
+            "--experimental",
+            "--stream-sra",
+            "--skip-fastqc",
+            "--dry-run",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "--stream_sra" in result.output
+    assert "--skip_fastqc" in result.output
+    assert "--stream-sra" not in result.output
+
+
 def test_run_accepts_no_enrichment_flag(tmp_path: Path) -> None:
     """Hyphenated CLI flag maps to the underscore Nextflow param."""
     samplesheet = tmp_path / "samples.csv"

@@ -171,6 +171,12 @@ def run(
         help="Skip per-file raw-read FastQC.",
         rich_help_panel=PANEL_CORE,
     ),
+    stream_sra: bool | None = typer.Option(
+        None,
+        "--stream-sra",
+        help="Experimentally stream paired Illumina SRA reads through fastq-dump into Deacon (requires --experimental and --skip-fastqc)",
+        rich_help_panel=PANEL_CORE,
+    ),
     # -------------------------------------------------------------------------
     # Reference Paths
     # -------------------------------------------------------------------------
@@ -345,7 +351,7 @@ def run(
     max_concurrent_downloads: int | None = typer.Option(
         None,
         "--max-concurrent-downloads",
-        help="Maximum concurrent SRA downloads (default: 3)",
+        help="Maximum concurrent SRA retrieval and streaming tasks (default: 3)",
         rich_help_panel=PANEL_ANALYSIS,
     ),
     # -------------------------------------------------------------------------
@@ -621,6 +627,7 @@ def run(
         "skip_assembly": skip_assembly,
         "skip_blast": skip_blast,
         "skip_fastqc": skip_fastqc,
+        "stream_sra": stream_sra,
         # Reference paths
         "blast_db": blast_db,
         "blast_db_prefix": blast_db_prefix,

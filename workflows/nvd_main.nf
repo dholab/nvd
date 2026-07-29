@@ -40,6 +40,31 @@ workflow NVD_MAIN {
   def target_enrichment_enabled = NvdUtils.targetEnrichmentEnabled(params)
   def depletion_enabled = NvdUtils.depletionEnabled(params)
   def has_target_enrichment_index = NvdUtils.hasTargetEnrichmentIndex(params)
+  assert !(params.stream_sra && !params.experimental) : """
+    SRA Toolkit streaming is available only when experimental features are enabled.
+
+    Current settings:
+      stream_sra = ${params.stream_sra}
+      experimental = ${params.experimental}
+
+    Choose one:
+      - Test paired Illumina SRA streaming: set experimental = true
+      - Use the materialized SRA route: set stream_sra = false
+    """
+  assert !(params.stream_sra && !params.skip_fastqc) : """
+    SRA Toolkit streaming cannot run with raw FastQC enabled.
+
+    stream_sra sends paired Illumina SRA reads from fastq-dump directly into
+    deacon, so complete raw FASTQ files are not available for FastQC.
+
+    Current settings:
+      stream_sra = ${params.stream_sra}
+      skip_fastqc = ${params.skip_fastqc}
+
+    Choose one:
+      - Keep SRA Toolkit streaming: set skip_fastqc = true
+      - Keep raw FastQC: set stream_sra = false
+    """
   assert (!requires_blast_db || (params.blast_db && file(params.blast_db).isDirectory())) && (!target_enrichment_enabled || has_target_enrichment_index) : """
     One or more required parameters are missing or point to non-existent files:
 
@@ -64,7 +89,10 @@ workflow NVD_MAIN {
 
   GATHER_READS(ch_samplesheet)
 
-  PREPROCESS_READS(GATHER_READS.out.reads)
+  PREPROCESS_READS(
+    GATHER_READS.out.reads,
+    GATHER_READS.out.sra_accessions,
+  )
 
   ch_sourmash_gather_csv = channel.empty()
   ch_sourmash_lineages = channel.empty()

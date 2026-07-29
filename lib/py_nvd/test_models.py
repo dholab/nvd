@@ -70,6 +70,33 @@ class TestNvdParamsInstantiation:
         assert p.labkey is True
 
 
+class TestNvdParamsSraStreaming:
+    """Tests for the experimental SRA streaming contract."""
+
+    def test_sra_streaming_requires_experimental_features(self) -> None:
+        with pytest.raises(
+            ValidationError,
+            match="SRA Toolkit streaming is available only with experimental features enabled",
+        ):
+            NvdParams(stream_sra=True, skip_fastqc=True, experimental=False)
+
+    def test_sra_streaming_requires_raw_fastqc_to_be_skipped(self) -> None:
+        with pytest.raises(
+            ValidationError,
+            match="SRA Toolkit streaming cannot run with raw FastQC enabled",
+        ):
+            NvdParams(stream_sra=True, skip_fastqc=False, experimental=True)
+
+    def test_sra_streaming_accepts_compatible_settings(self) -> None:
+        params = NvdParams(
+            stream_sra=True,
+            skip_fastqc=True,
+            experimental=True,
+        )
+
+        assert params.stream_sra is True
+
+
 class TestNvdParamsRangeValidators:
     """Tests for 0-1 range validators."""
 
@@ -482,6 +509,19 @@ class TestNvdParamsToNextflowArgs:
         assert "--skip-blast" not in cmd
         assert "--skip-fastqc" not in cmd
 
+    def test_stream_sra_param(self) -> None:
+        """SRA streaming is propagated with the Nextflow underscore name."""
+        params = NvdParams(
+            stream_sra=True,
+            skip_fastqc=True,
+            experimental=True,
+        )
+        command = params.to_nextflow_args(Path("/pipeline"))
+
+        stream_idx = command.index("--stream_sra")
+        assert command[stream_idx + 1] == "true"
+        assert "--stream-sra" not in command
+
     def test_sourmash_reference_params(self) -> None:
         """Sourmash reference params are correctly propagated."""
         p = NvdParams(
@@ -584,6 +624,10 @@ class TestNvdParamsDefaults:
         assert NvdParams().skip_assembly is False
         assert NvdParams().skip_blast is False
         assert NvdParams().skip_fastqc is False
+
+    def test_default_sra_streaming(self) -> None:
+        """SRA inputs are materialized unless streaming is explicitly requested."""
+        assert NvdParams().stream_sra is False
 
     def test_default_labkey(self) -> None:
         """Default labkey matches nextflow.config."""
