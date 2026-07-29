@@ -1,0 +1,43 @@
+context:
+  version: 3.4.1
+
+package:
+  name: nvd-sra-tools
+  version: ${{ version }}
+
+source:
+  - if: target_platform == "osx-arm64"
+    then:
+      url: https://ftp-trace.ncbi.nlm.nih.gov/sra/sdk/${{ version }}/sratoolkit.${{ version }}-mac-arm64.tar.gz
+      sha256: b38ec90f9c99805533c90684310b0495288890559c5af194f1074b72f4e95255
+  - if: target_platform == "osx-64"
+    then:
+      url: https://ftp-trace.ncbi.nlm.nih.gov/sra/sdk/${{ version }}/sratoolkit.${{ version }}-mac-x86_64.tar.gz
+      sha256: 8e19acfc0be8544b982b5233ae3f9469df31a317e50d63e984de034587e77488
+
+requirements:
+  build:
+    - if: linux
+      then: jq
+    - if: linux
+      then: skopeo
+    - if: linux
+      then: tar
+
+build:
+  number: 0
+  dynamic_linking:
+    binary_relocation: false
+  script:
+    file: install.sh
+
+tests:
+  - script:
+      - prefetch --version
+      - vdb-validate --version
+      - fastq-dump --version
+
+about:
+  homepage: https://github.com/ncbi/sra-tools
+  license: LicenseRef-Public-Domain
+  summary: Official precompiled NCBI SRA Toolkit commands required by NVD

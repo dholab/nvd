@@ -15,8 +15,13 @@
 !pixi.lock
 !pyproject.toml
 !uv.lock
-!.envrc
-!flake.nix
+!mise.lock
+!mise.toml
+
+# local Pixi source packages
+!/packages
+!/packages/nvd-sra-tools
+!/packages/nvd-sra-tools/*
 
 # workflows
 !/workflows

@@ -25,6 +25,7 @@ RUN apt-get update && \
 COPY pyproject.toml $HOME/pyproject.toml
 COPY pixi.lock $HOME/pixi.lock
 COPY uv.lock $HOME/uv.lock
+COPY packages/nvd-sra-tools/ $HOME/packages/nvd-sra-tools/
 COPY lib/ $HOME/lib/
 COPY main.nf $HOME/main.nf
 COPY nextflow.config $HOME/nextflow.config
