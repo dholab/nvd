@@ -76,14 +76,14 @@ class TestNvdParamsSraStreaming:
     def test_sra_streaming_requires_experimental_features(self) -> None:
         with pytest.raises(
             ValidationError,
-            match="SRA Toolkit streaming is available only with experimental features enabled",
+            match="SRA accession streaming is available only with experimental features enabled",
         ):
             NvdParams(stream_sra=True, skip_fastqc=True, experimental=False)
 
     def test_sra_streaming_requires_raw_fastqc_to_be_skipped(self) -> None:
         with pytest.raises(
             ValidationError,
-            match="SRA Toolkit streaming cannot run with raw FastQC enabled",
+            match="SRA accession streaming cannot run with raw FastQC enabled",
         ):
             NvdParams(stream_sra=True, skip_fastqc=False, experimental=True)
 

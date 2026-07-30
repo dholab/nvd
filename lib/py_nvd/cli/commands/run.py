@@ -180,7 +180,7 @@ def run(
     stream_sra: bool | None = typer.Option(
         None,
         "--stream-sra",
-        help="Experimentally stream paired Illumina SRA reads through fastq-dump into Deacon (requires --experimental and --skip-fastqc)",
+        help="Experimentally stream paired Illumina run accessions into Deacon, preferring ENA FASTQs with SRA Toolkit fallback (requires --experimental and --skip-fastqc)",
         rich_help_panel=PANEL_CORE,
     ),
     # -------------------------------------------------------------------------
