@@ -249,7 +249,7 @@ process DEACON_ENRICH_TARGET_READS {
 }
 
 process DEACON_ENRICH_SRA_READS {
-    /* Stream one paired Illumina SRA run through fastq-dump into deacon without writing raw FASTQ files. */
+    /* Prefer ENA FASTQs for one paired Illumina run, with SRA Toolkit fallback, without writing raw FASTQ files. */
 
     tag "${id}, ${run_accession}"
     label "medium"
@@ -276,34 +276,17 @@ process DEACON_ENRICH_SRA_READS {
     set -euo pipefail
 
     printf 'interleaved\\n' > ${id}.sra_read_structure.txt
-    printf 'nvd.sra_stream accession=%s platform=%s producer=fastq-dump layout=interleaved\\n' \
-        '${run_accession}' '${platform}' >&2
 
-    mkdir -p sra
-    (
-        cd sra
-        prefetch \
-            --max-size u \
-            --output-directory . \
-            '${run_accession}'
-        vdb-validate './${run_accession}'
-    )
-
-    fastq-dump \
-        --split-spot \
-        --skip-technical \
-        --readids \
-        --stdout \
-        './sra/${run_accession}' \
-    | deacon filter \
-        ${deplete_arg} \
+    stream_sra_to_deacon.py \
+        --accession '${run_accession}' \
+        --sra-directory sra \
+        --index ${deacon_idx} \
+        --output ${id}.target_enriched.fastq.gz \
+        --summary ${id}.deacon_filter.json \
         --threads ${deacon_threads} \
         --abs-threshold ${params.virus_abs_threshold} \
         --rel-threshold ${params.virus_rel_threshold} \
-        --summary ${id}.deacon_filter.json \
-        --output ${id}.target_enriched.fastq.gz \
-        ${deacon_idx} \
-        - -
+        ${deplete_arg}
 
     NVD_INPUT_READ_COUNT=\$(jq -er '.seqs_in | select(type == "number" and . >= 0 and . == floor)' ${id}.deacon_filter.json)
     NVD_ENRICHED_READ_COUNT=\$(jq -er '.seqs_out | select(type == "number" and . >= 0 and . == floor)' ${id}.deacon_filter.json)

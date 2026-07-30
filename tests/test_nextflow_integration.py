@@ -618,17 +618,17 @@ def integration_skip_assembly_enabled() -> bool:
 
 
 def assert_sra_streaming_work_has_no_raw_fastqs(work_dir: Path) -> None:
-    """Permit task-local SRA archives and enriched output, but no raw FASTQs."""
+    """Permit optional SRA archives and enriched output, but no raw FASTQs."""
     streaming_task_dirs = [
         command_file.parent
         for command_file in work_dir.rglob(".command.sh")
-        if "fastq-dump" in command_file.read_text(encoding="utf-8")
+        if "stream_sra_to_deacon.py" in command_file.read_text(encoding="utf-8")
     ]
-    assert streaming_task_dirs, f"No SRA Toolkit streaming tasks found in {work_dir}"
+    assert streaming_task_dirs, f"No SRA accession streaming tasks found in {work_dir}"
 
     for task_dir in streaming_task_dirs:
-        archives = list(task_dir.glob("sra/*/*.sra"))
-        assert archives, f"No task-local SRA archive found in {task_dir}"
+        command_error = (task_dir / ".command.err").read_text(encoding="utf-8")
+        assert "nvd.sra_stream " in command_error
         forbidden = [
             path
             for pattern in ("*.fastq", "*.fq", "*.fastq.gz", "*.fq.gz")

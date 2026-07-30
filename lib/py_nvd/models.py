@@ -135,7 +135,7 @@ class NvdParams(BaseModel):
     )
     stream_sra: bool = Field(
         default=False,
-        description="Experimentally stream paired Illumina SRA reads through fastq-dump directly into Deacon.",
+        description="Experimentally stream paired Illumina run accessions into Deacon, preferring ENA FASTQs with SRA Toolkit fallback.",
         json_schema_extra={"category": "Core"},
     )
 
@@ -535,7 +535,7 @@ class NvdParams(BaseModel):
         """Require compatible settings when SRA reads stream directly to Deacon."""
         if self.stream_sra and not self.experimental:
             message = (
-                "SRA Toolkit streaming is available only with "
+                "SRA accession streaming is available only with "
                 "experimental features enabled. "
                 "Set experimental=true to use stream_sra=true, or set "
                 "stream_sra=false."
@@ -543,7 +543,7 @@ class NvdParams(BaseModel):
             raise ValueError(message)
         if self.stream_sra and not self.skip_fastqc:
             message = (
-                "SRA Toolkit streaming cannot run with raw FastQC enabled. "
+                "SRA accession streaming cannot run with raw FastQC enabled. "
                 "Set skip_fastqc=true to keep stream_sra=true, or set "
                 "stream_sra=false to retain raw FastQC."
             )

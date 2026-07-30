@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
         (
             ["--experimental", "false", "--skip_fastqc", "true"],
             [
-                "SRA Toolkit streaming is available only when experimental features are enabled",
+                "SRA accession streaming is available only when experimental features are enabled",
                 "experimental = true",
                 "stream_sra = false",
             ],
@@ -22,7 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
         (
             ["--experimental", "true", "--skip_fastqc", "false"],
             [
-                "SRA Toolkit streaming cannot run with raw FastQC enabled",
+                "SRA accession streaming cannot run with raw FastQC enabled",
                 "skip_fastqc = true",
                 "stream_sra = false",
             ],

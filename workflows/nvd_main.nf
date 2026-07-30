@@ -42,7 +42,7 @@ workflow NVD_MAIN {
   def has_target_enrichment_index = NvdUtils.hasTargetEnrichmentIndex(params)
   def rapid_screening_enabled = params.experimental == true && !params.skip_rapid_screen
   assert !(params.stream_sra && !params.experimental) : """
-    SRA Toolkit streaming is available only when experimental features are enabled.
+    SRA accession streaming is available only when experimental features are enabled.
 
     Current settings:
       stream_sra = ${params.stream_sra}
@@ -53,17 +53,17 @@ workflow NVD_MAIN {
       - Use the materialized SRA route: set stream_sra = false
     """
   assert !(params.stream_sra && !params.skip_fastqc) : """
-    SRA Toolkit streaming cannot run with raw FastQC enabled.
+    SRA accession streaming cannot run with raw FastQC enabled.
 
-    stream_sra sends paired Illumina SRA reads from fastq-dump directly into
-    deacon, so complete raw FASTQ files are not available for FastQC.
+    stream_sra sends paired Illumina reads from ENA or SRA Toolkit directly
+    into deacon, so complete raw FASTQ files are not available for FastQC.
 
     Current settings:
       stream_sra = ${params.stream_sra}
       skip_fastqc = ${params.skip_fastqc}
 
     Choose one:
-      - Keep SRA Toolkit streaming: set skip_fastqc = true
+      - Keep SRA accession streaming: set skip_fastqc = true
       - Keep raw FastQC: set stream_sra = false
     """
   assert (!requires_blast_db || (params.blast_db && file(params.blast_db).isDirectory())) && (!target_enrichment_enabled || has_target_enrichment_index) : """
