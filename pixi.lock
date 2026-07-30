@@ -52,7 +52,7 @@ environments:
       - conda: https://conda.anaconda.org/bioconda/linux-64/samtools-1.24-h9dcdb79_1.conda
       - conda: https://conda.anaconda.org/bioconda/linux-64/seqkit-2.13.0-he881be0_0.conda
       - conda: https://conda.anaconda.org/bioconda/linux-64/spades-4.3.0-hde4eca7_0.conda
-      - conda: https://conda.anaconda.org/bioconda/linux-64/sracha-0.3.11-h54198d6_0.conda
+      - conda: https://conda.anaconda.org/bioconda/linux-64/sracha-0.5.0-h54198d6_0.conda
       - conda: https://conda.anaconda.org/bioconda/linux-64/vsearch-2.31.0-hd2be7a0_0.conda
       - conda: https://conda.anaconda.org/bioconda/noarch/fastqc-0.12.1-hdfd78af_0.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/noarch/multiqc-1.35-pyhdfd78af_1.conda
@@ -423,7 +423,7 @@ environments:
       - conda: https://conda.anaconda.org/bioconda/linux-aarch64/samtools-1.24-h391949c_1.conda
       - conda: https://conda.anaconda.org/bioconda/linux-aarch64/seqkit-2.13.0-h8865c2f_0.conda
       - conda: https://conda.anaconda.org/bioconda/linux-aarch64/spades-4.3.0-h07e4b28_0.conda
-      - conda: https://conda.anaconda.org/bioconda/linux-aarch64/sracha-0.3.11-h389c417_0.conda
+      - conda: https://conda.anaconda.org/bioconda/linux-aarch64/sracha-0.5.0-h389c417_0.conda
       - conda: https://conda.anaconda.org/bioconda/linux-aarch64/vsearch-2.31.0-hd0c913a_0.conda
       - conda: https://conda.anaconda.org/bioconda/noarch/fastqc-0.12.1-hdfd78af_0.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/noarch/multiqc-1.35-pyhdfd78af_1.conda
@@ -801,7 +801,7 @@ environments:
       - conda: https://conda.anaconda.org/bioconda/osx-64/samtools-1.24-he9a8aba_1.conda
       - conda: https://conda.anaconda.org/bioconda/osx-64/seqkit-2.13.0-h193322a_0.conda
       - conda: https://conda.anaconda.org/bioconda/osx-64/spades-4.3.0-hb11480c_0.conda
-      - conda: https://conda.anaconda.org/bioconda/osx-64/sracha-0.3.11-h518e4cb_0.conda
+      - conda: https://conda.anaconda.org/bioconda/osx-64/sracha-0.5.0-h518e4cb_0.conda
       - conda: https://conda.anaconda.org/bioconda/osx-64/vsearch-2.31.0-h7aab66d_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/_python_abi3_support-1.0-hd8ed1ab_3.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/annotated-types-0.7.0-pyhd8ed1ab_1.conda
@@ -1125,7 +1125,7 @@ environments:
       - conda: https://conda.anaconda.org/bioconda/osx-arm64/samtools-1.24-h36b3a25_1.conda
       - conda: https://conda.anaconda.org/bioconda/osx-arm64/seqkit-2.13.0-hd5f1084_0.conda
       - conda: https://conda.anaconda.org/bioconda/osx-arm64/spades-4.3.0-hd468e49_0.conda
-      - conda: https://conda.anaconda.org/bioconda/osx-arm64/sracha-0.3.11-h1a4e967_0.conda
+      - conda: https://conda.anaconda.org/bioconda/osx-arm64/sracha-0.5.0-h1a4e967_0.conda
       - conda: https://conda.anaconda.org/bioconda/osx-arm64/vsearch-2.31.0-h0448ff9_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/_python_abi3_support-1.0-hd8ed1ab_3.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/annotated-types-0.7.0-pyhd8ed1ab_1.conda
@@ -1447,7 +1447,7 @@ environments:
       - conda: https://conda.anaconda.org/bioconda/linux-64/samtools-1.24-h9dcdb79_1.conda
       - conda: https://conda.anaconda.org/bioconda/linux-64/seqkit-2.13.0-he881be0_0.conda
       - conda: https://conda.anaconda.org/bioconda/linux-64/spades-4.3.0-hde4eca7_0.conda
-      - conda: https://conda.anaconda.org/bioconda/linux-64/sracha-0.3.11-h54198d6_0.conda
+      - conda: https://conda.anaconda.org/bioconda/linux-64/sracha-0.5.0-h54198d6_0.conda
       - conda: https://conda.anaconda.org/bioconda/linux-64/vsearch-2.31.0-hd2be7a0_0.conda
       - conda: https://conda.anaconda.org/bioconda/noarch/fastqc-0.12.1-hdfd78af_0.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/noarch/multiqc-1.35-pyhdfd78af_1.conda
@@ -1917,7 +1917,7 @@ environments:
       - conda: https://conda.anaconda.org/bioconda/linux-aarch64/samtools-1.24-h391949c_1.conda
       - conda: https://conda.anaconda.org/bioconda/linux-aarch64/seqkit-2.13.0-h8865c2f_0.conda
       - conda: https://conda.anaconda.org/bioconda/linux-aarch64/spades-4.3.0-h07e4b28_0.conda
-      - conda: https://conda.anaconda.org/bioconda/linux-aarch64/sracha-0.3.11-h389c417_0.conda
+      - conda: https://conda.anaconda.org/bioconda/linux-aarch64/sracha-0.5.0-h389c417_0.conda
       - conda: https://conda.anaconda.org/bioconda/linux-aarch64/vsearch-2.31.0-hd0c913a_0.conda
       - conda: https://conda.anaconda.org/bioconda/noarch/fastqc-0.12.1-hdfd78af_0.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/noarch/multiqc-1.35-pyhdfd78af_1.conda
@@ -2394,7 +2394,7 @@ environments:
       - conda: https://conda.anaconda.org/bioconda/osx-64/samtools-1.24-he9a8aba_1.conda
       - conda: https://conda.anaconda.org/bioconda/osx-64/seqkit-2.13.0-h193322a_0.conda
       - conda: https://conda.anaconda.org/bioconda/osx-64/spades-4.3.0-hb11480c_0.conda
-      - conda: https://conda.anaconda.org/bioconda/osx-64/sracha-0.3.11-h518e4cb_0.conda
+      - conda: https://conda.anaconda.org/bioconda/osx-64/sracha-0.5.0-h518e4cb_0.conda
       - conda: https://conda.anaconda.org/bioconda/osx-64/vsearch-2.31.0-h7aab66d_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/_python_abi3_support-1.0-hd8ed1ab_3.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/annotated-types-0.7.0-pyhd8ed1ab_1.conda
@@ -2818,7 +2818,7 @@ environments:
       - conda: https://conda.anaconda.org/bioconda/osx-arm64/samtools-1.24-h36b3a25_1.conda
       - conda: https://conda.anaconda.org/bioconda/osx-arm64/seqkit-2.13.0-hd5f1084_0.conda
       - conda: https://conda.anaconda.org/bioconda/osx-arm64/spades-4.3.0-hd468e49_0.conda
-      - conda: https://conda.anaconda.org/bioconda/osx-arm64/sracha-0.3.11-h1a4e967_0.conda
+      - conda: https://conda.anaconda.org/bioconda/osx-arm64/sracha-0.5.0-h1a4e967_0.conda
       - conda: https://conda.anaconda.org/bioconda/osx-arm64/vsearch-2.31.0-h0448ff9_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/_python_abi3_support-1.0-hd8ed1ab_3.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/annotated-types-0.7.0-pyhd8ed1ab_1.conda
@@ -3543,20 +3543,19 @@ packages:
     - spades >=4.3.0,<5.0a0
   size: 21022222
   timestamp: 1781496084400
-- conda: https://conda.anaconda.org/bioconda/linux-64/sracha-0.3.11-h54198d6_0.conda
-  sha256: 3d2afd00513bb756cf7ae10774125f2e5ccdecc9eb16e38b0eb8eb28b4b42beb
-  md5: 3c478007d246ca08bbe3dbc8bb082b31
+- conda: https://conda.anaconda.org/bioconda/linux-64/sracha-0.5.0-h54198d6_0.conda
+  sha256: caabfd53f72dd500a866279703dbf724819d6a667f46b59f8ed642ff10842175
+  md5: 23417d39f3701e397ff7bcfd93227134
   depends:
   - libgcc >=14
   constrains:
   - __glibc >=2.17
   license: MIT
-  purls: []
   run_exports:
     weak:
-    - sracha >=0.3.11,<0.4.0a0
-  size: 3025009
-  timestamp: 1783873616890
+    - sracha >=0.5.0,<0.6.0a0
+  size: 3061014
+  timestamp: 1785719882966
 - conda: https://conda.anaconda.org/bioconda/linux-64/vsearch-2.31.0-hd2be7a0_0.conda
   sha256: 2cb6740460d605597869ba3223b4ea337f19256d5fc9de6e14510f3f6171ac0b
   md5: 1688be9a6aa97ea509e853055f57b03d
@@ -3916,20 +3915,19 @@ packages:
     - spades >=4.3.0,<5.0a0
   size: 36414780
   timestamp: 1781495878939
-- conda: https://conda.anaconda.org/bioconda/linux-aarch64/sracha-0.3.11-h389c417_0.conda
-  sha256: 883b7a796f9978075c97af1949d5f83728690e6f0edaca2d26b4778ce570f70d
-  md5: e025f830c42305327f4380f32d5d5480
+- conda: https://conda.anaconda.org/bioconda/linux-aarch64/sracha-0.5.0-h389c417_0.conda
+  sha256: 582d2a97d3977f64cf499272cbcda26d83388478bd2626b1ac3c2d43fcd3d846
+  md5: 0179cdf699064f0dde1f9e08a45627e6
   depends:
   - libgcc >=14
   constrains:
   - __glibc >=2.17
   license: MIT
-  purls: []
   run_exports:
     weak:
-    - sracha >=0.3.11,<0.4.0a0
-  size: 2947778
-  timestamp: 1783873416670
+    - sracha >=0.5.0,<0.6.0a0
+  size: 2987330
+  timestamp: 1785719661546
 - conda: https://conda.anaconda.org/bioconda/linux-aarch64/vsearch-2.31.0-hd0c913a_0.conda
   sha256: e70bab441117c0420a4d77802ccf9123bbec3a76070956295e47688967197b39
   md5: 549678a7db61a3883543250b65d7c1a2
@@ -4436,18 +4434,17 @@ packages:
     - spades >=4.3.0,<5.0a0
   size: 27554037
   timestamp: 1781498198967
-- conda: https://conda.anaconda.org/bioconda/osx-64/sracha-0.3.11-h518e4cb_0.conda
-  sha256: a391edf05d0f74060a22a837c2c8a3db3ce5ba01b3d4d28a25c38a645d7a1c87
-  md5: 1e8d9b1483f9fee8e9a8bc49ed3f8570
+- conda: https://conda.anaconda.org/bioconda/osx-64/sracha-0.5.0-h518e4cb_0.conda
+  sha256: 0a2f298751071c80d99bc506b043f169ae4fc3586d30a785442220d3ac144a48
+  md5: 43e83d4f2b6e8a1da473f715361dac44
   constrains:
   - __osx >=11.0
   license: MIT
-  purls: []
   run_exports:
     weak:
-    - sracha >=0.3.11,<0.4.0a0
-  size: 2937957
-  timestamp: 1783875310358
+    - sracha >=0.5.0,<0.6.0a0
+  size: 2972246
+  timestamp: 1785720990903
 - conda: https://conda.anaconda.org/bioconda/osx-64/vsearch-2.31.0-h7aab66d_0.conda
   sha256: 47236db3b8c996a26b3fbf6bfade7c209e3c222a799e53e5c8bb414a755a754f
   md5: cada888bf20c710bf62e724b6f01dcd7
@@ -4810,18 +4807,17 @@ packages:
     - spades >=4.3.0,<5.0a0
   size: 23250280
   timestamp: 1781495319729
-- conda: https://conda.anaconda.org/bioconda/osx-arm64/sracha-0.3.11-h1a4e967_0.conda
-  sha256: 3f89f535599b7db8e84f08a33026160cb9d6949fb980c5a0c12d07e4fa6f7381
-  md5: 1d4da04d4876deb89f431c89163b4b70
+- conda: https://conda.anaconda.org/bioconda/osx-arm64/sracha-0.5.0-h1a4e967_0.conda
+  sha256: af0bb6a50bf6940ead061f998992598982c2317c93aef9d00a40a5a86d457b15
+  md5: 3c48083993c15db8ed294596c2ca27a2
   constrains:
   - __osx >=11.0
   license: MIT
-  purls: []
   run_exports:
     weak:
-    - sracha >=0.3.11,<0.4.0a0
-  size: 2649966
-  timestamp: 1783873350576
+    - sracha >=0.5.0,<0.6.0a0
+  size: 2686424
+  timestamp: 1785719457985
 - conda: https://conda.anaconda.org/bioconda/osx-arm64/vsearch-2.31.0-h0448ff9_0.conda
   sha256: 992bb9bf6858d0c53f502f11575fe45526862b47277c5d2bbd3de008136af7f0
   md5: 003a2cc62a2f4350d19d549a6db39e25
