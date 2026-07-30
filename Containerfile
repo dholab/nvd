@@ -40,7 +40,7 @@ ENV PATH="${HOME}/.pixi/bin:${PATH}"
 # environment, so skip those direct packages and their dependency subtrees.
 RUN cd $HOME && \
     pixi install --frozen \
-        --skip-with-deps apptainer \
+        --skip apptainer \
         --skip-with-deps rust-script \
         --skip-with-deps rust \
         --skip-with-deps compilers \
