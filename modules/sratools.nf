@@ -23,7 +23,6 @@ process FETCH_FASTQ {
         --split split-3 \
         --gzip-level 1 \
         --threads ${task.cpus} \
-        --prefer-ena \
         --no-progress \
         --yes \
         --output-dir . \
