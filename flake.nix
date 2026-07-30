@@ -20,6 +20,40 @@
           inherit system;
         };
 
+        pixiVersion = "0.74.0";
+        pixiRelease = {
+          aarch64-darwin = {
+            target = "aarch64-apple-darwin";
+            hash = "sha256-t8kqwVMXHSXEanOHJyvaGs5tn530b9NLPJc3MAsyJBU=";
+          };
+          x86_64-darwin = {
+            target = "x86_64-apple-darwin";
+            hash = "sha256-II5HVbzfrIqWxTAU/WOe/nUy5qswGwNgq03vK+Max98=";
+          };
+          aarch64-linux = {
+            target = "aarch64-unknown-linux-musl";
+            hash = "sha256-hJ3dnaP82/yZpZvi8zlzEX0ZrVOjQIYewrmahqm2F98=";
+          };
+          x86_64-linux = {
+            target = "x86_64-unknown-linux-musl";
+            hash = "sha256-BuMYXJdAr5/9NFYQHXvw6uw7KUrxgIkijj8lnDneC2Q=";
+          };
+        }.${system};
+        pixi = pkgs.stdenvNoCC.mkDerivation {
+          pname = "pixi";
+          version = pixiVersion;
+          src = pkgs.fetchurl {
+            url = "https://github.com/prefix-dev/pixi/releases/download/v${pixiVersion}/pixi-${pixiRelease.target}";
+            hash = pixiRelease.hash;
+          };
+          dontUnpack = true;
+          installPhase = ''
+            runHook preInstall
+            install -Dm755 "$src" "$out/bin/pixi"
+            runHook postInstall
+          '';
+        };
+
       in
       {
         devShells.default = pkgs.mkShell {
@@ -36,7 +70,7 @@
             pkgs.libxml2
             pkgs.libxslt
             pkgs.libffi
-            pkgs.pixi
+            pixi
             pkgs.graphviz
           ];
 

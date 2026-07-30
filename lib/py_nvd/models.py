@@ -260,6 +260,11 @@ class NvdParams(BaseModel):
         description="Filter reads by quality/length",
         json_schema_extra={"category": "Preprocessing"},
     )
+    filter_low_complexity_reads: bool = Field(
+        default=False,
+        description="Filter reads below the minimum normalized 5-mer entropy",
+        json_schema_extra={"category": "Preprocessing"},
+    )
     min_read_quality_illumina: int = Field(
         20,
         description="Minimum average quality for Illumina reads",
@@ -278,6 +283,11 @@ class NvdParams(BaseModel):
     max_read_length: int | None = Field(
         None,
         description="Maximum read length (no limit if not specified)",
+        json_schema_extra={"category": "Preprocessing"},
+    )
+    min_read_entropy: float = Field(
+        0.9,
+        description="Minimum normalized 5-mer entropy over 50-base windows (0-1)",
         json_schema_extra={"category": "Preprocessing"},
     )
     host_index: Path | None = Field(
@@ -437,7 +447,7 @@ class NvdParams(BaseModel):
 
     date: str | None = Field(
         None,
-        description="Run date (computed by Nextflow)",
+        description="Deprecated compatibility parameter; ignored by the pipeline",
         json_schema_extra={"category": "Internal"},
     )
     resources: Path | None = Field(
@@ -459,6 +469,7 @@ class NvdParams(BaseModel):
     @field_validator(
         "cutoff_percent",
         "entropy",
+        "min_read_entropy",
         "tax_stringency",
         "host_rel_threshold",
         "virus_rel_threshold",

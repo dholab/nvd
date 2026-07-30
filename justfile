@@ -21,9 +21,17 @@ setup:
     pixi install --frozen
     uv sync
 
+# install the locked Pixi environment with explicit development dependencies
+setup-dev:
+    pixi install -e dev --frozen
+
 # enter the locked Pixi development shell
 shell:
     pixi shell --frozen
+
+# enter the locked Pixi development shell
+shell-dev:
+    pixi shell -e dev --frozen
 
 # === Day-to-day Checks ===
 
@@ -53,11 +61,11 @@ schema-check:
 
 # run the fast pytest suite only
 test:
-    uv run pytest -m "not slow and not network"
+    pixi run -e dev pytest -m "not slow and not network"
 
 # run one pytest file or node, e.g. just test-one lib/py_nvd/test_models.py
 test-one path:
-    uv run pytest "{{ path }}"
+    pixi run -e dev pytest "{{ path }}"
 
 # === Nextflow Development ===
 
@@ -125,23 +133,23 @@ build-sourmash-ncbi-wvdb approval="" build_dir="build/sourmash/ncbi-virus-wvdb-v
 
 # run the slow mini SRA end-to-end test with progress output
 e2e profile="test":
-    NVD_INTEGRATION_PROFILE="{{ profile }}" pixi run e2e-test
+    NVD_INTEGRATION_PROFILE="{{ profile }}" pixi run -e dev e2e-test
 
 # run the slow mini SRA end-to-end test with experimental features enabled
 e2e-experimental profile="test":
-    NVD_INTEGRATION_PROFILE="{{ profile }}" NVD_INTEGRATION_EXPERIMENTAL=1 pixi run e2e-test
+    NVD_INTEGRATION_PROFILE="{{ profile }}" NVD_INTEGRATION_EXPERIMENTAL=1 pixi run -e dev e2e-test
 
 # run the slow mini SRA end-to-end test without scheduling SPAdes assembly
 e2e-skip-assembly profile="test":
-    NVD_INTEGRATION_PROFILE="{{ profile }}" NVD_INTEGRATION_SKIP_ASSEMBLY=1 pixi run e2e-test
+    NVD_INTEGRATION_PROFILE="{{ profile }}" NVD_INTEGRATION_SKIP_ASSEMBLY=1 pixi run -e dev e2e-test
 
 # run the slow mini SRA end-to-end test with experimental features but no SPAdes assembly
 e2e-experimental-skip-assembly profile="test":
-    NVD_INTEGRATION_PROFILE="{{ profile }}" NVD_INTEGRATION_EXPERIMENTAL=1 NVD_INTEGRATION_SKIP_ASSEMBLY=1 pixi run e2e-test
+    NVD_INTEGRATION_PROFILE="{{ profile }}" NVD_INTEGRATION_EXPERIMENTAL=1 NVD_INTEGRATION_SKIP_ASSEMBLY=1 pixi run -e dev e2e-test
 
 # run the slow mini SRA end-to-end test as CI does
 e2e-ci profile="test":
-    NVD_INTEGRATION_PROFILE="{{ profile }}" pixi run e2e-test-ci
+    NVD_INTEGRATION_PROFILE="{{ profile }}" pixi run -e dev e2e-test-ci
 
 # print the latest end-to-end run directory
 e2e-latest:

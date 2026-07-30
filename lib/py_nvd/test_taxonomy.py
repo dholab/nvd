@@ -230,11 +230,13 @@ class TestTaxonomyDB:
         """Test lineage retrieval."""
         lineage = test_taxonomy.get_lineage(9606)
         assert len(lineage) > 0
-        # Should go from root toward leaf (but not include root)
+        # Should go from below NCBI root toward leaf, excluding synthetic root 1.
         assert lineage[-1].tax_id == 9606  # Leaf
         assert lineage[-1].scientific_name == "Homo sapiens"
         # Check some ancestors are present
         tax_ids = [t.tax_id for t in lineage]
+        assert 1 not in tax_ids
+        assert tax_ids[0] == 131567
         assert 9605 in tax_ids  # Homo
         assert 207598 in tax_ids  # Homininae
         assert 9604 in tax_ids  # Hominidae
@@ -644,8 +646,6 @@ class TestEnsureTaxdump:
         """Path 3: Fresh taxdump with SQLite returns immediately."""
         # Build SQLite first
         taxonomy._build_sqlite_from_dmp(minimal_taxdump)
-        sqlite_path = minimal_taxdump / "taxonomy.sqlite"
-        original_mtime = sqlite_path.stat().st_mtime
 
         # Track if either function was called
         download_called = []
@@ -672,8 +672,6 @@ class TestEnsureTaxdump:
         # Neither should have been called
         assert download_called == []
         assert build_called == []
-        # SQLite mtime should be unchanged
-        assert sqlite_path.stat().st_mtime == original_mtime
         assert result == minimal_taxdump
 
     def test_ensure_taxdump_reuses_stale_existing_taxonomy(

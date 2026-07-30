@@ -126,7 +126,7 @@ process TRIM_ADAPTERS {
 
 process FILTER_READS {
 
-	/* Filter reads by quality and length (pair-aware for interleaved reads) */
+	/* Independently filter reads by quality/length and normalized k-mer entropy */
 
 	tag "${sample_id}"
 	label "high"
@@ -144,15 +144,23 @@ process FILTER_READS {
 
 	script:
 	def max_len_arg = params.max_read_length ? "maxlength=${params.max_read_length}" : ""
-	def interleaved_arg = read_structure == "interleaved" ? "int=t" : ""
+	def quality_args = params.filter_reads
+		? "minavgquality=${min_quality} minlength=${params.min_read_length} ${max_len_arg}"
+		: "minavgquality=0 minlength=0"
+	def entropy_args = params.filter_low_complexity_reads
+		? "entropy=${params.min_read_entropy} entropywindow=50 entropyk=5"
+		: ""
+	def pair_args = read_structure == "interleaved"
+		? "int=t removeifeitherbad=t"
+		: "int=f"
 	"""
-	reformat.sh \\
+	bbduk.sh \\
 		in=${reads} \\
 		out=${sample_id}.filtered.fastq.gz \\
-		${interleaved_arg} \\
-		minavgquality=${min_quality} \\
-		minlength=${params.min_read_length} \\
-		${max_len_arg} \\
+		${pair_args} \\
+		${quality_args} \\
+		${entropy_args} \\
+		ordered=t \\
 		threads=${task.cpus} \\
 		-eoom
 	"""

@@ -13,12 +13,15 @@ nextflow.enable.dsl = 2
 
 include { GATHER_READS            } from "../subworkflows/gather_reads"
 include { PREPROCESS_READS        } from "../subworkflows/preprocess_reads"
+include { SHORT_READ_DENOVO_ASSEMBLY } from "../subworkflows/short_read_denovo_assembly"
+include { LONG_READ_DENOVO_ENSEMBLY  } from "../subworkflows/long_read_denovo_ensembly"
 include { PREPROCESS_CONTIGS      } from "../subworkflows/preprocess_contigs"
 include { EXTRACT_HUMAN_VIRUSES   } from "../subworkflows/extract_human_virus_contigs"
 include { CLASSIFY_WITH_MEGABLAST } from "../subworkflows/classify_with_megablast"
 include { CLASSIFY_WITH_BLASTN    } from "../subworkflows/classify_with_blastn"
-include { METAGENOME_PROFILING    } from "../subworkflows/metagenome_profiling"
+include { RAPID_SCREENING         } from "../subworkflows/rapid_screening"
 include { SAMPLE_SIMILARITY_QC    } from "../subworkflows/sample_similarity_qc"
+include { RAPID_SCREENING_EVAL    } from "../subworkflows/rapid_screening_eval"
 include { REPORTING               } from "../subworkflows/reporting"
 include { COMPUTE_RUN_CONTEXT ; ENSURE_TAXONOMY } from "../modules/utils"
 
@@ -60,21 +63,44 @@ workflow NVD_MAIN {
 
   PREPROCESS_READS(GATHER_READS.out.reads)
 
+  ch_sourmash_gather_csv = channel.empty()
+  ch_sourmash_lineages = channel.empty()
   ch_sourmash_tax_reports = channel.empty()
 
   if (params.experimental == true) {
-    metagenome_profiling = METAGENOME_PROFILING(PREPROCESS_READS.out.reads)
-    SAMPLE_SIMILARITY_QC(metagenome_profiling.query_sketches)
-    ch_sourmash_tax_reports = metagenome_profiling.tax_reports
+    rapid_screening = RAPID_SCREENING(PREPROCESS_READS.out.reads)
+    SAMPLE_SIMILARITY_QC(rapid_screening.query_sketches)
+    ch_sourmash_gather_csv = rapid_screening.gather_csv
+    ch_sourmash_lineages = rapid_screening.lineages
+    ch_sourmash_tax_reports = rapid_screening.tax_reports
   }
 
-  PREPROCESS_CONTIGS(PREPROCESS_READS.out.reads)
+  // Filter out samples with fewer than 100 reads before assembly; they are
+  // insufficient for de novo assembly and would otherwise fan out downstream.
+  ch_reads_for_assembly = PREPROCESS_READS.out.reads
+    .filter { _id, _platform, _read_structure, _fq -> !params.skip_assembly }
+    .map { id, platform, read_structure, fq -> tuple(id, platform, read_structure, fq, file(fq).countFastq()) }
+    .filter { _id, _platform, _read_structure, _fq, count -> count >= 100 }
+    .map { id, platform, read_structure, fq, _count -> tuple(id, platform, read_structure, file(fq)) }
+
+  ch_reads_by_platform = ch_reads_for_assembly.branch { _id, platform, _read_structure, _fq ->
+    illumina: platform == "illumina"
+    long_read: true
+  }
+
+  SHORT_READ_DENOVO_ASSEMBLY(ch_reads_by_platform.illumina)
+  LONG_READ_DENOVO_ENSEMBLY(ch_reads_by_platform.long_read)
+
+  ch_assembled_contigs = SHORT_READ_DENOVO_ASSEMBLY.out.contigs
+    .mix(LONG_READ_DENOVO_ENSEMBLY.out.contigs)
+
+  PREPROCESS_CONTIGS(ch_assembled_contigs)
 
   ch_run_context = COMPUTE_RUN_CONTEXT.out.run_context
   ch_taxonomy_dir = ENSURE_TAXONOMY.out.taxonomy_dir
   EXTRACT_HUMAN_VIRUSES(
     PREPROCESS_CONTIGS.out.contigs,
-    PREPROCESS_CONTIGS.out.viral_reads,
+    PREPROCESS_READS.out.reads,
     PREPROCESS_READS.out.virus_index,
     PREPROCESS_READS.out.depletion_index,
   )
@@ -97,12 +123,27 @@ workflow NVD_MAIN {
     PREPROCESS_READS.out.read_counts,
     EXTRACT_HUMAN_VIRUSES.out.contigs,
     EXTRACT_HUMAN_VIRUSES.out.contig_read_counts,
+    EXTRACT_HUMAN_VIRUSES.out.filtered_bam,
     PREPROCESS_READS.out.virus_enrichment_stats,
+    ch_taxonomy_dir,
     COMPUTE_RUN_CONTEXT.out.ready,
     ch_run_context,
     ch_sourmash_tax_reports,
     workflow.runName,
   )
+
+  if (params.experimental == true) {
+    RAPID_SCREENING_EVAL(
+      PREPROCESS_READS.out.read_counts,
+      ch_sourmash_gather_csv,
+      ch_sourmash_tax_reports,
+      ch_sourmash_lineages,
+      REPORTING.out.blast_results,
+      REPORTING.out.crumbs_taxa,
+      REPORTING.out.crumbs_contigs,
+      workflow.runName,
+    )
+  }
 
   emit:
   completion = REPORTING.out.blast_results.count().map { n -> "NVD main workflow complete: ${n} samples processed" }

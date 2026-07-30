@@ -54,6 +54,8 @@ class TestNvdParamsInstantiation:
             dedup_seq=True,
             dedup_pos=True,
             trim_adapters=True,
+            filter_low_complexity_reads=True,
+            min_read_entropy=0.65,
             host_index=Path("/db/host.idx"),
             # Analysis
             cutoff_percent=0.01,
@@ -66,6 +68,8 @@ class TestNvdParamsInstantiation:
         assert p.cleanup is True
         assert p.experimental is True
         assert p.host_index == Path("/db/host.idx")
+        assert p.filter_low_complexity_reads is True
+        assert p.min_read_entropy == 0.65
         assert p.cutoff_percent == 0.01
         assert p.labkey is True
 
@@ -103,6 +107,19 @@ class TestNvdParamsRangeValidators:
             NvdParams(entropy=1.1)
         with pytest.raises(ValidationError):
             NvdParams(entropy=-0.5)
+
+    def test_min_read_entropy_valid_range(self) -> None:
+        """min_read_entropy accepts the normalized BBDuk entropy range."""
+        assert NvdParams(min_read_entropy=0.0).min_read_entropy == 0.0
+        assert NvdParams(min_read_entropy=0.9).min_read_entropy == 0.9
+        assert NvdParams(min_read_entropy=1.0).min_read_entropy == 1.0
+
+    def test_min_read_entropy_out_of_range_rejected(self) -> None:
+        """min_read_entropy outside 0-1 raises ValidationError."""
+        with pytest.raises(ValidationError):
+            NvdParams(min_read_entropy=1.1)
+        with pytest.raises(ValidationError):
+            NvdParams(min_read_entropy=-0.1)
 
     def test_tax_stringency_valid_range(self) -> None:
         """tax_stringency accepts 0-1 range."""
@@ -561,6 +578,12 @@ class TestNvdParamsDefaults:
     def test_default_preprocess(self) -> None:
         """Default preprocess matches nextflow.config."""
         assert NvdParams().preprocess is False
+
+    def test_default_low_complexity_read_filter(self) -> None:
+        """Low-complexity read filtering is opt-in with a dormant threshold."""
+        params = NvdParams()
+        assert params.filter_low_complexity_reads is False
+        assert params.min_read_entropy == 0.9
 
     def test_default_experimental(self) -> None:
         """Default experimental gate matches nextflow.config."""

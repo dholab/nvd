@@ -14,6 +14,98 @@ except ImportError:
     sys.exit(1)
 
 
+# Taxid columns held strictly to a clean integer or a passable null so LabKey's
+# integer columns stay strict. A row whose taxid is neither (e.g. a stray
+# "11676;11706" or a label) is skipped before upload and logged, never coerced
+# or sent as something the schema would reject. Absent taxids reach LabKey as a
+# true SQL NULL (never a fabricated 0 or "").
+TAXID_COLUMNS = {"staxids", "adjusted_taxid"}
+
+# Identifier columns a row must have to be uploadable; a row missing any of them
+# is skipped and logged rather than sent for LabKey to reject.
+REQUIRED_COLUMNS = {"experiment", "sample_id", "qseqid"}
+
+
+def drop_invalid_rows(
+    df: pl.DataFrame,
+    taxid_columns: set[str],
+    required_columns: set[str],
+    log_entries: list[str],
+) -> pl.DataFrame:
+    """Drop rows LabKey's strict schema would reject, logging each one.
+
+    A row is skipped when a taxid column holds a value that is neither a clean
+    integer nor null, or when a required identifier column is null/empty. Kept
+    rows have their taxid columns cast to integers; a genuinely absent taxid
+    stays null (a passable null LabKey accepts). Skipped rows are recorded in
+    ``log_entries`` and are not uploaded, so a strict integer column never has
+    to reject them at insert time.
+    """
+    taxids = [c for c in sorted(taxid_columns) if c in df.columns]
+    required = [c for c in sorted(required_columns) if c in df.columns]
+
+    # Per taxid column: normalized text, "present" (empty -> null), parsed int.
+    # A value is bad if it is present but does not parse as an integer.
+    text = {c: pl.col(c).cast(pl.Utf8, strict=False).str.strip_chars() for c in taxids}
+    present = {
+        c: pl.when(text[c].str.len_chars() == 0).then(None).otherwise(text[c])
+        for c in taxids
+    }
+    as_int = {
+        c: present[c].str.to_integer(strict=False).cast(pl.Int64, strict=False)
+        for c in taxids
+    }
+
+    annotations = {f"__present_{c}": present[c] for c in taxids}
+    annotations.update(
+        {f"__bad_{c}": present[c].is_not_null() & as_int[c].is_null() for c in taxids},
+    )
+    annotations.update(
+        {
+            f"__missing_{c}": (
+                pl.col(c).is_null()
+                | (
+                    pl.col(c).cast(pl.Utf8, strict=False).str.strip_chars().str.len_chars()
+                    == 0
+                )
+            )
+            for c in required
+        },
+    )
+
+    if not annotations:
+        return df
+
+    annotated = df.with_columns(**annotations)
+    flag_cols = [f"__bad_{c}" for c in taxids] + [f"__missing_{c}" for c in required]
+    row_invalid = pl.any_horizontal([pl.col(flag) for flag in flag_cols])
+
+    invalid = annotated.filter(row_invalid)
+    for row in invalid.iter_rows(named=True):
+        reasons = [
+            f"{c}={row['__present_' + c]!r} (not an integer)"
+            for c in taxids
+            if row[f"__bad_{c}"]
+        ]
+        reasons += [f"{c} missing" for c in required if row[f"__missing_{c}"]]
+        ident = ", ".join(
+            f"{key}={row.get(key)!r}" for key in ("sample_id", "qseqid") if key in row
+        )
+        log_entries.append(f"  SKIPPED ROW ({ident}): {'; '.join(reasons)}")
+
+    if invalid.height > 0:
+        log_entries.append(
+            f"  SKIPPED {invalid.height} row(s) that would violate the LabKey "
+            f"schema; not uploaded (see entries above).",
+        )
+
+    return (
+        annotated.filter(~row_invalid)
+        .with_columns(**{c: as_int[c] for c in taxids})
+        .drop(list(annotations.keys()))
+    )
+
+
 def validate_dataframe(
     df: pl.DataFrame,
     csv_file: str,
@@ -57,8 +149,6 @@ def validate_dataframe(
         "pident": pl.Float64,
         "evalue": pl.Float64,
         "bitscore": pl.Float64,
-        "staxids": pl.Int64,
-        "adjusted_taxid": pl.Int64,
         "mapped_reads": pl.Int64,
         "total_reads": pl.Int64,
         "experiment": pl.Int64,
@@ -75,9 +165,10 @@ def validate_dataframe(
                     f"  WARNING: Could not convert '{col}' to {dtype}: {e!s}",
                 )
 
-    # Taxonomy absence is meaningful and must remain null through conversion to
-    # LabKey's empty representation rather than becoming fabricated taxid 0.
-    nullable_taxid_columns = {"staxids", "adjusted_taxid"}
+    # Skip (and log) rows LabKey's strict schema would reject: a taxid that is
+    # neither a clean integer nor a passable null, or a missing identifier. Kept
+    # rows carry integer taxids or a true null.
+    df = drop_invalid_rows(df, TAXID_COLUMNS, REQUIRED_COLUMNS, log_entries)
 
     # Fill null values with appropriate defaults
     for col in df.columns:
@@ -85,10 +176,10 @@ def validate_dataframe(
             df = df.with_columns(pl.col(col).fill_null(0.0))
         elif (
             df[col].dtype in [pl.Int8, pl.Int16, pl.Int32, pl.Int64]
-            and col not in nullable_taxid_columns
+            and col not in TAXID_COLUMNS
         ):
             df = df.with_columns(pl.col(col).fill_null(0))
-        elif df[col].dtype == pl.Utf8:
+        elif df[col].dtype == pl.Utf8 and col not in TAXID_COLUMNS:
             df = df.with_columns(pl.col(col).fill_null(""))
 
     return df
@@ -188,13 +279,16 @@ def dataframe_to_records(df: pl.DataFrame) -> list[dict[str, Any]]:
     # Convert to dictionaries, handling null values
     records = df.to_dicts()
 
-    # Clean up records - convert None to empty string for LabKey
+    # Clean up records for LabKey. Taxid columns preserve absence as a true null
+    # (LabKey stores SQL NULL); every other column keeps the legacy empty-string
+    # form for a missing value.
     cleaned_records = []
     for record in records:
         cleaned_record = {}
         for key, value in record.items():
-            if value is None or (isinstance(value, float) and value != value):
-                cleaned_record[key] = ""
+            is_missing = value is None or (isinstance(value, float) and value != value)
+            if is_missing:
+                cleaned_record[key] = None if key in TAXID_COLUMNS else ""
             else:
                 cleaned_record[key] = value
         cleaned_records.append(cleaned_record)

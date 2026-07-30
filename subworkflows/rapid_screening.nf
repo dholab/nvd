@@ -1,6 +1,6 @@
 include { SOURMASH_SKETCH_QUERY_METAGENOME ; SOURMASH_FETCH_REF_SKETCH ; SOURMASH_SKETCH_REF_FASTA ; SOURMASH_GATHER_QUERY_METAGENOME ; SOURMASH_FETCH_LINEAGES ; SOURMASH_STAGE_REFERENCE ; SOURMASH_TAX_METAGENOME } from "../modules/sourmash"
 
-workflow METAGENOME_PROFILING {
+workflow RAPID_SCREENING {
     take:
     ch_preprocessed_reads  // tuple(sample_id, platform, read_structure, fastq)
 
@@ -71,6 +71,7 @@ workflow METAGENOME_PROFILING {
     emit:
     query_sketches = SOURMASH_SKETCH_QUERY_METAGENOME.out.query_sketches
     ref_sketch     = SOURMASH_STAGE_REFERENCE.out.ref_sketch
+    lineages       = SOURMASH_STAGE_REFERENCE.out.lineages
     gather_csv     = SOURMASH_GATHER_QUERY_METAGENOME.out.gather_csv
     tax_reports    = SOURMASH_TAX_METAGENOME.out.tax_reports
 }

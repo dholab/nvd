@@ -112,14 +112,15 @@ workflow PREPROCESS_READS {
         ch_after_scrub = ch_after_trim
     }
 
-    // 2d. Quality/length filter
+    // 2d. Independently optional quality/length and low-complexity filters
     ch_with_quality = ch_after_scrub.map { sample_id, platform, read_structure, reads ->
         def min_qual = platform == "illumina"
             ? params.min_read_quality_illumina
             : params.min_read_quality_nanopore
         tuple(sample_id, platform, read_structure, reads, min_qual)
     }
-    ch_after_filter = params.filter_reads
+    def should_filter_reads = params.filter_reads || params.filter_low_complexity_reads
+    ch_after_filter = should_filter_reads
         ? FILTER_READS(ch_with_quality)
         : ch_after_scrub
 

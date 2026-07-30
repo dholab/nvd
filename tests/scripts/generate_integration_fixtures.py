@@ -84,6 +84,14 @@ SRA_RUNS = (
         "taxid": 10258,
         "size_mb": 210,
     },
+    {
+        "sample_id": "sample_ont_srr27720442",
+        "srr": "SRR27720442",
+        "platform": "ont",
+        "expected_organism": "Orf virus",
+        "taxid": 10258,
+        "size_mb": 31,
+    },
 )
 
 

@@ -1,8 +1,8 @@
 /*
- * sourmash: sketch-based metagenomic analysis
+ * sourmash: current engine for rapid k-mer screening
  *
- * Experimental branchwater-backed commands live here while the sourmash branch
- * is still being shaped. Keep the interface aligned with post-preprocessing NVD
+ * Experimental branchwater-backed commands live here while the rapid-screening
+ * stage is still being shaped. Keep the interface aligned with post-preprocessing NVD
  * read tuples so later gather/tax steps can extend the same subworkflow.
  */
 

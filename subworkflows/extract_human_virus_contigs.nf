@@ -36,4 +36,5 @@ workflow EXTRACT_HUMAN_VIRUSES {
     emit:
     contigs = DEACON_FILTER_CONTIGS.out
     contig_read_counts = COUNT_MAPPED_READS.out.mapped_counts
+    filtered_bam = COUNT_MAPPED_READS.out.filtered_bam
 }
