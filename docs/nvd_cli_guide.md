@@ -187,6 +187,8 @@ Generate from SRA accessions, one accession per line:
 nvd samplesheet generate --from-sra accessions.txt --platform illumina --output samplesheet.csv
 ```
 
+NVD decodes each SRA run as a stream through target enrichment rather than materializing decoded raw FASTQ files. Raw-read FastQC therefore runs only for local FASTQ inputs; the `skip_fastqc` setting controls those local tasks. SRA reads rejoin local reads immediately after target enrichment and receive the same subsequent preprocessing.
+
 Preview without writing:
 
 ```bash

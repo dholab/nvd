@@ -62,7 +62,10 @@ workflow NVD_MAIN {
 
   GATHER_READS(ch_samplesheet)
 
-  PREPROCESS_READS(GATHER_READS.out.reads)
+  PREPROCESS_READS(
+    GATHER_READS.out.reads,
+    GATHER_READS.out.sra_accessions,
+  )
 
   ch_risk_group_lookup = Channel.value(file("${projectDir}/assets/human_virus_risk_group_lookup.tsv"))
 
