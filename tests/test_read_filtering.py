@@ -306,16 +306,19 @@ params.min_consecutive_bases = 200
 include {{ PREPROCESS_READS }} from '{PREPROCESS_READS}'
 
 workflow {{
-    PREPROCESS_READS(Channel.of(tuple(
-        [
-            id: 'sample_A',
-            platform: 'illumina',
-            read_mode: 'single',
-            r1_count: 1,
-            deacon_read_structure: 'single',
-        ],
-        [file('{reads}')],
-    )))
+    PREPROCESS_READS(
+        Channel.of(tuple(
+            [
+                id: 'sample_A',
+                platform: 'illumina',
+                read_mode: 'single',
+                r1_count: 1,
+                deacon_read_structure: 'single',
+            ],
+            [file('{reads}')],
+        )),
+        Channel.empty(),
+    )
 
     PREPROCESS_READS.out.read_batches.view {{ _id, _platform, _structure, _query_class, output ->
         "FINAL_READS:${{output.name}}"

@@ -58,7 +58,7 @@ rust = ">=1.94.0,<1.95"
 samtools = ">=1.18,<2"
 seqkit = ">=2.10.0,<3"
 spades = ">=4.1.0,<5"
-sracha = { version = ">=0.3.10,<0.4", channel = "bioconda" }
+sracha = { version = ">=0.5.0", channel = "bioconda" }
 sourmash = ">=4.9.4,<5"
 sourmash_plugin_branchwater = ">=0.9.15,<0.10"
 taxburst = ">=0.3.2,<0.4"

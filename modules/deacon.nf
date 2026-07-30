@@ -236,6 +236,107 @@ process DEACON_ENRICH_TARGET_READS {
         """
 }
 
+process DEACON_ENRICH_SRA_READS {
+    /* Stream one resolved SRA run through deacon without materializing decoded FASTQ files. */
+
+    tag "${id}, ${run_accession}"
+    label "medium"
+
+    errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
+    maxRetries 2
+    maxForks params.max_concurrent_downloads
+
+    input:
+    tuple val(id), val(platform), val(run_accession), path(deacon_idx), val(target_enrichment_enabled)
+
+    output:
+    tuple val(id), val(platform), path("${id}.sra_read_structure.txt"), path("${id}.target_enriched.fastq.gz"), emit: reads
+    tuple val(id), path("${id}.deacon_filter.json"), emit: stats
+
+    script:
+    def cpus = task.cpus as int
+    def sracha_threads = Math.max(1, cpus.intdiv(2))
+    def deacon_threads = Math.max(1, cpus - sracha_threads)
+    def deplete_arg = target_enrichment_enabled ? "" : "--deplete"
+    """
+    set -euo pipefail
+
+    metadata_file='${id}.sracha_info.tsv'
+    sracha info --format tsv '${run_accession}' > "\${metadata_file}"
+
+    metadata_lines=()
+    while IFS= read -r line || [[ -n "\${line}" ]]; do
+        metadata_lines+=("\${line}")
+    done < "\${metadata_file}"
+
+    if [[ \${#metadata_lines[@]} -ne 2 ]]; then
+        printf 'Expected one sracha metadata row for %s, received %s lines\n' \
+            '${run_accession}' "\${#metadata_lines[@]}" >&2
+        exit 1
+    fi
+
+    expected_header=\$'accession\tarchive_type\tlayout\tnreads\tspots\tsize_bytes\tplatform\tmd5'
+    if [[ "\${metadata_lines[0]}" != "\${expected_header}" ]]; then
+        printf 'Unexpected sracha metadata header for %s: %s\n' \
+            '${run_accession}' "\${metadata_lines[0]}" >&2
+        exit 1
+    fi
+
+    IFS=\$'\t' read -r -a metadata_fields <<< "\${metadata_lines[1]}"
+    if [[ \${#metadata_fields[@]} -ne 8 ]]; then
+        printf 'Expected eight sracha metadata fields for %s, received %s\n' \
+            '${run_accession}' "\${#metadata_fields[@]}" >&2
+        exit 1
+    fi
+
+    resolved_accession="\${metadata_fields[0]}"
+    layout="\${metadata_fields[2]}"
+    nreads="\${metadata_fields[3]}"
+
+    if [[ "\${resolved_accession}" != '${run_accession}' ]]; then
+        printf 'Sracha resolved %s while %s was requested\n' \
+            "\${resolved_accession}" '${run_accession}' >&2
+        exit 1
+    fi
+
+    case "\${layout}/\${nreads}" in
+        SINGLE/1)
+            read_structure='single'
+            deacon_inputs=(-)
+            ;;
+        PAIRED/2)
+            read_structure='interleaved'
+            deacon_inputs=(- -)
+            ;;
+        *)
+            printf 'Unsupported sracha read layout for %s: layout=%s nreads=%s\n' \
+                '${run_accession}' "\${layout}" "\${nreads}" >&2
+            exit 1
+            ;;
+    esac
+
+    printf '%s\n' "\${read_structure}" > '${id}.sra_read_structure.txt'
+
+    sracha get \
+        --output-dir . \
+        --stdout \
+        --split interleaved \
+        --threads ${sracha_threads} \
+        --no-progress \
+        --yes \
+        '${run_accession}' \
+    | deacon filter \
+        ${deplete_arg} \
+        --threads ${deacon_threads} \
+        --abs-threshold ${params.virus_abs_threshold} \
+        --rel-threshold ${params.virus_rel_threshold} \
+        --summary '${id}.deacon_filter.json' \
+        --output '${id}.target_enriched.fastq.gz' \
+        ${deacon_idx} \
+        "\${deacon_inputs[@]}"
+    """
+}
+
 process DEACON_FILTER_CONTIGS {
     /*
      * Retain target contigs using deacon filter on assembled FASTA.
