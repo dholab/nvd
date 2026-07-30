@@ -23,7 +23,7 @@ def test_unavailable_staxid_remains_absent_in_labkey_record() -> None:
 
     [record] = dataframe_to_records(validate_dataframe(frame, "blast.csv", logs))
 
-    assert record["staxids"] == ""
+    assert record["staxids"] is None
     assert record["staxids"] != 0
 
 
