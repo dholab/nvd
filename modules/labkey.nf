@@ -20,7 +20,7 @@ process LABKEY_VALIDATE_BLAST_HITS_LIST {
         --list '${params.labkey_blast_meta_hits_list}' \
         --api_key \$LABKEY_API_KEY \
         --experiment_id ${params.experiment_id} \
-        --type blast > blast_validation_report.txt 2>&1
+        --type blast
     """
 }
 
@@ -42,7 +42,7 @@ process LABKEY_VALIDATE_BLAST_FASTA_LIST {
         --list '${params.labkey_blast_fasta_list}' \
         --api_key \$LABKEY_API_KEY \
         --experiment_id ${params.experiment_id} \
-        --type blast_fasta > fasta_validation_report.txt 2>&1
+        --type blast_fasta
     """
 }
 
