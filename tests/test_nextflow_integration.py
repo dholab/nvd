@@ -629,16 +629,36 @@ def write_local_only_samplesheet(run_dir: Path) -> Path:
 LABKEY_SECRET_NAME = "LABKEY_API_KEY"
 
 
-def set_labkey_secret(env: dict[str, str]) -> None:
-    """Register a dummy LabKey API-key secret so the LIMS processes can launch.
+def get_labkey_secret(env: dict[str, str]) -> str | None:
+    """Return the current ``LABKEY_API_KEY`` secret value, or ``None`` if unset.
+
+    ``nextflow secrets get`` prints the plaintext value, or the literal ``null``
+    when the secret does not exist.
+    """
+    result = subprocess.run(  # noqa: S603
+        ["nextflow", "secrets", "get", LABKEY_SECRET_NAME],  # noqa: S607
+        cwd=ROOT,
+        env=env,
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    value = (result.stdout or "").strip()
+    if result.returncode != 0 or value in {"", "null"}:
+        return None
+    return value
+
+
+def set_labkey_secret(env: dict[str, str], value: str = "mock-api-key") -> None:
+    """Register a LabKey API-key secret so the LIMS processes can launch.
 
     The LabKey processes declare ``secret 'LABKEY_API_KEY'``; Nextflow refuses
-    to launch them unless the secret exists. The value is never validated by the
-    mock endpoint, so any placeholder works. The secret is stored in the default
-    Nextflow secrets store (``$NXF_HOME``) and removed by ``delete_labkey_secret``.
+    to launch them unless the secret exists. The dummy value is never validated
+    by the mock endpoint, so any placeholder works. Stored in the default
+    Nextflow secrets store (``$NXF_HOME``).
     """
     subprocess.run(  # noqa: S603
-        ["nextflow", "secrets", "set", LABKEY_SECRET_NAME, "mock-api-key"],  # noqa: S607
+        ["nextflow", "secrets", "set", LABKEY_SECRET_NAME, value],  # noqa: S607
         cwd=ROOT,
         env=env,
         check=True,
@@ -656,6 +676,21 @@ def delete_labkey_secret(env: dict[str, str]) -> None:
         text=True,
         capture_output=True,
     )
+
+
+def restore_labkey_secret(env: dict[str, str], previous: str | None) -> None:
+    """Restore the pre-existing secret, or delete the dummy if there was none.
+
+    Kept exception-safe so a restore hiccup never masks a test failure raised in
+    the surrounding ``finally``.
+    """
+    try:
+        if previous is not None:
+            set_labkey_secret(env, previous)
+        else:
+            delete_labkey_secret(env)
+    except Exception:  # noqa: BLE001, S110 - never mask the test's own failure
+        pass
 
 
 def run_labkey_nextflow(mock: Any) -> tuple[subprocess.CompletedProcess[str], Path]:
@@ -757,13 +792,19 @@ def data_hits_inserts(mock: Any) -> list[dict[str, Any]]:
     ]
 
 
+# Marked `network` in addition to `slow` so the existing `slow and network`
+# CI path (pyproject `e2e-test-ci`, the integration CI workflow) actually runs
+# it: the test binds loopback HTTP(S) sockets for the mock endpoint.
 @pytest.mark.slow
+@pytest.mark.network
 def test_lims_enabled_pipeline_uploads_eagerly_and_dedups() -> None:
     """LabKey-enabled run uploads hits per batch; a rerun skips present combos."""
     from tests.scripts.mock_labkey_server import mock_labkey_server
 
     with mock_labkey_server() as mock:
         secret_env = os.environ.copy()
+        # Capture any developer-set secret so we restore (never destroy) it.
+        previous_secret = get_labkey_secret(secret_env)
         set_labkey_secret(secret_env)
         try:
             first, run_dir = run_labkey_nextflow(mock)
@@ -799,7 +840,7 @@ def test_lims_enabled_pipeline_uploads_eagerly_and_dedups() -> None:
                 "destination hits list), but new hits inserts were recorded"
             )
         finally:
-            delete_labkey_secret(secret_env)
+            restore_labkey_secret(secret_env, previous_secret)
 
 
 @pytest.mark.slow
