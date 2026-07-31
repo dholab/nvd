@@ -115,7 +115,11 @@ workflow LIMS_INTEGRATION {
     )
 
     // Upload completion replaces experiment registration as the Slack gate.
-    ch_uploads_done = LABKEY_UPLOAD_BLAST.out.log
+    // Collects completion of ALL per-batch uploads: the WebDAV raw-file
+    // uploads as well as the row-level BLAST/FASTA inserts.
+    ch_uploads_done = LABKEY_WEBDAV_UPLOAD_BLAST.out.done
+        .mix(LABKEY_WEBDAV_UPLOAD_CONCATENATED.out.done)
+        .mix(LABKEY_UPLOAD_BLAST.out.log)
         .mix(LABKEY_UPLOAD_FASTA.out.log)
         .collect()
         .map { _events -> true }

@@ -201,6 +201,8 @@ process LABKEY_UPLOAD_BLAST {
     tag "${sample_id}, ${query_class}"
     label 'low'
     secret 'LABKEY_API_KEY'
+    errorStrategy 'retry'
+    maxRetries 2
 
     input:
     tuple val(sample_id), val(query_class), path(csv_file)
@@ -215,7 +217,7 @@ process LABKEY_UPLOAD_BLAST {
         --experiment-id '${experiment_id}' \
         --sample-id '${sample_id}' \
         --query-class '${query_class}' \
-        --csv ${csv_file} \
+        --csv '${csv_file}' \
         --labkey-server '${params.labkey_server}' \
         --labkey-project-name '${params.labkey_project_name}' \
         --labkey-api-key \$LABKEY_API_KEY \

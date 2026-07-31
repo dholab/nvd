@@ -337,6 +337,24 @@ def combo_already_uploaded(
     return bool(result and result.get("rows"))
 
 
+def insert_records(
+    query_api,
+    schema: str,
+    table: str,
+    records: list[dict[str, Any]],
+) -> None:
+    """Insert every record for a (sample_id, query_class) combo in one atomic call.
+
+    Deliberately does not catch anything: a failed insert must propagate so the
+    caller can hard-fail the run rather than log an error and report success.
+    """
+    query_api.insert_rows(
+        schema_name=schema,
+        query_name=table,
+        rows=records,
+    )
+
+
 def _write_log(log_entries: list[str]) -> None:
     """Write the accumulated log entries to the upload log file and stdout."""
     text = "\n".join(log_entries)
@@ -481,23 +499,30 @@ def main():
                     log_entries.append(f"    {key}: {value}")
 
             if upload_enabled:
+                # Insert the whole combo atomically: one (sample_id, query_class)
+                # batch is small enough that chunked inserts only add partial-
+                # failure risk without a throughput benefit.
+                records = dataframe_to_records(df)
                 try:
-                    records = dataframe_to_records(df)
-                    # Insert the whole combo atomically: one (sample_id, query_class)
-                    # batch is small enough that chunked inserts only add partial-
-                    # failure risk without a throughput benefit.
-                    api.query.insert_rows(
-                        schema_name=args.labkey_schema,
-                        query_name=args.table_name,
-                        rows=records,
+                    insert_records(
+                        api.query, args.labkey_schema, args.table_name, records,
                     )
-                    log_entries.append(f"  Upload: SUCCESS ({len(records)} records)")
                 except Exception as e:
                     log_entries.append(f"  Upload: ERROR - {e!s}")
-                    if len(df) > 0:
-                        log_entries.append(
-                            f"    Failed batch first record: {df.head(1).to_dicts()[0]}",
-                        )
+                    log_entries.append(
+                        f"    Failed batch first record: {df.head(1).to_dicts()[0]}",
+                    )
+                    log_entries.append(
+                        "\nBLAST UPLOAD FAILED - insert error, see above (no rows committed)",
+                    )
+                    _write_log(log_entries)
+                    print(
+                        f"ERROR: LabKey insert failed for sample={args.sample_id}, "
+                        f"query_class={args.query_class}: {e!s}",
+                        file=sys.stderr,
+                    )
+                    sys.exit(1)
+                log_entries.append(f"  Upload: SUCCESS ({len(records)} records)")
             else:
                 log_entries.append(
                     f"  Would upload {record_count} record(s) (SIMULATION)",
