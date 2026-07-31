@@ -54,14 +54,36 @@ workflow PREPROCESS_READS {
     // -------------------------------------------------------------------------
     // Step 2: Inlined preprocessing on virus-only reads
     // -------------------------------------------------------------------------
-    ch_virus_reads = DEACON_ENRICH_TARGET_READS.out.reads
-
-    // Extract total read counts from deacon summary JSON (replaces COUNT_READS).
-    // The seqs_in field is the total input read count across R1+R2.
-    ch_read_counts = DEACON_ENRICH_TARGET_READS.out.stats
+    // Extract input and retained counts from Deacon's summary. A malformed
+    // summary is a process failure, never an empty-sample completion.
+    ch_enrichment_counts = DEACON_ENRICH_TARGET_READS.out.stats
         .map { sample_id, json_file ->
             def summary = new groovy.json.JsonSlurper().parse(json_file.toFile())
-            tuple(sample_id, summary.seqs_in.toString())
+            def input_count = summary.seqs_in
+            def retained_count = summary.seqs_out
+            assert input_count instanceof Number && input_count >= 0 && input_count == input_count.toLong()
+            assert retained_count instanceof Number && retained_count >= 0 && retained_count == retained_count.toLong()
+            tuple(sample_id, input_count.toLong().toString(), retained_count.toLong())
+        }
+
+    ch_read_counts = ch_enrichment_counts
+        .map { sample_id, input_count, _retained_count -> tuple(sample_id, input_count) }
+
+    ch_virus_reads_by_retention = DEACON_ENRICH_TARGET_READS.out.reads
+        .join(ch_enrichment_counts, by: 0)
+        .branch { _sample_id, _platform, _read_structure, _reads, _input_count, retained_count ->
+            retained: retained_count > 0
+            complete_empty: true
+        }
+
+    ch_virus_reads = ch_virus_reads_by_retention.retained
+        .map { sample_id, platform, read_structure, reads, _input_count, _retained_count ->
+            tuple(sample_id, platform, read_structure, reads)
+        }
+
+    ch_complete_empty_samples = ch_virus_reads_by_retention.complete_empty
+        .map { sample_id, platform, _read_structure, _reads, _input_count, _retained_count ->
+            tuple(sample_id, platform)
         }
 
     // 2a. Dedup
@@ -135,6 +157,7 @@ workflow PREPROCESS_READS {
     emit:
     reads = ch_preprocessed
     read_counts = ch_read_counts
+    complete_empty_samples = ch_complete_empty_samples
     virus_enrichment_stats = DEACON_ENRICH_TARGET_READS.out.stats
     virus_index = ch_virus_index
     depletion_index = ch_depletion_index_option
