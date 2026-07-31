@@ -3,7 +3,6 @@ include {
   ANNOTATE_BLASTN_RESULTS ;
   FILTER_NON_VIRUS_BLASTN_NODES ;
   COMBINE_BATCH_SEARCH_HITS ;
-  STACK_BATCH_BLAST_RESULTS ;
   SELECT_TOP_BLAST_HITS
 } from "../modules/blast"
 include { ANNOTATE_LEAST_COMMON_ANCESTORS  } from "../modules/utils"
@@ -69,13 +68,7 @@ workflow CLASSIFY_WITH_BLASTN {
 
   ANNOTATE_LEAST_COMMON_ANCESTORS(COMBINE_BATCH_SEARCH_HITS.out, ch_taxonomy_dir)
 
-  ch_sample_merged_inputs = ANNOTATE_LEAST_COMMON_ANCESTORS.out
-    .map { sample_id, _query_class, batch_tsv -> tuple(sample_id, batch_tsv) }
-    .groupTuple()
-
-  STACK_BATCH_BLAST_RESULTS(ch_sample_merged_inputs)
-
   emit:
-  merged_results = STACK_BATCH_BLAST_RESULTS.out
+  merged_results = ANNOTATE_LEAST_COMMON_ANCESTORS.out   // tuple(sample_id, query_class, batch_lca_tsv)
   filter_decisions = FILTER_NON_VIRUS_BLASTN_NODES.out.decisions
 }
