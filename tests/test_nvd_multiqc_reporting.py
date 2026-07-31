@@ -9,6 +9,7 @@ import stat
 import subprocess
 from pathlib import Path
 
+import pytest
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -383,8 +384,14 @@ workflow {{
     assert "SKIP: no_fastqc_units" in completed.stdout
 
 
+@pytest.mark.parametrize(
+    ("seqs_out", "expected_status"),
+    [(8, "observed"), (0, "complete_empty")],
+)
 def test_target_enrichment_package_crosses_explicit_process_boundary(
     tmp_path: Path,
+    seqs_out: int,
+    expected_status: str,
 ) -> None:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
@@ -399,15 +406,15 @@ def test_target_enrichment_package_crosses_explicit_process_boundary(
             {
                 "version": "deacon-test",
                 "seqs_in": 10,
-                "seqs_out": 8,
-                "seqs_removed": 2,
-                "seqs_out_proportion": 0.8,
-                "seqs_removed_proportion": 0.2,
+                "seqs_out": seqs_out,
+                "seqs_removed": 10 - seqs_out,
+                "seqs_out_proportion": seqs_out / 10,
+                "seqs_removed_proportion": (10 - seqs_out) / 10,
                 "bp_in": 1000,
-                "bp_out": 800,
-                "bp_removed": 200,
-                "bp_out_proportion": 0.8,
-                "bp_removed_proportion": 0.2,
+                "bp_out": seqs_out * 100,
+                "bp_removed": (10 - seqs_out) * 100,
+                "bp_out_proportion": seqs_out / 10,
+                "bp_removed_proportion": (10 - seqs_out) / 10,
             },
         ),
         encoding="utf-8",
@@ -442,7 +449,7 @@ workflow {{
     sections = sorted(tmp_path.glob("work/**/nvd_target_enrichment_mqc.yaml"))
     assert sections, diagnostics
     section_text = sections[-1].read_text(encoding="utf-8")
-    assert "status: observed" in section_text
+    assert f"status: {expected_status}" in section_text
     assert "reads_in: 10" in section_text
     assert "\n  sample_A:\n" in section_text
     assert "row_0001" not in section_text
