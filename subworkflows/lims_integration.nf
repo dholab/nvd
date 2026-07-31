@@ -14,7 +14,7 @@ include {
 
 workflow LIMS_INTEGRATION {
     take:
-    blast_results        // queue channel: [ sample_id, tsv ] — enriched with mapped_reads, total_reads, blast_db_version, nextflow_run_id
+    blast_results        // queue channel: [ sample_id, query_class, batch_final_tsv ] — enriched with mapped_reads, total_reads, blast_db_version, nextflow_run_id; per (sample_id, query_class) batch
     contig_sequences     // queue channel: [ sample_id, fasta ] - one per sample
     experiment_id        // value channel: experiment ID (the one LabKey-specific field)
     run_id               // value channel: workflow run ID (needed for FASTA prep and uploads)
@@ -50,8 +50,10 @@ workflow LIMS_INTEGRATION {
 
     // BLAST row insertion does not require a contig FASTA. This keeps valid
     // read-only samples eligible for the reduced-schema LIMS table.
-    ch_blast_labkey = ch_labkey_blast_results.map { sample_id, blast_tsv ->
-        tuple(sample_id, blast_tsv, "${sample_id}_blast_labkey.csv")
+    // Runs per (sample_id, query_class) batch so each read type can be
+    // uploaded eagerly downstream.
+    ch_blast_labkey = ch_labkey_blast_results.map { sample_id, query_class, blast_tsv ->
+        tuple(sample_id, query_class, blast_tsv)
     }
 
     // FASTA insertion and the combined WebDAV upload remain synchronized by

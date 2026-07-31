@@ -151,23 +151,25 @@ process LABKEY_PREPARE_BLAST {
      * The input TSV already contains mapped_reads, total_reads, blast_db_version,
      * and nextflow_run_id from upstream ADD_READ_COUNTS_TO_BLAST.
      * This process only adds experiment_id and converts TSV → CSV.
+     * Runs per (sample_id, query_class) batch so each read type can be
+     * uploaded eagerly downstream.
      */
-    tag "$meta"
+    tag "$meta.$query_class"
     label 'low'
 
     input:
-    tuple val(meta), path(blast_tsv), val(output_name)
+    tuple val(meta), val(query_class), path(blast_tsv)
     val experiment_id
     val validation_complete
 
     output:
-    tuple val(meta), path(output_name), emit: csv
+    tuple val(meta), val(query_class), path("${meta}.${query_class}_blast_labkey.csv"), emit: csv
 
     script:
     """
     prepare_blast_labkey.py \
         --blast-csv ${blast_tsv} \
-        --output ${output_name} \
+        --output ${meta}.${query_class}_blast_labkey.csv \
         --meta '${meta}' \
         --experiment-id ${experiment_id}
     """
