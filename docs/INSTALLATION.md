@@ -102,7 +102,7 @@ source ~/.bashrc
 The generated `~/.local/bin/nvd` launcher uses the repository selected during setup. To run another installed version, set `NVD_REPO` to that checkout root; the launcher then uses its CLI, Pixi environment, and Nextflow sources together:
 
 ```bash
-NVD_REPO=/home/you/.nvd/v3.2.1 nvd run --samplesheet samples.csv
+NVD_REPO=/home/you/.nvd/v3.4.0 nvd run --samplesheet samples.csv
 ```
 
 `NVD_PIPELINE_ROOT` remains a deprecated compatibility alias during NVD v3. If both variables are set, they must resolve to the same checkout.
