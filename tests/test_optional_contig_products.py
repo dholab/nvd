@@ -119,6 +119,7 @@ workflow {{
     ADD_READ_COUNTS_TO_BLAST(
         Channel.of(tuple(
             'water',
+            'single_read',
             file('{blast}'),
             10,
             [],
@@ -128,7 +129,7 @@ workflow {{
     )
 
     ESTIMATE_CRUMBS_PROFILE(
-        ADD_READ_COUNTS_TO_BLAST.out.map {{ sample_id, final_blast ->
+        ADD_READ_COUNTS_TO_BLAST.out.map {{ sample_id, _query_class, final_blast ->
             tuple(sample_id, final_blast, [], file('{taxonomy}'))
         }}
     )

@@ -118,15 +118,15 @@ process ADD_READ_COUNTS_TO_BLAST {
    * LabKey is enabled. LIMS integration only needs to add experiment_id.
    */
 
-  tag "${sample_id}"
+  tag "${sample_id}, ${query_class}"
   label "low"
 
   input:
-  tuple val(sample_id), path(blast_tsv), val(total_reads), path(contig_count_files), path(query_lookups)
+  tuple val(sample_id), val(query_class), path(blast_tsv), val(total_reads), path(contig_count_files), path(query_lookups)
   val run_id
 
   output:
-  tuple val(sample_id), path("${sample_id}_blast.final.tsv")
+  tuple val(sample_id), val(query_class), path("${sample_id}.${query_class}_blast.final.tsv")
 
   script:
   def virus_index_version = NvdUtils.targetEnrichmentEnabled(params) ? params.virus_index_version : "not_used"
@@ -140,11 +140,33 @@ process ADD_READ_COUNTS_TO_BLAST {
       --blast-tsv ${blast_tsv} \\
       ${count_arg} \\
       ${lookup_args} \\
-      --output ${sample_id}_blast.final.tsv \\
+      --output ${sample_id}.${query_class}_blast.final.tsv \\
       --total-reads ${total_reads} \\
       --blast-db-version '${params.blast_db_version}' \\
       --virus-index-version '${virus_index_version}' \\
       --run-id '${run_id}'
+  """
+}
+
+process STACK_ENRICHED_BATCHES {
+  /*
+   * Stack the already-enriched per-(sample, query_class) BLAST batches back
+   * into one per-sample TSV for reporting aggregates. Enrichment (and LCA)
+   * already happened per batch; this is a header-aware concat only.
+   */
+
+  tag "${sample_id}"
+  label "low"
+
+  input:
+  tuple val(sample_id), path(batch_final_tsvs, stageAs: "batch??????/*")
+
+  output:
+  tuple val(sample_id), path("${sample_id}_blast.final.tsv")
+
+  script:
+  """
+  concat_tsv_with_header.py --output ${sample_id}_blast.final.tsv ${batch_final_tsvs}
   """
 }
 
