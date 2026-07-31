@@ -13,6 +13,7 @@ import re
 import shutil
 import subprocess
 import sys
+import warnings
 from pathlib import Path
 from typing import NoReturn
 
@@ -66,7 +67,7 @@ def _pipeline_root_error() -> RuntimeError:
     """Build the standard missing pipeline root error."""
     msg = (
         "Could not find NVD pipeline root. "
-        "Either run from the repository root, set NVD_PIPELINE_ROOT, "
+        "Either run from the repository root, set NVD_REPO, "
         "or ensure the CLI is installed from the cloned repository."
     )
     return RuntimeError(msg)
@@ -77,9 +78,10 @@ def _find_pipeline_root() -> Path:
     Find the NVD pipeline root directory.
 
     Strategy (in order of precedence):
-    1. NVD_PIPELINE_ROOT environment variable (explicit override)
-    2. Walk up from this file's location (development/editable install)
-    3. Current working directory (container bind-mount fallback)
+    1. NVD_REPO environment variable (explicit repository override)
+    2. NVD_PIPELINE_ROOT environment variable (deprecated compatibility alias)
+    3. Walk up from this file's location (development/editable install)
+    4. Current working directory (container bind-mount fallback)
 
     Candidates must contain NVD-specific sentinel paths so the CLI does not
     accidentally run an unrelated Nextflow project that merely has main.nf and
@@ -91,14 +93,43 @@ def _find_pipeline_root() -> Path:
     Raises:
         RuntimeError: If the pipeline root cannot be found.
     """
-    # Strategy 1: Explicit override via environment variable
-    if env_root := os.environ.get("NVD_PIPELINE_ROOT"):
+    repo_value = os.environ.get("NVD_REPO")
+    legacy_value = os.environ.get("NVD_PIPELINE_ROOT")
+
+    if repo_value and legacy_value:
+        repo_candidate = Path(repo_value).resolve()
+        legacy_candidate = Path(legacy_value).resolve()
+        if repo_candidate != legacy_candidate:
+            msg = (
+                "NVD_REPO and NVD_PIPELINE_ROOT select different repositories: "
+                f"{repo_candidate} != {legacy_candidate}"
+            )
+            raise RuntimeError(msg)
+
+    if legacy_value:
+        warnings.warn(
+            "NVD_PIPELINE_ROOT is deprecated; use NVD_REPO instead",
+            FutureWarning,
+            stacklevel=2,
+        )
+
+    # Strategies 1 and 2: canonical override or deprecated compatibility alias.
+    if env_root := repo_value or legacy_value:
+        env_name = "NVD_REPO" if repo_value else "NVD_PIPELINE_ROOT"
         candidate = Path(env_root).resolve()
         if _has_nvd_sentinels(candidate):
+            package_root = _find_parent_pipeline_root(Path(__file__))
+            if package_root is not None and package_root != candidate:
+                msg = (
+                    f"{env_name} selects {candidate}, but the running NVD CLI belongs "
+                    f"to {package_root}. Invoke NVD through the selected repository's "
+                    "generated launcher to keep the CLI and pipeline on one version."
+                )
+                raise RuntimeError(msg)
             return candidate
 
         msg = (
-            "NVD_PIPELINE_ROOT is set, but does not point to an NVD pipeline root: "
+            f"{env_name} is set, but does not point to an NVD repository root: "
             f"{candidate}"
         )
         raise RuntimeError(msg)
@@ -121,7 +152,7 @@ def _find_pipeline_root_optional() -> Path | None:
     try:
         return _find_pipeline_root()
     except RuntimeError as exc:
-        if os.environ.get("NVD_PIPELINE_ROOT"):
+        if os.environ.get("NVD_REPO") or os.environ.get("NVD_PIPELINE_ROOT"):
             raise
         if str(exc) != str(_pipeline_root_error()):
             raise
@@ -130,6 +161,8 @@ def _find_pipeline_root_optional() -> Path | None:
 
 def get_pipeline_root() -> Path:
     """Return the pipeline root, failing only when a command actually needs it."""
+    if os.environ.get("NVD_REPO") or os.environ.get("NVD_PIPELINE_ROOT"):
+        return _find_pipeline_root()
     if PIPELINE_ROOT is not None:
         return PIPELINE_ROOT
     return _find_pipeline_root()

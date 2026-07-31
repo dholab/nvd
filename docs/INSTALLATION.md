@@ -85,7 +85,6 @@ bash install.sh --non-interactive
 On an O'Connor Lab CHTC access point, `nvd setup` detects the host and uses CHTC defaults. The generated `~/.nvd/setup.conf` should include values like:
 
 ```bash
-NVD_REPO=/home/you/.nvd/latest
 NVD_CONFIG_DIR=/home/you/.nvd
 NVD_TAXONOMY_DB=/staging/groups/oconnor_group/nvd/taxdump
 NVD_PRESET_STORE=/staging/groups/oconnor_group/nvd/presets.sqlite
@@ -99,6 +98,14 @@ The shell hook installed by setup loads this configuration in new shells. After 
 ```bash
 source ~/.bashrc
 ```
+
+The generated `~/.local/bin/nvd` launcher uses the repository selected during setup. To run another installed version, set `NVD_REPO` to that checkout root; the launcher then uses its CLI, Pixi environment, and Nextflow sources together:
+
+```bash
+NVD_REPO=/home/you/.nvd/v3.2.1 nvd run --samplesheet samples.csv
+```
+
+`NVD_PIPELINE_ROOT` remains a deprecated compatibility alias during NVD v3. If both variables are set, they must resolve to the same checkout.
 
 ## Reference artifacts
 
