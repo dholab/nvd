@@ -1,4 +1,4 @@
-include { ADD_READ_COUNTS_TO_BLAST; BUILD_QUERY_BIG_TABLE; BUILD_TAXON_BIG_TABLE; CONCATENATE_QUERY_BIG_TABLE; CONCATENATE_TAXON_BIG_TABLE; CONCATENATE_EXPERIMENT_BLAST; TARGET_ENRICHMENT_REPORT } from "../modules/utils"
+include { ADD_READ_COUNTS_TO_BLAST; STACK_ENRICHED_BATCHES; BUILD_QUERY_BIG_TABLE; BUILD_TAXON_BIG_TABLE; CONCATENATE_QUERY_BIG_TABLE; CONCATENATE_TAXON_BIG_TABLE; CONCATENATE_EXPERIMENT_BLAST; TARGET_ENRICHMENT_REPORT } from "../modules/utils"
 include { NOTIFY_SLACK } from "../modules/utils"
 include { BUILD_SEQUENCE_FLOW; RENDER_MERGED_TAXON_ABUNDANCE_SUNBURST; RENDER_TAXON_ABUNDANCE_SUNBURST; RENDER_SOURMASH_SANKEY } from "../modules/reporting"
 include { CRUMBS_PROFILING } from "./crumbs_profiling"
@@ -32,20 +32,30 @@ workflow REPORTING {
 
     // Enrich BLAST results with all pipeline metadata (mapped_reads, total_reads,
     // blast_db_version, nextflow_run_id) so the published TSV is complete
-    // regardless of whether LabKey is enabled.
+    // regardless of whether LabKey is enabled. This now runs per (sample_id,
+    // query_class) batch — before batches are stacked — so each read type's
+    // hits can be uploaded eagerly downstream.
     ch_blast_finalize = ch_blast_results
-        .join(ch_read_counts, by: 0)
-        .join(ch_contig_read_counts, by: 0)
-        .join(ch_query_lookups, by: 0)
+        .combine(ch_read_counts, by: 0)
+        .combine(ch_contig_read_counts, by: 0)
+        .combine(ch_query_lookups, by: 0)
+        .map { sample_id, query_class, batch_tsv, total_reads, contig_counts, lookups ->
+            tuple(sample_id, query_class, batch_tsv, total_reads, contig_counts, lookups)
+        }
 
-    ADD_READ_COUNTS_TO_BLAST(ch_blast_finalize, run_id)
+    ADD_READ_COUNTS_TO_BLAST(ch_blast_finalize, run_id)   // -> tuple(sample_id, query_class, batch.final.tsv)
 
-    ch_split_blast_results = ADD_READ_COUNTS_TO_BLAST.out
+    // Reporting aggregates need the per-sample enriched TSV: stack the enriched batches.
+    STACK_ENRICHED_BATCHES(
+        ADD_READ_COUNTS_TO_BLAST.out
+            .map { sample_id, _query_class, final_tsv -> tuple(sample_id, final_tsv) }
+            .groupTuple()
+    )
+
+    ch_split_blast_results = STACK_ENRICHED_BATCHES.out
         .multiMap { sample_id, blast_tsv ->
             for_summary: tuple(sample_id, blast_tsv)
             for_big_table: tuple(sample_id, blast_tsv)
-            for_labkey_trigger: tuple(sample_id, blast_tsv)
-            for_labkey_upload: tuple(sample_id, blast_tsv)
             for_emit: tuple(sample_id, blast_tsv)
         }
 
@@ -112,7 +122,7 @@ workflow REPORTING {
     }
 
     LIMS_INTEGRATION(
-        ch_split_blast_results.for_labkey_upload,
+        ADD_READ_COUNTS_TO_BLAST.out,
         ch_contig_sequence_parts.for_lims,
         params.experiment_id,
         run_id,
