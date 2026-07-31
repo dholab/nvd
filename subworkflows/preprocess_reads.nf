@@ -71,9 +71,9 @@ workflow PREPROCESS_READS {
     // Step 2: Inlined preprocessing on target-enriched reads
     // -------------------------------------------------------------------------
     ch_sra_target_reads = DEACON_ENRICH_SRA_READS.out.reads
-        .map { sample_id, platform, read_structure_file, reads ->
+        .map { sample_id, platform, read_structure_file, reads, input_read_count, enriched_read_count ->
             def read_structure = read_structure_file.toFile().text.trim()
-            tuple(sample_id, platform, read_structure, reads)
+            tuple(sample_id, platform, read_structure, reads, input_read_count, enriched_read_count)
         }
 
     ch_target_reads = DEACON_ENRICH_TARGET_READS.out.reads
@@ -82,39 +82,30 @@ workflow PREPROCESS_READS {
     ch_target_enrichment_stats = DEACON_ENRICH_TARGET_READS.out.stats
         .mix(DEACON_ENRICH_SRA_READS.out.stats)
 
-    // Extract input and retained counts from Deacon's summary. A malformed
-    // summary is a process failure, never an empty-sample completion.
-    ch_enrichment_counts = ch_target_enrichment_stats
-        .map { sample_id, json_file ->
-            def summary = new groovy.json.JsonSlurper().parse(json_file.toFile())
-            def input_count = summary.seqs_in
-            def retained_count = summary.seqs_out
-            assert input_count instanceof Number && input_count >= 0 && input_count == input_count.toLong()
-            assert retained_count instanceof Number && retained_count >= 0 && retained_count == retained_count.toLong()
-            tuple(sample_id, input_count.toLong().toString(), retained_count.toLong())
+    // Deacon reports counts across all input and retained reads. Carry those
+    // scalar values on the channel so workflow routing never parses JSON.
+    ch_read_counts = ch_target_reads
+        .map { sample_id, _platform, _read_structure, _reads, input_read_count, _enriched_read_count ->
+            tuple(sample_id, input_read_count)
         }
 
-    ch_read_counts = ch_enrichment_counts
-        .map { sample_id, input_count, _retained_count -> tuple(sample_id, input_count) }
+    ch_target_reads_by_retention = ch_target_reads.branch { _id, _platform, _read_structure, _reads, _input_read_count, enriched_read_count ->
+        retained: enriched_read_count != "0"
+        complete_empty: true
+    }
 
-    ch_target_reads_by_retention = ch_target_reads
-        .join(ch_enrichment_counts, by: 0)
-        .branch { _sample_id, _platform, _read_structure, _reads, _input_count, retained_count ->
-            retained: retained_count > 0
-            complete_empty: true
-        }
+    ch_complete_empty_samples = ch_target_reads_by_retention.complete_empty.map {
+        sample_id, platform, _read_structure, _reads, _input_read_count, _enriched_read_count ->
+        log.debug "nvd.contig_route sample_id=${sample_id} platform=${platform} outcome=no_contigs stage=target_enrichment"
+        tuple(sample_id, platform)
+    }
 
-    ch_target_reads = ch_target_reads_by_retention.retained
-        .map { sample_id, platform, read_structure, reads, _input_count, _retained_count ->
-            tuple(sample_id, platform, read_structure, reads)
-        }
+    ch_retained_target_reads = ch_target_reads_by_retention.retained.map {
+        sample_id, platform, read_structure, reads, _input_read_count, _enriched_read_count ->
+        tuple(sample_id, platform, read_structure, reads)
+    }
 
-    ch_complete_empty_samples = ch_target_reads_by_retention.complete_empty
-        .map { sample_id, platform, _read_structure, _reads, _input_count, _retained_count ->
-            tuple(sample_id, platform)
-        }
-
-    ch_target_reads_by_layout = ch_target_reads.branch { _id, platform, read_structure, _reads ->
+    ch_target_reads_by_layout = ch_retained_target_reads.branch { _id, platform, read_structure, _reads ->
         mergeable: platform == "illumina" && read_structure == "interleaved"
         other: true
     }
@@ -176,7 +167,7 @@ workflow PREPROCESS_READS {
         ? ch_merged_read_batches
             .mix(ch_unmerged_read_batches)
             .mix(ch_nonmergeable_read_batches)
-        : ch_target_reads.map { sample_id, platform, read_structure, reads ->
+        : ch_retained_target_reads.map { sample_id, platform, read_structure, reads ->
             tuple(
                 [
                     id: sample_id,
