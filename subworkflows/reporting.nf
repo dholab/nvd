@@ -64,6 +64,7 @@ workflow REPORTING {
             for_summary: tuple(sample_id, blast_tsv)
             for_big_table: tuple(sample_id, blast_tsv)
             for_emit: tuple(sample_id, blast_tsv)
+            for_lims: tuple(sample_id, blast_tsv)
         }
 
     // Concatenate all per-sample final BLAST results into a single experiment-level TSV.
@@ -130,7 +131,7 @@ workflow REPORTING {
 
     LIMS_INTEGRATION(
         ADD_READ_COUNTS_TO_BLAST.out,
-        STACK_ENRICHED_BATCHES.out,
+        ch_sample_blast_results.for_lims,
         ch_contig_sequence_parts.for_lims,
         ch_query_fastas_for_lims,
         params.experiment_id,
