@@ -98,6 +98,7 @@ dev = { features = ["dev"], solve-group = "default" }
 [tool.pixi.tasks]
 e2e-test = "NVD_E2E_SHOW_PROGRESS=1 pytest tests/test_nextflow_integration.py -m 'slow and network' -q -s"
 e2e-test-ci = "pytest tests/test_nextflow_integration.py -m 'slow and network' -q"
+e2e-labkey-test = "NVD_E2E_SHOW_PROGRESS=1 pytest tests/test_nextflow_integration.py -k real_labkey -m 'slow and network' -q -s"
 
 [dependency-groups]
 dev = [

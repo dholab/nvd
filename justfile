@@ -151,6 +151,14 @@ e2e-experimental-skip-assembly profile="test":
 e2e-ci profile="test":
     NVD_INTEGRATION_PROFILE="{{ profile }}" pixi run -e dev e2e-test-ci
 
+# run the opt-in real-LabKey e2e (needs the labkey-e2e preset; prompts for LABKEY_API_KEY if unset)
+e2e-labkey profile="test":
+    @if ! pixi run nvd secrets check > /dev/null 2>&1; then \
+        echo "LABKEY_API_KEY secret not set; prompting (input hidden)..."; \
+        pixi run nvd secrets set LABKEY_API_KEY; \
+    fi
+    NVD_INTEGRATION_PROFILE="{{ profile }}" pixi run -e dev e2e-labkey-test
+
 # print the latest end-to-end run directory
 e2e-latest:
     @if [ -f .e2e/latest.txt ]; then \

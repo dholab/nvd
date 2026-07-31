@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import json
 import os
+import secrets
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
@@ -693,8 +694,23 @@ def restore_labkey_secret(env: dict[str, str], previous: str | None) -> None:
         pass
 
 
-def run_labkey_nextflow(mock: Any) -> tuple[subprocess.CompletedProcess[str], Path]:
-    """Run the local-only pipeline with LabKey enabled against the mock endpoint."""
+def run_labkey_nextflow(  # noqa: PLR0913
+    *,
+    server: str,
+    webdav: str,
+    project: str,
+    schema: str,
+    hits_list: str,
+    fasta_list: str,
+    experiment_id: int,
+    cert_file: Path | None = None,
+) -> tuple[subprocess.CompletedProcess[str], Path]:
+    """Run the local-only pipeline with LabKey enabled against the given endpoint.
+
+    Shared by the mocked and real-LabKey e2e tests. ``cert_file`` is set only for
+    the mock (its self-signed TLS cert); a real LabKey server presents a
+    publicly-trusted cert and needs no override.
+    """
     profile = os.environ.get("NVD_INTEGRATION_PROFILE", "test")
     show_progress = os.environ.get("NVD_E2E_SHOW_PROGRESS") == "1"
     run_dir = make_e2e_run_dir()
@@ -706,10 +722,11 @@ def run_labkey_nextflow(mock: Any) -> tuple[subprocess.CompletedProcess[str], Pa
     write_mini_taxdump(taxonomy_dir)
 
     env = os.environ.copy()
-    # Make both the requests-based LabKey client and the urllib WebDAV client
-    # trust the mock's self-signed TLS certificate.
-    env["SSL_CERT_FILE"] = str(mock.cert_file)
-    env["REQUESTS_CA_BUNDLE"] = str(mock.cert_file)
+    if cert_file is not None:
+        # Make both the requests-based LabKey client and the urllib WebDAV client
+        # trust the mock's self-signed TLS certificate.
+        env["SSL_CERT_FILE"] = str(cert_file)
+        env["REQUESTS_CA_BUNDLE"] = str(cert_file)
 
     command = [
         "nextflow",
@@ -728,7 +745,7 @@ def run_labkey_nextflow(mock: Any) -> tuple[subprocess.CompletedProcess[str], Pa
         "--taxonomy_dir",
         str(taxonomy_dir),
         "--experiment_id",
-        "1",
+        str(experiment_id),
         "--results",
         str(results_dir),
         "--work_dir",
@@ -745,17 +762,17 @@ def run_labkey_nextflow(mock: Any) -> tuple[subprocess.CompletedProcess[str], Pa
         "--labkey",
         "true",
         "--labkey_server",
-        mock.base_url,
+        server,
         "--labkey_webdav",
-        mock.webdav_url,
+        webdav,
         "--labkey_project_name",
-        "test",
+        project,
         "--labkey_schema",
-        "lists",
+        schema,
         "--labkey_blast_meta_hits_list",
-        "hits",
+        hits_list,
         "--labkey_blast_fasta_list",
-        "fasta",
+        fasta_list,
     ]
     completed = subprocess.run(  # noqa: S603
         command,
@@ -806,8 +823,18 @@ def test_lims_enabled_pipeline_uploads_eagerly_and_dedups() -> None:
         # Capture any developer-set secret so we restore (never destroy) it.
         previous_secret = get_labkey_secret(secret_env)
         set_labkey_secret(secret_env)
+        mock_coords = {
+            "server": mock.base_url,
+            "webdav": mock.webdav_url,
+            "project": "test",
+            "schema": "lists",
+            "hits_list": "hits",
+            "fasta_list": "fasta",
+        }
         try:
-            first, run_dir = run_labkey_nextflow(mock)
+            first, run_dir = run_labkey_nextflow(
+                **mock_coords, experiment_id=1, cert_file=mock.cert_file
+            )
             assert first.returncode == 0, (
                 f"LabKey e2e run failed.\n\nRun directory: {run_dir}\n\nSTDOUT:\n"
                 + (first.stdout or "<not captured; see nextflow logs in run dir>")
@@ -827,7 +854,9 @@ def test_lims_enabled_pipeline_uploads_eagerly_and_dedups() -> None:
                     assert row.get("query_class"), f"hits row missing query_class: {row}"
 
             before = len(first_hits)
-            second, second_dir = run_labkey_nextflow(mock)
+            second, second_dir = run_labkey_nextflow(
+                **mock_coords, experiment_id=1, cert_file=mock.cert_file
+            )
             assert second.returncode == 0, (
                 f"Second LabKey e2e run failed.\n\nRun directory: {second_dir}\n\n"
                 "STDOUT:\n"
@@ -841,6 +870,232 @@ def test_lims_enabled_pipeline_uploads_eagerly_and_dedups() -> None:
             )
         finally:
             restore_labkey_secret(secret_env, previous_secret)
+
+
+# Opt-in real-LabKey e2e target. The LabKey coordinates come from an `nvd`
+# preset (a validated bundle of pipeline params); the API key stays a Nextflow
+# secret (a params preset must not hold secrets). The preset's existence is the
+# gate: absent -> skip; present-but-incomplete or missing secret -> fail loudly.
+DEFAULT_LABKEY_PRESET = "labkey-e2e"
+# local field -> the pipeline param the preset stores it under.
+LABKEY_PRESET_PARAMS = {
+    "server": "labkey_server",
+    "project": "labkey_project_name",
+    "schema": "labkey_schema",
+    "hits_list": "labkey_blast_meta_hits_list",
+    "fasta_list": "labkey_blast_fasta_list",
+    "webdav": "labkey_webdav",
+}
+
+
+def labkey_test_preset_name() -> str:
+    """Preset name for the real-LabKey e2e: ``NVD_TEST_LABKEY_PRESET`` or default."""
+    return os.environ.get("NVD_TEST_LABKEY_PRESET", DEFAULT_LABKEY_PRESET)
+
+
+def load_labkey_test_target() -> dict[str, str] | None:
+    """Resolve the real-LabKey coordinates from an ``nvd`` preset plus the secret.
+
+    Returns ``None`` when the preset does not exist (the test skips). When the
+    preset exists it must carry every LabKey coordinate param, and the
+    ``LABKEY_API_KEY`` Nextflow secret must be set; otherwise the test fails
+    naming exactly what is missing. The returned dict adds ``api_key`` (read from
+    the secret store) to the preset's coordinates.
+    """
+    from py_nvd.presets import get_preset_store
+
+    name = labkey_test_preset_name()
+    preset = get_preset_store().get(name)
+    if preset is None:
+        return None
+    params = preset.params
+    missing = [
+        param
+        for param in LABKEY_PRESET_PARAMS.values()
+        if not str(params.get(param, "")).strip()
+    ]
+    if missing:
+        pytest.fail(
+            f"preset {name!r} is missing LabKey coordinates: {', '.join(missing)} "
+            "(register them with `nvd preset register`)",
+        )
+    api_key = get_labkey_secret(os.environ.copy())
+    if not api_key:
+        pytest.fail(
+            f"preset {name!r} found, but the LABKEY_API_KEY secret is not set; "
+            'set it with `nvd secrets set LABKEY_API_KEY "<key>"` to run',
+        )
+    target = {
+        field: str(params[param]).strip()
+        for field, param in LABKEY_PRESET_PARAMS.items()
+    }
+    target["api_key"] = api_key
+    return target
+
+
+def real_labkey_api(cfg: dict[str, str]) -> Any:
+    """Build a LabKey APIWrapper for verifying and cleaning up the real list."""
+    from labkey.api_wrapper import APIWrapper
+
+    return APIWrapper(cfg["server"], cfg["project"], api_key=cfg["api_key"])
+
+
+def experiment_rows(
+    api: Any,
+    schema: str,
+    table: str,
+    experiment_id: int,
+) -> list[dict[str, Any]]:
+    """Return every row on ``table`` belonging to ``experiment_id``."""
+    from labkey.query import QueryFilter
+
+    result = api.query.select_rows(
+        schema_name=schema,
+        query_name=table,
+        filter_array=[QueryFilter("experiment", experiment_id, "eq")],
+    )
+    return result.get("rows", []) if result else []
+
+
+def delete_experiment_rows(
+    api: Any,
+    schema: str,
+    table: str,
+    experiment_id: int,
+) -> None:
+    """Delete every row on ``table`` for ``experiment_id`` (by its list Key)."""
+    rows = experiment_rows(api, schema, table, experiment_id)
+    keys = [{"Key": row["Key"]} for row in rows if "Key" in row]
+    if keys:
+        api.query.delete_rows(schema_name=schema, query_name=table, rows=keys)
+
+
+def delete_webdav_experiment(webdav: str, api_key: str, experiment_id: int) -> None:
+    """Recursively delete the experiment's WebDAV upload directory.
+
+    The upload processes write to ``{webdav}/{experiment_id}/...`` (LabKey WebDAV
+    Basic auth is ``apikey:<key>``). A collection DELETE removes it and every file
+    under it, so a run leaves no WebDAV residue. A 404 (nothing was uploaded) is
+    treated as already-clean.
+    """
+    import base64  # noqa: PLC0415
+    import urllib.error  # noqa: PLC0415
+    import urllib.request  # noqa: PLC0415
+
+    url = webdav.rstrip("/") + f"/{experiment_id}/"
+    token = base64.b64encode(f"apikey:{api_key}".encode()).decode()
+    request = urllib.request.Request(  # noqa: S310 - fixed LabKey WebDAV https URL
+        url,
+        method="DELETE",
+        headers={"Authorization": f"Basic {token}"},
+    )
+    try:
+        urllib.request.urlopen(request, timeout=60)  # noqa: S310
+    except urllib.error.HTTPError as exc:
+        if exc.code != 404:
+            raise
+
+
+# Marked `network` (like the mock test) so the `slow and network` CI/e2e path
+# collects it; it no-ops via skip unless the `nvd` preset is registered.
+@pytest.mark.slow
+@pytest.mark.network
+def test_lims_enabled_real_labkey_uploads_and_dedups() -> None:
+    """Against a real LabKey list: first run inserts per batch; a rerun is deduped.
+
+    Opt-in via an `nvd` preset (coordinates) plus the LABKEY_API_KEY secret; see
+    labkey_test_preset_name(). Uses a random experiment_id for isolation and
+    removes all of that experiment's rows from both lists at the end, so the test
+    lists are left as they were found.
+    """
+    cfg = load_labkey_test_target()
+    if cfg is None:
+        pytest.skip(
+            f"register an `nvd` preset named {labkey_test_preset_name()!r} with the "
+            "LabKey coordinates (and set the LABKEY_API_KEY secret) to run the real "
+            "LabKey e2e",
+        )
+
+    coords = {
+        "server": cfg["server"],
+        "webdav": cfg["webdav"],
+        "project": cfg["project"],
+        "schema": cfg["schema"],
+        "hits_list": cfg["hits_list"],
+        "fasta_list": cfg["fasta_list"],
+    }
+    # Random, collision-avoiding experiment id within the int32 range LabKey's
+    # integer column accepts (well above any real experiment id).
+    experiment_id = 2_000_000_000 + secrets.randbelow(147_000_000)
+    print(f"NVD real LabKey e2e experiment_id={experiment_id}", flush=True)
+
+    # Keep the run's rows and WebDAV files by default so they can be inspected in
+    # LabKey. Set NVD_TEST_LABKEY_KEEP=0 to have the test remove everything it
+    # created and leave the lists and file store as it found them.
+    keep = os.environ.get("NVD_TEST_LABKEY_KEEP", "1") != "0"
+
+    # The API key already lives in the Nextflow secret store (the pipeline reads
+    # it directly); we read it only to drive verification/cleanup, and never
+    # mutate the store here.
+    api = real_labkey_api(cfg)
+    try:
+        # Start from a clean slate so the first run genuinely inserts.
+        delete_experiment_rows(api, cfg["schema"], cfg["hits_list"], experiment_id)
+        delete_experiment_rows(api, cfg["schema"], cfg["fasta_list"], experiment_id)
+
+        first, run_dir = run_labkey_nextflow(**coords, experiment_id=experiment_id)
+        assert first.returncode == 0, (
+            f"Real LabKey e2e run failed.\n\nRun directory: {run_dir}\n\nSTDOUT:\n"
+            + (first.stdout or "<not captured; see nextflow logs in run dir>")
+            + "\n\nSTDERR:\n"
+            + (first.stderr or "<not captured; see nextflow logs in run dir>")
+        )
+
+        hits_after_first = experiment_rows(
+            api, cfg["schema"], cfg["hits_list"], experiment_id
+        )
+        assert hits_after_first, "first run inserted no hits for the test experiment"
+        for row in hits_after_first:
+            assert row.get("query_class"), f"hits row missing query_class: {row}"
+        first_hits_count = len(hits_after_first)
+        first_fasta_count = len(
+            experiment_rows(api, cfg["schema"], cfg["fasta_list"], experiment_id),
+        )
+
+        # Insert-again is blocked: the rerun dedups against the destination lists.
+        second, second_dir = run_labkey_nextflow(**coords, experiment_id=experiment_id)
+        assert second.returncode == 0, (
+            f"Second real LabKey e2e run failed.\n\nRun directory: {second_dir}\n\n"
+            "STDOUT:\n"
+            + (second.stdout or "<not captured; see nextflow logs in run dir>")
+            + "\n\nSTDERR:\n"
+            + (second.stderr or "<not captured; see nextflow logs in run dir>")
+        )
+        assert (
+            len(experiment_rows(api, cfg["schema"], cfg["hits_list"], experiment_id))
+            == first_hits_count
+        ), "second run must not add hits rows (dedup on the destination hits list)"
+        assert (
+            len(experiment_rows(api, cfg["schema"], cfg["fasta_list"], experiment_id))
+            == first_fasta_count
+        ), "second run must not add contig FASTA rows (dedup on the FASTA list)"
+    finally:
+        # Leave the lists and WebDAV store as we found them (unless KEEP is set).
+        # Best-effort so a cleanup hiccup never masks a test failure raised above.
+        if keep:
+            print(
+                f"Leaving experiment {experiment_id} in place for inspection "
+                f"(hits list {cfg['hits_list']!r}, fasta list {cfg['fasta_list']!r}, "
+                f"WebDAV dir {experiment_id}/). Set NVD_TEST_LABKEY_KEEP=0 to auto-clean.",
+                flush=True,
+            )
+        else:
+            try:
+                delete_experiment_rows(api, cfg["schema"], cfg["hits_list"], experiment_id)
+                delete_experiment_rows(api, cfg["schema"], cfg["fasta_list"], experiment_id)
+                delete_webdav_experiment(cfg["webdav"], cfg["api_key"], experiment_id)
+            except Exception:  # noqa: BLE001, S110 - cleanup is best-effort; never mask a failure
+                pass
 
 
 @pytest.mark.slow
