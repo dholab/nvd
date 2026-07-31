@@ -584,6 +584,224 @@ def run_nextflow() -> tuple[subprocess.CompletedProcess[str], Path]:
     return completed, run_dir
 
 
+def write_local_only_samplesheet(run_dir: Path) -> Path:
+    """Write a samplesheet with only the local FASTQ fixtures (no SRA rows).
+
+    Dropping the SRA rows keeps the LIMS end-to-end test off the network so it
+    can be marked ``slow`` alone. Mirrors the local portion of
+    ``write_augmented_samplesheet``.
+    """
+    local_fastq_dir = run_dir / "local_fastqs"
+    local_fastq_dir.mkdir(parents=True, exist_ok=True)
+
+    glob_links = {
+        "local_hits_glob_L001_R1_001.fastq.gz": LOCAL_FASTQ_FIXTURES["hits_r1"],
+        "local_hits_glob_L001_R2_001.fastq.gz": LOCAL_FASTQ_FIXTURES["hits_r2"],
+        "local_hits_glob_L002_R1_001.fastq.gz": LOCAL_FASTQ_FIXTURES[
+            "water_plus_hits_r1"
+        ],
+        "local_hits_glob_L002_R2_001.fastq.gz": LOCAL_FASTQ_FIXTURES[
+            "water_plus_hits_r2"
+        ],
+    }
+    for name, target in glob_links.items():
+        (local_fastq_dir / name).symlink_to(target.resolve())
+
+    fieldnames = [
+        "sample_id",
+        "srr",
+        "platform",
+        "fastq1",
+        "fastq2",
+        "fastq1_glob",
+        "fastq2_glob",
+    ]
+    rows = [local_sample_row(sample, local_fastq_dir) for sample in LOCAL_E2E_SAMPLES]
+
+    samplesheet = run_dir / "integration_samplesheet.csv"
+    with samplesheet.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
+    return samplesheet
+
+
+LABKEY_SECRET_NAME = "LABKEY_API_KEY"
+
+
+def set_labkey_secret(env: dict[str, str]) -> None:
+    """Register a dummy LabKey API-key secret so the LIMS processes can launch.
+
+    The LabKey processes declare ``secret 'LABKEY_API_KEY'``; Nextflow refuses
+    to launch them unless the secret exists. The value is never validated by the
+    mock endpoint, so any placeholder works. The secret is stored in the default
+    Nextflow secrets store (``$NXF_HOME``) and removed by ``delete_labkey_secret``.
+    """
+    subprocess.run(  # noqa: S603
+        ["nextflow", "secrets", "set", LABKEY_SECRET_NAME, "mock-api-key"],  # noqa: S607
+        cwd=ROOT,
+        env=env,
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+
+
+def delete_labkey_secret(env: dict[str, str]) -> None:
+    subprocess.run(  # noqa: S603
+        ["nextflow", "secrets", "delete", LABKEY_SECRET_NAME],  # noqa: S607
+        cwd=ROOT,
+        env=env,
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+
+
+def run_labkey_nextflow(mock: Any) -> tuple[subprocess.CompletedProcess[str], Path]:
+    """Run the local-only pipeline with LabKey enabled against the mock endpoint."""
+    profile = os.environ.get("NVD_INTEGRATION_PROFILE", "test")
+    show_progress = os.environ.get("NVD_E2E_SHOW_PROGRESS") == "1"
+    run_dir = make_e2e_run_dir()
+    results_dir = run_dir / "results"
+    work_dir = run_dir / "work"
+    taxonomy_dir = run_dir / "taxonomy"
+    print(f"NVD LIMS e2e run directory: {run_dir}", flush=True)
+    samplesheet = write_local_only_samplesheet(run_dir)
+    write_mini_taxdump(taxonomy_dir)
+
+    env = os.environ.copy()
+    # Make both the requests-based LabKey client and the urllib WebDAV client
+    # trust the mock's self-signed TLS certificate.
+    env["SSL_CERT_FILE"] = str(mock.cert_file)
+    env["REQUESTS_CA_BUNDLE"] = str(mock.cert_file)
+
+    command = [
+        "nextflow",
+        "run",
+        ".",
+        "-profile",
+        profile,
+        "--samplesheet",
+        str(samplesheet),
+        "--virus_index",
+        str(DEACON_INDEX),
+        "--blast_db",
+        str(BLAST_DB),
+        "--blast_db_prefix",
+        BLAST_DB_PREFIX,
+        "--taxonomy_dir",
+        str(taxonomy_dir),
+        "--experiment_id",
+        "1",
+        "--results",
+        str(results_dir),
+        "--work_dir",
+        str(work_dir),
+        "--filter_reads",
+        "true",
+        # Disable deacon target enrichment. The mini deacon index shares no
+        # k-mers with the local fixtures, so enrichment would drop every read
+        # (0/N enriched) and nothing would reach BLAST. With enrichment off all
+        # reads are retained, assemble into contigs, and hit the mini BLAST db,
+        # producing the per-batch hits the LIMS upload consumes -- fully offline.
+        "--no_enrichment",
+        "true",
+        "--labkey",
+        "true",
+        "--labkey_server",
+        mock.base_url,
+        "--labkey_webdav",
+        mock.webdav_url,
+        "--labkey_project_name",
+        "test",
+        "--labkey_schema",
+        "lists",
+        "--labkey_blast_meta_hits_list",
+        "hits",
+        "--labkey_blast_fasta_list",
+        "fasta",
+    ]
+    completed = subprocess.run(  # noqa: S603
+        command,
+        cwd=ROOT,
+        check=False,
+        text=True,
+        capture_output=not show_progress,
+        env=env,
+        timeout=60 * 60 * 2,
+    )
+    (run_dir / "nextflow.stdout.log").write_text(
+        completed.stdout or "",
+        encoding="utf-8",
+    )
+    (run_dir / "nextflow.stderr.log").write_text(
+        completed.stderr or "",
+        encoding="utf-8",
+    )
+    return completed, run_dir
+
+
+def data_hits_inserts(mock: Any) -> list[dict[str, Any]]:
+    """Eager per-batch BLAST hit inserts (rows carrying a ``query_class``).
+
+    Distinguishes the real per-(sample, query_class) hit uploads from the
+    schema-probe row ``validate_labkey.py`` inserts-then-deletes, which has no
+    ``query_class`` column.
+    """
+    return [
+        op
+        for op in mock.inserts
+        if op["table"] == "hits"
+        and any(row.get("query_class") for row in op["rows"])
+    ]
+
+
+@pytest.mark.slow
+def test_lims_enabled_pipeline_uploads_eagerly_and_dedups() -> None:
+    """LabKey-enabled run uploads hits per batch; a rerun skips present combos."""
+    from tests.scripts.mock_labkey_server import mock_labkey_server
+
+    with mock_labkey_server() as mock:
+        secret_env = os.environ.copy()
+        set_labkey_secret(secret_env)
+        try:
+            first, run_dir = run_labkey_nextflow(mock)
+            assert first.returncode == 0, (
+                f"LabKey e2e run failed.\n\nRun directory: {run_dir}\n\nSTDOUT:\n"
+                + (first.stdout or "<not captured; see nextflow logs in run dir>")
+                + "\n\nSTDERR:\n"
+                + (first.stderr or "<not captured; see nextflow logs in run dir>")
+            )
+
+            results_root = run_dir / "results" / "nvd"
+            assert (results_root / "13_labkey_uploads").exists(), (
+                f"Missing LabKey uploads results dir under {results_root}"
+            )
+
+            first_hits = data_hits_inserts(mock)
+            assert first_hits, "no eager per-batch hits insert carrying query_class"
+            for op in first_hits:
+                for row in op["rows"]:
+                    assert row.get("query_class"), f"hits row missing query_class: {row}"
+
+            before = len(first_hits)
+            second, second_dir = run_labkey_nextflow(mock)
+            assert second.returncode == 0, (
+                f"Second LabKey e2e run failed.\n\nRun directory: {second_dir}\n\n"
+                "STDOUT:\n"
+                + (second.stdout or "<not captured; see nextflow logs in run dir>")
+                + "\n\nSTDERR:\n"
+                + (second.stderr or "<not captured; see nextflow logs in run dir>")
+            )
+            assert len(data_hits_inserts(mock)) == before, (
+                "second run must skip already-present combos (dedup on the "
+                "destination hits list), but new hits inserts were recorded"
+            )
+        finally:
+            delete_labkey_secret(secret_env)
+
+
 @pytest.mark.slow
 @pytest.mark.network
 def test_mini_sra_viral_pipeline_completes() -> None:
