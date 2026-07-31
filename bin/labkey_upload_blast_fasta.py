@@ -11,7 +11,8 @@ import csv
 import os
 import sys
 from datetime import datetime
-from typing import Any
+
+from py_nvd.labkey_io import insert_records, rows_present
 
 
 def sample_already_uploaded(query_api, schema, table, experiment, sample_id) -> bool:
@@ -22,42 +23,11 @@ def sample_already_uploaded(query_api, schema, table, experiment, sample_id) -> 
     filter fallbacks (QueryFilter objects, then filter-string syntax) so this
     still works against older labkey-api-python versions.
     """
-    try:
-        from labkey.query import QueryFilter
-
-        result = query_api.select_rows(
-            schema_name=schema,
-            query_name=table,
-            filter_array=[
-                QueryFilter("experiment", experiment, "eq"),
-                QueryFilter("sample_id", sample_id, "eq"),
-            ],
-            max_rows=1,
-        )
-    except (ImportError, AttributeError):
-        result = query_api.select_rows(
-            schema_name=schema,
-            query_name=table,
-            filter_array=[f"experiment~eq={experiment}", f"sample_id~eq={sample_id}"],
-        )
-    return bool(result and result.get("rows"))
-
-
-def insert_records(
-    query_api,
-    schema: str,
-    table: str,
-    records: list[dict[str, Any]],
-) -> None:
-    """Insert every record for a sample's contigs in one atomic call.
-
-    Deliberately does not catch anything: a failed insert must propagate so the
-    caller can hard-fail the run rather than log an error and report success.
-    """
-    query_api.insert_rows(
-        schema_name=schema,
-        query_name=table,
-        rows=records,
+    return rows_present(
+        query_api,
+        schema,
+        table,
+        {"experiment": experiment, "sample_id": sample_id},
     )
 
 

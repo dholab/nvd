@@ -12,6 +12,8 @@ except ImportError:
     print("ERROR: Polars is not installed. Please install it with: pip install polars")
     sys.exit(1)
 
+from py_nvd.labkey_io import insert_records, rows_present
+
 
 # Taxid columns held strictly to a clean integer or a passable null so LabKey's
 # integer columns stay strict. A row whose taxid is neither (e.g. a stray
@@ -311,47 +313,15 @@ def combo_already_uploaded(
     filter fallbacks (QueryFilter objects, then filter-string syntax) so this
     still works against older labkey-api-python versions.
     """
-    try:
-        from labkey.query import QueryFilter
-
-        result = query_api.select_rows(
-            schema_name=schema,
-            query_name=table,
-            filter_array=[
-                QueryFilter("experiment", experiment, "eq"),
-                QueryFilter("sample_id", sample_id, "eq"),
-                QueryFilter("query_class", query_class, "eq"),
-            ],
-            max_rows=1,
-        )
-    except (ImportError, AttributeError):
-        result = query_api.select_rows(
-            schema_name=schema,
-            query_name=table,
-            filter_array=[
-                f"experiment~eq={experiment}",
-                f"sample_id~eq={sample_id}",
-                f"query_class~eq={query_class}",
-            ],
-        )
-    return bool(result and result.get("rows"))
-
-
-def insert_records(
-    query_api,
-    schema: str,
-    table: str,
-    records: list[dict[str, Any]],
-) -> None:
-    """Insert every record for a (sample_id, query_class) combo in one atomic call.
-
-    Deliberately does not catch anything: a failed insert must propagate so the
-    caller can hard-fail the run rather than log an error and report success.
-    """
-    query_api.insert_rows(
-        schema_name=schema,
-        query_name=table,
-        rows=records,
+    return rows_present(
+        query_api,
+        schema,
+        table,
+        {
+            "experiment": experiment,
+            "sample_id": sample_id,
+            "query_class": query_class,
+        },
     )
 
 
