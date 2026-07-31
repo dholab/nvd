@@ -46,54 +46,6 @@ process LABKEY_VALIDATE_BLAST_FASTA_LIST {
     """
 }
 
-process LABKEY_VALIDATE_EXPERIMENT_FRESH {
-    cache false
-    secret 'LABKEY_API_KEY'
-    tag "exp_${params.experiment_id}"
-    label "low"
-
-    input:
-    val trigger
-
-    output:
-    val true, emit: validated
-
-    script:
-    """
-    labkey_check_guard_list.py \
-        --mode check \
-        --server ${params.labkey_server} \
-        --container ${params.labkey_project_name} \
-        --guard_list ${params.labkey_exp_id_guard_list} \
-        --api_key \$LABKEY_API_KEY \
-        --experiment_id ${params.experiment_id}
-    """
-}
-
-process LABKEY_REGISTER_EXPERIMENT {
-    cache false
-    secret 'LABKEY_API_KEY'
-    tag "exp_${params.experiment_id}"
-    label 'low'
-
-    input:
-    val upload_complete
-
-    output:
-    val true, emit: registered
-
-    script:
-    """
-    labkey_check_guard_list.py \
-        --mode register \
-        --server ${params.labkey_server} \
-        --container ${params.labkey_project_name} \
-        --guard_list ${params.labkey_exp_id_guard_list} \
-        --api_key \$LABKEY_API_KEY \
-        --experiment_id ${params.experiment_id}
-    """
-}
-
 process LABKEY_WEBDAV_UPLOAD_BLAST {
     tag "${sample_id}"
     label 'low'
@@ -246,12 +198,12 @@ process LABKEY_PREPARE_FASTA {
 }
 
 process LABKEY_UPLOAD_BLAST {
-    tag "${sample_id}"
+    tag "${sample_id}, ${query_class}"
     label 'low'
     secret 'LABKEY_API_KEY'
 
     input:
-    tuple val(sample_id), path(csv_file)
+    tuple val(sample_id), val(query_class), path(csv_file)
     val experiment_id
 
     output:
@@ -261,6 +213,9 @@ process LABKEY_UPLOAD_BLAST {
     """
     labkey_upload_blast_results.py \
         --experiment-id '${experiment_id}' \
+        --sample-id '${sample_id}' \
+        --query-class '${query_class}' \
+        --csv ${csv_file} \
         --labkey-server '${params.labkey_server}' \
         --labkey-project-name '${params.labkey_project_name}' \
         --labkey-api-key \$LABKEY_API_KEY \

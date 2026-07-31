@@ -3,9 +3,36 @@
 import polars as pl
 from labkey_upload_blast_results import (
     apply_reference_cutoff,
+    combo_already_uploaded,
     dataframe_to_records,
     validate_dataframe,
 )
+
+
+class _FakeQuery:
+    def __init__(self, rows):
+        self._rows = rows
+        self.calls = []
+
+    def select_rows(self, **kwargs):
+        self.calls.append(kwargs)
+        return {"rows": self._rows}
+
+
+def test_combo_present_is_detected() -> None:
+    q = _FakeQuery(rows=[{"Key": 1}])
+    assert combo_already_uploaded(q, "lists", "hits", 7, "s1", "single_read") is True
+
+
+def test_combo_absent_is_detected() -> None:
+    q = _FakeQuery(rows=[])
+    assert combo_already_uploaded(q, "lists", "hits", 7, "s1", "single_read") is False
+    # filters must include all three identity columns
+    (call,) = q.calls
+    filtered = {f.column_name if hasattr(f, "column_name") else str(f) for f in call["filter_array"]}
+    assert any("experiment" in str(f) for f in filtered)
+    assert any("sample_id" in str(f) for f in filtered)
+    assert any("query_class" in str(f) for f in filtered)
 
 
 def test_unavailable_staxid_remains_absent_in_labkey_record() -> None:

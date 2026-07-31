@@ -21,7 +21,6 @@ class NvdUtils {
     private static final List<String> LABKEY_BLAST_PARAMS = [
         'labkey_blast_meta_hits_list',
         'labkey_blast_fasta_list',
-        'labkey_exp_id_guard_list',
     ]
 
     // -------------------------------------------------------------------------

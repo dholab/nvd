@@ -123,6 +123,7 @@ workflow REPORTING {
 
     LIMS_INTEGRATION(
         ADD_READ_COUNTS_TO_BLAST.out,
+        STACK_ENRICHED_BATCHES.out,
         ch_contig_sequence_parts.for_lims,
         params.experiment_id,
         run_id,
@@ -134,7 +135,7 @@ workflow REPORTING {
     )
 
     ch_slack_trigger = params.slack_enabled && params.slack_channel && params.labkey
-        ? LIMS_INTEGRATION.out.registered
+        ? LIMS_INTEGRATION.out.uploads_done
         : channel.empty()
 
     NOTIFY_SLACK(
@@ -157,7 +158,7 @@ workflow REPORTING {
     sourmash_sankey_reports = params.experimental ? RENDER_SOURMASH_SANKEY.out.report : channel.empty()
     labkey_log = LIMS_INTEGRATION.out.upload_log
     final_labkey_log = LIMS_INTEGRATION.out.final_labkey_log
-    labkey_registered = LIMS_INTEGRATION.out.registered
+    labkey_uploads_done = LIMS_INTEGRATION.out.uploads_done
     crumbs_queries = params.experimental ? CRUMBS_PROFILING.out.queries : channel.empty()
     crumbs_taxa = params.experimental ? CRUMBS_PROFILING.out.taxa : channel.empty()
     crumbs_bioboxes_profile = params.experimental ? CRUMBS_PROFILING.out.bioboxes_profile : channel.empty()

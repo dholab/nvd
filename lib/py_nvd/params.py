@@ -347,7 +347,6 @@ def _generate_yaml_template(path: Path, schema: dict, schema_url: str) -> None:
             "labkey_schema",
             "labkey_blast_meta_hits_list",
             "labkey_blast_fasta_list",
-            "labkey_exp_id_guard_list",
         ],
         properties,
         subheading="Set labkey: true and configure these for LabKey uploads.",

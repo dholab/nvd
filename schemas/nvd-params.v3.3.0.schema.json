@@ -34,10 +34,6 @@
       "type": "string",
       "description": "LabKey list name for BLAST FASTA uploads"
     },
-    "labkey_exp_id_guard_list": {
-      "type": "string",
-      "description": "LabKey list name for experiment ID guard (prevents duplicate uploads)"
-    },
     "samplesheet": {
       "type": "string",
       "format": "path",

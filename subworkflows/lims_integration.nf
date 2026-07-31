@@ -1,8 +1,6 @@
 include {
     LABKEY_VALIDATE_BLAST_HITS_LIST ;
     LABKEY_VALIDATE_BLAST_FASTA_LIST ;
-    LABKEY_VALIDATE_EXPERIMENT_FRESH ;
-    LABKEY_REGISTER_EXPERIMENT ;
     LABKEY_PREPARE_BLAST ;
     LABKEY_PREPARE_FASTA ;
     LABKEY_CONCAT_ALL_SAMPLE_BLAST_RESULTS ;
@@ -14,15 +12,19 @@ include {
 
 workflow LIMS_INTEGRATION {
     take:
-    blast_results        // queue channel: [ sample_id, query_class, batch_final_tsv ] — enriched with mapped_reads, total_reads, blast_db_version, nextflow_run_id; per (sample_id, query_class) batch
-    contig_sequences     // queue channel: [ sample_id, fasta ] - one per sample
-    experiment_id        // value channel: experiment ID (the one LabKey-specific field)
-    run_id               // value channel: workflow run ID (needed for FASTA prep and uploads)
-    run_ready            // value channel: gate ensuring upstream preflight passed
+    blast_results         // queue channel: [ sample_id, query_class, batch_final_tsv ] — enriched with mapped_reads, total_reads, blast_db_version, nextflow_run_id; per (sample_id, query_class) batch
+    sample_blast_results  // queue channel: [ sample_id, blast_tsv ] - per-sample stack of every query_class batch; one per sample
+    contig_sequences      // queue channel: [ sample_id, fasta ] - one per sample
+    experiment_id         // value channel: experiment ID (the one LabKey-specific field)
+    run_id                // value channel: workflow run ID (needed for FASTA prep and uploads)
+    run_ready             // value channel: gate ensuring upstream preflight passed
 
     main:
     ch_labkey_blast_results = params.labkey
         ? blast_results
+        : channel.empty()
+    ch_labkey_sample_blast_results = params.labkey
+        ? sample_blast_results
         : channel.empty()
     ch_labkey_contigs = params.labkey
         ? contig_sequences
@@ -40,12 +42,9 @@ workflow LIMS_INTEGRATION {
         .combine(LABKEY_VALIDATE_BLAST_FASTA_LIST.out.validated)
         .map { _hits, _fasta -> true }
 
-    LABKEY_VALIDATE_EXPERIMENT_FRESH(ch_labkey_has_hits)
-
     ch_validation_gate = run_ready
         .combine(ch_labkey_list_validation)
-        .combine(LABKEY_VALIDATE_EXPERIMENT_FRESH.out.validated)
-        .map { _ready, _list_valid, _fresh -> true }
+        .map { _ready, _list_valid -> true }
         .first()
 
     // BLAST row insertion does not require a contig FASTA. This keeps valid
@@ -57,8 +56,11 @@ workflow LIMS_INTEGRATION {
     }
 
     // FASTA insertion and the combined WebDAV upload remain synchronized by
-    // this inner join. Read-only samples intentionally skip both for now.
-    ch_all_sample_data = ch_labkey_blast_results
+    // this inner join. Contigs are per-sample, so this joins against the
+    // per-sample stacked BLAST TSV (not the per-batch stream) to keep both
+    // downstream of this join running once per sample. Read-only samples
+    // intentionally skip both for now.
+    ch_all_sample_data = ch_labkey_sample_blast_results
         .join(ch_labkey_contigs, by: 0)
 
     ch_split = ch_all_sample_data
@@ -87,7 +89,7 @@ workflow LIMS_INTEGRATION {
     )
 
     ch_prepared_blast_csvs = LABKEY_PREPARE_BLAST.out.csv
-        .map { _sample_id, csv -> csv }
+        .map { _sample_id, _query_class, csv -> csv }
         .collect()
         .filter { files -> files.size() > 0 }
 
@@ -112,16 +114,11 @@ workflow LIMS_INTEGRATION {
         experiment_id,
     )
 
-
-    ch_upload_complete = LABKEY_WEBDAV_UPLOAD_BLAST.out.done
-        .mix(LABKEY_WEBDAV_UPLOAD_CONCATENATED.out.done)
-        .mix(LABKEY_UPLOAD_BLAST.out.log)
+    // Upload completion replaces experiment registration as the Slack gate.
+    ch_uploads_done = LABKEY_UPLOAD_BLAST.out.log
         .mix(LABKEY_UPLOAD_FASTA.out.log)
         .collect()
-        .filter { events -> events.size() > 0 }
         .map { _events -> true }
-
-    LABKEY_REGISTER_EXPERIMENT(ch_upload_complete)
 
     ch_final_labkey_log = params.labkey
         ? LABKEY_UPLOAD_BLAST.out.log
@@ -135,5 +132,5 @@ workflow LIMS_INTEGRATION {
     emit:
     upload_log = LABKEY_UPLOAD_BLAST.out.log.mix(LABKEY_UPLOAD_FASTA.out.log)
     final_labkey_log = ch_final_labkey_log
-    registered = LABKEY_REGISTER_EXPERIMENT.out.registered
+    uploads_done = ch_uploads_done
 }

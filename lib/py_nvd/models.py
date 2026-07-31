@@ -412,11 +412,6 @@ class NvdParams(BaseModel):
         description="LabKey list name for BLAST FASTA results",
         json_schema_extra={"category": "LabKey"},
     )
-    labkey_exp_id_guard_list: str | None = Field(
-        None,
-        description="LabKey list name for experiment ID guard",
-        json_schema_extra={"category": "LabKey"},
-    )
 
     slack_enabled: bool = Field(
         default=False,
