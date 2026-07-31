@@ -231,6 +231,8 @@ process LABKEY_UPLOAD_FASTA {
     tag "${sample_id}"
     label 'low'
     secret 'LABKEY_API_KEY'
+    errorStrategy 'retry'
+    maxRetries 2
 
     input:
     tuple val(sample_id), path(csv_file)
@@ -243,6 +245,7 @@ process LABKEY_UPLOAD_FASTA {
     """
     labkey_upload_blast_fasta.py \
         --experiment-id '${experiment_id}' \
+        --sample-id '${sample_id}' \
         --labkey-server '${params.labkey_server}' \
         --labkey-project-name '${params.labkey_project_name}' \
         --labkey-api-key \$LABKEY_API_KEY \
