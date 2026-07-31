@@ -75,6 +75,29 @@ process LABKEY_WEBDAV_UPLOAD_BLAST {
     """
 }
 
+process LABKEY_WEBDAV_UPLOAD_QUERY_FASTA {
+    tag "${sample_id}, ${query_class}"
+    label 'low'
+    secret 'LABKEY_API_KEY'
+
+    input:
+    tuple val(sample_id), val(query_class), path(query_fasta)
+    val validation_complete
+
+    output:
+    path "${query_fasta}.gz", emit: published
+
+    script:
+    """
+    gzip -c ${query_fasta} > ${query_fasta}.gz
+
+    webdav_CLIent.py \
+        --password \$LABKEY_API_KEY \
+        --server ${params.labkey_webdav} \
+        upload ${query_fasta}.gz ${params.experiment_id}/${sample_id}/nvd/${query_fasta}.gz
+    """
+}
+
 process LABKEY_WEBDAV_UPLOAD_CONCATENATED {
     label 'low'
     secret 'LABKEY_API_KEY'

@@ -5,6 +5,7 @@ include {
     LABKEY_PREPARE_FASTA ;
     LABKEY_CONCAT_ALL_SAMPLE_BLAST_RESULTS ;
     LABKEY_WEBDAV_UPLOAD_BLAST ;
+    LABKEY_WEBDAV_UPLOAD_QUERY_FASTA ;
     LABKEY_WEBDAV_UPLOAD_CONCATENATED ;
     LABKEY_UPLOAD_BLAST ;
     LABKEY_UPLOAD_FASTA
@@ -15,6 +16,7 @@ workflow LIMS_INTEGRATION {
     blast_results         // queue channel: [ sample_id, query_class, batch_final_tsv ] — enriched with mapped_reads, total_reads, blast_db_version, nextflow_run_id; per (sample_id, query_class) batch
     sample_blast_results  // queue channel: [ sample_id, blast_tsv ] - per-sample stack of every query_class batch; one per sample
     contig_sequences      // queue channel: [ sample_id, fasta ] - one per sample
+    query_fastas          // queue channel: [ sample_id, query_class, batch_fasta ] - per-read-type query FASTAs actually BLASTed; per (sample_id, query_class) batch
     experiment_id         // value channel: experiment ID (the one LabKey-specific field)
     run_id                // value channel: workflow run ID (needed for FASTA prep and uploads)
     run_ready             // value channel: gate ensuring upstream preflight passed
@@ -28,6 +30,9 @@ workflow LIMS_INTEGRATION {
         : channel.empty()
     ch_labkey_contigs = params.labkey
         ? contig_sequences
+        : channel.empty()
+    ch_labkey_query_fastas = params.labkey
+        ? query_fastas
         : channel.empty()
 
     ch_labkey_has_hits = ch_labkey_blast_results
@@ -81,6 +86,15 @@ workflow LIMS_INTEGRATION {
         ch_validation_gate,
     )
 
+    // Per-read-type query FASTAs (contig, merged, single) — the sequences
+    // that were actually BLASTed — published as file artifacts. Un-guarded:
+    // there is no corresponding LabKey list row, so no validation gate is
+    // required beyond params.labkey being enabled.
+    LABKEY_WEBDAV_UPLOAD_QUERY_FASTA(
+        ch_labkey_query_fastas,
+        ch_validation_gate,
+    )
+
     LABKEY_PREPARE_FASTA(
         ch_split.fasta_labkey,
         experiment_id,
@@ -118,6 +132,7 @@ workflow LIMS_INTEGRATION {
     // Collects completion of ALL per-batch uploads: the WebDAV raw-file
     // uploads as well as the row-level BLAST/FASTA inserts.
     ch_uploads_done = LABKEY_WEBDAV_UPLOAD_BLAST.out.done
+        .mix(LABKEY_WEBDAV_UPLOAD_QUERY_FASTA.out.published)
         .mix(LABKEY_WEBDAV_UPLOAD_CONCATENATED.out.done)
         .mix(LABKEY_UPLOAD_BLAST.out.log)
         .mix(LABKEY_UPLOAD_FASTA.out.log)

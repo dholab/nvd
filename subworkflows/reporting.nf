@@ -9,6 +9,7 @@ workflow REPORTING {
     ch_blast_results
     ch_read_counts
     ch_contig_sequences  // tuple(sample_id, platform, read_structure, fasta, lookup)
+    ch_query_fastas      // tuple(sample_id, platform, query_class, batch_fasta, lookup) from PREPARE_BLAST_QUERIES.out.queries
     ch_query_lookups
     ch_contig_read_counts
     ch_filtered_bam
@@ -28,6 +29,12 @@ workflow REPORTING {
 
     ch_contig_sequence_parts = ch_contig_sequences.multiMap { sample_id, _platform, _read_structure, fasta, _lookup ->
         for_lims: tuple(sample_id, fasta)
+    }
+
+    // Per-read-type query FASTAs (contig, merged, single) — the sequences
+    // that were actually BLASTed — for eager per-read-type LIMS upload.
+    ch_query_fastas_for_lims = ch_query_fastas.map { sample_id, _platform, query_class, batch_fasta, _lookup ->
+        tuple(sample_id, query_class, batch_fasta)
     }
 
     // Enrich BLAST results with all pipeline metadata (mapped_reads, total_reads,
@@ -125,6 +132,7 @@ workflow REPORTING {
         ADD_READ_COUNTS_TO_BLAST.out,
         STACK_ENRICHED_BATCHES.out,
         ch_contig_sequence_parts.for_lims,
+        ch_query_fastas_for_lims,
         params.experiment_id,
         run_id,
         ch_run_ready,
