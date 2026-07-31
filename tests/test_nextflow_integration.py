@@ -299,6 +299,34 @@ def read_tsv_rows(path: Path) -> list[dict[str, str]]:
     return read_delimited_rows(path, delimiter="\t")
 
 
+def read_tsv_document(path: Path) -> tuple[list[str], list[dict[str, str]]]:
+    with path.open(newline="", encoding="utf-8") as handle:
+        reader = csv.DictReader(handle, delimiter="\t")
+        assert reader.fieldnames is not None, f"Missing TSV header: {path}"
+        return reader.fieldnames, list(reader)
+
+
+def assert_concatenated_tsv(output: Path, inputs: list[Path]) -> None:
+    ordered_inputs = sorted(inputs, key=lambda path: (path.name, str(path)))
+    if not ordered_inputs:
+        assert output.read_text(encoding="utf-8") == ""
+        return
+
+    expected_header: list[str] | None = None
+    expected_rows: list[dict[str, str]] = []
+    for path in ordered_inputs:
+        header, rows = read_tsv_document(path)
+        if expected_header is None:
+            expected_header = header
+        else:
+            assert header == expected_header, f"Unexpected per-sample header: {path}"
+        expected_rows.extend(rows)
+
+    output_header, output_rows = read_tsv_document(output)
+    assert output_header == expected_header
+    assert output_rows == expected_rows
+
+
 def assert_long_read_assembly_outputs(
     results_root: Path,
     selected_sra_runs: list[dict[str, Any]],
@@ -601,6 +629,7 @@ def test_mini_sra_viral_pipeline_completes() -> None:
             f"Missing experiment BLAST summary: {experiment_blast}"
         )
         assert final_blast_files, f"No final BLAST TSVs found in {final_dir}"
+        assert_concatenated_tsv(experiment_blast, final_blast_files)
 
         final_text = "\n".join(
             path.read_text(encoding="utf-8") for path in final_blast_files
@@ -672,7 +701,11 @@ def test_mini_sra_viral_pipeline_completes() -> None:
             assert_long_read_assembly_outputs(results_root, selected_sra_runs)
 
         big_tables_dir = results_root / "11_big_tables"
-        for filename in ("query_big_table.tsv", "taxon_big_table.tsv"):
+        table_inputs = {
+            "query_big_table.tsv": big_tables_dir / "query" / "per_sample",
+            "taxon_big_table.tsv": big_tables_dir / "taxon" / "per_sample",
+        }
+        for filename, per_sample_dir in table_inputs.items():
             featured_table = results_root / filename
             grouped_table = big_tables_dir / filename
             assert featured_table.is_file(), (
@@ -682,6 +715,10 @@ def test_mini_sra_viral_pipeline_completes() -> None:
                 f"Missing grouped Big Table: {grouped_table}"
             )
             assert featured_table.read_bytes() == grouped_table.read_bytes()
+            assert_concatenated_tsv(
+                grouped_table,
+                list(per_sample_dir.glob("*.tsv")),
+            )
 
         sourmash_root = (
             results_root

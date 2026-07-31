@@ -148,25 +148,26 @@ process ADD_READ_COUNTS_TO_BLAST {
   """
 }
 
-process STACK_ENRICHED_BATCHES {
+process CONCATENATE_SAMPLE_BLAST_RESULTS {
   /*
-   * Stack the already-enriched per-(sample, query_class) BLAST batches back
-   * into one per-sample TSV for reporting aggregates. Enrichment (and LCA)
-   * already happened per batch; this is a header-aware concat only.
+   * Concatenate per-(sample, query_class) BLAST results into one canonical
+   * per-sample TSV for publication and downstream reporting.
    */
 
   tag "${sample_id}"
   label "low"
 
   input:
-  tuple val(sample_id), path(batch_final_tsvs, stageAs: "batch??????/*")
+  tuple val(sample_id), path(batch_results, stageAs: "batch??????/*")
 
   output:
   tuple val(sample_id), path("${sample_id}_blast.final.tsv")
 
   script:
   """
-  concat_tsv_with_header.py --output ${sample_id}_blast.final.tsv ${batch_final_tsvs}
+  concatenate_tsvs.py \
+      --input ${batch_results} \
+      --output ${sample_id}_blast.final.tsv
   """
 }
 
@@ -216,12 +217,11 @@ process BUILD_TAXON_BIG_TABLE {
   """
 }
 
-process CONCATENATE_EXPERIMENT_BLAST {
+process CONCATENATE_EXPERIMENT_BLAST_RESULTS {
   /*
    * Concatenate all per-sample _blast.final.tsv files into a single
    * experiment-level TSV. Runs unconditionally (does not require LabKey).
-   * Header is taken from the first file; subsequent files contribute
-   * data rows only.
+   * Inputs are ordered by filename and required to have matching headers.
    */
 
   label "low"
@@ -234,27 +234,10 @@ process CONCATENATE_EXPERIMENT_BLAST {
 
   script:
   """
-  #!/usr/bin/env python3
-  from pathlib import Path
-
-  files = sorted(Path("sample_results").glob("*.tsv"))
-
-  if not files:
-      Path("experiment_blast_results.tsv").write_text("")
-  else:
-      with open("experiment_blast_results.tsv", "w") as out:
-          # Write header from first file
-          with open(files[0]) as f:
-              header = f.readline()
-              out.write(header)
-              for line in f:
-                  out.write(line)
-          # Append data rows from remaining files
-          for tsv in files[1:]:
-              with open(tsv) as f:
-                  f.readline()  # skip header
-                  for line in f:
-                      out.write(line)
+  mkdir -p sample_results
+  concatenate_tsvs.py \
+      --input-dir sample_results \
+      --output experiment_blast_results.tsv
   """
 }
 
@@ -273,7 +256,8 @@ process CONCATENATE_QUERY_BIG_TABLE {
 
   script:
   """
-  stack_big_tables.py \
+  mkdir -p sample_big_tables
+  concatenate_tsvs.py \
       --input-dir sample_big_tables \
       --output query_big_table.tsv
   """
@@ -294,7 +278,8 @@ process CONCATENATE_TAXON_BIG_TABLE {
 
   script:
   """
-  stack_big_tables.py \
+  mkdir -p sample_big_tables
+  concatenate_tsvs.py \
       --input-dir sample_big_tables \
       --output taxon_big_table.tsv
   """

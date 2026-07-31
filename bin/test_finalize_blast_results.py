@@ -4,15 +4,14 @@ from __future__ import annotations
 
 import csv
 import sqlite3
-import subprocess
-import sys
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
+from concatenate_tsvs import concatenate_tsvs
 from finalize_blast_results import main
 
-BIN = Path(__file__).resolve().parent
-SCRIPT = BIN / "finalize_blast_results.py"
+if TYPE_CHECKING:
+    from pathlib import Path
 
 MERGED_HEADER = "task\tsample\tqseqid\tqlen\tsseqid\tstitle\tlength\tpident\tevalue\tbitscore\tsscinames\tstaxids\trank"
 
@@ -378,23 +377,48 @@ def _lookup(path: Path, rows: list[tuple[str, str, str, str, int]]) -> None:
     conn.close()
 
 
-def _run(blast_tsv: Path, out: Path, lookups: list[Path], contig_counts: Path | None) -> None:
-    cmd = [sys.executable, str(SCRIPT), "--blast-tsv", str(blast_tsv), "--output", str(out),
-           "--total-reads", "1000", "--blast-db-version", "v1", "--virus-index-version", "vx", "--run-id", "R1"]
+def _run(
+    blast_tsv: Path,
+    out: Path,
+    lookups: list[Path],
+    contig_counts: Path | None,
+) -> None:
+    args = [
+        "--blast-tsv",
+        str(blast_tsv),
+        "--output",
+        str(out),
+        "--total-reads",
+        "1000",
+        "--blast-db-version",
+        "v1",
+        "--virus-index-version",
+        "vx",
+        "--run-id",
+        "R1",
+    ]
     for lk in lookups:
-        cmd += ["--query-lookup", str(lk)]
+        args += ["--query-lookup", str(lk)]
     if contig_counts is not None:
-        cmd += ["--contig-counts", str(contig_counts)]
-    subprocess.run(cmd, check=True)
+        args += ["--contig-counts", str(contig_counts)]
+    main(args)
 
 
-def test_per_batch_concat_equals_per_sample(tmp_path: Path) -> None:
+def test_finalizing_batches_then_concatenating_matches_finalizing_sample(
+    tmp_path: Path,
+) -> None:
     """Per-batch enrichment must equal per-sample enrichment, row-for-row."""
     # Two batches for one sample: a contig batch and a single_read batch.
     contig_tsv = tmp_path / "contig.tsv"
-    contig_tsv.write_text(MERGED_HEADER + "\nmegablast\ts1\tc1\t300\trefA\ttA\t250\t99.0\t1e-9\t400\tHomo\t9606\tspecies:x\n")
-    read_tsv = tmp_path / "read.tsv"
-    read_tsv.write_text(MERGED_HEADER + "\nmegablast\ts1\tnvdReadQuery_1\t150\trefB\ttB\t140\t98.0\t1e-8\t200\tHomo\t9606\tspecies:x\n")
+    contig_tsv.write_text(
+        MERGED_HEADER
+        + "\nmegablast\ts1\tc1\t300\trefA\ttA\t250\t99.0\t1e-9\t400\tHomo\t9606\tspecies:x\n",
+    )
+    read_batch_tsv = tmp_path / "read.tsv"
+    read_batch_tsv.write_text(
+        MERGED_HEADER
+        + "\nmegablast\ts1\tnvdReadQuery_1\t150\trefB\ttB\t140\t98.0\t1e-8\t200\tHomo\t9606\tspecies:x\n",
+    )
 
     contig_lk = tmp_path / "contig.sqlite"
     _lookup(contig_lk, [("c1", "short_assembly_contig", "spades", "c1", 1)])
@@ -404,18 +428,21 @@ def test_per_batch_concat_equals_per_sample(tmp_path: Path) -> None:
     counts = tmp_path / "counts.tsv"
     counts.write_text("c1\t42\n")
 
-    # Per-batch: enrich each batch with its own lookup, concat.
+    # Per-batch: enrich each batch with the sample's grouped lookups, then concatenate.
     out_contig = tmp_path / "contig.final.tsv"
     out_read = tmp_path / "read.final.tsv"
-    _run(contig_tsv, out_contig, [contig_lk, read_lk], counts)   # sample's grouped lookups; unused rows harmless
-    _run(read_tsv, out_read, [contig_lk, read_lk], None)
-    per_batch_lines = out_contig.read_text().splitlines() + out_read.read_text().splitlines()[1:]
+    _run(contig_tsv, out_contig, [contig_lk, read_lk], counts)
+    _run(read_batch_tsv, out_read, [contig_lk, read_lk], counts)
+    per_batch = tmp_path / "per-batch.final.tsv"
+    concatenate_tsvs([out_contig, out_read], per_batch)
 
     # Per-sample: concat batches first, then enrich once.
     merged = tmp_path / "merged.tsv"
-    merged.write_text(contig_tsv.read_text() + "\n".join(read_tsv.read_text().splitlines()[1:]) + "\n")
+    concatenate_tsvs([contig_tsv, read_batch_tsv], merged)
     out_sample = tmp_path / "sample.final.tsv"
     _run(merged, out_sample, [contig_lk, read_lk], counts)
-    per_sample_lines = out_sample.read_text().splitlines()
 
-    assert sorted(per_batch_lines) == sorted(per_sample_lines)
+    expected_qseqids = ["c1", "nvdReadQuery_1"]
+    assert [row["qseqid"] for row in read_tsv(per_batch)] == expected_qseqids
+    assert [row["qseqid"] for row in read_tsv(out_sample)] == expected_qseqids
+    assert per_batch.read_text() == out_sample.read_text()

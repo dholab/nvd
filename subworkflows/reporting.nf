@@ -1,4 +1,4 @@
-include { ADD_READ_COUNTS_TO_BLAST; STACK_ENRICHED_BATCHES; BUILD_QUERY_BIG_TABLE; BUILD_TAXON_BIG_TABLE; CONCATENATE_QUERY_BIG_TABLE; CONCATENATE_TAXON_BIG_TABLE; CONCATENATE_EXPERIMENT_BLAST; TARGET_ENRICHMENT_REPORT } from "../modules/utils"
+include { ADD_READ_COUNTS_TO_BLAST; CONCATENATE_SAMPLE_BLAST_RESULTS; BUILD_QUERY_BIG_TABLE; BUILD_TAXON_BIG_TABLE; CONCATENATE_QUERY_BIG_TABLE; CONCATENATE_TAXON_BIG_TABLE; CONCATENATE_EXPERIMENT_BLAST_RESULTS; TARGET_ENRICHMENT_REPORT } from "../modules/utils"
 include { NOTIFY_SLACK } from "../modules/utils"
 include { BUILD_SEQUENCE_FLOW; RENDER_MERGED_TAXON_ABUNDANCE_SUNBURST; RENDER_TAXON_ABUNDANCE_SUNBURST; RENDER_SOURMASH_SANKEY } from "../modules/reporting"
 include { CRUMBS_PROFILING } from "./crumbs_profiling"
@@ -45,14 +45,14 @@ workflow REPORTING {
 
     ADD_READ_COUNTS_TO_BLAST(ch_blast_finalize, run_id)   // -> tuple(sample_id, query_class, batch.final.tsv)
 
-    // Reporting aggregates need the per-sample enriched TSV: stack the enriched batches.
-    STACK_ENRICHED_BATCHES(
+    // Collapse query-class partitions into the canonical per-sample BLAST result.
+    CONCATENATE_SAMPLE_BLAST_RESULTS(
         ADD_READ_COUNTS_TO_BLAST.out
             .map { sample_id, _query_class, final_tsv -> tuple(sample_id, final_tsv) }
             .groupTuple()
     )
 
-    ch_split_blast_results = STACK_ENRICHED_BATCHES.out
+    ch_sample_blast_results = CONCATENATE_SAMPLE_BLAST_RESULTS.out
         .multiMap { sample_id, blast_tsv ->
             for_summary: tuple(sample_id, blast_tsv)
             for_big_table: tuple(sample_id, blast_tsv)
@@ -61,21 +61,21 @@ workflow REPORTING {
 
     // Concatenate all per-sample final BLAST results into a single experiment-level TSV.
     // Runs unconditionally so every run produces an experiment summary, not just LabKey runs.
-    CONCATENATE_EXPERIMENT_BLAST(
-        ch_split_blast_results.for_summary.map { _sample_id, tsv -> tsv }.collect()
+    CONCATENATE_EXPERIMENT_BLAST_RESULTS(
+        ch_sample_blast_results.for_summary.map { _sample_id, tsv -> tsv }.collect()
     )
 
     if (params.experimental == true) {
         BUILD_SEQUENCE_FLOW(ch_sequence_flow_evidence.collect())
 
         CRUMBS_PROFILING(
-            ch_split_blast_results.for_emit,
+            ch_sample_blast_results.for_emit,
             ch_filtered_bam,
             ch_no_contigs,
             ch_taxonomy_dir,
         )
 
-        ch_query_big_table_inputs = ch_split_blast_results.for_big_table
+        ch_query_big_table_inputs = ch_sample_blast_results.for_big_table
             .join(CRUMBS_PROFILING.out.queries, by: 0)
             .map { sample_id, blast_tsv, crumbs_tsv -> tuple(sample_id, blast_tsv, crumbs_tsv) }
 
@@ -144,12 +144,12 @@ workflow REPORTING {
     )
 
     emit:
-    blast_results = ch_split_blast_results.for_emit
+    blast_results = ch_sample_blast_results.for_emit
     query_big_tables = params.experimental ? BUILD_QUERY_BIG_TABLE.out : channel.empty()
     query_big_table = params.experimental ? CONCATENATE_QUERY_BIG_TABLE.out.concatenated_tsv : channel.empty()
     taxon_big_tables = params.experimental ? BUILD_TAXON_BIG_TABLE.out : channel.empty()
     taxon_big_table = params.experimental ? CONCATENATE_TAXON_BIG_TABLE.out.concatenated_tsv : channel.empty()
-    experiment_blast = CONCATENATE_EXPERIMENT_BLAST.out.concatenated_tsv
+    experiment_blast = CONCATENATE_EXPERIMENT_BLAST_RESULTS.out.concatenated_tsv
     sequence_flow = params.experimental ? BUILD_SEQUENCE_FLOW.out.sequence_flow : channel.empty()
     target_enrichment_report = TARGET_ENRICHMENT_REPORT.out.summary_tsv
     taxon_abundance_sunbursts = params.experimental ? RENDER_TAXON_ABUNDANCE_SUNBURST.out.reports : channel.empty()
