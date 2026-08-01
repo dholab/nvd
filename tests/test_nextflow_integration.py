@@ -759,6 +759,19 @@ def run_labkey_nextflow(  # noqa: PLR0913
         # producing the per-batch hits the LIMS upload consumes -- fully offline.
         "--no_enrichment",
         "true",
+        # Experimental mode so read-derived query classes (overlap_merged_pair,
+        # single_read) are generated alongside short_assembly_contig -- this is
+        # what makes the LIMS e2e actually exercise the per-query-class split and
+        # dedup, not just the contig path. Needs the sourmash rapid-screening
+        # fixtures that experimental mode turns on.
+        "--experimental",
+        "true",
+        "--merge_pairs",
+        "true",
+        "--sourmash_ref_fasta",
+        str(SOURMASH_REF_FASTA),
+        "--sourmash_lineages_path",
+        str(SOURMASH_LINEAGES),
         "--labkey",
         "true",
         "--labkey_server",
@@ -852,6 +865,18 @@ def test_lims_enabled_pipeline_uploads_eagerly_and_dedups() -> None:
             for op in first_hits:
                 for row in op["rows"]:
                     assert row.get("query_class"), f"hits row missing query_class: {row}"
+
+            observed_classes = {
+                row.get("query_class") for op in first_hits for row in op["rows"]
+            }
+            print(f"query_class values uploaded: {sorted(observed_classes)}", flush=True)
+            assert "short_assembly_contig" in observed_classes, (
+                f"expected the contig query class; observed {sorted(observed_classes)}"
+            )
+            assert observed_classes & {"overlap_merged_pair", "single_read"}, (
+                "expected read-derived query classes too (experimental mode splits "
+                f"queries by read type); observed {sorted(observed_classes)}"
+            )
 
             before = len(first_hits)
             second, second_dir = run_labkey_nextflow(
@@ -1057,6 +1082,15 @@ def test_lims_enabled_real_labkey_uploads_and_dedups() -> None:
         assert hits_after_first, "first run inserted no hits for the test experiment"
         for row in hits_after_first:
             assert row.get("query_class"), f"hits row missing query_class: {row}"
+        observed_classes = {row.get("query_class") for row in hits_after_first}
+        print(f"query_class values uploaded: {sorted(observed_classes)}", flush=True)
+        assert "short_assembly_contig" in observed_classes, (
+            f"expected the contig query class; observed {sorted(observed_classes)}"
+        )
+        assert observed_classes & {"overlap_merged_pair", "single_read"}, (
+            "expected read-derived query classes too (experimental mode splits "
+            f"queries by read type); observed {sorted(observed_classes)}"
+        )
         first_hits_count = len(hits_after_first)
         first_fasta_count = len(
             experiment_rows(api, cfg["schema"], cfg["fasta_list"], experiment_id),
