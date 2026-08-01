@@ -703,13 +703,15 @@ def run_labkey_nextflow(  # noqa: PLR0913
     hits_list: str,
     fasta_list: str,
     experiment_id: int,
+    experimental: bool = True,
     cert_file: Path | None = None,
 ) -> tuple[subprocess.CompletedProcess[str], Path]:
     """Run the local-only pipeline with LabKey enabled against the given endpoint.
 
-    Shared by the mocked and real-LabKey e2e tests. ``cert_file`` is set only for
-    the mock (its self-signed TLS cert); a real LabKey server presents a
-    publicly-trusted cert and needs no override.
+    Shared by the mocked and real-LabKey e2e tests. ``experimental`` (default on)
+    turns on the read-derived query classes; set it off for a contig-only run.
+    ``cert_file`` is set only for the mock (its self-signed TLS cert); a real
+    LabKey server presents a publicly-trusted cert and needs no override.
     """
     profile = os.environ.get("NVD_INTEGRATION_PROFILE", "test")
     show_progress = os.environ.get("NVD_E2E_SHOW_PROGRESS") == "1"
@@ -759,19 +761,6 @@ def run_labkey_nextflow(  # noqa: PLR0913
         # producing the per-batch hits the LIMS upload consumes -- fully offline.
         "--no_enrichment",
         "true",
-        # Experimental mode so read-derived query classes (overlap_merged_pair,
-        # single_read) are generated alongside short_assembly_contig -- this is
-        # what makes the LIMS e2e actually exercise the per-query-class split and
-        # dedup, not just the contig path. Needs the sourmash rapid-screening
-        # fixtures that experimental mode turns on.
-        "--experimental",
-        "true",
-        "--merge_pairs",
-        "true",
-        "--sourmash_ref_fasta",
-        str(SOURMASH_REF_FASTA),
-        "--sourmash_lineages_path",
-        str(SOURMASH_LINEAGES),
         "--labkey",
         "true",
         "--labkey_server",
@@ -787,6 +776,20 @@ def run_labkey_nextflow(  # noqa: PLR0913
         "--labkey_blast_fasta_list",
         fasta_list,
     ]
+    if experimental:
+        # Read-derived query classes (overlap_merged_pair, single_read) alongside
+        # short_assembly_contig, so the run exercises the full per-query-class
+        # split. Needs the sourmash rapid-screening fixtures experimental turns on.
+        command += [
+            "--experimental",
+            "true",
+            "--merge_pairs",
+            "true",
+            "--sourmash_ref_fasta",
+            str(SOURMASH_REF_FASTA),
+            "--sourmash_lineages_path",
+            str(SOURMASH_LINEAGES),
+        ]
     completed = subprocess.run(  # noqa: S603
         command,
         cwd=ROOT,
@@ -1049,10 +1052,21 @@ def test_lims_enabled_real_labkey_uploads_and_dedups() -> None:
         "hits_list": cfg["hits_list"],
         "fasta_list": cfg["fasta_list"],
     }
-    # Random, collision-avoiding experiment id within the int32 range LabKey's
-    # integer column accepts (well above any real experiment id).
-    experiment_id = 2_000_000_000 + secrets.randbelow(147_000_000)
-    print(f"NVD real LabKey e2e experiment_id={experiment_id}", flush=True)
+    # Pin the experiment id with NVD_TEST_LABKEY_EXPERIMENT_ID to rerun against
+    # an id that already has rows (verifies the check-ahead skips duplicates
+    # across invocations, not just within one). Otherwise use a random,
+    # collision-avoiding id in the int32 range LabKey's integer column accepts.
+    pinned = os.environ.get("NVD_TEST_LABKEY_EXPERIMENT_ID")
+    experiment_id = int(pinned) if pinned else 2_000_000_000 + secrets.randbelow(147_000_000)
+
+    # Experimental on (default) emits the read-derived query classes too; set
+    # NVD_TEST_LABKEY_EXPERIMENTAL=0 for a faster contig-only run.
+    experimental = os.environ.get("NVD_TEST_LABKEY_EXPERIMENTAL", "1") != "0"
+    print(
+        f"NVD real LabKey e2e experiment_id={experiment_id} "
+        f"(pinned={bool(pinned)}, experimental={experimental})",
+        flush=True,
+    )
 
     # Keep the run's rows and WebDAV files by default so they can be inspected in
     # LabKey. Set NVD_TEST_LABKEY_KEEP=0 to have the test remove everything it
@@ -1064,11 +1078,16 @@ def test_lims_enabled_real_labkey_uploads_and_dedups() -> None:
     # mutate the store here.
     api = real_labkey_api(cfg)
     try:
-        # Start from a clean slate so the first run genuinely inserts.
-        delete_experiment_rows(api, cfg["schema"], cfg["hits_list"], experiment_id)
-        delete_experiment_rows(api, cfg["schema"], cfg["fasta_list"], experiment_id)
+        # For a random (ephemeral) id, start clean so the first run genuinely
+        # inserts. For a pinned id, keep any existing rows so a rerun exercises
+        # the cross-invocation check-ahead dedup instead of re-inserting.
+        if not pinned:
+            delete_experiment_rows(api, cfg["schema"], cfg["hits_list"], experiment_id)
+            delete_experiment_rows(api, cfg["schema"], cfg["fasta_list"], experiment_id)
 
-        first, run_dir = run_labkey_nextflow(**coords, experiment_id=experiment_id)
+        first, run_dir = run_labkey_nextflow(
+            **coords, experiment_id=experiment_id, experimental=experimental
+        )
         assert first.returncode == 0, (
             f"Real LabKey e2e run failed.\n\nRun directory: {run_dir}\n\nSTDOUT:\n"
             + (first.stdout or "<not captured; see nextflow logs in run dir>")
@@ -1079,25 +1098,28 @@ def test_lims_enabled_real_labkey_uploads_and_dedups() -> None:
         hits_after_first = experiment_rows(
             api, cfg["schema"], cfg["hits_list"], experiment_id
         )
-        assert hits_after_first, "first run inserted no hits for the test experiment"
+        assert hits_after_first, "no hits present for the test experiment after the first run"
         for row in hits_after_first:
             assert row.get("query_class"), f"hits row missing query_class: {row}"
         observed_classes = {row.get("query_class") for row in hits_after_first}
-        print(f"query_class values uploaded: {sorted(observed_classes)}", flush=True)
+        print(f"query_class values present: {sorted(observed_classes)}", flush=True)
         assert "short_assembly_contig" in observed_classes, (
             f"expected the contig query class; observed {sorted(observed_classes)}"
         )
-        assert observed_classes & {"overlap_merged_pair", "single_read"}, (
-            "expected read-derived query classes too (experimental mode splits "
-            f"queries by read type); observed {sorted(observed_classes)}"
-        )
+        if experimental:
+            assert observed_classes & {"overlap_merged_pair", "single_read"}, (
+                "expected read-derived query classes too (experimental mode splits "
+                f"queries by read type); observed {sorted(observed_classes)}"
+            )
         first_hits_count = len(hits_after_first)
         first_fasta_count = len(
             experiment_rows(api, cfg["schema"], cfg["fasta_list"], experiment_id),
         )
 
         # Insert-again is blocked: the rerun dedups against the destination lists.
-        second, second_dir = run_labkey_nextflow(**coords, experiment_id=experiment_id)
+        second, second_dir = run_labkey_nextflow(
+            **coords, experiment_id=experiment_id, experimental=experimental
+        )
         assert second.returncode == 0, (
             f"Second real LabKey e2e run failed.\n\nRun directory: {second_dir}\n\n"
             "STDOUT:\n"
