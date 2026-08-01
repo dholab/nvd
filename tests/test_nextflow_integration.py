@@ -825,11 +825,12 @@ def data_hits_inserts(mock: Any) -> list[dict[str, Any]]:
     ]
 
 
-# Marked `network` in addition to `slow` so the existing `slow and network`
-# CI path (pyproject `e2e-test-ci`, the integration CI workflow) actually runs
-# it: the test binds loopback HTTP(S) sockets for the mock endpoint.
+# Marked `labkey` (with the real test) so it runs only via `just e2e-labkey` and
+# is excluded from `just e2e`/CI. Even though it uses a mock endpoint and a dummy
+# secret, CI has no LabKey credentials/secret store, so LIMS e2e stays opt-in.
 @pytest.mark.slow
 @pytest.mark.network
+@pytest.mark.labkey
 def test_lims_enabled_pipeline_uploads_eagerly_and_dedups() -> None:
     """LabKey-enabled run uploads hits per batch; a rerun skips present combos."""
     from tests.scripts.mock_labkey_server import mock_labkey_server
@@ -1024,10 +1025,12 @@ def delete_webdav_experiment(webdav: str, api_key: str, experiment_id: int) -> N
             raise
 
 
-# Marked `network` (like the mock test) so the `slow and network` CI/e2e path
-# collects it; it no-ops via skip unless the `nvd` preset is registered.
+# Marked `labkey` so it only runs via the dedicated `just e2e-labkey` target and
+# is excluded from `just e2e`/CI (`-m '... and not labkey'`). Otherwise, once the
+# nvd preset is registered, a plain `just e2e` would hit the real LabKey server.
 @pytest.mark.slow
 @pytest.mark.network
+@pytest.mark.labkey
 def test_lims_enabled_real_labkey_uploads_and_dedups() -> None:
     """Against a real LabKey list: first run inserts per batch; a rerun is deduped.
 

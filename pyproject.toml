@@ -96,9 +96,9 @@ python = "3.12.*"
 dev = { features = ["dev"], solve-group = "default" }
 
 [tool.pixi.tasks]
-e2e-test = "NVD_E2E_SHOW_PROGRESS=1 pytest tests/test_nextflow_integration.py -m 'slow and network' -q -s"
-e2e-test-ci = "pytest tests/test_nextflow_integration.py -m 'slow and network' -q"
-e2e-labkey-test = "NVD_E2E_SHOW_PROGRESS=1 pytest tests/test_nextflow_integration.py -k real_labkey -m 'slow and network' -q -s"
+e2e-test = "NVD_E2E_SHOW_PROGRESS=1 pytest tests/test_nextflow_integration.py -m 'slow and network and not labkey' -q -s"
+e2e-test-ci = "pytest tests/test_nextflow_integration.py -m 'slow and network and not labkey' -q"
+e2e-labkey-test = "NVD_E2E_SHOW_PROGRESS=1 pytest tests/test_nextflow_integration.py -m 'slow and network and labkey' -q -s"
 
 [dependency-groups]
 dev = [
@@ -152,6 +152,7 @@ testpaths = ["lib/py_nvd", "bin", "tests"]
 markers = [
   "slow: marks tests as slow (deselect with '-m \"not slow\"')",
   "network: marks tests as requiring network access (deselect with '-m \"not network\"')",
+  "labkey: LIMS/LabKey end-to-end tests; run via 'just e2e-labkey', excluded from 'just e2e' and CI (which have no LabKey credentials)",
 ]
 
 [tool.basedpyright]
