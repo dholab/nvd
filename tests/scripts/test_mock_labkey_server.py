@@ -90,20 +90,22 @@ def test_validate_insert_then_delete_leaves_no_stored_row() -> None:
 
 def test_webdav_put_is_recorded() -> None:
     import base64
+    import ssl
     import urllib.request
 
     with mock_labkey_server() as mock:
-        os.environ["SSL_CERT_FILE"] = str(mock.cert_file)
-        try:
-            token = base64.b64encode(b"apikey:dummy").decode()
-            request = urllib.request.Request(  # noqa: S310
-                mock.webdav_url + "1/sample/nvd/file.gz",
-                data=b"payload",
-                method="PUT",
-                headers={"Authorization": f"Basic {token}"},
-            )
-            with urllib.request.urlopen(request) as response:  # noqa: S310
-                assert response.getcode() == 201
-            assert any(path.endswith("file.gz") for path in mock.webdav_puts)
-        finally:
-            os.environ.pop("SSL_CERT_FILE", None)
+        token = base64.b64encode(b"apikey:dummy").decode()
+        request = urllib.request.Request(  # noqa: S310
+            mock.webdav_url + "1/sample/nvd/file.gz",
+            data=b"payload",
+            method="PUT",
+            headers={"Authorization": f"Basic {token}"},
+        )
+        # Trust the mock's self-signed cert via an explicit context rather than
+        # the SSL_CERT_FILE env var: env-based trust is only honored if set
+        # before the process's first SSL context is created, which is unreliable
+        # in a shared pytest process (passes on macOS, fails on Linux CI).
+        context = ssl.create_default_context(cafile=str(mock.cert_file))
+        with urllib.request.urlopen(request, context=context) as response:  # noqa: S310
+            assert response.getcode() == 201
+        assert any(path.endswith("file.gz") for path in mock.webdav_puts)
