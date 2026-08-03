@@ -82,7 +82,7 @@ process ENSURE_TAXONOMY {
 process ANNOTATE_LEAST_COMMON_ANCESTORS {
 
   tag "${sample_id}"
-  label "low"
+  label "medium"
 
   errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
   maxRetries 2

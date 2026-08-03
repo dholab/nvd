@@ -37,7 +37,7 @@ process DEACON_UNION_INDEXES {
      * Only called when both a base index and custom index are present.
      */
 
-    label "low"
+    label "medium"
 
     input:
     path indexes  // Collection of .idx files (always 2+)
