@@ -171,6 +171,12 @@ def run_reformat(input_file: Path, *, tmpdir: Path) -> RawProfile:
             f"lhist={length_histogram}",
             f"aqhist={quality_histogram}",
             "overwrite=true",
+            # BBTools sizes its quality histogram from maxcalledquality, but does
+            # not always clamp incoming scores to it. Nanopore basecallers emit
+            # Phred scores well above the Illumina-era default, which overruns
+            # the histogram array and aborts the run. Declare the full Sanger
+            # range so long-read qualities always have a bin.
+            "maxcalledquality=93",
         ],
         check=True,
     )
