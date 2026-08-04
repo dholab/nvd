@@ -190,8 +190,11 @@ process LABKEY_CONCAT_ALL_SAMPLE_BLAST_RESULTS {
     import polars as pl
     from pathlib import Path
 
-    files = sorted(Path("blast_results").glob("*.csv"))
-    pl.concat([pl.scan_csv(f) for f in files]).sink_csv("${experiment_id}_blast_concatenated.csv")
+    # Skip 0-byte inputs: polars aborts the whole concat with "NoDataError: empty
+    # CSV". Header-only files are kept, and all columns are read as strings so
+    # mixed header-only/populated files share one value-independent schema.
+    files = [f for f in sorted(Path("blast_results").glob("*.csv")) if f.stat().st_size > 0]
+    pl.concat([pl.scan_csv(f, infer_schema_length=0) for f in files]).sink_csv("${experiment_id}_blast_concatenated.csv")
     """
 }
 
