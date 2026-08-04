@@ -175,37 +175,6 @@ process FILTER_READS {
 	"""
 }
 
-process REPAIR_PAIRS {
-
-	/* Repair interleaved paired-end reads, discarding orphans */
-
-	tag "${meta.id}, ${meta.query_class}"
-	label "high"
-
-	errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
-	maxRetries 2
-
-	cpus 4
-
-	input:
-	tuple val(meta), path(reads)
-
-	output:
-	tuple val(meta), path("${meta.id}.${meta.query_class}.repaired.fastq.gz")
-
-	script:
-	"""
-	repair.sh \\
-		in=${reads} \\
-		out=${meta.id}.${meta.query_class}.repaired.fastq.gz \\
-		outs=${meta.id}.${meta.query_class}.singletons.fastq.gz \\
-		interleaved=t \\
-		repair=t \\
-		threads=${task.cpus} \\
-		-eoom
-	"""
-}
-
 process MASK_LOW_COMPLEXITY {
 
 	/* Mask low-complexity regions in contigs */

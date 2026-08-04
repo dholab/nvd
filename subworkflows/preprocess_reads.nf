@@ -5,7 +5,7 @@ include { DEACON_BUILD_INDEX_FROM_FASTA                   } from "../modules/dea
 include { DEACON_UNION_INDEXES                            } from "../modules/deacon"
 include { DEACON_ENRICH_TARGET_READS                     } from "../modules/deacon"
 include { DEACON_DEPLETE                                  } from "../modules/deacon"
-include { MERGE_PAIRS ; DEDUP_WITH_CLUMPIFY ; TRIM_ADAPTERS ; FILTER_READS ; REPAIR_PAIRS } from "../modules/bbmap"
+include { MERGE_PAIRS ; DEDUP_WITH_CLUMPIFY ; TRIM_ADAPTERS ; FILTER_READS } from "../modules/bbmap"
 include { PROFILE_FASTX as PROFILE_READS } from "../modules/fastx"
 
 workflow PREPROCESS_READS {
@@ -216,13 +216,7 @@ workflow PREPROCESS_READS {
         ? FILTER_READS(ch_after_scrub)
         : ch_after_scrub
 
-    // 2e. Repair pairs (interleaved only)
-    ch_branched_for_repair = ch_after_filter.branch { meta, _reads ->
-        interleaved: meta.read_structure == "interleaved"
-        other: true
-    }
-    ch_repaired = REPAIR_PAIRS(ch_branched_for_repair.interleaved)
-    ch_preprocessed_batches = ch_repaired.mix(ch_branched_for_repair.other)
+    ch_preprocessed_batches = ch_after_filter
 
     ch_preprocessed_batches_for_profile = ch_preprocessed_batches.map { meta, reads ->
         def min_qual = meta.platform == "illumina"
