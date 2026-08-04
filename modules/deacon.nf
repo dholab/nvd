@@ -105,8 +105,14 @@ process DEACON_DEPLETE {
     tuple val(sample_id), path("${sample_id}.deacon.json"), emit: stats
 
     script:
+    def input_stream = read_structure == "interleaved"
+        ? "gzip -dc ${reads} | "
+        : ""
+    def filter_inputs = read_structure == "interleaved" ? "- -" : "${reads}"
     """
-    deacon filter \
+    set -euo pipefail
+
+    ${input_stream}deacon filter \
         --deplete \
         --threads ${task.cpus} \
         --abs-threshold ${params.host_abs_threshold} \
@@ -114,7 +120,7 @@ process DEACON_DEPLETE {
         --summary ${sample_id}.deacon.json \
         --output ${sample_id}.depleted.fastq.gz \
         ${index} \
-        ${reads}
+        ${filter_inputs}
     """
 }
 
