@@ -111,6 +111,9 @@ process TRIM_ADAPTERS {
 	tuple val(sample_id), val(platform), val(read_structure), path("${sample_id}.trimmed.fastq.gz")
 
 	script:
+	def pair_trim_args = read_structure == "interleaved"
+		? "int=t tpe tbo removeifeitherbad=t"
+		: "int=f"
 	"""
 	bbduk.sh \\
 		in=${reads} \\
@@ -120,7 +123,7 @@ process TRIM_ADAPTERS {
 		k=23 \\
 		mink=11 \\
 		hdist=1 \\
-		tpe tbo \\
+		${pair_trim_args} \\
 		threads=${task.cpus} \\
 		-eoom
 	"""
