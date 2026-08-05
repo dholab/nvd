@@ -55,11 +55,14 @@ params.filter_low_complexity_reads = {str(filter_low_complexity_reads).lower()}
 params.min_read_entropy = 0.9
 params.min_read_length = {min_read_length}
 params.max_read_length = null
+params.min_read_quality_illumina = 20
+params.min_read_quality_nanopore = 20
 
 include {{ FILTER_READS }} from '{BBMAP_MODULE}'
 
 workflow {{
-    FILTER_READS(Channel.of(tuple('sample_A', 'illumina', '{read_structure}', file('{reads}'), 20)))
+    meta = [id: 'sample_A', platform: 'illumina', read_structure: '{read_structure}', query_class: 'single_read']
+    FILTER_READS(Channel.of(tuple(meta, file('{reads}'))))
 }}
 """,
         encoding="utf-8",
@@ -79,7 +82,9 @@ workflow {{
 
     diagnostics = f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}"
     assert completed.returncode == 0, diagnostics
-    outputs = list((tmp_path / "work").glob("**/sample_A.filtered.fastq.gz"))
+    outputs = list(
+        (tmp_path / "work").glob("**/sample_A.single_read.filtered.fastq.gz")
+    )
     assert len(outputs) == 1, outputs
     with gzip.open(outputs[0], "rt", encoding="utf-8") as handle:
         return handle.read()
@@ -101,7 +106,8 @@ nextflow.enable.dsl = 2
 include {{ DEDUP_WITH_CLUMPIFY }} from '{BBMAP_MODULE}'
 
 workflow {{
-    DEDUP_WITH_CLUMPIFY(Channel.of(tuple('sample_A', 'illumina', 'single', file('{reads}'))))
+    meta = [id: 'sample_A', platform: 'illumina', read_structure: 'single', query_class: 'single_read']
+    DEDUP_WITH_CLUMPIFY(Channel.of(tuple(meta, file('{reads}'))))
 }}
 """,
         encoding="utf-8",
@@ -121,7 +127,9 @@ workflow {{
 
     diagnostics = f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}"
     assert completed.returncode == 0, diagnostics
-    outputs = list((tmp_path / "work").glob("**/sample_A.dedup.fastq.gz"))
+    outputs = list(
+        (tmp_path / "work").glob("**/sample_A.single_read.dedup.fastq.gz")
+    )
     assert len(outputs) == 1, outputs
     with gzip.open(outputs[0], "rt", encoding="utf-8") as handle:
         return handle.read()
@@ -167,7 +175,8 @@ nextflow.enable.dsl = 2
 include {{ TRIM_ADAPTERS }} from '{BBMAP_MODULE}'
 
 workflow {{
-    TRIM_ADAPTERS(Channel.of(tuple('sample_A', 'illumina', '{read_structure}', file('{reads}'))))
+    meta = [id: 'sample_A', platform: 'illumina', read_structure: '{read_structure}', query_class: 'single_read']
+    TRIM_ADAPTERS(Channel.of(tuple(meta, file('{reads}'))))
 }}
 """,
         encoding="utf-8",
@@ -187,7 +196,9 @@ workflow {{
 
     diagnostics = f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}"
     assert completed.returncode == 0, diagnostics
-    outputs = list((tmp_path / "work").glob("**/sample_A.trimmed.fastq.gz"))
+    outputs = list(
+        (tmp_path / "work").glob("**/sample_A.single_read.trimmed.fastq.gz")
+    )
     assert len(outputs) == 1, outputs
     with gzip.open(outputs[0], "rt", encoding="utf-8") as handle:
         return handle.read()

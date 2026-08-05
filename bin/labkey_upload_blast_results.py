@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 import argparse
-import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -12,6 +11,8 @@ try:
 except ImportError:
     print("ERROR: Polars is not installed. Please install it with: pip install polars")
     sys.exit(1)
+
+from py_nvd.labkey_io import insert_records, rows_present
 
 
 # Taxid columns held strictly to a clean integer or a passable null so LabKey's
@@ -296,34 +297,50 @@ def dataframe_to_records(df: pl.DataFrame) -> list[dict[str, Any]]:
     return cleaned_records
 
 
-def process_csv_batch(df: pl.DataFrame, batch_size: int = 1000) -> list[pl.DataFrame]:
+def combo_already_uploaded(
+    query_api,
+    schema: str,
+    table: str,
+    experiment,
+    sample_id: str,
+    query_class: str,
+) -> bool:
+    """True if the hits list already holds any row for this combo.
+
+    The destination list is its own completion ledger: presence of any row for
+    (experiment, sample_id, query_class) means "already uploaded", so the caller
+    skips the insert rather than risk a duplicate. Reuses the guard script's
+    filter fallbacks (QueryFilter objects, then filter-string syntax) so this
+    still works against older labkey-api-python versions.
     """
-    Split DataFrame into batches for upload.
+    return rows_present(
+        query_api,
+        schema,
+        table,
+        {
+            "experiment": experiment,
+            "sample_id": sample_id,
+            "query_class": query_class,
+        },
+    )
 
-    Args:
-        df: Polars DataFrame
-        batch_size: Number of records per batch
 
-    Returns:
-        List of DataFrame batches
-    """
-    n_batches = (len(df) + batch_size - 1) // batch_size
-    batches = []
-
-    for i in range(n_batches):
-        start_idx = i * batch_size
-        end_idx = min((i + 1) * batch_size, len(df))
-        batch = df.slice(start_idx, end_idx - start_idx)
-        batches.append(batch)
-
-    return batches
+def _write_log(log_entries: list[str]) -> None:
+    """Write the accumulated log entries to the upload log file and stdout."""
+    text = "\n".join(log_entries)
+    with open("blast_labkey_upload.log", "w") as f:
+        f.write(text)
+    print(text)
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Upload BLAST CSVs to LabKey using Polars.",
+        description="Upload a (sample, query_class) BLAST CSV batch to LabKey using Polars.",
     )
     parser.add_argument("--experiment-id", required=True)
+    parser.add_argument("--sample-id", required=True)
+    parser.add_argument("--query-class", required=True)
+    parser.add_argument("--csv", required=True)
     parser.add_argument("--labkey-server", required=True)
     parser.add_argument("--labkey-project-name", required=True)
     parser.add_argument("--labkey-api-key", required=True)
@@ -337,12 +354,6 @@ def main():
         "production list (default: 5). Trims only the insert, not the WebDAV upload.",
     )
     parser.add_argument(
-        "--batch-size",
-        type=int,
-        default=1000,
-        help="Number of records per upload batch",
-    )
-    parser.add_argument(
         "--validate-only",
         action="store_true",
         help="Only validate data without uploading",
@@ -352,10 +363,11 @@ def main():
     log_entries = [
         f"LabKey BLAST Upload Log (Polars Version) - {datetime.now()}",
         f"Experiment ID: {args.experiment_id}",
+        f"Sample: {args.sample_id}",
+        f"Query class: {args.query_class}",
         f"Server: {args.labkey_server}",
         f"Project: {args.labkey_project_name}",
         f"Target Table: {args.table_name}",
-        f"Batch Size: {args.batch_size}",
         "=" * 80,
     ]
 
@@ -364,6 +376,7 @@ def main():
         and not args.validate_only
     )
 
+    api = None
     if upload_enabled:
         try:
             from labkey.api_wrapper import APIWrapper
@@ -385,167 +398,115 @@ def main():
             "No LabKey credentials provided - running in simulation mode",
         )
 
-    # Find all BLAST CSV files
-    csv_files = [
-        f for f in os.listdir(".") if f.endswith(".csv") and "blast" in f.lower()
-    ]
-    log_entries.append(f"Found {len(csv_files)} BLAST CSV files: {csv_files}")
+    # The destination list is its own completion ledger. If this combo already
+    # has rows there, a prior run already uploaded it: skip re-inserting rather
+    # than risk duplicating the hits list.
+    if upload_enabled and combo_already_uploaded(
+        api.query,
+        args.labkey_schema,
+        args.table_name,
+        int(args.experiment_id),
+        args.sample_id,
+        args.query_class,
+    ):
+        log_entries.append(
+            f"SKIP: combo already uploaded (exp={args.experiment_id}, "
+            f"sample={args.sample_id}, query_class={args.query_class}); no insert.",
+        )
+        _write_log(log_entries)
+        return
 
-    total_records_processed = 0
-    total_records_uploaded = 0
-    all_stats = {}
+    log_entries.append(f"\nProcessing BLAST file: {args.csv}")
 
-    for csv_file in sorted(csv_files):
-        log_entries.append(f"\nProcessing BLAST file: {csv_file}")
+    csv_path = Path(args.csv)
+    if not csv_path.exists() or csv_path.stat().st_size == 0:
+        log_entries.append("  Empty or missing file - skipping")
+        log_entries.append(
+            "\nBLAST UPLOAD COMPLETE"
+            if upload_enabled
+            else "\nBLAST SIMULATION COMPLETE - No actual upload performed",
+        )
+        _write_log(log_entries)
+        return
 
-        file_path = Path(csv_file)
-        if file_path.stat().st_size == 0:
-            log_entries.append("  Empty file - skipping")
-            continue
+    try:
+        # Read CSV with Polars
+        df = pl.read_csv(
+            args.csv,
+            separator="\t" if args.csv.endswith(".tsv") else ",",
+            has_header=True,
+            ignore_errors=True,  # Continue on parsing errors
+            null_values=["", "NA", "N/A", "null", "NULL", "None"],
+            infer_schema_length=10000,  # Infer types from more rows
+        )
 
-        try:
-            # Read CSV with Polars
-            df = pl.read_csv(
-                csv_file,
-                separator="\t" if csv_file.endswith(".tsv") else ",",
-                has_header=True,
-                ignore_errors=True,  # Continue on parsing errors
-                null_values=["", "NA", "N/A", "null", "NULL", "None"],
-                infer_schema_length=10000,  # Infer types from more rows
+        # Validate and clean the DataFrame
+        df = validate_dataframe(df, args.csv, log_entries)
+
+        # Trim the production list to the top references per contig. core_nt
+        # redundancy can otherwise insert dozens of tied references per contig;
+        # this bounds the inserted rows without touching the WebDAV upload.
+        rows_before_cutoff = len(df)
+        df = apply_reference_cutoff(df, args.blast_retention_count)
+        if len(df) != rows_before_cutoff:
+            log_entries.append(
+                f"  Production-list cutoff (<= {args.blast_retention_count} "
+                f"references per contig): {rows_before_cutoff} -> {len(df)} rows",
             )
 
-            # Validate and clean the DataFrame
-            df = validate_dataframe(df, csv_file, log_entries)
+        record_count = len(df)
 
-            # Trim the production list to the top references per contig. core_nt
-            # redundancy can otherwise insert dozens of tied references per contig;
-            # this bounds the inserted rows without touching the WebDAV upload.
-            rows_before_cutoff = len(df)
-            df = apply_reference_cutoff(df, args.blast_retention_count)
-            if len(df) != rows_before_cutoff:
-                log_entries.append(
-                    f"  Production-list cutoff (<= {args.blast_retention_count} "
-                    f"references per contig): {rows_before_cutoff} -> {len(df)} rows",
-                )
+        if record_count > 0:
+            # Get statistics
+            stats = get_sample_stats(df)
 
-            record_count = len(df)
-            total_records_processed += record_count
-
-            if record_count > 0:
-                # Get statistics
-                stats = get_sample_stats(df)
-                all_stats[csv_file] = stats
-
-                log_entries.append(f"  Records: {record_count}")
-                log_entries.append("  Statistics:")
-                for key, value in stats.items():
-                    if isinstance(value, float):
-                        log_entries.append(f"    {key}: {value:.4f}")
-                    else:
-                        log_entries.append(f"    {key}: {value}")
-
-                # Show sample of first record
-                if len(df) > 0:
-                    first_record = df.head(1).to_dicts()[0]
-                    sample_fields = list(first_record.keys())[:5]
-                    log_entries.append(f"  Sample fields: {', '.join(sample_fields)}")
-                    log_entries.append("  First record sample:")
-                    for field in sample_fields:
-                        value = first_record.get(field, "")
-                        if isinstance(value, float):
-                            log_entries.append(f"    {field}: {value:.4f}")
-                        else:
-                            log_entries.append(f"    {field}: {value}")
-
-                if upload_enabled:
-                    # Process in batches using Polars
-                    batches = process_csv_batch(df, args.batch_size)
-                    success_count = 0
-
-                    for i, batch_df in enumerate(batches, 1):
-                        try:
-                            # Convert batch to records
-                            batch_records = dataframe_to_records(batch_df)
-
-                            # Upload to LabKey
-                            api.query.insert_rows(
-                                schema_name=args.labkey_schema,
-                                query_name=args.table_name,
-                                rows=batch_records,
-                            )
-                            log_entries.append(
-                                f"    Batch {i}/{len(batches)}: SUCCESS ({len(batch_records)} records)",
-                            )
-                            success_count += len(batch_records)
-                        except Exception as e:
-                            log_entries.append(
-                                f"    Batch {i}/{len(batches)}: ERROR - {e!s}",
-                            )
-                            # Log first record of failed batch for debugging
-                            if len(batch_df) > 0:
-                                log_entries.append(
-                                    f"      Failed batch first record: {batch_df.head(1).to_dicts()[0]}",
-                                )
-
-                    total_records_uploaded += success_count
-
+            log_entries.append(f"  Records: {record_count}")
+            log_entries.append("  Statistics:")
+            for key, value in stats.items():
+                if isinstance(value, float):
+                    log_entries.append(f"    {key}: {value:.4f}")
                 else:
-                    # Simulation mode - just count batches
-                    num_batches = (
-                        record_count + args.batch_size - 1
-                    ) // args.batch_size
-                    log_entries.append(
-                        f"  Would upload in {num_batches} batch(es) (SIMULATION)",
+                    log_entries.append(f"    {key}: {value}")
+
+            if upload_enabled:
+                # Insert the whole combo atomically: one (sample_id, query_class)
+                # batch is small enough that chunked inserts only add partial-
+                # failure risk without a throughput benefit.
+                records = dataframe_to_records(df)
+                try:
+                    insert_records(
+                        api.query, args.labkey_schema, args.table_name, records,
                     )
-                    total_records_uploaded += record_count
+                except Exception as e:
+                    log_entries.append(f"  Upload: ERROR - {e!s}")
+                    log_entries.append(
+                        f"    Failed batch first record: {df.head(1).to_dicts()[0]}",
+                    )
+                    log_entries.append(
+                        "\nBLAST UPLOAD FAILED - insert error, see above (no rows committed)",
+                    )
+                    _write_log(log_entries)
+                    print(
+                        f"ERROR: LabKey insert failed for sample={args.sample_id}, "
+                        f"query_class={args.query_class}: {e!s}",
+                        file=sys.stderr,
+                    )
+                    sys.exit(1)
+                log_entries.append(f"  Upload: SUCCESS ({len(records)} records)")
             else:
-                log_entries.append("  No valid records found in file after cleaning")
-
-        except pl.exceptions.ComputeError as e:
-            log_entries.append(f"  ERROR: Polars compute error - {e!s}")
-        except Exception as e:
-            log_entries.append(f"  ERROR: Failed to process file - {e!s}")
-            import traceback
-
-            log_entries.append(f"  Traceback: {traceback.format_exc()}")
-
-    # Summary statistics using Polars
-    log_entries += [
-        "\n" + "=" * 80,
-        "BLAST DATA UPLOAD SUMMARY",
-        f"Files processed: {len(csv_files)}",
-        f"Total records processed: {total_records_processed}",
-        f"Total records uploaded: {total_records_uploaded}"
-        if upload_enabled
-        else f"Total records that would be uploaded: {total_records_uploaded}",
-    ]
-
-    # Add aggregate statistics if available
-    if all_stats:
-        log_entries.append("\nAGGREGATE STATISTICS:")
-        total_unique_samples = len(
-            {
-                sample
-                for stats in all_stats.values()
-                for sample in [stats.get("unique_samples", 0)]
-            },
-        )
-        log_entries.append(
-            f"  Total unique samples across all files: {total_unique_samples}",
-        )
-
-        # Calculate overall averages
-        if any("avg_pident" in stats for stats in all_stats.values()):
-            avg_pidents = [
-                stats.get("avg_pident", 0)
-                for stats in all_stats.values()
-                if "avg_pident" in stats
-            ]
-            if avg_pidents:
-                overall_avg_pident = sum(avg_pidents) / len(avg_pidents)
                 log_entries.append(
-                    f"  Overall average percent identity: {overall_avg_pident:.2f}%",
+                    f"  Would upload {record_count} record(s) (SIMULATION)",
                 )
+        else:
+            log_entries.append("  No valid records found in file after cleaning")
+
+    except pl.exceptions.ComputeError as e:
+        log_entries.append(f"  ERROR: Polars compute error - {e!s}")
+    except Exception as e:
+        log_entries.append(f"  ERROR: Failed to process file - {e!s}")
+        import traceback
+
+        log_entries.append(f"  Traceback: {traceback.format_exc()}")
 
     log_entries.append(
         "\nBLAST UPLOAD COMPLETE"
@@ -553,12 +514,7 @@ def main():
         else "\nBLAST SIMULATION COMPLETE - No actual upload performed",
     )
 
-    # Write log file
-    with open("blast_labkey_upload.log", "w") as f:
-        f.write("\n".join(log_entries))
-
-    # Also print to console
-    print("\n".join(log_entries))
+    _write_log(log_entries)
 
 
 if __name__ == "__main__":

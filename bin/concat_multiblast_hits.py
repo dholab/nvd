@@ -42,6 +42,19 @@ def has_data(filepath: str | Path) -> bool:
         return sum(1 for _ in f) > 1
 
 
+def first_header(blast_hits: list[str | Path]) -> str | None:
+    """Return the first header line from existing non-empty input files."""
+    for filepath in blast_hits:
+        path = Path(filepath)
+        if not path.exists() or path.stat().st_size == 0:
+            continue
+        with path.open(encoding="utf-8") as handle:
+            header = handle.readline()
+        if header:
+            return header.rstrip("\n")
+    return None
+
+
 def process_blast_file(filepath: str | Path) -> pl.LazyFrame:
     """Load and process a BLAST results file."""
     return (
@@ -78,10 +91,10 @@ def main() -> None:
     if concat_lf is not None:
         concat_lf.sink_csv(args.output_file, separator="\t")
     else:
-        # Create empty file with header
-        Path(args.output_file).write_text(
-            "task\tsample\tqseqid\tqlen\tsseqid\tstitle\tlength\tpident\tevalue\tbitscore\tsscinames\tstaxids\trank\n",
+        header = first_header(args.blast_hits) or (
+            "task\tsample\tqseqid\tqlen\tsseqid\tstitle\tlength\tpident\tevalue\tbitscore\tsscinames\tstaxids\trank"
         )
+        Path(args.output_file).write_text(f"{header}\n", encoding="utf-8")
 
 
 if __name__ == "__main__":

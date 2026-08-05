@@ -235,6 +235,11 @@ class NvdParams(BaseModel):
         description="Enable all preprocessing steps",
         json_schema_extra={"category": "Preprocessing"},
     )
+    merge_pairs: bool = Field(
+        default=False,
+        description="Merge overlapping paired-end reads before contig mapback",
+        json_schema_extra={"category": "Preprocessing"},
+    )
     dedup: bool = Field(
         default=False,
         description="Deduplicate reads (umbrella: enables both dedup_seq and dedup_pos)",
@@ -405,11 +410,6 @@ class NvdParams(BaseModel):
     labkey_blast_fasta_list: str | None = Field(
         None,
         description="LabKey list name for BLAST FASTA results",
-        json_schema_extra={"category": "LabKey"},
-    )
-    labkey_exp_id_guard_list: str | None = Field(
-        None,
-        description="LabKey list name for experiment ID guard",
         json_schema_extra={"category": "LabKey"},
     )
 

@@ -1,6 +1,6 @@
-include { ADD_READ_COUNTS_TO_BLAST; CONCATENATE_EXPERIMENT_BLAST; VIRUS_ENRICHMENT_REPORT } from "../modules/utils"
+include { ADD_READ_COUNTS_TO_BLAST; CONCATENATE_SAMPLE_BLAST_RESULTS; BUILD_QUERY_BIG_TABLE; BUILD_TAXON_BIG_TABLE; CONCATENATE_QUERY_BIG_TABLE; CONCATENATE_TAXON_BIG_TABLE; CONCATENATE_EXPERIMENT_BLAST_RESULTS; TARGET_ENRICHMENT_REPORT } from "../modules/utils"
 include { NOTIFY_SLACK } from "../modules/utils"
-include { RENDER_MERGED_TAXON_ABUNDANCE_SUNBURST; RENDER_TAXON_ABUNDANCE_SUNBURST; RENDER_SOURMASH_SANKEY } from "../modules/reporting"
+include { BUILD_SEQUENCE_FLOW; RENDER_MERGED_TAXON_ABUNDANCE_SUNBURST; RENDER_TAXON_ABUNDANCE_SUNBURST; RENDER_SOURMASH_SANKEY } from "../modules/reporting"
 include { CRUMBS_PROFILING } from "./crumbs_profiling"
 include { LIMS_INTEGRATION } from "./lims_integration"
 
@@ -8,14 +8,18 @@ workflow REPORTING {
     take:
     ch_blast_results
     ch_read_counts
-    ch_contig_sequences
+    ch_contig_sequences  // tuple(sample_id, platform, read_structure, fasta, lookup)
+    ch_query_fastas      // tuple(sample_id, platform, query_class, batch_fasta, lookup) from PREPARE_BLAST_QUERIES.out.queries
+    ch_query_lookups
     ch_contig_read_counts
     ch_filtered_bam
-    ch_virus_enrichment_stats
+    ch_no_contigs
+    ch_target_enrichment_stats
     ch_taxonomy_dir
     ch_run_ready
     ch_run_context
     ch_sourmash_tax_reports
+    ch_sequence_flow_evidence
     run_id
 
     main:
@@ -23,31 +27,85 @@ workflow REPORTING {
         NvdUtils.validateLabkeyBlast(params)
     }
 
+    ch_contig_sequence_parts = ch_contig_sequences.multiMap { sample_id, _platform, _read_structure, fasta, _lookup ->
+        for_lims: tuple(sample_id, fasta)
+    }
+
+    // Per-read-type query FASTAs (contig, merged, single) — the sequences
+    // that were actually BLASTed — for eager per-read-type LIMS upload.
+    ch_query_fastas_for_lims = ch_query_fastas.map { sample_id, _platform, query_class, batch_fasta, _lookup ->
+        tuple(sample_id, query_class, batch_fasta)
+    }
+
     // Enrich BLAST results with all pipeline metadata (mapped_reads, total_reads,
     // blast_db_version, nextflow_run_id) so the published TSV is complete
-    // regardless of whether LabKey is enabled.
+    // regardless of whether LabKey is enabled. This now runs per (sample_id,
+    // query_class) batch — before batches are stacked — so each read type's
+    // hits can be uploaded eagerly downstream.
     ch_blast_finalize = ch_blast_results
-        .join(ch_read_counts, by: 0)
-        .join(ch_contig_read_counts, by: 0)
+        .combine(ch_read_counts, by: 0)
+        .combine(ch_contig_read_counts, by: 0)
+        .combine(ch_query_lookups, by: 0)
+        .map { sample_id, query_class, batch_tsv, total_reads, contig_counts, lookups ->
+            tuple(sample_id, query_class, batch_tsv, total_reads, contig_counts, lookups)
+        }
 
-    ADD_READ_COUNTS_TO_BLAST(ch_blast_finalize, run_id)
+    ADD_READ_COUNTS_TO_BLAST(ch_blast_finalize, run_id)   // -> tuple(sample_id, query_class, batch.final.tsv)
 
-    ch_split_blast_results = ADD_READ_COUNTS_TO_BLAST.out
+    // Collapse query-class partitions into the canonical per-sample BLAST result.
+    CONCATENATE_SAMPLE_BLAST_RESULTS(
+        ADD_READ_COUNTS_TO_BLAST.out
+            .map { sample_id, _query_class, final_tsv -> tuple(sample_id, final_tsv) }
+            .groupTuple()
+    )
+
+    ch_sample_blast_results = CONCATENATE_SAMPLE_BLAST_RESULTS.out
         .multiMap { sample_id, blast_tsv ->
             for_summary: tuple(sample_id, blast_tsv)
-            for_labkey_trigger: tuple(sample_id, blast_tsv)
-            for_labkey_upload: tuple(sample_id, blast_tsv)
+            for_big_table: tuple(sample_id, blast_tsv)
             for_emit: tuple(sample_id, blast_tsv)
+            for_lims: tuple(sample_id, blast_tsv)
         }
 
     // Concatenate all per-sample final BLAST results into a single experiment-level TSV.
     // Runs unconditionally so every run produces an experiment summary, not just LabKey runs.
-    CONCATENATE_EXPERIMENT_BLAST(
-        ch_split_blast_results.for_summary.map { _sample_id, tsv -> tsv }.collect()
+    CONCATENATE_EXPERIMENT_BLAST_RESULTS(
+        ch_sample_blast_results.for_summary.map { _sample_id, tsv -> tsv }.collect()
     )
 
-    VIRUS_ENRICHMENT_REPORT(
-        ch_virus_enrichment_stats.map { _sample_id, json -> json }.collect()
+    if (params.experimental == true) {
+        BUILD_SEQUENCE_FLOW(ch_sequence_flow_evidence.collect())
+
+        CRUMBS_PROFILING(
+            ch_sample_blast_results.for_emit,
+            ch_filtered_bam,
+            ch_no_contigs,
+            ch_taxonomy_dir,
+        )
+
+        ch_query_big_table_inputs = ch_sample_blast_results.for_big_table
+            .join(CRUMBS_PROFILING.out.queries, by: 0)
+            .map { sample_id, blast_tsv, crumbs_tsv -> tuple(sample_id, blast_tsv, crumbs_tsv) }
+
+        BUILD_QUERY_BIG_TABLE(ch_query_big_table_inputs)
+
+        CONCATENATE_QUERY_BIG_TABLE(
+            BUILD_QUERY_BIG_TABLE.out.map { _sample_id, tsv -> tsv }.collect()
+        )
+
+        ch_taxon_big_table_inputs = BUILD_QUERY_BIG_TABLE.out
+            .join(CRUMBS_PROFILING.out.taxa, by: 0)
+            .map { sample_id, query_big_table, crumbs_taxa_tsv -> tuple(sample_id, query_big_table, crumbs_taxa_tsv) }
+
+        BUILD_TAXON_BIG_TABLE(ch_taxon_big_table_inputs)
+
+        CONCATENATE_TAXON_BIG_TABLE(
+            BUILD_TAXON_BIG_TABLE.out.map { _sample_id, tsv -> tsv }.collect()
+        )
+    }
+
+    TARGET_ENRICHMENT_REPORT(
+        ch_target_enrichment_stats.map { _sample_id, json -> json }.collect()
     )
 
     if (params.experimental == true) {
@@ -69,16 +127,13 @@ workflow REPORTING {
 
         RENDER_MERGED_TAXON_ABUNDANCE_SUNBURST(ch_merged_taxburst_input)
 
-        CRUMBS_PROFILING(
-            ch_split_blast_results.for_emit,
-            ch_filtered_bam,
-            ch_taxonomy_dir,
-        )
     }
 
     LIMS_INTEGRATION(
-        ch_split_blast_results.for_labkey_upload,
-        ch_contig_sequences,
+        ADD_READ_COUNTS_TO_BLAST.out,
+        ch_sample_blast_results.for_lims,
+        ch_contig_sequence_parts.for_lims,
+        ch_query_fastas_for_lims,
         params.experiment_id,
         run_id,
         ch_run_ready,
@@ -89,7 +144,7 @@ workflow REPORTING {
     )
 
     ch_slack_trigger = params.slack_enabled && params.slack_channel && params.labkey
-        ? LIMS_INTEGRATION.out.registered
+        ? LIMS_INTEGRATION.out.uploads_done
         : channel.empty()
 
     NOTIFY_SLACK(
@@ -99,16 +154,21 @@ workflow REPORTING {
     )
 
     emit:
-    blast_results = ch_split_blast_results.for_emit
-    experiment_blast = CONCATENATE_EXPERIMENT_BLAST.out.concatenated_tsv
-    virus_enrichment_report = VIRUS_ENRICHMENT_REPORT.out.summary_tsv
+    blast_results = ch_sample_blast_results.for_emit
+    query_big_tables = params.experimental ? BUILD_QUERY_BIG_TABLE.out : channel.empty()
+    query_big_table = params.experimental ? CONCATENATE_QUERY_BIG_TABLE.out.concatenated_tsv : channel.empty()
+    taxon_big_tables = params.experimental ? BUILD_TAXON_BIG_TABLE.out : channel.empty()
+    taxon_big_table = params.experimental ? CONCATENATE_TAXON_BIG_TABLE.out.concatenated_tsv : channel.empty()
+    experiment_blast = CONCATENATE_EXPERIMENT_BLAST_RESULTS.out.concatenated_tsv
+    sequence_flow = params.experimental ? BUILD_SEQUENCE_FLOW.out.sequence_flow : channel.empty()
+    target_enrichment_report = TARGET_ENRICHMENT_REPORT.out.summary_tsv
     taxon_abundance_sunbursts = params.experimental ? RENDER_TAXON_ABUNDANCE_SUNBURST.out.reports : channel.empty()
     merged_taxon_abundance_sunburst = params.experimental ? RENDER_MERGED_TAXON_ABUNDANCE_SUNBURST.out.report : channel.empty()
     sourmash_sankey_reports = params.experimental ? RENDER_SOURMASH_SANKEY.out.report : channel.empty()
     labkey_log = LIMS_INTEGRATION.out.upload_log
     final_labkey_log = LIMS_INTEGRATION.out.final_labkey_log
-    labkey_registered = LIMS_INTEGRATION.out.registered
-    crumbs_contigs = params.experimental ? CRUMBS_PROFILING.out.contigs : channel.empty()
+    labkey_uploads_done = LIMS_INTEGRATION.out.uploads_done
+    crumbs_queries = params.experimental ? CRUMBS_PROFILING.out.queries : channel.empty()
     crumbs_taxa = params.experimental ? CRUMBS_PROFILING.out.taxa : channel.empty()
     crumbs_bioboxes_profile = params.experimental ? CRUMBS_PROFILING.out.bioboxes_profile : channel.empty()
     crumbs_qc = params.experimental ? CRUMBS_PROFILING.out.qc : channel.empty()

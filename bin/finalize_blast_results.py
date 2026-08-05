@@ -2,15 +2,20 @@
 """
 Enrich merged BLAST results with pipeline metadata columns.
 
-Appends per-contig mapped read counts (joined by qseqid), sample-level
-total reads, BLAST database version, and workflow run identifier to each
-row. The output TSV is the canonical final BLAST result — complete
+Appends per-query metadata, per-contig mapped read counts (joined by qseqid),
+sample-level total reads, BLAST database version, and workflow run identifier to
+each row. The output TSV is the canonical final BLAST result — complete
 regardless of whether LabKey is enabled.
 """
 
 import argparse
 import csv
+import sqlite3
 from pathlib import Path
+
+MIN_CONTIG_COUNT_COLUMNS = 2
+READ_QUERY_CLASSES = frozenset({"overlap_merged_pair", "single_read"})
+READ_QUERY_PREFIXES = ("nvdMergeReadQuery_", "nvdReadQuery_")
 
 
 def load_contig_counts(contig_counts_path: Path) -> dict[str, str]:
@@ -20,12 +25,39 @@ def load_contig_counts(contig_counts_path: Path) -> dict[str, str]:
         with open(contig_counts_path) as f:
             for line in f:
                 parts = line.strip().split("\t")
-                if len(parts) >= 2:
+                if len(parts) >= MIN_CONTIG_COUNT_COLUMNS:
                     contig_counts[parts[0]] = parts[1]
     return contig_counts
 
 
-def main():
+def load_query_metadata(query_lookup_paths: list[Path]) -> dict[str, dict[str, str]]:
+    """Load query sequence metadata keyed by stable BLAST query ID."""
+    queries: dict[str, dict[str, str]] = {}
+    for query_lookup_path in query_lookup_paths:
+        with sqlite3.connect(query_lookup_path) as connection:
+            connection.row_factory = sqlite3.Row
+            rows = connection.execute(
+                """
+                select qseqid, query_class, producer, source_id, support_record_count
+                from query_sequences
+                """,
+            ).fetchall()
+        for row in rows:
+            if row["qseqid"] in queries:
+                message = f"duplicate qseqid across query lookups: {row['qseqid']!r}"
+                raise ValueError(message)
+            queries[row["qseqid"]] = dict(row)
+    return queries
+
+
+def is_read_query(qseqid: str, metadata: dict[str, str]) -> bool:
+    """Return whether a query can be finalized without contig mapback counts."""
+    return metadata.get("query_class") in READ_QUERY_CLASSES or qseqid.startswith(
+        READ_QUERY_PREFIXES,
+    )
+
+
+def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         description="Enrich merged BLAST results with pipeline metadata.",
     )
@@ -38,14 +70,20 @@ def main():
     parser.add_argument(
         "--contig-counts",
         type=Path,
-        required=True,
-        help="Two-column TSV of contig_id and mapped read count",
+        help="Optional two-column TSV of qseqid and mapped read count",
     )
     parser.add_argument(
         "--output",
         type=Path,
         required=True,
         help="Output enriched BLAST TSV",
+    )
+    parser.add_argument(
+        "--query-lookup",
+        type=Path,
+        action="append",
+        default=[],
+        help="Per-sample SQLite lookup keyed by qseqid. Repeat for multiple query batches.",
     )
     parser.add_argument(
         "--total-reads",
@@ -67,11 +105,16 @@ def main():
         required=True,
         help="Workflow run identifier",
     )
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
-    contig_counts = load_contig_counts(args.contig_counts)
+    contig_counts = load_contig_counts(args.contig_counts) if args.contig_counts else {}
+    queries_by_qseqid = load_query_metadata(args.query_lookup)
 
     metadata_columns = [
+        "query_class",
+        "producer",
+        "source_id",
+        "support_record_count",
         "mapped_reads",
         "total_reads",
         "blast_db_version",
@@ -88,7 +131,16 @@ def main():
         )
         writer.writeheader()
         for row in reader:
-            row["mapped_reads"] = contig_counts.get(row.get("qseqid", ""), "0")
+            qseqid = row.get("qseqid", "")
+            query = queries_by_qseqid.get(qseqid, {})
+            if args.contig_counts is None and not is_read_query(qseqid, query):
+                message = f"contig query requires mapped-read counts: {qseqid}"
+                raise ValueError(message)
+            row["query_class"] = query.get("query_class", "")
+            row["producer"] = query.get("producer", "")
+            row["source_id"] = query.get("source_id", "")
+            row["support_record_count"] = query.get("support_record_count", "")
+            row["mapped_reads"] = contig_counts.get(qseqid, "0")
             row["total_reads"] = args.total_reads
             row["blast_db_version"] = args.blast_db_version
             row["virus_index_version"] = args.virus_index_version

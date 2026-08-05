@@ -375,6 +375,12 @@ def run(
         help="Trim Illumina adapters (default: follows --preprocess)",
         rich_help_panel=PANEL_PREPROCESSING,
     ),
+    merge_pairs: bool | None = typer.Option(
+        None,
+        "--merge-pairs/--no-merge-pairs",
+        help="Merge overlapping paired-end reads before contig mapback",
+        rich_help_panel=PANEL_PREPROCESSING,
+    ),
     host_index: Path | None = typer.Option(
         None,
         "--host-index",
@@ -478,12 +484,6 @@ def run(
         None,
         "--labkey-blast-fasta-list",
         help="LabKey list name for BLAST FASTA results",
-        rich_help_panel=PANEL_LABKEY,
-    ),
-    labkey_exp_id_guard_list: str | None = typer.Option(
-        None,
-        "--labkey-exp-id-guard-list",
-        help="LabKey list name for experiment ID guard (prevents duplicate uploads)",
         rich_help_panel=PANEL_LABKEY,
     ),
     # -------------------------------------------------------------------------
@@ -651,6 +651,7 @@ def run(
         "dedup_seq": dedup_seq,
         "dedup_pos": dedup_pos,
         "trim_adapters": trim_adapters,
+        "merge_pairs": merge_pairs,
         "host_index": host_index,
         "host_index_url": host_index_url,
         "host_contaminants_fasta": host_contaminants_fasta,
@@ -669,7 +670,6 @@ def run(
         "labkey_schema": labkey_schema,
         "labkey_blast_meta_hits_list": labkey_blast_meta_hits_list,
         "labkey_blast_fasta_list": labkey_blast_fasta_list,
-        "labkey_exp_id_guard_list": labkey_exp_id_guard_list,
         # Notifications
         "slack_enabled": False if no_slack else None,  # Only override if --no-slack
         "slack_channel": slack_channel,

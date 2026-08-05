@@ -7,7 +7,7 @@ authors = [
   { name = "William Gardner", email = "wkgardner@wisc.edu" },
 ]
 requires-python = ">= 3.11, < 3.14"
-version = "3.2.1"
+version = "3.3.0"
 dependencies = [
   "altair>=6.1.0",
   "biopython>=1.85",
@@ -16,7 +16,6 @@ dependencies = [
   "labkey>=3.4.0",
   "loguru>=0.7.3",
   "lxml>=5.4.0",
-  "more-itertools>=10.7.0",
   "numpy>=2.0.0",
   "pandas>=2.2.3",
   "polars>=1.27.1",
@@ -70,6 +69,7 @@ taxburst = ">=0.3.2,<0.4"
 # conda side so Pixi can use platform packages instead of building PyQt from
 # source for linux-aarch64 and other headless pipeline platforms.
 pyqt = ">=5.15.11,<6"
+vsearch = ">=2.31.0,<3"
 
 # ----------------------------------------------------------------------------------- #
 
@@ -96,8 +96,9 @@ python = "3.12.*"
 dev = { features = ["dev"], solve-group = "default" }
 
 [tool.pixi.tasks]
-e2e-test = "NVD_E2E_SHOW_PROGRESS=1 pytest tests/test_nextflow_integration.py -m 'slow and network' -q -s"
-e2e-test-ci = "pytest tests/test_nextflow_integration.py -m 'slow and network' -q"
+e2e-test = "NVD_E2E_SHOW_PROGRESS=1 pytest tests/test_nextflow_integration.py -m 'slow and network and not labkey' -q -s"
+e2e-test-ci = "pytest tests/test_nextflow_integration.py -m 'slow and network and not labkey' -q"
+e2e-labkey-test = "NVD_E2E_SHOW_PROGRESS=1 pytest tests/test_nextflow_integration.py -m 'slow and network and labkey' -q -s"
 
 [dependency-groups]
 dev = [
@@ -151,6 +152,7 @@ testpaths = ["lib/py_nvd", "bin", "tests"]
 markers = [
   "slow: marks tests as slow (deselect with '-m \"not slow\"')",
   "network: marks tests as requiring network access (deselect with '-m \"not network\"')",
+  "labkey: LIMS/LabKey end-to-end tests; run via 'just e2e-labkey', excluded from 'just e2e' and CI (which have no LabKey credentials)",
 ]
 
 [tool.basedpyright]

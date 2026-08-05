@@ -20,7 +20,7 @@ process LABKEY_VALIDATE_BLAST_HITS_LIST {
         --list '${params.labkey_blast_meta_hits_list}' \
         --api_key \$LABKEY_API_KEY \
         --experiment_id ${params.experiment_id} \
-        --type blast > blast_validation_report.txt 2>&1
+        --type blast
     """
 }
 
@@ -42,55 +42,7 @@ process LABKEY_VALIDATE_BLAST_FASTA_LIST {
         --list '${params.labkey_blast_fasta_list}' \
         --api_key \$LABKEY_API_KEY \
         --experiment_id ${params.experiment_id} \
-        --type blast_fasta > fasta_validation_report.txt 2>&1
-    """
-}
-
-process LABKEY_VALIDATE_EXPERIMENT_FRESH {
-    cache false
-    secret 'LABKEY_API_KEY'
-    tag "exp_${params.experiment_id}"
-    label "low"
-
-    input:
-    val trigger
-
-    output:
-    val true, emit: validated
-
-    script:
-    """
-    labkey_check_guard_list.py \
-        --mode check \
-        --server ${params.labkey_server} \
-        --container ${params.labkey_project_name} \
-        --guard_list ${params.labkey_exp_id_guard_list} \
-        --api_key \$LABKEY_API_KEY \
-        --experiment_id ${params.experiment_id}
-    """
-}
-
-process LABKEY_REGISTER_EXPERIMENT {
-    cache false
-    secret 'LABKEY_API_KEY'
-    tag "exp_${params.experiment_id}"
-    label 'low'
-
-    input:
-    val upload_complete
-
-    output:
-    val true, emit: registered
-
-    script:
-    """
-    labkey_check_guard_list.py \
-        --mode register \
-        --server ${params.labkey_server} \
-        --container ${params.labkey_project_name} \
-        --guard_list ${params.labkey_exp_id_guard_list} \
-        --api_key \$LABKEY_API_KEY \
-        --experiment_id ${params.experiment_id}
+        --type blast_fasta
     """
 }
 
@@ -123,6 +75,29 @@ process LABKEY_WEBDAV_UPLOAD_BLAST {
     """
 }
 
+process LABKEY_WEBDAV_UPLOAD_QUERY_FASTA {
+    tag "${sample_id}, ${query_class}"
+    label 'low'
+    secret 'LABKEY_API_KEY'
+
+    input:
+    tuple val(sample_id), val(query_class), path(query_fasta)
+    val validation_complete
+
+    output:
+    path "${query_fasta}.gz", emit: published
+
+    script:
+    """
+    gzip -c ${query_fasta} > ${query_fasta}.gz
+
+    webdav_CLIent.py \
+        --password \$LABKEY_API_KEY \
+        --server ${params.labkey_webdav} \
+        upload ${query_fasta}.gz ${params.experiment_id}/${sample_id}/nvd/${query_fasta}.gz
+    """
+}
+
 process LABKEY_WEBDAV_UPLOAD_CONCATENATED {
     label 'low'
     secret 'LABKEY_API_KEY'
@@ -151,23 +126,25 @@ process LABKEY_PREPARE_BLAST {
      * The input TSV already contains mapped_reads, total_reads, blast_db_version,
      * and nextflow_run_id from upstream ADD_READ_COUNTS_TO_BLAST.
      * This process only adds experiment_id and converts TSV → CSV.
+     * Runs per (sample_id, query_class) batch so each read type can be
+     * uploaded eagerly downstream.
      */
-    tag "$meta"
+    tag "$meta.$query_class"
     label 'low'
 
     input:
-    tuple val(meta), path(blast_tsv), val(output_name)
+    tuple val(meta), val(query_class), path(blast_tsv)
     val experiment_id
     val validation_complete
 
     output:
-    tuple val(meta), path(output_name), emit: csv
+    tuple val(meta), val(query_class), path("${meta}.${query_class}_blast_labkey.csv"), emit: csv
 
     script:
     """
     prepare_blast_labkey.py \
         --blast-csv ${blast_tsv} \
-        --output ${output_name} \
+        --output ${meta}.${query_class}_blast_labkey.csv \
         --meta '${meta}' \
         --experiment-id ${experiment_id}
     """
@@ -244,12 +221,14 @@ process LABKEY_PREPARE_FASTA {
 }
 
 process LABKEY_UPLOAD_BLAST {
-    tag "${sample_id}"
+    tag "${sample_id}, ${query_class}"
     label 'low'
     secret 'LABKEY_API_KEY'
+    errorStrategy 'retry'
+    maxRetries 2
 
     input:
-    tuple val(sample_id), path(csv_file)
+    tuple val(sample_id), val(query_class), path(csv_file)
     val experiment_id
 
     output:
@@ -259,6 +238,9 @@ process LABKEY_UPLOAD_BLAST {
     """
     labkey_upload_blast_results.py \
         --experiment-id '${experiment_id}' \
+        --sample-id '${sample_id}' \
+        --query-class '${query_class}' \
+        --csv '${csv_file}' \
         --labkey-server '${params.labkey_server}' \
         --labkey-project-name '${params.labkey_project_name}' \
         --labkey-api-key \$LABKEY_API_KEY \
@@ -272,6 +254,8 @@ process LABKEY_UPLOAD_FASTA {
     tag "${sample_id}"
     label 'low'
     secret 'LABKEY_API_KEY'
+    errorStrategy 'retry'
+    maxRetries 2
 
     input:
     tuple val(sample_id), path(csv_file)
@@ -284,6 +268,7 @@ process LABKEY_UPLOAD_FASTA {
     """
     labkey_upload_blast_fasta.py \
         --experiment-id '${experiment_id}' \
+        --sample-id '${sample_id}' \
         --labkey-server '${params.labkey_server}' \
         --labkey-project-name '${params.labkey_project_name}' \
         --labkey-api-key \$LABKEY_API_KEY \

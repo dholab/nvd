@@ -3,21 +3,46 @@
 # requires-python = ">=3.12"
 # dependencies = [
 #     "labkey>=4.0.1",
-#     "more-itertools>=10.8.0",
 # ]
 # ///
 
 import argparse
 import csv
 import os
+import sys
 from datetime import datetime
 
-import more_itertools
+from py_nvd.labkey_io import insert_records, rows_present
+
+
+def sample_already_uploaded(query_api, schema, table, experiment, sample_id) -> bool:
+    """True if the FASTA list already holds this sample's contigs (its ledger).
+
+    FASTA is contig-only: one unit per sample, so presence is checked by
+    (experiment, sample_id) alone (no query_class). Reuses the guard script's
+    filter fallbacks (QueryFilter objects, then filter-string syntax) so this
+    still works against older labkey-api-python versions.
+    """
+    return rows_present(
+        query_api,
+        schema,
+        table,
+        {"experiment": experiment, "sample_id": sample_id},
+    )
+
+
+def _write_log(log_entries: list[str]) -> None:
+    """Write the accumulated log entries to the upload log file and stdout."""
+    text = "\n".join(log_entries)
+    with open("fasta_labkey_upload.log", "w") as f:
+        f.write(text)
+    print(text)
 
 
 def main():
     parser = argparse.ArgumentParser(description="Upload FASTA CSVs to LabKey.")
     parser.add_argument("--experiment-id", required=True)
+    parser.add_argument("--sample-id", required=True)
     parser.add_argument("--labkey-server", required=True)
     parser.add_argument("--labkey-project-name", required=True)
     parser.add_argument("--labkey-api-key", required=True)
@@ -28,6 +53,7 @@ def main():
     log_entries = [
         f"LabKey FASTA Upload Log - {datetime.now()}",
         f"Experiment ID: {args.experiment_id}",
+        f"Sample: {args.sample_id}",
         f"Server: {args.labkey_server}",
         f"Project: {args.labkey_project_name}",
         f"Target Table: {args.table_name}",
@@ -56,6 +82,23 @@ def main():
             "No LabKey credentials provided - running in simulation mode",
         )
 
+    # The destination list is its own completion ledger. If this sample already
+    # has rows there, a prior run already uploaded its contigs: skip
+    # re-inserting rather than risk duplicating the FASTA list.
+    if upload_enabled and sample_already_uploaded(
+        api.query,
+        args.labkey_schema,
+        args.table_name,
+        int(args.experiment_id),
+        args.sample_id,
+    ):
+        log_entries.append(
+            f"SKIP: sample already uploaded (exp={args.experiment_id}, "
+            f"sample={args.sample_id}); no insert.",
+        )
+        _write_log(log_entries)
+        return
+
     csv_files = [
         f for f in os.listdir(".") if f.endswith(".csv") and "fasta" in f.lower()
     ]
@@ -83,27 +126,27 @@ def main():
                     )
 
                     if upload_enabled:
-                        batch_size = 1000
-                        record_chunks = list(
-                            more_itertools.chunked(records, batch_size),
-                        )
-                        success_count = 0
-                        for i, chunk in enumerate(record_chunks, 1):
-                            try:
-                                api.query.insert_rows(
-                                    schema_name=args.labkey_schema,
-                                    query_name=args.table_name,
-                                    rows=chunk,
-                                )
-                                log_entries.append(
-                                    f"    Batch {i}/{len(record_chunks)}: SUCCESS ({len(chunk)} records)",
-                                )
-                                success_count += len(chunk)
-                            except Exception as e:
-                                log_entries.append(
-                                    f"    Batch {i}/{len(record_chunks)}: ERROR - {e!s}",
-                                )
-                        total_records_uploaded += success_count
+                        # Insert the whole file atomically: chunking only adds
+                        # partial-failure risk (some rows committed, some not)
+                        # without a throughput benefit at this batch size.
+                        try:
+                            insert_records(
+                                api.query, args.labkey_schema, args.table_name, records,
+                            )
+                        except Exception as e:
+                            log_entries.append(f"  Upload: ERROR - {e!s}")
+                            log_entries.append(
+                                "\nFASTA UPLOAD FAILED - insert error, see above (no rows committed)",
+                            )
+                            _write_log(log_entries)
+                            print(
+                                f"ERROR: LabKey insert failed for "
+                                f"sample={args.sample_id}: {e!s}",
+                                file=sys.stderr,
+                            )
+                            sys.exit(1)
+                        log_entries.append(f"  Upload: SUCCESS ({len(records)} records)")
+                        total_records_uploaded += record_count
 
                     else:
                         num_batches = (record_count + 999) // 1000
@@ -129,8 +172,7 @@ def main():
         else "FASTA SIMULATION COMPLETE - No actual upload performed",
     ]
 
-    with open("fasta_labkey_upload.log", "w") as f:
-        f.write("\n".join(log_entries))
+    _write_log(log_entries)
 
 
 if __name__ == "__main__":
