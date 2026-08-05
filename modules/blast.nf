@@ -71,7 +71,7 @@ process ANNOTATE_MEGABLAST_RESULTS {
 process SELECT_TOP_BLAST_HITS {
 
   tag "${sample_id}"
-  label "low"
+  label "medium"
 
   errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
   maxRetries 2

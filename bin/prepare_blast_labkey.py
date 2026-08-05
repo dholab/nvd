@@ -64,6 +64,7 @@ def main():
 
         with open(args.blast_csv) as f:
             reader = csv.DictReader(f, delimiter="\t")
+            input_columns = reader.fieldnames
 
             for row in reader:
                 row_count += 1
@@ -78,16 +79,29 @@ def main():
                 record.update(rename_columns(row))
                 records.append(record)
 
+        if input_columns is None:
+            logger.error(
+                f"{args.blast_csv} has no header row; cannot determine LabKey columns",
+            )
+            sys.exit(1)
+
+        # The header is written even when there are no records. Samples with zero
+        # BLAST hits (water/negative controls) are legitimate, but a 0-byte CSV
+        # aborts the experiment-wide concat in
+        # LABKEY_CONCAT_ALL_SAMPLE_BLAST_RESULTS with "NoDataError: empty CSV".
+        # A header-only file can concatenate as a zero-row contribution when the
+        # concat reads every prepared CSV column as a string.
+        fieldnames = ["experiment", *(COLUMN_RENAMES.get(c, c) for c in input_columns)]
+
+        with open(args.output, "w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(records)
+
         if records:
-            fieldnames = list(records[0].keys())
-            with open(args.output, "w", newline="") as f:
-                writer = csv.DictWriter(f, fieldnames=fieldnames)
-                writer.writeheader()
-                writer.writerows(records)
             logger.info(f"Wrote {len(records)} records to {args.output}")
         else:
-            args.output.touch()
-            logger.warning(f"No valid records. Created empty file: {args.output}")
+            logger.warning(f"No valid records. Wrote header-only file: {args.output}")
 
         logger.info(
             f"Processed {row_count} rows: {len(records)} valid, {skipped_count} skipped",

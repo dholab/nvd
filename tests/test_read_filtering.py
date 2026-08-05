@@ -21,6 +21,8 @@ pytestmark = pytest.mark.skipif(
 HIGH_COMPLEXITY = "ACGTTGCAGATCGTAGCTAGGCTAACGATCGTACGGCATTCGATGCTAGCATCGTACGTA"
 LOW_COMPLEXITY = "T" * len(HIGH_COMPLEXITY)
 DINUCLEOTIDE_REPEAT = "AC" * (len(HIGH_COMPLEXITY) // 2)
+ILLUMINA_ADAPTER = "AGATCGGAAGAGCACACGTCTGAACTCCAGTCAC"
+SECOND_MATE = 2
 
 
 def write_fastq(path: Path, records: list[tuple[str, str, str]]) -> None:
@@ -81,6 +83,159 @@ workflow {{
     assert len(outputs) == 1, outputs
     with gzip.open(outputs[0], "rt", encoding="utf-8") as handle:
         return handle.read()
+
+
+def run_dedup(
+    tmp_path: Path,
+    records: list[tuple[str, str, str]],
+) -> str:
+    """Run the public DEDUP_WITH_CLUMPIFY process and return its FASTQ text."""
+    reads = tmp_path / "reads.fastq.gz"
+    write_fastq(reads, records)
+
+    workflow = tmp_path / "main.nf"
+    workflow.write_text(
+        f"""\
+nextflow.enable.dsl = 2
+
+include {{ DEDUP_WITH_CLUMPIFY }} from '{BBMAP_MODULE}'
+
+workflow {{
+    DEDUP_WITH_CLUMPIFY(Channel.of(tuple('sample_A', 'illumina', 'single', file('{reads}'))))
+}}
+""",
+        encoding="utf-8",
+    )
+
+    environment = os.environ.copy()
+    environment["NXF_ANSI_LOG"] = "false"
+    completed = subprocess.run(  # noqa: S603
+        ["nextflow", "-C", "/dev/null", "run", str(workflow)],  # noqa: S607
+        cwd=tmp_path,
+        env=environment,
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=45,
+    )
+
+    diagnostics = f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}"
+    assert completed.returncode == 0, diagnostics
+    outputs = list((tmp_path / "work").glob("**/sample_A.dedup.fastq.gz"))
+    assert len(outputs) == 1, outputs
+    with gzip.open(outputs[0], "rt", encoding="utf-8") as handle:
+        return handle.read()
+
+
+@pytest.mark.skipif(
+    shutil.which("clumpify.sh") is None,
+    reason="DEDUP_WITH_CLUMPIFY behavior requires locked BBTools",
+)
+def test_clumpify_deduplicates_only_exact_sequences_independent_of_name(
+    tmp_path: Path,
+) -> None:
+    """Different names collapse only when their read sequences are exact duplicates."""
+    near_match = HIGH_COMPLEXITY[:-1] + ("A" if HIGH_COMPLEXITY[-1] != "A" else "C")
+    output = run_dedup(
+        tmp_path,
+        [
+            ("first-name", HIGH_COMPLEXITY, "I" * len(HIGH_COMPLEXITY)),
+            ("second-name", HIGH_COMPLEXITY, "I" * len(HIGH_COMPLEXITY)),
+            ("near-match", near_match, "I" * len(near_match)),
+        ],
+    )
+    sequences = output.splitlines()[1::4]
+
+    assert sorted(sequences) == sorted([HIGH_COMPLEXITY, near_match])
+
+
+def run_adapter_trim(
+    tmp_path: Path,
+    records: list[tuple[str, str, str]],
+    *,
+    read_structure: str,
+) -> str:
+    """Run the public TRIM_ADAPTERS process and return its FASTQ text."""
+    reads = tmp_path / "reads.fastq.gz"
+    write_fastq(reads, records)
+
+    workflow = tmp_path / "main.nf"
+    workflow.write_text(
+        f"""\
+nextflow.enable.dsl = 2
+
+include {{ TRIM_ADAPTERS }} from '{BBMAP_MODULE}'
+
+workflow {{
+    TRIM_ADAPTERS(Channel.of(tuple('sample_A', 'illumina', '{read_structure}', file('{reads}'))))
+}}
+""",
+        encoding="utf-8",
+    )
+
+    environment = os.environ.copy()
+    environment["NXF_ANSI_LOG"] = "false"
+    completed = subprocess.run(  # noqa: S603
+        ["nextflow", "-C", "/dev/null", "run", str(workflow)],  # noqa: S607
+        cwd=tmp_path,
+        env=environment,
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=45,
+    )
+
+    diagnostics = f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}"
+    assert completed.returncode == 0, diagnostics
+    outputs = list((tmp_path / "work").glob("**/sample_A.trimmed.fastq.gz"))
+    assert len(outputs) == 1, outputs
+    with gzip.open(outputs[0], "rt", encoding="utf-8") as handle:
+        return handle.read()
+
+
+@pytest.mark.parametrize("adapter_mate", [1, SECOND_MATE])
+def test_adapter_trimming_removes_complete_interleaved_pair_when_either_mate_matches(
+    tmp_path: Path,
+    adapter_mate: int,
+) -> None:
+    """An adapter-only mate removes its complete SRA-style interleaved pair."""
+    records = [
+        (
+            "spot.1",
+            ILLUMINA_ADAPTER if adapter_mate == 1 else HIGH_COMPLEXITY,
+            "I"
+            * (len(ILLUMINA_ADAPTER) if adapter_mate == 1 else len(HIGH_COMPLEXITY)),
+        ),
+        (
+            "spot.2",
+            ILLUMINA_ADAPTER if adapter_mate == SECOND_MATE else HIGH_COMPLEXITY,
+            "I"
+            * (
+                len(ILLUMINA_ADAPTER)
+                if adapter_mate == SECOND_MATE
+                else len(HIGH_COMPLEXITY)
+            ),
+        ),
+    ]
+
+    output = run_adapter_trim(tmp_path, records, read_structure="interleaved")
+
+    assert output == ""
+
+
+def test_adapter_trimming_keeps_single_read_batches_unpaired(tmp_path: Path) -> None:
+    """SRA-style suffixes do not make independent single reads into a pair."""
+    output = run_adapter_trim(
+        tmp_path,
+        [
+            ("spot.1", ILLUMINA_ADAPTER, "I" * len(ILLUMINA_ADAPTER)),
+            ("spot.2", HIGH_COMPLEXITY, "I" * len(HIGH_COMPLEXITY)),
+        ],
+        read_structure="single",
+    )
+
+    assert "@spot.1\n" not in output
+    assert "@spot.2\n" in output
 
 
 def test_entropy_filter_does_not_enable_quality_filtering(tmp_path: Path) -> None:
@@ -214,6 +369,4 @@ def test_either_filter_family_schedules_filter_reads() -> None:
         encoding="utf-8",
     )
 
-    assert (
-        "params.filter_reads || params.filter_low_complexity_reads" in preprocessing
-    )
+    assert "params.filter_reads || params.filter_low_complexity_reads" in preprocessing

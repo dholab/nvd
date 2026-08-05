@@ -1089,8 +1089,8 @@ main() {
 	local nvd_bin="${NVD_REPO}/.pixi/envs/default/bin/nvd"
 	if [[ "$DRY_RUN" == "true" ]]; then
 		print_info "[DRY RUN] Would run: ${nvd_bin} setup"
-	elif "${nvd_bin}" setup --help &>/dev/null; then
-		run_interactive_command "${nvd_bin}" setup
+	elif env -u NVD_PIPELINE_ROOT NVD_REPO="$NVD_REPO" "${nvd_bin}" setup --help &>/dev/null; then
+		run_interactive_command env -u NVD_PIPELINE_ROOT NVD_REPO="$NVD_REPO" "${nvd_bin}" setup
 	else
 		print_warning "nvd setup command not available in this version"
 		print_info "You may need to run 'nvd setup' manually after updating"
