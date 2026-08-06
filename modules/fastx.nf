@@ -20,6 +20,7 @@ process PROFILE_FASTX {
     profile_fastx.py \
         --sample-id '${meta.id}' \
         --stage '${meta.profile_stage}' \
+        --input-format '${meta.profile_format}' \
         ${output_prefix_arg} \
         ${threshold_args} \
         --input ${reads}
@@ -33,6 +34,31 @@ process PROFILE_FASTX {
             ln -s ../"\${artifact}" publish/"\${artifact}"
         done
     fi
+    """
+}
+
+process PROFILE_ASSEMBLY_FASTA_FOR_REPORT {
+
+    tag "${sample_id}, ${producer}"
+    label "low"
+
+    errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
+    maxRetries 2
+
+    input:
+    tuple val(sample_id), val(platform), val(read_structure), val(producer), path(fasta)
+
+    output:
+    tuple val(sample_id), val(platform), val(read_structure), val(producer), path("*.fastx_profile.json"), path("*.length_histogram.tsv"), path("*.sequence_count.txt"), emit: profiled
+
+    script:
+    """
+    profile_fastx.py \
+        --sample-id '${sample_id}' \
+        --stage assembly \
+        --input-format fasta \
+        --output-prefix '${sample_id}.${producer}.assembly' \
+        --input ${fasta}
     """
 }
 

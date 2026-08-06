@@ -26,10 +26,15 @@ REQUIRED_QUERY_COLUMNS = {
     "assigned_taxid",
     "assigned_taxid_name",
     "assigned_taxid_rank",
+    "who_risk_group",
     "support_tier",
     "query_class",
     "crumbs_score",
     "qlen",
+    "best_hit_reference_accession",
+    "best_hit_reference_length",
+    "best_hit_reference_start_1based",
+    "best_hit_reference_end_1based",
 }
 OUTPUT_COLUMNS = [
     "sample_id",
@@ -40,6 +45,7 @@ OUTPUT_COLUMNS = [
     "relative_crumbs_percent",
     "supporting_query_count",
     "taxid",
+    "who_risk_group",
     "total_query_span",
     "total_crumbs_score",
     "strong_query_count",
@@ -63,6 +69,18 @@ SUPPORT_TIER_ORDER = {
     "redacted": 5,
 }
 MULTI_QUERY_STRONG_MIN = 2
+QUERY_TAXON_COLUMNS = [
+    "sample_id",
+    "assigned_taxid",
+    "assigned_taxid_name",
+    "assigned_taxid_rank",
+]
+REFERENCE_COLUMNS = [
+    *QUERY_TAXON_COLUMNS,
+    "best_hit_reference_accession",
+    "_reference_length_num",
+]
+TAXON_COLUMNS = ["sample_id", "taxid", "taxon_name", "taxon_rank"]
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -150,6 +168,15 @@ def with_numeric_query_columns(frame: pl.LazyFrame) -> pl.LazyFrame:
         pl.col("crumbs_score")
         .cast(pl.Float64, strict=False)
         .alias("_crumbs_score_num"),
+        pl.col("best_hit_reference_length")
+        .cast(pl.Int64)
+        .alias("_reference_length_num"),
+        pl.col("best_hit_reference_start_1based")
+        .cast(pl.Int64)
+        .alias("_reference_start_num"),
+        pl.col("best_hit_reference_end_1based")
+        .cast(pl.Int64)
+        .alias("_reference_end_num"),
     )
 
 
@@ -164,6 +191,7 @@ def aggregate_queries(frame: pl.LazyFrame) -> pl.LazyFrame:
         pl.col("assigned_taxid_name").alias("taxon_name"),
         pl.col("assigned_taxid_rank").alias("taxon_rank"),
     ).agg(
+        pl.col("who_risk_group").first(),
         pl.len().alias("supporting_query_count"),
         pl.col("_qlen_num").sum().alias("total_query_span"),
         pl.col("_crumbs_score_num").sum().alias("query_total_crumbs_score"),
@@ -211,6 +239,93 @@ def aggregate_queries(frame: pl.LazyFrame) -> pl.LazyFrame:
             & pl.col("query_class").is_in(["overlap_merged_pair", "single_read"]),
             "_strong_read_query_count",
         ),
+    )
+
+
+def with_reference_regions(frame: pl.LazyFrame) -> pl.LazyFrame:
+    """Assign overlapping or adjacent best-hit intervals to reference regions."""
+    return (
+        frame.sort([*REFERENCE_COLUMNS, "_reference_start_num", "_reference_end_num"])
+        .with_columns(
+            pl.col("_reference_end_num")
+            .cum_max()
+            .shift(1)
+            .over(REFERENCE_COLUMNS)
+            .alias("_previous_reference_end"),
+        )
+        .with_columns(
+            (
+                pl.col("_previous_reference_end").is_null()
+                | (
+                    pl.col("_reference_start_num")
+                    > pl.col("_previous_reference_end") + 1
+                )
+            )
+            .cast(pl.Int64)
+            .cum_sum()
+            .over(REFERENCE_COLUMNS)
+            .alias("_reference_region"),
+        )
+    )
+
+
+def summarize_reference_geometry(frame: pl.LazyFrame) -> pl.LazyFrame:
+    """Summarize best-hit intervals within references, then within assigned taxa."""
+    reference_query_counts = frame.group_by(REFERENCE_COLUMNS).agg(
+        pl.len().alias("_reference_query_count"),
+    )
+    reference_regions = (
+        frame.pipe(with_reference_regions)
+        .group_by([*REFERENCE_COLUMNS, "_reference_region"])
+        .agg(
+            pl.col("_reference_start_num").min().alias("_region_start"),
+            pl.col("_reference_end_num").max().alias("_region_end"),
+        )
+        .group_by(REFERENCE_COLUMNS)
+        .agg(
+            pl.len().alias("_reference_region_count"),
+            (pl.col("_region_end") - pl.col("_region_start") + 1)
+            .sum()
+            .alias("_reference_covered_bases"),
+        )
+        .join(
+            reference_query_counts,
+            on=REFERENCE_COLUMNS,
+            how="inner",
+            nulls_equal=True,
+        )
+    )
+    return reference_regions.group_by(
+        "sample_id",
+        pl.col("assigned_taxid").alias("taxid"),
+        pl.col("assigned_taxid_name").alias("taxon_name"),
+        pl.col("assigned_taxid_rank").alias("taxon_rank"),
+    ).agg(
+        pl.len().alias("_reference_count"),
+        pl.col("_reference_region_count").sum().alias("_region_count"),
+        (pl.col("_reference_query_count") == 1)
+        .sum()
+        .alias("_singleton_reference_count"),
+        (pl.col("_reference_query_count") > 1)
+        .sum()
+        .alias("_multi_placement_reference_count"),
+        pl.col("_reference_region_count")
+        .filter(pl.col("_reference_query_count") > 1)
+        .sum()
+        .alias("_multi_placement_region_count"),
+        pl.col("best_hit_reference_accession").first().alias("_reference_accession"),
+        pl.col("_reference_length_num").first().alias("_reference_length"),
+        pl.col("_reference_covered_bases").first().alias("_covered_bases"),
+    )
+
+
+def aggregate_taxon_evidence(frame: pl.LazyFrame) -> pl.LazyFrame:
+    """Join existing query-support aggregates with best-hit reference geometry."""
+    return aggregate_queries(frame).join(
+        summarize_reference_geometry(frame),
+        on=TAXON_COLUMNS,
+        how="inner",
+        nulls_equal=True,
     )
 
 
@@ -436,6 +551,105 @@ def taxon_support_note() -> pl.Expr:
     )
 
 
+def reference_geometry_note() -> pl.Expr:
+    """Describe one-reference placement geometry without changing support tiers."""
+    covered_percent = (
+        pl.col("_covered_bases") / pl.col("_reference_length") * 100
+    ).round(1)
+    return (
+        pl.when(pl.col("supporting_query_count") == 1)
+        .then(pl.lit(""))
+        .when((pl.col("_reference_count") == 1) & (pl.col("_region_count") == 1))
+        .then(
+            pl.concat_str(
+                [
+                    pl.lit(
+                        " Their representative best-hit intervals merge into one "
+                        "region on "
+                    ),
+                    pl.col("_reference_accession"),
+                    pl.lit(", totaling "),
+                    covered_percent.cast(pl.String),
+                    pl.lit("% of the "),
+                    pl.col("_reference_length").cast(pl.String),
+                    pl.lit("-base reference."),
+                ],
+            ),
+        )
+        .when(pl.col("_reference_count") == 1)
+        .then(
+            pl.concat_str(
+                [
+                    pl.lit(" On "),
+                    pl.col("_reference_accession"),
+                    pl.lit(", their representative best-hit intervals form "),
+                    pl.col("_region_count").cast(pl.String),
+                    pl.lit(" separate regions totaling "),
+                    covered_percent.cast(pl.String),
+                    pl.lit("% of the reference length."),
+                ],
+            ),
+        )
+        .when(
+            (pl.col("_multi_placement_reference_count") > 0)
+            & (pl.col("_singleton_reference_count") > 0)
+        )
+        .then(
+            pl.concat_str(
+                [
+                    pl.lit(" Their best-hit placements span "),
+                    pl.col("_reference_count").cast(pl.String),
+                    pl.lit(" references. "),
+                    pl.col("_multi_placement_reference_count").cast(pl.String),
+                    pl.when(pl.col("_multi_placement_reference_count") == 1)
+                    .then(pl.lit(" reference has multiple placements, forming "))
+                    .otherwise(
+                        pl.lit(" references have multiple placements, forming ")
+                    ),
+                    pl.col("_multi_placement_region_count").cast(pl.String),
+                    pl.when(pl.col("_multi_placement_region_count") == 1)
+                    .then(pl.lit(" region"))
+                    .otherwise(pl.lit(" regions")),
+                    pl.when(pl.col("_singleton_reference_count") == 1)
+                    .then(pl.lit("; the remaining reference has one placement."))
+                    .otherwise(
+                        pl.concat_str(
+                            [
+                                pl.lit("; "),
+                                pl.col("_singleton_reference_count").cast(pl.String),
+                                pl.lit(" references have one placement each."),
+                            ]
+                        )
+                    ),
+                ],
+            ),
+        )
+        .when(pl.col("_multi_placement_reference_count") == 0)
+        .then(
+            pl.concat_str(
+                [
+                    pl.lit(" Their best-hit placements span "),
+                    pl.col("_reference_count").cast(pl.String),
+                    pl.lit(" references; each reference has one placement."),
+                ],
+            ),
+        )
+        .when(pl.col("_singleton_reference_count") == 0)
+        .then(
+            pl.concat_str(
+                [
+                    pl.lit(" Their best-hit placements span "),
+                    pl.col("_reference_count").cast(pl.String),
+                    pl.lit(" references and form "),
+                    pl.col("_region_count").cast(pl.String),
+                    pl.lit(" regions when resolved separately within each reference."),
+                ],
+            ),
+        )
+        .otherwise(pl.lit(""))
+    )
+
+
 def with_support_columns(frame: pl.LazyFrame) -> pl.LazyFrame:
     branch = taxon_support_branch()
     return frame.with_columns(branch.alias("support_tier_rule")).with_columns(
@@ -453,7 +667,9 @@ def with_support_columns(frame: pl.LazyFrame) -> pl.LazyFrame:
         .then(pl.lit("review"))
         .otherwise(pl.lit("moderate"))
         .alias("support_tier"),
-        taxon_support_note().alias("support_note"),
+        pl.concat_str([taxon_support_note(), reference_geometry_note()]).alias(
+            "support_note",
+        ),
     )
 
 
@@ -503,7 +719,7 @@ def build_taxon_big_table(
             require_columns, REQUIRED_QUERY_COLUMNS, label="query Big Table"
         )
         .pipe(with_numeric_query_columns)
-        .pipe(aggregate_queries)
+        .pipe(aggregate_taxon_evidence)
         .pipe(with_derived_crumbs)
         .join(crumbs_taxa, on=["sample_id", "taxid"], how="left")
         .pipe(with_taxon_crumbs)

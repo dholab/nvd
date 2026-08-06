@@ -469,15 +469,18 @@ class TestNvdParamsToNextflowArgs:
 
     def test_skip_stage_params(self) -> None:
         """Stage-skip params are propagated with Nextflow underscore names."""
-        p = NvdParams(skip_assembly=True, skip_blast=True)
+        p = NvdParams(skip_assembly=True, skip_blast=True, skip_fastqc=True)
         cmd = p.to_nextflow_args(Path("/pipeline"))
 
         assembly_idx = cmd.index("--skip_assembly")
         blast_idx = cmd.index("--skip_blast")
+        fastqc_idx = cmd.index("--skip_fastqc")
         assert cmd[assembly_idx + 1] == "true"
         assert cmd[blast_idx + 1] == "true"
+        assert cmd[fastqc_idx + 1] == "true"
         assert "--skip-assembly" not in cmd
         assert "--skip-blast" not in cmd
+        assert "--skip-fastqc" not in cmd
 
     def test_sourmash_reference_params(self) -> None:
         """Sourmash reference params are correctly propagated."""
@@ -580,6 +583,7 @@ class TestNvdParamsDefaults:
         """Stage-skip params are disabled by default."""
         assert NvdParams().skip_assembly is False
         assert NvdParams().skip_blast is False
+        assert NvdParams().skip_fastqc is False
 
     def test_default_labkey(self) -> None:
         """Default labkey matches nextflow.config."""

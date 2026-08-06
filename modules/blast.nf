@@ -55,10 +55,13 @@ process NORMALIZE_READ_BLAST_QUERIES {
 }
 
 process SUMMARIZE_BLAST_QUERY_BATCHES {
-  /* Summarize experimental BLAST query batches, including absent query classes. */
+  /* Summarize prepared BLAST query batches, including absent query classes. */
 
   tag "${sample_id}"
   label "low"
+
+  errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
+  maxRetries 2
 
   input:
   tuple val(sample_id), val(platform), val(query_classes), path(query_fastas, stageAs: "query_fastas??????/*"), path(query_lookups, stageAs: "query_lookups??????/*")
@@ -89,6 +92,9 @@ process SUMMARIZE_EMPTY_BLAST_QUERY_BATCHES {
 
   tag "${sample_id}"
   label "low"
+
+  errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
+  maxRetries 2
 
   input:
   tuple val(sample_id), val(platform)
@@ -126,7 +132,7 @@ process MEGABLAST {
   tuple val(sample_id), val(query_class), path("${sample_id}.${query_class}.megablast.txt")
 
   script:
-  def outfmt = "6 qseqid qlen sseqid stitle length pident evalue bitscore sscinames staxids"
+  def outfmt = "6 qseqid qlen sseqid stitle length pident evalue bitscore sscinames staxids saccver qstart qend slen sstart send sstrand"
   def blast_task = "megablast"
   def index_exists = file("${blast_db}/${params.blast_db_prefix}.00.idx").exists() || file("${blast_db}/${params.blast_db_prefix}.00.00.idx").exists()
   def use_index = blast_task == "megablast" && index_exists ? "-use_index true" : ""
@@ -290,7 +296,7 @@ process BLASTN_CLASSIFY {
   tuple val(sample_id), val(query_class), path("${sample_id}.${query_class}.blastn.txt")
 
   script:
-  def outfmt = "6 qseqid qlen sseqid stitle length pident evalue bitscore sscinames staxids"
+  def outfmt = "6 qseqid qlen sseqid stitle length pident evalue bitscore sscinames staxids saccver qstart qend slen sstart send sstrand"
   def blast_task = "blastn"
   """
     export BLASTDb=${blast_db}/

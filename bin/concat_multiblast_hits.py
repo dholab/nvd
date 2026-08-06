@@ -12,6 +12,29 @@ from pathlib import Path
 import polars as pl
 import polars.selectors as cs
 
+ANNOTATED_BLAST_COLUMNS = [
+    "task",
+    "sample",
+    "qseqid",
+    "qlen",
+    "sseqid",
+    "stitle",
+    "length",
+    "pident",
+    "evalue",
+    "bitscore",
+    "sscinames",
+    "staxids",
+    "saccver",
+    "qstart",
+    "qend",
+    "slen",
+    "sstart",
+    "send",
+    "sstrand",
+    "rank",
+]
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -91,9 +114,7 @@ def main() -> None:
     if concat_lf is not None:
         concat_lf.sink_csv(args.output_file, separator="\t")
     else:
-        header = first_header(args.blast_hits) or (
-            "task\tsample\tqseqid\tqlen\tsseqid\tstitle\tlength\tpident\tevalue\tbitscore\tsscinames\tstaxids\trank"
-        )
+        header = first_header(args.blast_hits) or "\t".join(ANNOTATED_BLAST_COLUMNS)
         Path(args.output_file).write_text(f"{header}\n", encoding="utf-8")
 
 

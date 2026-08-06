@@ -15,12 +15,38 @@ from pathlib import Path
 
 import polars as pl
 import pytest
-from annotate_blast_lca import (
-    OUTPUT_COLUMNS,
-    main,
-    parse_args,
-)
+from annotate_blast_lca import main, parse_args
 from py_nvd import taxonomy
+
+BLAST_INPUT_COLUMNS = [
+    "task",
+    "sample",
+    "qseqid",
+    "qlen",
+    "sseqid",
+    "stitle",
+    "length",
+    "pident",
+    "evalue",
+    "bitscore",
+    "sscinames",
+    "staxids",
+    "saccver",
+    "qstart",
+    "qend",
+    "slen",
+    "sstart",
+    "send",
+    "sstrand",
+    "rank",
+]
+EXPECTED_OUTPUT_COLUMNS = [
+    *BLAST_INPUT_COLUMNS,
+    "adjusted_taxid",
+    "adjusted_taxid_name",
+    "adjusted_taxid_rank",
+    "adjustment_method",
+]
 
 
 @pytest.fixture
@@ -142,12 +168,12 @@ class TestEndToEnd:
         blast_file = tmp_path / "close_scoring_taxids.tsv"
         blast_file.write_text(
             """\
-task\tsample\tqseqid\tqlen\tsseqid\tstitle\tlength\tpident\tevalue\tbitscore\tsscinames\tstaxids
-megablast\tsample1\tcontig_edge\t216\tref|human-best\tHuman best\t214\t100\t1e-100\t396\tHomo sapiens\t9606
-megablast\tsample1\tcontig_edge\t216\tref|chimp-close\tChimp close\t214\t99.5\t1e-99\t390\tPan troglodytes\t9598
-megablast\tsample1\tcontig_edge\t216\tref|sparse-close\tSparse close\t10\t20.0\t1\t390\tSparse-lineage test species\t6001
-megablast\tsample1\tcontig_edge\t216\tref|test-close\tTest close\t214\t99.0\t1e-98\t385\tTest species one\t5001
-megablast\tsample1\tcontig_edge\t216\tref|human-distant\tHuman distant\t214\t98.0\t1e-90\t374\tHomo sapiens\t9606
+task\tsample\tqseqid\tqlen\tsseqid\tstitle\tlength\tpident\tevalue\tbitscore\tsscinames\tstaxids\tsaccver\tqstart\tqend\tslen\tsstart\tsend\tsstrand\trank
+megablast\tsample1\tcontig_edge\t216\tref|human-best\tHuman best\t214\t100\t1e-100\t396\tHomo sapiens\t9606\tNC_000001.1\t2\t215\t1000\t900\t687\tminus\tspecies:Homo sapiens
+megablast\tsample1\tcontig_edge\t216\tref|chimp-close\tChimp close\t214\t99.5\t1e-99\t390\tPan troglodytes\t9598\tNC_000002.1\t1\t214\t1000\t100\t313\tplus\tspecies:Pan troglodytes
+megablast\tsample1\tcontig_edge\t216\tref|sparse-close\tSparse close\t10\t20.0\t1\t390\tSparse-lineage test species\t6001\tNC_000003.1\t1\t10\t1000\t200\t209\tplus\tspecies:Sparse-lineage test species
+megablast\tsample1\tcontig_edge\t216\tref|test-close\tTest close\t214\t99.0\t1e-98\t385\tTest species one\t5001\tNC_000004.1\t1\t214\t1000\t300\t513\tplus\tspecies:Test species one
+megablast\tsample1\tcontig_edge\t216\tref|human-distant\tHuman distant\t214\t98.0\t1e-90\t374\tHomo sapiens\t9606\tNC_000005.1\t1\t214\t1000\t400\t613\tplus\tspecies:Homo sapiens
 """,
         )
         output_file = tmp_path / "output.tsv"
@@ -166,6 +192,7 @@ megablast\tsample1\tcontig_edge\t216\tref|human-distant\tHuman distant\t214\t98.
             sys.argv = original_argv
 
         output = pl.read_csv(output_file, separator="\t")
+        assert output.columns == EXPECTED_OUTPUT_COLUMNS
         assert output.height == 5
         assert set(output["sseqid"]) == {
             "ref|human-best",
@@ -174,6 +201,14 @@ megablast\tsample1\tcontig_edge\t216\tref|human-distant\tHuman distant\t214\t98.
             "ref|test-close",
             "ref|human-distant",
         }
+        best = output.filter(pl.col("sseqid") == "ref|human-best").row(0, named=True)
+        assert best["saccver"] == "NC_000001.1"
+        assert best["qstart"] == 2
+        assert best["qend"] == 215
+        assert best["slen"] == 1000
+        assert best["sstart"] == 900
+        assert best["send"] == 687
+        assert best["sstrand"] == "minus"
         [assignment] = (
             output.select("adjusted_taxid", "adjustment_method")
             .unique()
@@ -269,8 +304,7 @@ megablast\tsample1\tcontig_merged\t500\tref|NC_001\tOld Human ID\t450\t99.5\t1e-
         assert output.height == 1
         assert output["staxids"].to_list() == [9606]
         [assignment] = (
-            output
-            .select("adjusted_taxid", "adjustment_method")
+            output.select("adjusted_taxid", "adjustment_method")
             .unique()
             .iter_rows(named=True)
         )
@@ -311,12 +345,11 @@ megablast\tsample1\tcontig_invalid\t500\tref|invalid\tUnknown\t450\t99.5\t1e-100
 
         output = pl.read_csv(output_file, separator="\t")
         assert output.filter(pl.col("sseqid") == "ref|valid")["staxids"].item() == 9606
-        assert output.filter(pl.col("sseqid") == "ref|invalid")[
-            "staxids"
-        ].item() is None
+        assert (
+            output.filter(pl.col("sseqid") == "ref|invalid")["staxids"].item() is None
+        )
         [assignment] = (
-            output
-            .select("adjusted_taxid", "adjustment_method")
+            output.select("adjusted_taxid", "adjustment_method")
             .unique()
             .iter_rows(named=True)
         )
@@ -434,7 +467,7 @@ megablast\tsample1\tcontig_unavailable\t500\tref|invalid\tUnknown\t450\t99.5\t1e
         with output_file.open(newline="") as handle:
             rows = list(csv.reader(handle, delimiter="\t"))
 
-        assert rows == [OUTPUT_COLUMNS]
+        assert rows == [EXPECTED_OUTPUT_COLUMNS]
 
     def test_header_only_input_creates_header_only_output(
         self,
@@ -444,9 +477,7 @@ megablast\tsample1\tcontig_unavailable\t500\tref|invalid\tUnknown\t450\t99.5\t1e
     ):
         """Header-only merged BLAST tables are valid no-hit sentinels."""
         blast_file = tmp_path / "header_only.txt"
-        blast_file.write_text(
-            "task\tsample\tqseqid\tqlen\tsseqid\tstitle\tlength\tpident\tevalue\tbitscore\tsscinames\tstaxids\trank\n",
-        )
+        blast_file.write_text("\t".join(BLAST_INPUT_COLUMNS) + "\n")
 
         output_file = tmp_path / "output.txt"
 
@@ -467,4 +498,4 @@ megablast\tsample1\tcontig_unavailable\t500\tref|invalid\tUnknown\t450\t99.5\t1e
         with output_file.open(newline="") as handle:
             rows = list(csv.reader(handle, delimiter="\t"))
 
-        assert rows == [OUTPUT_COLUMNS]
+        assert rows == [EXPECTED_OUTPUT_COLUMNS]

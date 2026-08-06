@@ -85,51 +85,27 @@ def annotate_blast_results(request: AnnotationRequest) -> None:
             open(request.input_file) as infile,
             open(request.output_file, "w", newline="") as outfile,
         ):
-            reader = csv.reader(infile, delimiter="\t")
-            # Skip header line
-            next(reader)
-            writer = csv.writer(outfile, delimiter="\t")
-
-            # Write header
-            header = [
-                "task",
-                "sample",
-                "qseqid",
-                "qlen",
-                "sseqid",
-                "stitle",
-                "length",
-                "pident",
-                "evalue",
-                "bitscore",
-                "sscinames",
-                "staxids",
-                "rank",
-            ]
-            writer.writerow(header)
+            reader = csv.DictReader(infile, delimiter="\t")
+            input_columns = reader.fieldnames or []
+            writer = csv.DictWriter(
+                outfile,
+                fieldnames=["task", "sample", *input_columns, "rank"],
+                delimiter="\t",
+            )
+            writer.writeheader()
 
             for row in reader:
-                (
-                    _qseqid,
-                    _qlen,
-                    _sseqid,
-                    _stitle,
-                    _length,
-                    _pident,
-                    _evalue,
-                    _bitscore,
-                    _sscinames,
-                    staxids,
-                ) = row
-
-                # Get lineages for all taxids
-                taxids = staxids.split(";")
+                taxids = row["staxids"].split(";")
                 lineages = [tax.get_lineage_string(int(taxid)) for taxid in taxids]
                 full_lineage = "; ".join(lineages)
-
-                # Create new row with additional information
-                new_row = [request.task, request.sample_name, *row, full_lineage]
-                writer.writerow(new_row)
+                writer.writerow(
+                    {
+                        "task": request.task,
+                        "sample": request.sample_name,
+                        **row,
+                        "rank": full_lineage,
+                    },
+                )
 
         logger.info(f"Annotated results written to {request.output_file}")
 

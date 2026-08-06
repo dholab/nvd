@@ -16,6 +16,7 @@ PROCESS_CONTIGS = ROOT / "subworkflows" / "process_contigs"
 PREPARE_BLAST_QUERIES = ROOT / "subworkflows" / "prepare_blast_queries"
 SHORT_READ_ASSEMBLY = ROOT / "subworkflows" / "short_read_denovo_assembly"
 LONG_READ_ENSEMBLE = ROOT / "subworkflows" / "long_read_denovo_ensembly"
+FASTX_MODULE = ROOT / "modules" / "fastx"
 
 
 def write_executable(path: Path, source: str) -> None:
@@ -55,6 +56,57 @@ def run_nextflow(
         capture_output=True,
         check=False,
     )
+
+
+def test_standard_mode_emits_prepared_query_summary_for_no_contig_sample(
+    tmp_path: Path,
+) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    lib = tmp_path / "lib"
+    lib.mkdir()
+    shutil.copy2(ROOT / "lib" / "NvdUtils.groovy", lib / "NvdUtils.groovy")
+    target_index = tmp_path / "target.idx"
+    target_index.touch()
+    depletion_index = tmp_path / "depletion.idx"
+    depletion_index.touch()
+
+    workflow = tmp_path / "main.nf"
+    workflow.write_text(
+        f"""\
+nextflow.enable.dsl = 2
+
+include {{ PREPARE_BLAST_QUERIES }} from '{PREPARE_BLAST_QUERIES}'
+
+params.experimental = false
+
+workflow {{
+    PREPARE_BLAST_QUERIES(
+        Channel.empty(),
+        Channel.of(tuple('sample_A', 'illumina')),
+        Channel.empty(),
+        Channel.empty(),
+        Channel.value(file('{target_index}')),
+        Channel.value(tuple(false, file('{depletion_index}'))),
+    )
+
+    PREPARE_BLAST_QUERIES.out.blast_query_summaries.view {{ sample_id, summary ->
+        "SUMMARY: ${{sample_id}}:${{summary.name}}"
+    }}
+}}
+""",
+        encoding="utf-8",
+    )
+
+    completed = run_nextflow(workflow, bin_dir=bin_dir)
+    diagnostics = f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}"
+    assert completed.returncode == 0, diagnostics
+    assert "SUMMARY: sample_A:sample_A.blast_query_batches.tsv" in completed.stdout
+    summaries = sorted(tmp_path.glob("work/**/sample_A.blast_query_batches.tsv"))
+    assert summaries, diagnostics
+    rows = summaries[-1].read_text(encoding="utf-8").splitlines()
+    assert len(rows) == 5
+    assert all("\t0\tfalse\tfalse\t" in row for row in rows[1:])
 
 
 def write_process_contig_fakes(bin_dir: Path) -> None:
@@ -102,6 +154,38 @@ else:
     shutil.copyfile(values["in"], output)
 """,
     )
+
+
+def test_report_only_assembly_profile_failure_does_not_block_sentinel(tmp_path: Path) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    attempts = tmp_path / "profile_attempts.log"
+    write_executable(
+        bin_dir / "profile_fastx.py",
+        f"#!/bin/sh\nprintf 'attempt\\n' >> {json.dumps(str(attempts))}\nexit 2\n",
+    )
+    fasta = tmp_path / "contigs.fasta"
+    fasta.write_text(">contig\nACGT\n", encoding="utf-8")
+    workflow = tmp_path / "main.nf"
+    workflow.write_text(
+        f"""\
+nextflow.enable.dsl = 2
+
+include {{ PROFILE_ASSEMBLY_FASTA_FOR_REPORT }} from '{FASTX_MODULE}'
+
+workflow {{
+    PROFILE_ASSEMBLY_FASTA_FOR_REPORT(Channel.of(tuple('sample_A', 'illumina', 'single', 'spades', file('{fasta}'))))
+    Channel.value('scientific-sentinel').view {{ value -> "SENTINEL: ${{value}}" }}
+}}
+""",
+        encoding="utf-8",
+    )
+
+    completed = run_nextflow(workflow, bin_dir=bin_dir)
+    diagnostics = f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}"
+    assert completed.returncode == 0, diagnostics
+    assert "SENTINEL: scientific-sentinel" in completed.stdout
+    assert attempts.read_text(encoding="utf-8").count("attempt") == 3
 
 
 def test_contig_processing_stops_at_the_first_empty_checkpoint(tmp_path: Path) -> None:
