@@ -5,6 +5,7 @@ include { DEACON_BUILD_INDEX_FROM_FASTA                   } from "../modules/dea
 include { DEACON_UNION_INDEXES                            } from "../modules/deacon"
 include { DEACON_ENRICH_TARGET_READS                     } from "../modules/deacon"
 include { DEACON_ENRICH_SRA_READS                        } from "../modules/deacon"
+include { DEACON_REENRICH_POSTMERGE_READS                } from "../modules/deacon"
 include { DEACON_DEPLETE                                  } from "../modules/deacon"
 include { MERGE_PAIRS ; DEDUP_WITH_CLUMPIFY ; TRIM_ADAPTERS ; FILTER_READS } from "../modules/bbmap"
 include { PROFILE_FASTX as PROFILE_READS ; PLOT_FASTX_LENGTH_PROFILE as PLOT_READ_LENGTH_PROFILES ; PLOT_FASTX_QUALITY_PROFILE as PLOT_READ_QUALITY_PROFILES } from "../modules/fastx"
@@ -162,10 +163,25 @@ workflow PREPROCESS_READS {
         )
     }
 
+    ch_postmerge_read_batches = ch_merged_read_batches
+        .mix(ch_unmerged_read_batches)
+
+    // The initial Deacon pass evaluates paired inputs pair-atomically. Once
+    // BBMerge has converted both output classes to single-read batches, reapply
+    // the same target index so each resulting FASTQ record must match by itself.
+    def should_reenrich_postmerge = target_enrichment_enabled && params.merge_pairs
+    if (should_reenrich_postmerge) {
+        DEACON_REENRICH_POSTMERGE_READS(
+            ch_postmerge_read_batches.combine(ch_target_index)
+        )
+        ch_postmerge_batches_for_qc = DEACON_REENRICH_POSTMERGE_READS.out.reads
+    } else {
+        ch_postmerge_batches_for_qc = ch_postmerge_read_batches
+    }
+
     // With pair merging disabled, every sample likewise has one single_read batch.
     ch_read_batches = params.merge_pairs
-        ? ch_merged_read_batches
-            .mix(ch_unmerged_read_batches)
+        ? ch_postmerge_batches_for_qc
             .mix(ch_nonmergeable_read_batches)
         : ch_retained_target_reads.map { sample_id, platform, read_structure, reads ->
             tuple(

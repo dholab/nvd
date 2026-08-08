@@ -248,6 +248,35 @@ process DEACON_ENRICH_TARGET_READS {
         """
 }
 
+process DEACON_REENRICH_POSTMERGE_READS {
+    /* Reapply target enrichment independently to records emitted by pair merging. */
+
+    tag "${meta.id}, ${meta.query_class}"
+    label "medium"
+
+    errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
+    maxRetries 2
+
+    input:
+    tuple val(meta), path(reads), path(deacon_idx)
+
+    output:
+    tuple val(meta), path("${meta.id}.${meta.query_class}.per_read_target_enriched.fastq.gz"), emit: reads
+    tuple val(meta), path("${meta.id}.${meta.query_class}.per_read_deacon.json"), emit: stats
+
+    script:
+    """
+    deacon filter \
+        --threads ${task.cpus} \
+        --abs-threshold ${params.virus_abs_threshold} \
+        --rel-threshold ${params.virus_rel_threshold} \
+        --summary ${meta.id}.${meta.query_class}.per_read_deacon.json \
+        --output ${meta.id}.${meta.query_class}.per_read_target_enriched.fastq.gz \
+        ${deacon_idx} \
+        ${reads}
+    """
+}
+
 process DEACON_ENRICH_SRA_READS {
     /* Stream one resolved SRA run through deacon without materializing decoded FASTQ files. */
 
