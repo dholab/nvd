@@ -59,6 +59,13 @@ INPUT_COLUMNS = [
     "bitscore",
     "sscinames",
     "staxids",
+    "saccver",
+    "qstart",
+    "qend",
+    "slen",
+    "sstart",
+    "send",
+    "sstrand",
     "rank",
 ]
 LCA_COLUMNS = [
@@ -341,12 +348,13 @@ def main() -> None:
             "Assigning taxonomy from references scoring at least {:.0%} of the best hit",
             ASSIGNMENT_BITSCORE_FRACTION,
         )
-        hits = (
-            pl.scan_csv(args.input_file, separator="\t")
-            .pipe(with_canonical_taxids, tx)
-            .pipe(with_score_context)
+        blast = pl.scan_csv(args.input_file, separator="\t")
+        input_columns = blast.collect_schema().names()
+        hits = blast.pipe(with_canonical_taxids, tx).pipe(with_score_context)
+        assignment_lf = assign_taxonomic_consensus(hits, tx).select(
+            *input_columns,
+            *LCA_COLUMNS,
         )
-        assignment_lf = assign_taxonomic_consensus(hits, tx)
         require_taxonomic_assignments(assignment_lf)
 
         logger.info("Writing annotated results to {}", args.output_file)

@@ -9,7 +9,15 @@ from collections import Counter
 from pathlib import Path
 
 import pytest
-from profile_fastx import RawProfile, main, parse_bbtools_histogram, run_reformat
+from profile_fastx import (
+    ProfileRequest,
+    RawProfile,
+    main,
+    n50_l50,
+    parse_bbtools_histogram,
+    profile_fastx,
+    run_reformat,
+)
 
 FASTQ_RECORD_COUNT = 3
 FASTQ_TOTAL_BASES = 33
@@ -116,6 +124,69 @@ def test_run_reformat_profiles_fastq_records_as_singletons(
     )
 
 
+def test_n50_l50_uses_unbinned_lengths_with_ties_and_empty() -> None:
+    assert n50_l50(Counter()) == (None, None)
+    assert n50_l50(Counter({100: 2, 50: 4})) == (100, 2)
+    assert n50_l50(Counter({1: 1, 100_000: 1, 5_000_000: 1})) == (5_000_000, 1)
+    assert n50_l50(Counter({3: 1, 2: 1})) == (3, 1)
+    assert n50_l50(Counter({9_000_000_000_000_001: 1, 1: 9_000_000_000_000_001})) == (
+        9_000_000_000_000_001,
+        1,
+    )
+
+
+def profile_request(tmp_path: Path, input_format: str) -> ProfileRequest:
+    path = tmp_path / f"input.{input_format}"
+    path.touch()
+    return ProfileRequest(
+        sample_id="sample_A",
+        stage="stage",
+        input_files=(path,),
+        input_format=input_format,
+        length_bin_size=50,
+        quality_bin_size=1,
+        thresholds=(),
+    )
+
+
+def test_profile_fastx_preserves_empty_fastq_format(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "profile_fastx.run_reformat",
+        lambda _input_file, **_kwargs: RawProfile(length_counts=Counter(), quality_counts=Counter()),
+    )
+
+    profile = profile_fastx(profile_request(tmp_path, "fastq"))
+
+    assert profile.format == "fastq"
+    assert profile.sequence_count == 0
+    assert profile.quality_histogram == Counter()
+
+
+@pytest.mark.parametrize("quality_counts", [Counter(), Counter({40: 1})])
+def test_profile_fastx_rejects_nonempty_fastq_with_missing_or_partial_quality(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    quality_counts: Counter[int],
+) -> None:
+    monkeypatch.setattr(
+        "profile_fastx.run_reformat",
+        lambda _input_file, **_kwargs: RawProfile(length_counts=Counter({10: 2}), quality_counts=quality_counts),
+    )
+
+    with pytest.raises(ValueError, match="quality histogram count"):
+        profile_fastx(profile_request(tmp_path, "fastq"))
+
+
+def test_profile_fastx_rejects_fasta_with_quality_counts(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "profile_fastx.run_reformat",
+        lambda _input_file, **_kwargs: RawProfile(length_counts=Counter({10: 1}), quality_counts=Counter({40: 1})),
+    )
+
+    with pytest.raises(ValueError, match="FASTA input"):
+        profile_fastx(profile_request(tmp_path, "fasta"))
+
+
 def test_profile_fastx_counts_gzipped_fastq_and_writes_histograms(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -146,6 +217,8 @@ def test_profile_fastx_counts_gzipped_fastq_and_writes_histograms(
             "preprocessed_single_read",
             "--input",
             str(fastq),
+            "--input-format",
+            "fastq",
             "--output-prefix",
             str(output_prefix),
             "--length-bin-size",
@@ -165,7 +238,14 @@ def test_profile_fastx_counts_gzipped_fastq_and_writes_histograms(
     assert profile["format"] == "fastq"
     assert profile["sequence_count"] == FASTQ_RECORD_COUNT
     assert profile["total_bases"] == FASTQ_TOTAL_BASES
-    assert profile["length"] == {"min": 8, "max": 13, "mean": 11.0, "bin_size": 5}
+    assert profile["length"] == {
+        "min": 8,
+        "max": 13,
+        "mean": 11.0,
+        "n50": 12,
+        "l50": 2,
+        "bin_size": 5,
+    }
     assert profile["quality"] == {
         "mean": 30.0,
         "bin_size": 10,
@@ -254,6 +334,8 @@ def test_profile_fastx_counts_sequences_and_bases_above_length_thresholds(
             "preprocessed_single_read",
             "--input",
             str(fastq),
+            "--input-format",
+            "fastq",
             "--output-prefix",
             str(output_prefix),
             "--threshold",
@@ -321,6 +403,8 @@ def test_profile_fastx_sums_multiple_fasta_inputs_without_quality(
             "--input",
             str(first),
             str(second),
+            "--input-format",
+            "fasta",
             "--output-prefix",
             str(output_prefix),
             "--length-bin-size",
@@ -382,6 +466,8 @@ def test_profile_fastx_uses_bbtools_integer_average_quality_bins(
             "preprocessed_single_read",
             "--input",
             str(fastq),
+            "--input-format",
+            "fastq",
             "--output-prefix",
             str(output_prefix),
         ],
@@ -426,6 +512,8 @@ def test_profile_fastx_defaults_to_input_basename_for_single_input(
             "preprocessed_single_read",
             "--input",
             str(fastq),
+            "--input-format",
+            "fastq",
         ],
     )
 

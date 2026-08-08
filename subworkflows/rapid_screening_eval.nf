@@ -58,9 +58,15 @@ workflow RAPID_SCREENING_EVAL {
         BUILD_RAPID_SCREENING_EVAL_DB.out.without_followup_tsv,
     )
 
+    ch_completion = RENDER_RAPID_SCREENING_EVAL.out.report
+        .collect()
+        .ifEmpty { [] }
+        .map { _outputs -> true }
+
     emit:
     database = BUILD_RAPID_SCREENING_EVAL_DB.out.database
     followup_tsv = BUILD_RAPID_SCREENING_EVAL_DB.out.followup_tsv
     without_followup_tsv = BUILD_RAPID_SCREENING_EVAL_DB.out.without_followup_tsv
     report = RENDER_RAPID_SCREENING_EVAL.out.report
+    completion = ch_completion
 }

@@ -4,15 +4,27 @@ include { DEACON_BUILD_TARGET_INDEX_FROM_FASTA            } from "../modules/dea
 include { DEACON_BUILD_INDEX_FROM_FASTA                   } from "../modules/deacon"
 include { DEACON_UNION_INDEXES                            } from "../modules/deacon"
 include { DEACON_ENRICH_TARGET_READS                     } from "../modules/deacon"
+include { DEACON_ENRICH_SRA_READS                        } from "../modules/deacon"
+include { DEACON_REENRICH_POSTMERGE_READS                } from "../modules/deacon"
 include { DEACON_DEPLETE                                  } from "../modules/deacon"
 include { MERGE_PAIRS ; DEDUP_WITH_CLUMPIFY ; TRIM_ADAPTERS ; FILTER_READS } from "../modules/bbmap"
 include { PROFILE_FASTX as PROFILE_READS ; PLOT_FASTX_LENGTH_PROFILE as PLOT_READ_LENGTH_PROFILES ; PLOT_FASTX_QUALITY_PROFILE as PLOT_READ_QUALITY_PROFILES } from "../modules/fastx"
+include { FASTQC_RAW } from "../modules/fastqc"
 
 workflow PREPROCESS_READS {
     take:
     ch_read_bundles  // tuple(meta, read_files) from GATHER_READS
+    ch_sra_accessions  // tuple(sample_id, platform, accession) from GATHER_READS
 
     main:
+
+    // Raw-read QC is an ancillary preprocessing branch. Each physical FASTQ
+    // remains an independent task so failures, retries, memory, and cache reuse
+    // stay bounded without delaying target enrichment.
+    ch_fastqc_units = ch_read_bundles.flatMap { meta, reads ->
+        NvdReporting.processReadyFastqcTuples(meta, reads, params.skip_fastqc == true)
+    }
+    FASTQC_RAW(ch_fastqc_units)
 
     // -------------------------------------------------------------------------
     // Step 1: Resolve target index and frontloaded extraction
@@ -51,43 +63,50 @@ workflow PREPROCESS_READS {
         ch_read_bundles.combine(ch_target_index)
             .combine(ch_target_enrichment_enabled)
     )
+    DEACON_ENRICH_SRA_READS(
+        ch_sra_accessions.combine(ch_target_index)
+            .combine(ch_target_enrichment_enabled)
+    )
 
     // -------------------------------------------------------------------------
     // Step 2: Inlined preprocessing on target-enriched reads
     // -------------------------------------------------------------------------
-    // Extract input and retained counts from Deacon's summary. A malformed
-    // summary is a process failure, never an empty-sample completion.
-    ch_enrichment_counts = DEACON_ENRICH_TARGET_READS.out.stats
-        .map { sample_id, json_file ->
-            def summary = new groovy.json.JsonSlurper().parse(json_file.toFile())
-            def input_count = summary.seqs_in
-            def retained_count = summary.seqs_out
-            assert input_count instanceof Number && input_count >= 0 && input_count == input_count.toLong()
-            assert retained_count instanceof Number && retained_count >= 0 && retained_count == retained_count.toLong()
-            tuple(sample_id, input_count.toLong().toString(), retained_count.toLong())
+    ch_sra_target_reads = DEACON_ENRICH_SRA_READS.out.reads
+        .map { sample_id, platform, read_structure_file, reads, input_read_count, enriched_read_count ->
+            def read_structure = read_structure_file.toFile().text.trim()
+            tuple(sample_id, platform, read_structure, reads, input_read_count, enriched_read_count)
         }
 
-    ch_read_counts = ch_enrichment_counts
-        .map { sample_id, input_count, _retained_count -> tuple(sample_id, input_count) }
+    ch_target_reads = DEACON_ENRICH_TARGET_READS.out.reads
+        .mix(ch_sra_target_reads)
 
-    ch_target_reads_by_retention = DEACON_ENRICH_TARGET_READS.out.reads
-        .join(ch_enrichment_counts, by: 0)
-        .branch { _sample_id, _platform, _read_structure, _reads, _input_count, retained_count ->
-            retained: retained_count > 0
-            complete_empty: true
+    ch_target_enrichment_stats = DEACON_ENRICH_TARGET_READS.out.stats
+        .mix(DEACON_ENRICH_SRA_READS.out.stats)
+
+    // Deacon reports counts across all input and retained reads. Carry those
+    // scalar values on the channel so workflow routing never parses JSON.
+    ch_read_counts = ch_target_reads
+        .map { sample_id, _platform, _read_structure, _reads, input_read_count, _enriched_read_count ->
+            tuple(sample_id, input_read_count)
         }
 
-    ch_target_reads = ch_target_reads_by_retention.retained
-        .map { sample_id, platform, read_structure, reads, _input_count, _retained_count ->
-            tuple(sample_id, platform, read_structure, reads)
-        }
+    ch_target_reads_by_retention = ch_target_reads.branch { _id, _platform, _read_structure, _reads, _input_read_count, enriched_read_count ->
+        retained: enriched_read_count != "0"
+        complete_empty: true
+    }
 
-    ch_complete_empty_samples = ch_target_reads_by_retention.complete_empty
-        .map { sample_id, platform, _read_structure, _reads, _input_count, _retained_count ->
-            tuple(sample_id, platform)
-        }
+    ch_complete_empty_samples = ch_target_reads_by_retention.complete_empty.map {
+        sample_id, platform, _read_structure, _reads, _input_read_count, _enriched_read_count ->
+        log.debug "nvd.contig_route sample_id=${sample_id} platform=${platform} outcome=no_contigs stage=target_enrichment"
+        tuple(sample_id, platform)
+    }
 
-    ch_target_reads_by_layout = ch_target_reads.branch { _id, platform, read_structure, _reads ->
+    ch_retained_target_reads = ch_target_reads_by_retention.retained.map {
+        sample_id, platform, read_structure, reads, _input_read_count, _enriched_read_count ->
+        tuple(sample_id, platform, read_structure, reads)
+    }
+
+    ch_target_reads_by_layout = ch_retained_target_reads.branch { _id, platform, read_structure, _reads ->
         mergeable: platform == "illumina" && read_structure == "interleaved"
         other: true
     }
@@ -144,12 +163,27 @@ workflow PREPROCESS_READS {
         )
     }
 
+    ch_postmerge_read_batches = ch_merged_read_batches
+        .mix(ch_unmerged_read_batches)
+
+    // The initial Deacon pass evaluates paired inputs pair-atomically. Once
+    // BBMerge has converted both output classes to single-read batches, reapply
+    // the same target index so each resulting FASTQ record must match by itself.
+    def should_reenrich_postmerge = target_enrichment_enabled && params.merge_pairs
+    if (should_reenrich_postmerge) {
+        DEACON_REENRICH_POSTMERGE_READS(
+            ch_postmerge_read_batches.combine(ch_target_index)
+        )
+        ch_postmerge_batches_for_qc = DEACON_REENRICH_POSTMERGE_READS.out.reads
+    } else {
+        ch_postmerge_batches_for_qc = ch_postmerge_read_batches
+    }
+
     // With pair merging disabled, every sample likewise has one single_read batch.
     ch_read_batches = params.merge_pairs
-        ? ch_merged_read_batches
-            .mix(ch_unmerged_read_batches)
+        ? ch_postmerge_batches_for_qc
             .mix(ch_nonmergeable_read_batches)
-        : ch_target_reads.map { sample_id, platform, read_structure, reads ->
+        : ch_retained_target_reads.map { sample_id, platform, read_structure, reads ->
             tuple(
                 [
                     id: sample_id,
@@ -180,7 +214,7 @@ workflow PREPROCESS_READS {
     // 2c. Host/contaminant depletion with deacon (optional). The public
     // parameter names remain host_* for compatibility, but this channel is the
     // general depletion index used by both read and contig filtering.
-    def has_depletion_config = params.host_index || params.host_index_url || params.host_contaminants_fasta
+    def has_depletion_config = NvdUtils.depletionEnabled(params)
     if (has_depletion_config) {
         ch_local_depletion_index = params.host_index
             ? Channel.fromPath(params.host_index)
@@ -204,10 +238,13 @@ workflow PREPROCESS_READS {
         ch_depletion_index = DEACON_UNION_INDEXES.out.index
         ch_depletion_index_option = ch_depletion_index.map { idx -> tuple(true, idx) }
 
-        ch_after_scrub = DEACON_DEPLETE(ch_after_trim.combine(ch_depletion_index)).reads
+        DEACON_DEPLETE(ch_after_trim.combine(ch_depletion_index))
+        ch_after_scrub = DEACON_DEPLETE.out.reads
+        ch_depletion_stats = DEACON_DEPLETE.out.stats
     } else {
         ch_depletion_index_option = Channel.value(tuple(false, file("${projectDir}/assets/README.md")))
         ch_after_scrub = ch_after_trim
+        ch_depletion_stats = channel.empty()
     }
 
     // 2d. Independently optional quality/length and low-complexity filters
@@ -239,6 +276,7 @@ workflow PREPROCESS_READS {
             meta + [
                 profile_stage: meta.query_class,
                 profile_key: "${meta.id}:${meta.read_structure}:${meta.query_class}",
+                profile_format: "fastq",
                 thresholds: thresholds,
             ],
             reads,
@@ -393,13 +431,18 @@ workflow PREPROCESS_READS {
     // tuple(meta, reads, profile_json, length_histogram)
     // meta: id, platform, read_structure, query_class, sample_batch_count, profile_stage, sequence_count
     profiled_read_batches = ch_profiled_preprocessed_batches
+    processed_read_profiles = PROFILE_READS.out.profiled
+    processed_read_quality_histograms = PROFILE_READS.out.quality_histogram
     // tuple(sample_meta, batches); each batch contains meta and reads
     profiled_batches_by_sample = ch_profiled_batches_by_sample
     paired_reads_for_mapback = ch_paired_reads_for_mapback
     single_reads_for_mapback = ch_single_reads_for_mapback
     read_counts = ch_read_counts
     complete_empty_samples = ch_complete_empty_samples
-    target_enrichment_stats = DEACON_ENRICH_TARGET_READS.out.stats
+    target_enrichment_stats = ch_target_enrichment_stats
+    depletion_stats = ch_depletion_stats
+    raw_fastqc_packages = FASTQC_RAW.out.packages
+    raw_fastqc_zips = FASTQC_RAW.out.zips
     target_index = ch_target_index
     depletion_index = ch_depletion_index_option
 }

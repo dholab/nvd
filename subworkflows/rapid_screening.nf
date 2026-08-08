@@ -1,9 +1,13 @@
 include { SOURMASH_SKETCH_QUERY_METAGENOME ; SOURMASH_FETCH_REF_SKETCH ; SOURMASH_SKETCH_REF_FASTA ; SOURMASH_GATHER_QUERY_METAGENOME ; SOURMASH_FETCH_LINEAGES ; SOURMASH_STAGE_REFERENCE ; SOURMASH_TAX_METAGENOME } from "../modules/sourmash"
 include { CONCAT_READS_AS_FASTA } from "../modules/seqkit"
+include { ANNOTATE_SOURMASH_RISK_GROUPS } from "../modules/risk_groups"
+include { NOTIFY_RAPID_SCREENING_SLACK } from "../modules/notifications"
 
 workflow RAPID_SCREENING {
     take:
     ch_profiled_batches_by_sample  // tuple(sample_meta, batches); each batch contains meta and reads
+    ch_risk_group_lookup
+    ch_target_enrichment_stats
 
     main:
     def is_http_url = { value -> value && value ==~ /(?i)^https?:\/\/.+/ }
@@ -75,10 +79,41 @@ workflow RAPID_SCREENING {
 
     SOURMASH_TAX_METAGENOME(ch_tax_inputs)
 
+    ch_risk_group_inputs = SOURMASH_TAX_METAGENOME.out.tax_reports
+        .flatMap { sample_id, platform, read_structure, tax_reports ->
+            def report_files = tax_reports instanceof List ? tax_reports : [tax_reports]
+            def summarized_csv = report_files.find { report -> report.name.endsWith(".summarized.csv") }
+            def bioboxes_profile = report_files.find { report -> report.name.endsWith(".bioboxes.profile") }
+            assert summarized_csv : "Missing sourmash tax summary CSV for ${sample_id}."
+            if (!bioboxes_profile) {
+                log.warn "Skipping WHO risk-group annotation for ${sample_id}: sourmash produced no BioBoxes profile. Ensure the taxonomy CSV contains taxpath."
+                return []
+            }
+            [tuple(sample_id, platform, read_structure, summarized_csv, bioboxes_profile)]
+        }
+
+    ANNOTATE_SOURMASH_RISK_GROUPS(
+        ch_risk_group_inputs,
+        ch_risk_group_lookup,
+    )
+
+    ch_notification_inputs = ANNOTATE_SOURMASH_RISK_GROUPS.out
+        .join(ch_target_enrichment_stats, by: 0)
+        .map { sample_id, platform, read_structure, risk_summary, enrichment_summary ->
+            tuple(sample_id, risk_summary, enrichment_summary)
+        }
+
+    NOTIFY_RAPID_SCREENING_SLACK(
+        ch_notification_inputs,
+        NvdUtils.targetEnrichmentEnabled(params),
+        workflow.runName,
+    )
+
     emit:
     query_sketches = SOURMASH_SKETCH_QUERY_METAGENOME.out.query_sketches
     ref_sketch     = SOURMASH_STAGE_REFERENCE.out.ref_sketch
     lineages       = SOURMASH_STAGE_REFERENCE.out.lineages
     gather_csv     = SOURMASH_GATHER_QUERY_METAGENOME.out.gather_csv
     tax_reports    = SOURMASH_TAX_METAGENOME.out.tax_reports
+    risk_group_summaries = ANNOTATE_SOURMASH_RISK_GROUPS.out
 }

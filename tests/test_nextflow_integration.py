@@ -61,9 +61,11 @@ def write_mini_taxdump(taxonomy_dir: Path) -> None:
 2732544\t|\t2732506\t|\torder\t|\t
 10240\t|\t2732544\t|\tfamily\t|\t
 10242\t|\t10240\t|\tgenus\t|\t
-10244\t|\t10242\t|\tspecies\t|\t
+3431483\t|\t10242\t|\tspecies\t|\t
+10244\t|\t3431483\t|\tno rank\t|\t
 10255\t|\t10240\t|\tgenus\t|\t
-10258\t|\t10255\t|\tspecies\t|\t
+3431389\t|\t10255\t|\tspecies\t|\t
+10258\t|\t3431389\t|\tno rank\t|\t
 """,
         encoding="utf-8",
     )
@@ -76,8 +78,10 @@ def write_mini_taxdump(taxonomy_dir: Path) -> None:
 2732544\t|\tChitovirales\t|\t\t|\tscientific name\t|
 10240\t|\tPoxviridae\t|\t\t|\tscientific name\t|
 10242\t|\tOrthopoxvirus\t|\t\t|\tscientific name\t|
+3431483\t|\tOrthopoxvirus monkeypox\t|\t\t|\tscientific name\t|
 10244\t|\tMonkeypox virus\t|\t\t|\tscientific name\t|
 10255\t|\tParapoxvirus\t|\t\t|\tscientific name\t|
+3431389\t|\tParapoxvirus orf\t|\t\t|\tscientific name\t|
 10258\t|\tOrf virus\t|\t\t|\tscientific name\t|
 """,
         encoding="utf-8",
@@ -255,6 +259,7 @@ def test_sourmash_tax_metagenome_writes_all_formats_with_strain_taxids(
         if line and not line.startswith(("#", "@"))
     ]
     assert profile_rows
+    assert {"3431389", "3431483"}.issubset({row[0] for row in profile_rows})
     rank_order = (
         "superkingdom",
         "phylum",
@@ -326,6 +331,92 @@ def assert_concatenated_tsv(output: Path, inputs: list[Path]) -> None:
     output_header, output_rows = read_tsv_document(output)
     assert output_header == expected_header
     assert output_rows == expected_rows
+
+
+def read_fasta_records(path: Path) -> dict[str, str]:
+    records: dict[str, str] = {}
+    current_id: str | None = None
+    sequence_lines = 0
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        if raw_line.startswith(">"):
+            current_id = raw_line[1:].split(maxsplit=1)[0]
+            assert current_id not in records, (
+                f"Duplicate FASTA ID {current_id} in {path}"
+            )
+            records[current_id] = ""
+            sequence_lines = 0
+        else:
+            assert current_id is not None, f"Sequence before FASTA header in {path}"
+            sequence_lines += 1
+            assert sequence_lines == 1, (
+                f"Wrapped FASTA sequence for {current_id} in {path}"
+            )
+            records[current_id] += raw_line
+    return records
+
+
+def assert_best_hit_sequence_evidence_outputs(results_root: Path) -> None:
+    best_hit_sequences_dir = results_root / "11_best_hit_sequences"
+    expected_artifacts = {
+        "query_sequences.fasta",
+        "selected_references.fasta",
+        "best_hit_placements.bed",
+    }
+    assert best_hit_sequences_dir.is_dir(), (
+        f"Missing best-hit sequence evidence directory: {best_hit_sequences_dir}"
+    )
+    assert {
+        path.name
+        for path in best_hit_sequences_dir.iterdir()
+        if path.is_file() and path.name != "versions.yml"
+    } == expected_artifacts
+    qbt_rows = read_tsv_rows(results_root / "query_big_table.tsv")
+    assert qbt_rows, "Missing Query Big Table rows for best-hit sequence evidence"
+    query_fasta_ids = set(
+        read_fasta_records(best_hit_sequences_dir / "query_sequences.fasta"),
+    )
+    reference_fasta_ids = set(
+        read_fasta_records(best_hit_sequences_dir / "selected_references.fasta"),
+    )
+    expected_query_ids = {f"{row['sample_id']}|{row['qseqid']}" for row in qbt_rows}
+    expected_reference_ids = {row["best_hit_reference_accession"] for row in qbt_rows}
+    assert query_fasta_ids == expected_query_ids
+    assert reference_fasta_ids == expected_reference_ids
+
+    strand_map = {"plus": "+", "minus": "-", "+": "+", "-": "-"}
+    expected_bed_rows = sorted(
+        [
+            [
+                row["best_hit_reference_accession"],
+                str(
+                    min(
+                        int(row["best_hit_reference_start_1based"]),
+                        int(row["best_hit_reference_end_1based"]),
+                    )
+                    - 1,
+                ),
+                str(
+                    max(
+                        int(row["best_hit_reference_start_1based"]),
+                        int(row["best_hit_reference_end_1based"]),
+                    ),
+                ),
+                f"{row['sample_id']}|{row['qseqid']}",
+                "0",
+                strand_map[row["best_hit_reference_strand"]],
+            ]
+            for row in qbt_rows
+        ],
+        key=lambda row: (row[0], int(row[1]), int(row[2]), row[3], row[5]),
+    )
+    observed_bed_rows = [
+        line.split("\t")
+        for line in (best_hit_sequences_dir / "best_hit_placements.bed")
+        .read_text(encoding="utf-8")
+        .splitlines()
+        if line
+    ]
+    assert observed_bed_rows == expected_bed_rows
 
 
 def assert_long_read_assembly_outputs(
@@ -422,6 +513,64 @@ def assert_target_enrichment_outputs(
         plot = plot_dir / filename
         assert plot.is_file(), f"Missing target enrichment plot: {plot}"
         assert plot.stat().st_size > 0, f"Empty target enrichment plot: {plot}"
+
+
+def assert_successful_nvd_multiqc_outputs(
+    results_root: Path,
+    *,
+    experimental: bool,
+    skip_assembly: bool,
+) -> None:
+    """Assert the healthy fixture completed ancillary reporting and publication."""
+    report = results_root / "multiqc_report.html"
+    data = results_root / "13_experiment_summary" / "multiqc_data"
+    nvd_inputs = data / "nvd_inputs"
+    manifest_path = nvd_inputs / "nvd_report_manifest.json"
+    raw_fastqc = results_root / "00_input_preparation" / "raw_fastq_qc" / "fastqc"
+
+    assert report.is_file(), f"Missing NVD MultiQC report: {report}"
+    assert report.stat().st_size > 0, f"Empty NVD MultiQC report: {report}"
+    assert data.is_dir(), f"Missing NVD MultiQC data directory: {data}"
+    assert any(data.iterdir()), f"Empty NVD MultiQC data directory: {data}"
+    assert manifest_path.is_file(), (
+        f"Missing retained NVD MultiQC manifest: {manifest_path}"
+    )
+    assert (nvd_inputs / "nvd_sample_roster_mqc.yaml").is_file()
+    expected_domain_inputs = [
+        "nvd_target_enrichment_mqc.yaml",
+        "nvd_depletion_mqc.yaml",
+        "nvd_fastx_profiles_mqc.yaml",
+        "nvd_fastx_single_read_length_distribution_mqc.yaml",
+        "nvd_fastx_quality_distribution_mqc.yaml",
+        "nvd_assembly_mqc.yaml",
+        "nvd_prepared_blast_query_batches_mqc.yaml",
+    ]
+    if experimental:
+        expected_domain_inputs.append(
+            "nvd_fastx_overlap_merged_pair_length_distribution_mqc.yaml",
+        )
+    if not skip_assembly:
+        expected_domain_inputs.append(
+            "nvd_fastx_filtered_contigs_length_distribution_mqc.yaml",
+        )
+    for filename in expected_domain_inputs:
+        assert (nvd_inputs / filename).is_file(), (
+            f"Missing retained NVD MultiQC input: {filename}"
+        )
+    assert raw_fastqc.is_dir(), f"Missing retained raw FastQC directory: {raw_fastqc}"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    raw_units = manifest.get("raw_fastqc")
+    assert raw_units, (
+        f"No observed raw FastQC units in retained manifest: {manifest_path}"
+    )
+    expected_zips = sorted(str(unit["zip_alias"]) for unit in raw_units)
+    expected_htmls = sorted(str(unit["html_alias"]) for unit in raw_units)
+    observed_zips = sorted(path.name for path in raw_fastqc.glob("*.raw.*_fastqc.zip"))
+    observed_htmls = sorted(
+        path.name for path in raw_fastqc.glob("*.raw.*_fastqc.html")
+    )
+    assert observed_zips == expected_zips
+    assert observed_htmls == expected_htmls
 
 
 def make_e2e_run_dir() -> Path:
@@ -860,9 +1009,9 @@ def test_lims_enabled_pipeline_uploads_eagerly_and_dedups() -> None:
             )
 
             results_root = run_dir / "results" / "nvd"
-            assert (results_root / "13_labkey_uploads").exists(), (
-                f"Missing LabKey uploads results dir under {results_root}"
-            )
+            assert (
+                results_root / "14_labkey_uploads" / "upload_logs" / "final_labkey_upload.log"
+            ).exists(), f"Missing final LabKey upload log under {results_root}"
 
             first_hits = data_hits_inserts(mock)
             assert first_hits, "no eager per-batch hits insert carrying query_class"
@@ -1176,22 +1325,51 @@ def test_mini_sra_viral_pipeline_completes() -> None:
     )
 
     results_root = run_dir / "results" / "nvd"
-    assert not (results_root / "13_labkey_uploads").exists()
+    assert not (results_root / "14_labkey_uploads").exists()
     expected_sample_ids = {
         str(run_info["sample_id"])
         for run_info in (*LOCAL_E2E_SAMPLES, *selected_sra_runs)
     }
+    assert_successful_nvd_multiqc_outputs(
+        results_root,
+        experimental=experimental,
+        skip_assembly=skip_assembly,
+    )
     assert_target_enrichment_outputs(results_root, expected_sample_ids)
     assert_read_profiles_respect_length_filter(results_root)
+    resolved_manifest = (
+        results_root
+        / "00_input_preparation"
+        / "input_resolution"
+        / "resolved_reads.jsonl"
+    )
+    resolved_records = [
+        json.loads(line)
+        for line in resolved_manifest.read_text(encoding="utf-8").splitlines()
+    ]
+    resolved_by_sample = {record["sample_id"]: record for record in resolved_records}
+    for run_info in LOCAL_E2E_SAMPLES:
+        record = resolved_by_sample[run_info["sample_id"]]
+        assert record["source"] == run_info["source"]
+
+    glob_record = resolved_by_sample["local_hits_glob"]
+    assert [Path(path).name for path in glob_record["r1"]] == [
+        "local_hits_glob_L001_R1_001.fastq.gz",
+        "local_hits_glob_L002_R1_001.fastq.gz",
+    ]
+    assert [Path(path).name for path in glob_record["r2"]] == [
+        "local_hits_glob_L001_R2_001.fastq.gz",
+        "local_hits_glob_L002_R2_001.fastq.gz",
+    ]
     merged_blast_dir = results_root / "07_merged_blast_results"
     final_dir = merged_blast_dir / "final"
     final_blast_files = sorted(final_dir.glob("*_blast.final.tsv"))
 
     experiment_blast = (
-        results_root / "12_experiment_summary" / "experiment_blast_results.tsv"
+        results_root / "13_experiment_summary" / "experiment_blast_results.tsv"
     )
 
-    if skip_assembly:
+    if skip_assembly and not experimental:
         assert not final_blast_files, (
             f"Skip-assembly run unexpectedly produced final BLAST TSVs: {final_blast_files}"
         )
@@ -1209,12 +1387,17 @@ def test_mini_sra_viral_pipeline_completes() -> None:
         )
         experiment_rows = read_tsv_rows(experiment_blast)
         assert experiment_rows, f"No experiment BLAST rows found in {experiment_blast}"
+        assert "who_risk_group" in experiment_rows[0]
 
         # Assert per-sample biological expectations for the rows actually under
         # test. Coupling this loop to every manifest row makes a deleted
         # samplesheet row fail as a missing output, even though the pipeline did
         # exactly what the samplesheet requested.
         for run_info in selected_sra_runs:
+            expected_risk_group = {
+                "Orf virus": "RG2",
+                "Monkeypox virus": "RG3",
+            }[run_info["expected_organism"]]
             sample_rows = [
                 row
                 for row in experiment_rows
@@ -1227,10 +1410,19 @@ def test_mini_sra_viral_pipeline_completes() -> None:
                 row.get("staxids") == str(run_info["taxid"]) for row in sample_rows
             ), f"No {run_info['taxid']} BLAST taxid found for {run_info['sample_id']}"
             assert any(
-                run_info["expected_organism"] in row.get("rank", "")
+                row.get("adjusted_taxid") == str(run_info["taxid"])
+                and row.get("who_risk_group") == expected_risk_group
                 for row in sample_rows
             ), (
-                f"No {run_info['expected_organism']} lineage found for "
+                f"No {expected_risk_group} WHO risk group found for "
+                f"{run_info['taxid']} in {run_info['sample_id']}"
+            )
+            assert any(
+                row.get("adjusted_taxid") == str(run_info["taxid"])
+                and row.get("adjusted_taxid_name") == run_info["expected_organism"]
+                for row in sample_rows
+            ), (
+                f"No {run_info['expected_organism']} adjusted taxon found for "
                 f"{run_info['sample_id']}"
             )
             expected_tasks = run_info.get("expected_tasks", [])
@@ -1239,30 +1431,6 @@ def test_mini_sra_viral_pipeline_completes() -> None:
                 f"Missing expected BLAST tasks for {run_info['sample_id']}: "
                 f"expected {sorted(expected_tasks)}, observed {sorted(observed_tasks)}"
             )
-
-        resolved_manifest = (
-            results_root / "00_input_resolution" / "resolved_reads.jsonl"
-        )
-        resolved_records = [
-            json.loads(line)
-            for line in resolved_manifest.read_text(encoding="utf-8").splitlines()
-        ]
-        resolved_by_sample = {
-            record["sample_id"]: record for record in resolved_records
-        }
-        for run_info in LOCAL_E2E_SAMPLES:
-            record = resolved_by_sample[run_info["sample_id"]]
-            assert record["source"] == run_info["source"]
-
-        glob_record = resolved_by_sample["local_hits_glob"]
-        assert [Path(path).name for path in glob_record["r1"]] == [
-            "local_hits_glob_L001_R1_001.fastq.gz",
-            "local_hits_glob_L002_R1_001.fastq.gz",
-        ]
-        assert [Path(path).name for path in glob_record["r2"]] == [
-            "local_hits_glob_L001_R2_001.fastq.gz",
-            "local_hits_glob_L002_R2_001.fastq.gz",
-        ]
 
         for organism in {
             str(run_info["expected_organism"]) for run_info in selected_sra_runs
@@ -1273,7 +1441,7 @@ def test_mini_sra_viral_pipeline_completes() -> None:
         if not skip_assembly:
             assert_long_read_assembly_outputs(results_root, selected_sra_runs)
 
-        big_tables_dir = results_root / "11_big_tables"
+        big_tables_dir = results_root / "12_big_tables"
         table_inputs = {
             "query_big_table.tsv": big_tables_dir / "query" / "per_sample",
             "taxon_big_table.tsv": big_tables_dir / "taxon" / "per_sample",
@@ -1292,6 +1460,36 @@ def test_mini_sra_viral_pipeline_completes() -> None:
                 grouped_table,
                 list(per_sample_dir.glob("*.tsv")),
             )
+            rows = read_tsv_rows(featured_table)
+            assert rows, f"No rows in featured Big Table: {featured_table}"
+            columns = list(rows[0])
+            taxid_column = (
+                "assigned_taxid" if filename == "query_big_table.tsv" else "taxid"
+            )
+            assert columns.index("who_risk_group") == columns.index(taxid_column) + 1
+            if filename == "query_big_table.tsv":
+                placement_columns = {
+                    "best_hit_reference_accession",
+                    "best_hit_reference_title",
+                    "best_hit_alignment_length",
+                    "best_hit_query_start_1based",
+                    "best_hit_query_end_1based",
+                    "best_hit_reference_length",
+                    "best_hit_reference_start_1based",
+                    "best_hit_reference_end_1based",
+                    "best_hit_reference_strand",
+                }
+                assert placement_columns <= set(columns)
+                for row in rows:
+                    assert row["best_hit_reference_accession"]
+                    assert int(row["best_hit_query_start_1based"]) <= int(
+                        row["best_hit_query_end_1based"],
+                    )
+                    assert int(row["best_hit_reference_start_1based"]) <= int(
+                        row["best_hit_reference_end_1based"],
+                    )
+
+        assert_best_hit_sequence_evidence_outputs(results_root)
 
         sourmash_root = (
             results_root
@@ -1302,6 +1500,7 @@ def test_mini_sra_viral_pipeline_completes() -> None:
         )
         ref_dir = sourmash_root / "reference"
         gather_dir = sourmash_root / "gather"
+        risk_group_dir = sourmash_root / "taxonomy" / "risk_groups"
         merged_taxburst_dir = sourmash_root / "plots" / "taxburst"
         taxburst_dir = merged_taxburst_dir / "per_sample"
         sankey_dir = sourmash_root / "plots" / "sankey"
@@ -1312,6 +1511,10 @@ def test_mini_sra_viral_pipeline_completes() -> None:
         expected_species_by_sample = {
             run_info["sample_id"]: run_info["expected_organism"]
             for run_info in selected_sra_runs
+        }
+        expected_risk_group_species = {
+            "Orf virus": ("Parapoxvirus orf", "RG2"),
+            "Monkeypox virus": ("Orthopoxvirus monkeypox", "RG3"),
         }
         merged_taxburst_html = merged_taxburst_dir / "sourmash.taxburst.html"
         assert merged_taxburst_html.is_file(), (
@@ -1330,6 +1533,28 @@ def test_mini_sra_viral_pipeline_completes() -> None:
                 expected_species in (row.get("name") or row.get("match_name", ""))
                 for row in gather_rows
             ), f"No {expected_species} sourmash gather hit found for {sample_id}"
+
+            risk_group_csv = (
+                risk_group_dir
+                / f"{sample_id}.sourmash.tax_metagenome.with_risk_groups.csv"
+            )
+            assert risk_group_csv.is_file(), (
+                f"Missing WHO risk-group annotated sourmash summary: {risk_group_csv}"
+            )
+            risk_group_rows = read_csv_rows(risk_group_csv)
+            assert risk_group_rows, f"No rows in {risk_group_csv}"
+            columns = list(risk_group_rows[0])
+            assert columns.index("who_risk_group") == columns.index("lineage") + 1
+            assert any(
+                row.get("lineage", "").split(";")[-1]
+                == expected_risk_group_species[expected_species][0]
+                and row.get("who_risk_group")
+                == expected_risk_group_species[expected_species][1]
+                for row in risk_group_rows
+            ), (
+                "No WHO risk group found for "
+                f"{expected_risk_group_species[expected_species]} in {risk_group_csv}"
+            )
 
             taxburst_html = taxburst_dir / f"{sample_id}.sourmash.taxburst.html"
             taxburst_json = taxburst_dir / f"{sample_id}.sourmash.taxburst.json"

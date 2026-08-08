@@ -113,6 +113,11 @@ class NvdParams(BaseModel):
         description="Enable experimental release-candidate features",
         json_schema_extra={"category": "Core"},
     )
+    skip_rapid_screen: bool = Field(
+        default=False,
+        description="Disable experimental rapid screening for sensitive targets with sourmash",
+        json_schema_extra={"category": "Core"},
+    )
     skip_assembly: bool = Field(
         default=False,
         description="Skip SPAdes assembly and all downstream contig classification",
@@ -123,6 +128,11 @@ class NvdParams(BaseModel):
         description="Skip MEGABLAST and BLASTN contig search.",
         json_schema_extra={"category": "Core"},
     )
+    skip_fastqc: bool = Field(
+        default=False,
+        description="Skip per-file raw-read FastQC.",
+        json_schema_extra={"category": "Core"},
+    )
 
     blast_db_version: str | None = Field(
         None,
@@ -131,7 +141,7 @@ class NvdParams(BaseModel):
     )
     virus_index_version: str | None = Field(
         None,
-        description="Virus enrichment index version",
+        description="Target-enrichment index version",
         json_schema_extra={"category": "Databases"},
     )
 
@@ -152,42 +162,42 @@ class NvdParams(BaseModel):
     )
     virus_index: Path | None = Field(
         None,
-        description="Path to prebuilt vertebrate-infecting virus deacon index (.idx file)",
+        description="Path to a prebuilt Deacon target-enrichment index (.idx file)",
         json_schema_extra={"category": "Databases"},
     )
     virus_index_url: str | None = Field(
         None,
-        description="URL to download a prebuilt vertebrate-infecting virus deacon index",
+        description="URL to download a prebuilt Deacon target-enrichment index",
         json_schema_extra={"category": "Databases"},
     )
     virus_reference_fasta: Path | None = Field(
         None,
-        description="Custom vertebrate-infecting virus FASTA for building an enrichment index",
+        description="Custom target FASTA for building a Deacon enrichment index",
         json_schema_extra={"category": "Databases"},
     )
     no_enrichment: bool = Field(
         default=False,
-        description="Disable target enrichment even when a virus index source is provided",
+        description="Disable target enrichment even when an index source is provided",
         json_schema_extra={"category": "Databases"},
     )
     virus_kmer_size: int = Field(
         31,
-        description="K-mer size for building a custom virus enrichment index",
+        description="K-mer size for building a custom target-enrichment index",
         json_schema_extra={"category": "Databases"},
     )
     virus_window_size: int = Field(
         1,
-        description="Minimizer window size for building a custom virus enrichment index",
+        description="Minimizer window size for building a custom target-enrichment index",
         json_schema_extra={"category": "Databases"},
     )
     virus_abs_threshold: int = Field(
         1,
-        description="Minimum absolute minimizer hits for virus read enrichment",
+        description="Minimum absolute minimizer hits for target enrichment",
         json_schema_extra={"category": "Databases"},
     )
     virus_rel_threshold: float = Field(
         0.0,
-        description="Minimum relative proportion of minimizers for virus read enrichment (0.0-1.0)",
+        description="Minimum relative proportion of minimizers for target enrichment (0.0-1.0)",
         json_schema_extra={"category": "Databases"},
     )
     sourmash_ref_path: Path | None = Field(

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import gzip
+import json
 import os
 import shutil
 import subprocess
@@ -153,3 +154,52 @@ def test_depletion_keeps_direct_file_filtering_for_single_reads(tmp_path: Path) 
     output = run_depletion(tmp_path, read_structure="single")
 
     assert "@single\n" in output
+
+
+def test_single_input_enrichment_filters_records_independently(
+    tmp_path: Path,
+) -> None:
+    """A single-input target pass can discard one former mate by itself."""
+    reads = tmp_path / "postmerge.fastq.gz"
+    with gzip.open(reads, "wt", encoding="utf-8") as handle:
+        handle.write(f"@target\n{CONTAMINANT}\n+\n{'I' * len(CONTAMINANT)}\n")
+        handle.write(
+            f"@nontarget\n{NONCONTAMINANT}\n+\n{'I' * len(NONCONTAMINANT)}\n",
+        )
+
+    index = build_deacon_index(tmp_path)
+    output = tmp_path / "enriched.fastq.gz"
+    summary = tmp_path / "summary.json"
+    completed = subprocess.run(  # noqa: S603
+        [
+            "deacon",
+            "filter",
+            "--threads",
+            "1",
+            "--abs-threshold",
+            "1",
+            "--rel-threshold",
+            "0.0",
+            "--summary",
+            str(summary),
+            "--output",
+            str(output),
+            str(index),
+            str(reads),
+        ],  # noqa: S607
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=45,
+    )
+
+    diagnostics = f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}"
+    assert completed.returncode == 0, diagnostics
+    with gzip.open(output, "rt", encoding="utf-8") as handle:
+        enriched_reads = handle.read()
+    assert "@target\n" in enriched_reads
+    assert "@nontarget\n" not in enriched_reads
+
+    summary_data = json.loads(summary.read_text(encoding="utf-8"))
+    assert summary_data["seqs_in"] == 2
+    assert summary_data["seqs_out"] == 1

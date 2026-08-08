@@ -212,6 +212,8 @@ Then generate a samplesheet from that accession list:
 nvd samplesheet generate --from-sra accessions.txt --platform illumina --output samplesheet.csv
 ```
 
+NVD decodes each SRA run as a stream through target enrichment rather than materializing decoded raw FASTQ files. Raw-read FastQC therefore runs only for local FASTQ inputs; the `skip_fastqc` setting controls those local tasks. SRA reads rejoin local reads immediately after target enrichment and receive the same subsequent preprocessing.
+
 If you want to inspect what NVD would write before touching the filesystem, use dry-run mode:
 
 ```bash
@@ -306,6 +308,10 @@ Resume with the same inputs by adding `--resume`, or ask NVD to resume the last 
 nvd run --params-file run.yaml --resume
 nvd resume
 ```
+
+Treat a results directory as belonging to one run identity and sample set. Same-run resume is supported for interrupted work; unrelated or concurrent reuse of a results directory is unsupported, especially with live FASTQ glob inputs.
+
+NVD best-effort reporting retries twice and is then ignored so scientific work can finish. When available, the report artifacts are `${results}/nvd/multiqc_report.html` and `${results}/nvd/13_experiment_summary/multiqc_data/`; raw-read FastQC payloads may be partially available under `${results}/nvd/00_input_preparation/raw_fastq_qc/fastqc/` as generated `*_fastqc.zip` and `*_fastqc.html` files. Resolved input declarations are published under `${results}/nvd/00_input_preparation/input_resolution/`. `multiqc_data/nvd_inputs`, manifest fields/schema, generated YAML names, receipt schemas, and section IDs are internal and not a downstream API.
 
 For more on authoring params, managing presets, samplesheet helpers, secrets, and taxonomy setup, see the [NVD CLI Guide](./docs/nvd_cli_guide.md).
 

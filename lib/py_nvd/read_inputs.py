@@ -477,10 +477,24 @@ def resolve_rows(rows: tuple[SamplesheetRow, ...]) -> Resolution:
 
 
 def _sample_to_json(sample: ResolvedSample) -> dict[str, object]:
+    if sample.r1:
+        read_structure = "paired"
+        read_counts: dict[str, int] | None = {
+            "R1": len(sample.r1),
+            "R2": len(sample.r2),
+        }
+    elif sample.reads:
+        read_structure = "single"
+        read_counts = {"single": len(sample.reads)}
+    else:
+        read_structure = "unknown"
+        read_counts = None
     record: dict[str, object] = {
         "sample_id": sample.sample_id,
         "platform": sample.platform,
         "source": sample.source,
+        "read_structure": read_structure,
+        "read_counts": read_counts,
     }
     if sample.r1:
         record["r1"] = [str(path) for path in sample.r1]

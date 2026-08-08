@@ -1,0 +1,12 @@
+min_version = "2026.7.13"
+
+[tools]
+"github:prefix-dev/pixi" = "0.74.0"
+just = "1.57.0"
+uv = "0.9.18"
+
+[env]
+_.path = [".pixi/envs/default/bin", "bin"]
+
+[settings]
+lockfile = true

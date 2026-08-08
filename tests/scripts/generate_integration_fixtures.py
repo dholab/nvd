@@ -36,18 +36,21 @@ REFERENCE_TAXIDS = {
 SOURMASH_LINEAGES = {
     "NC_005336.1": {
         "genus": "Parapoxvirus",
-        "species": "Orf virus",
-        "taxpath": "10239|2732408|2732506|2732544|10240|10255|10258",
+        "species": "Parapoxvirus orf",
+        "strain": "Orf virus",
+        "taxpath": "10239|2732408|2732506|2732544|10240|10255|3431389|10258",
     },
     "NC_003310.1": {
         "genus": "Orthopoxvirus",
-        "species": "Monkeypox virus",
-        "taxpath": "10239|2732408|2732506|2732544|10240|10242|10244",
+        "species": "Orthopoxvirus monkeypox",
+        "strain": "Monkeypox virus",
+        "taxpath": "10239|2732408|2732506|2732544|10240|10242|3431483|10244",
     },
     "NC_063383.1": {
         "genus": "Orthopoxvirus",
-        "species": "Monkeypox virus",
-        "taxpath": "10239|2732408|2732506|2732544|10240|10242|10244",
+        "species": "Orthopoxvirus monkeypox",
+        "strain": "Monkeypox virus",
+        "taxpath": "10239|2732408|2732506|2732544|10240|10242|3431483|10244",
     },
 }
 
@@ -183,7 +186,7 @@ def write_blast_taxid_map(paths: FixturePaths) -> None:
 
 def write_sourmash_lineages(paths: FixturePaths) -> None:
     lines = [
-        "ident,superkingdom,phylum,class,order,family,genus,species,taxpath",
+        "ident,superkingdom,phylum,class,order,family,genus,species,strain,taxpath",
     ]
     for accession in REFERENCE_ACCESSIONS:
         lineage = SOURMASH_LINEAGES[accession]
@@ -198,6 +201,7 @@ def write_sourmash_lineages(paths: FixturePaths) -> None:
                     "Poxviridae",
                     lineage["genus"],
                     lineage["species"],
+                    lineage["strain"],
                     lineage["taxpath"],
                 ],
             ),
