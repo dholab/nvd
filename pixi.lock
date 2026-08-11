@@ -35,7 +35,7 @@ environments:
       - conda: https://conda.anaconda.org/bioconda/linux-64/alignoth-1.10.1-h9e2517d_0.conda
       - conda: https://conda.anaconda.org/bioconda/linux-64/bbmap-39.91-h09cc210_0.conda
       - conda: https://conda.anaconda.org/bioconda/linux-64/blast-2.17.0-h66d330f_0.conda
-      - conda: https://conda.anaconda.org/bioconda/linux-64/deacon-0.15.0-hdd79491_0.conda
+      - conda: https://conda.anaconda.org/bioconda/linux-64/deacon-0.16.0-h3edb6b3_0.conda
       - conda: https://conda.anaconda.org/bioconda/linux-64/entrez-direct-24.0-he881be0_0.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/linux-64/fastp-1.3.6-h43da1c4_0.conda
       - conda: https://conda.anaconda.org/bioconda/linux-64/flye-2.9.6-py312h734f728_1.conda
@@ -407,7 +407,7 @@ environments:
       - conda: https://conda.anaconda.org/bioconda/linux-aarch64/alignoth-1.10.1-hb267aa8_0.conda
       - conda: https://conda.anaconda.org/bioconda/linux-aarch64/bbmap-39.91-h7683cbd_0.conda
       - conda: https://conda.anaconda.org/bioconda/linux-aarch64/blast-2.16.0-h6a93c2d_5.tar.bz2
-      - conda: https://conda.anaconda.org/bioconda/linux-aarch64/deacon-0.15.0-hacc9189_0.conda
+      - conda: https://conda.anaconda.org/bioconda/linux-aarch64/deacon-0.16.0-ha0850b2_0.conda
       - conda: https://conda.anaconda.org/bioconda/linux-aarch64/entrez-direct-22.4-h8865c2f_0.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/linux-aarch64/fastp-1.3.6-h5eda1b2_0.conda
       - conda: https://conda.anaconda.org/bioconda/linux-aarch64/flye-2.9.6-py312h01567af_1.conda
@@ -787,7 +787,7 @@ environments:
       - conda: https://conda.anaconda.org/bioconda/osx-64/alignoth-1.10.1-h822ee72_0.conda
       - conda: https://conda.anaconda.org/bioconda/osx-64/bbmap-39.91-h991cdf7_0.conda
       - conda: https://conda.anaconda.org/bioconda/osx-64/blast-2.17.0-h53185c9_0.conda
-      - conda: https://conda.anaconda.org/bioconda/osx-64/deacon-0.15.0-h5126ea9_0.conda
+      - conda: https://conda.anaconda.org/bioconda/osx-64/deacon-0.16.0-h80f120d_0.conda
       - conda: https://conda.anaconda.org/bioconda/osx-64/entrez-direct-24.0-h193322a_0.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/osx-64/fastp-1.3.6-h3119cac_0.conda
       - conda: https://conda.anaconda.org/bioconda/osx-64/flye-2.9.6-py313h95f5313_1.conda
@@ -1112,7 +1112,7 @@ environments:
       - conda: https://conda.anaconda.org/bioconda/osx-arm64/alignoth-1.10.1-h75efd46_0.conda
       - conda: https://conda.anaconda.org/bioconda/osx-arm64/bbmap-39.91-he046917_0.conda
       - conda: https://conda.anaconda.org/bioconda/osx-arm64/blast-2.16.0-hb260f6e_5.tar.bz2
-      - conda: https://conda.anaconda.org/bioconda/osx-arm64/deacon-0.15.0-hc0d6d67_0.conda
+      - conda: https://conda.anaconda.org/bioconda/osx-arm64/deacon-0.16.0-h314a369_0.conda
       - conda: https://conda.anaconda.org/bioconda/osx-arm64/entrez-direct-22.4-hd5f1084_0.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/osx-arm64/fastp-1.3.6-ha1d0559_0.conda
       - conda: https://conda.anaconda.org/bioconda/osx-arm64/flye-2.9.6-py313h05f0e27_1.conda
@@ -1437,7 +1437,7 @@ environments:
       - conda: https://conda.anaconda.org/bioconda/linux-64/alignoth-1.10.1-h9e2517d_0.conda
       - conda: https://conda.anaconda.org/bioconda/linux-64/bbmap-39.91-h09cc210_0.conda
       - conda: https://conda.anaconda.org/bioconda/linux-64/blast-2.17.0-h66d330f_0.conda
-      - conda: https://conda.anaconda.org/bioconda/linux-64/deacon-0.15.0-hdd79491_0.conda
+      - conda: https://conda.anaconda.org/bioconda/linux-64/deacon-0.16.0-h3edb6b3_0.conda
       - conda: https://conda.anaconda.org/bioconda/linux-64/entrez-direct-24.0-he881be0_0.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/linux-64/fastp-1.3.6-h43da1c4_0.conda
       - conda: https://conda.anaconda.org/bioconda/linux-64/flye-2.9.6-py312h734f728_1.conda
@@ -1907,7 +1907,7 @@ environments:
       - conda: https://conda.anaconda.org/bioconda/linux-aarch64/alignoth-1.10.1-hb267aa8_0.conda
       - conda: https://conda.anaconda.org/bioconda/linux-aarch64/bbmap-39.91-h7683cbd_0.conda
       - conda: https://conda.anaconda.org/bioconda/linux-aarch64/blast-2.16.0-h6a93c2d_5.tar.bz2
-      - conda: https://conda.anaconda.org/bioconda/linux-aarch64/deacon-0.15.0-hacc9189_0.conda
+      - conda: https://conda.anaconda.org/bioconda/linux-aarch64/deacon-0.16.0-ha0850b2_0.conda
       - conda: https://conda.anaconda.org/bioconda/linux-aarch64/entrez-direct-22.4-h8865c2f_0.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/linux-aarch64/fastp-1.3.6-h5eda1b2_0.conda
       - conda: https://conda.anaconda.org/bioconda/linux-aarch64/flye-2.9.6-py312h01567af_1.conda
@@ -2385,7 +2385,7 @@ environments:
       - conda: https://conda.anaconda.org/bioconda/osx-64/alignoth-1.10.1-h822ee72_0.conda
       - conda: https://conda.anaconda.org/bioconda/osx-64/bbmap-39.91-h991cdf7_0.conda
       - conda: https://conda.anaconda.org/bioconda/osx-64/blast-2.17.0-h53185c9_0.conda
-      - conda: https://conda.anaconda.org/bioconda/osx-64/deacon-0.15.0-h5126ea9_0.conda
+      - conda: https://conda.anaconda.org/bioconda/osx-64/deacon-0.16.0-h80f120d_0.conda
       - conda: https://conda.anaconda.org/bioconda/osx-64/entrez-direct-24.0-h193322a_0.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/osx-64/fastp-1.3.6-h3119cac_0.conda
       - conda: https://conda.anaconda.org/bioconda/osx-64/flye-2.9.6-py312hf7bdf34_1.conda
@@ -2809,7 +2809,7 @@ environments:
       - conda: https://conda.anaconda.org/bioconda/osx-arm64/alignoth-1.10.1-h75efd46_0.conda
       - conda: https://conda.anaconda.org/bioconda/osx-arm64/bbmap-39.91-he046917_0.conda
       - conda: https://conda.anaconda.org/bioconda/osx-arm64/blast-2.16.0-hb260f6e_5.tar.bz2
-      - conda: https://conda.anaconda.org/bioconda/osx-arm64/deacon-0.15.0-hc0d6d67_0.conda
+      - conda: https://conda.anaconda.org/bioconda/osx-arm64/deacon-0.16.0-h314a369_0.conda
       - conda: https://conda.anaconda.org/bioconda/osx-arm64/entrez-direct-22.4-hd5f1084_0.tar.bz2
       - conda: https://conda.anaconda.org/bioconda/osx-arm64/fastp-1.3.6-ha1d0559_0.conda
       - conda: https://conda.anaconda.org/bioconda/osx-arm64/flye-2.9.6-py312hf40edc0_1.conda
@@ -3281,20 +3281,23 @@ packages:
     - blast >=2.17.0,<2.18.0a0
   size: 84832339
   timestamp: 1754909742570
-- conda: https://conda.anaconda.org/bioconda/linux-64/deacon-0.15.0-hdd79491_0.conda
-  sha256: 69c31e411d270f1311d31fceacb522ddea1b2ba3a04cbfa63e5669e919ecdee6
-  md5: 310026878e1a138dfade306cc1ab0950
+- conda: https://conda.anaconda.org/bioconda/linux-64/deacon-0.16.0-h3edb6b3_0.conda
+  sha256: 05fd4cd0e01d44d746304e6e605af637294d2226adc26ba12bddf30f56d9f1b9
+  md5: 816292026eccfd60728456ce183eb146
   depends:
-  - openssl >=3.5.5,<4.0a0
+  - __glibc >=2.17,<3.0.a0
+  - libgcc >=14
+  - openssl >=3.5.7,<4.0a0
   constrains:
   - __glibc >=2.17
   license: MIT
+  license_family: MIT
   purls: []
   run_exports:
     weak:
-    - deacon >=0.15.0,<1.0a0
-  size: 2160787
-  timestamp: 1773419136781
+    - deacon >=0.16.0,<0.17.0a0
+  size: 2451074
+  timestamp: 1786274921399
 - conda: https://conda.anaconda.org/bioconda/linux-64/entrez-direct-24.0-he881be0_0.tar.bz2
   sha256: 71a8f349659c9c18efa544663de2db1a20b5e3d32f8e4e88cd33110a0caf4eb3
   md5: 52a3fabee9201c2c6093c13b4eaf29b4
@@ -3645,20 +3648,22 @@ packages:
     - blast >=2.16.0,<2.17.0a0
   size: 145178710
   timestamp: 1743180765609
-- conda: https://conda.anaconda.org/bioconda/linux-aarch64/deacon-0.15.0-hacc9189_0.conda
-  sha256: 49b7e515bc70b2a5838bdfd75088f3d1e098868935be819939ffa1e1a7a89e3f
-  md5: 049bd11a7743471d3dbd5bd438f161be
+- conda: https://conda.anaconda.org/bioconda/linux-aarch64/deacon-0.16.0-ha0850b2_0.conda
+  sha256: d9e12ec77eb3b00929ae546c348d1c1bbb6c751a6400ec246c91ada7056e295e
+  md5: 13cc68a2750d208c2be56e66d86f27c2
   depends:
-  - openssl >=3.5.5,<4.0a0
+  - libgcc >=14
+  - openssl >=3.5.7,<4.0a0
   constrains:
   - __glibc >=2.17
   license: MIT
+  license_family: MIT
   purls: []
   run_exports:
     weak:
-    - deacon >=0.15.0,<1.0a0
-  size: 2197786
-  timestamp: 1773419019481
+    - deacon >=0.16.0,<0.17.0a0
+  size: 2448963
+  timestamp: 1786274674979
 - conda: https://conda.anaconda.org/bioconda/linux-aarch64/entrez-direct-22.4-h8865c2f_0.tar.bz2
   sha256: 2ed85538e2e3ae19129faf078afed08b44b32ba12ff3d6982176ccb7879adf75
   md5: 289ba7576234e65af7824ef380db651a
@@ -4174,20 +4179,22 @@ packages:
     - blast >=2.17.0,<2.18.0a0
   size: 152602258
   timestamp: 1754920755551
-- conda: https://conda.anaconda.org/bioconda/osx-64/deacon-0.15.0-h5126ea9_0.conda
-  sha256: 0ce07edc1f37913b2b83cd75bd9e5c1ddbf8b69b3d6eaf9be9d4b006cab0b9aa
-  md5: 6e9dcc0f8de108fff7b71fa08572e08e
+- conda: https://conda.anaconda.org/bioconda/osx-64/deacon-0.16.0-h80f120d_0.conda
+  sha256: a5c5e9cffdf74742c1491f8c5f6179218cf3a795133edc118c97e005395e960d
+  md5: 43dfcdf69a5043fdad90bdf90dc99cfe
   depends:
-  - openssl >=3.5.5,<4.0a0
+  - __osx >=10.13
+  - openssl >=3.5.7,<4.0a0
   constrains:
   - __osx >=10.13
   license: MIT
+  license_family: MIT
   purls: []
   run_exports:
     weak:
-    - deacon >=0.15.0,<1.0a0
-  size: 1395517
-  timestamp: 1773420060364
+    - deacon >=0.16.0,<0.17.0a0
+  size: 2002368
+  timestamp: 1786276123016
 - conda: https://conda.anaconda.org/bioconda/osx-64/entrez-direct-24.0-h193322a_0.tar.bz2
   sha256: a9257df9c0f41436190e6161fca969308b082b4a6b51e50f27600dfd035637c7
   md5: 1a3b2f781a1a9f3a14f26dd9d7660998
@@ -4537,20 +4544,22 @@ packages:
     - blast >=2.16.0,<2.17.0a0
   size: 157885023
   timestamp: 1743182400505
-- conda: https://conda.anaconda.org/bioconda/osx-arm64/deacon-0.15.0-hc0d6d67_0.conda
-  sha256: 4ea72a07956e653e7d17ccd4addf5b02ede55d99abf371288dfd58869176ae65
-  md5: 6ec8b3f1a537bcd5043bed62f9352a43
+- conda: https://conda.anaconda.org/bioconda/osx-arm64/deacon-0.16.0-h314a369_0.conda
+  sha256: a3b1d2a8eea8ff5fc9e572e5065ba1d1a9b0fed420561894445667ebb39e521f
+  md5: beb02a73e6694cf04bda74d97c648cda
   depends:
-  - openssl >=3.5.5,<4.0a0
+  - __osx >=11.0
+  - openssl >=3.5.7,<4.0a0
   constrains:
   - __osx >=11.0
   license: MIT
+  license_family: MIT
   purls: []
   run_exports:
     weak:
-    - deacon >=0.15.0,<1.0a0
-  size: 1297184
-  timestamp: 1773418777553
+    - deacon >=0.16.0,<0.17.0a0
+  size: 1780226
+  timestamp: 1786274455646
 - conda: https://conda.anaconda.org/bioconda/osx-arm64/entrez-direct-22.4-hd5f1084_0.tar.bz2
   sha256: 46efea9f61526340ae8db2c1e25666fc46a259f5a52e8d69d5ca62fedf46774d
   md5: 56c3860d52479d20d86dd78f24947e8e

@@ -213,6 +213,11 @@
       "default": false,
       "description": "Merge overlapping paired-end reads before contig mapback"
     },
+    "check_pairs": {
+      "type": "boolean",
+      "default": false,
+      "description": "Ask Deacon to validate paired FASTQ record names and fail on mismatches. Accepted names use Illumina CASAVA mate fields or /1 and /2 suffixes; validation does not repair pairs."
+    },
     "dedup": {
       "type": "boolean",
       "default": false,

@@ -250,6 +250,13 @@ class NvdParams(BaseModel):
         description="Merge overlapping paired-end reads before contig mapback",
         json_schema_extra={"category": "Preprocessing"},
     )
+    check_pairs: bool = Field(
+        default=False,
+        description=(
+            "Ask Deacon to validate paired FASTQ record names and fail on mismatches"
+        ),
+        json_schema_extra={"category": "Preprocessing"},
+    )
     dedup: bool = Field(
         default=False,
         description="Deduplicate reads (umbrella: enables both dedup_seq and dedup_pos)",

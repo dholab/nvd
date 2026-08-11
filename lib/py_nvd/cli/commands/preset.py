@@ -186,6 +186,11 @@ def preset_register(
         "--merge-pairs/--no-merge-pairs",
         help="Merge overlapping paired-end reads before contig mapback",
     ),
+    check_pairs: bool | None = typer.Option(
+        None,
+        "--check-pairs/--no-check-pairs",
+        help="Ask Deacon to validate paired FASTQ record names",
+    ),
     host_index: Path | None = typer.Option(
         None,
         "--host-index",
@@ -303,6 +308,7 @@ def preset_register(
         "dedup_pos": dedup_pos,
         "trim_adapters": trim_adapters,
         "merge_pairs": merge_pairs,
+        "check_pairs": check_pairs,
         "host_index": host_index,
         "host_index_url": host_index_url,
         "host_contaminants_fasta": host_contaminants_fasta,

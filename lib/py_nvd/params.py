@@ -280,6 +280,7 @@ def _yaml_analysis_section(
         "dedup_pos",
         "trim_adapters",
         "merge_pairs",
+        "check_pairs",
         "filter_reads",
         "filter_low_complexity_reads",
         "min_read_entropy",

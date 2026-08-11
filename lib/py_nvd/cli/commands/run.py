@@ -393,6 +393,15 @@ def run(
         help="Merge overlapping paired-end reads before contig mapback",
         rich_help_panel=PANEL_PREPROCESSING,
     ),
+    check_pairs: bool | None = typer.Option(
+        None,
+        "--check-pairs/--no-check-pairs",
+        help=(
+            "Ask Deacon to validate paired FASTQ record names and fail on "
+            "mismatches; accepts CASAVA names or /1 and /2 suffixes"
+        ),
+        rich_help_panel=PANEL_PREPROCESSING,
+    ),
     host_index: Path | None = typer.Option(
         None,
         "--host-index",
@@ -666,6 +675,7 @@ def run(
         "dedup_pos": dedup_pos,
         "trim_adapters": trim_adapters,
         "merge_pairs": merge_pairs,
+        "check_pairs": check_pairs,
         "host_index": host_index,
         "host_index_url": host_index_url,
         "host_contaminants_fasta": host_contaminants_fasta,

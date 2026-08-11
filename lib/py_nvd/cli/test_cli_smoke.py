@@ -249,6 +249,27 @@ def test_run_help_describes_moderate_read_entropy_default() -> None:
     assert "default: 0.5" in result.output
 
 
+def test_run_accepts_check_pairs_flag(tmp_path: Path) -> None:
+    """The pair-validation CLI flag maps to the underscore Nextflow param."""
+    samplesheet = tmp_path / "samples.csv"
+    samplesheet.write_text("sample_id,srr,platform,fastq1,fastq2\n", encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        [
+            "run",
+            "--samplesheet",
+            str(samplesheet),
+            "--check-pairs",
+            "--dry-run",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "--check_pairs true" in result.output
+    assert "--check-pairs" not in result.output
+
+
 def test_samplesheet_generate_sanitizes_illumina_ids(tmp_path: Path) -> None:
     fastq_dir = tmp_path / "fastqs"
     fastq_dir.mkdir()
