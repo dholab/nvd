@@ -19,12 +19,26 @@ process MERGE_PAIRS {
 
 	script:
 	"""
+	set -o pipefail
+
+	# Preserve mate identity before later single-read filtering can orphan pairs.
 	bbmerge.sh \
 	in=${reads} \
 	out=${sample_id}.overlap_merged_pair.fastq.gz \
-	outu=${sample_id}.single_read.fastq.gz \
+	outu=stdout.fq \
 	interleaved=t \
 	threads=${task.cpus} \
+	-eoom \
+	| reformat.sh \
+	in=stdin.fq \
+	out=${sample_id}.single_read.fastq.gz \
+	interleaved=t \
+	verifyinterleaved=t \
+	trimreaddescription=t \
+	addslash=t \
+	spaceslash=f \
+	changequality=f \
+	threads=1 \
 	-eoom
 	"""
 }
