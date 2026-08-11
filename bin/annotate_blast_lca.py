@@ -346,7 +346,7 @@ def main() -> None:
             .pipe(with_canonical_taxids, tx)
             .pipe(with_score_context)
         )
-        assignment_lf = assign_taxonomic_consensus(hits, tx)
+        assignment_lf = assign_taxonomic_consensus(hits, tx).select(OUTPUT_COLUMNS)
         require_taxonomic_assignments(assignment_lf)
 
         logger.info("Writing annotated results to {}", args.output_file)
