@@ -7,7 +7,7 @@ authors = [
   { name = "William Gardner", email = "wkgardner@wisc.edu" },
 ]
 requires-python = ">= 3.11, < 3.14"
-version = "3.3.0"
+version = "3.3.1"
 dependencies = [
   "altair>=6.1.0",
   "biopython>=1.85",
@@ -16,6 +16,7 @@ dependencies = [
   "labkey>=3.4.0",
   "loguru>=0.7.3",
   "lxml>=5.4.0",
+  "more-itertools>=10.7.0",
   "numpy>=2.0.0",
   "pandas>=2.2.3",
   "polars>=1.27.1",
