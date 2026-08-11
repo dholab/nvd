@@ -18,6 +18,7 @@ from stream_fastqs_to_deacon import (
     DeaconStreamConfig,
     StreamError,
     config_from_args,
+    deacon_command,
     parse_args,
     run_deacon_stream,
 )
@@ -53,7 +54,7 @@ def command_io(command: list[str]) -> tuple[Path, Path, Path, tuple[Path, ...]]:
     summary = Path(command[command.index("--summary") + 1])
     index = command.index("filter") + 1
     while command[index].startswith("--"):
-        index += 2
+        index += 1 if command[index] in {"--check-pairs", "--deplete"} else 2
     return (
         output,
         summary,
@@ -194,6 +195,7 @@ def config(
     reads: tuple[Path, ...] = (),
     r1: tuple[Path, ...] = (),
     r2: tuple[Path, ...] = (),
+    check_pairs: bool = False,
 ) -> DeaconStreamConfig:
     index = tmp_path / "index.dcn"
     index.write_text("fake index", encoding="utf-8")
@@ -210,6 +212,7 @@ def config(
         rel_threshold=0.0,
         deplete=False,
         deacon_bin=str(deacon_bin),
+        check_pairs=check_pairs,
     )
 
 
@@ -299,6 +302,34 @@ def test_paired_bundle_streams_both_mates_in_order(tmp_path: Path) -> None:
     output = (tmp_path / "out" / "S1.fastq").read_text(encoding="utf-8")
     assert output.index("@L1_A/1") < output.index("@L2_B/1")
     assert output.index("@L1_A/2") < output.index("@L2_B/2")
+
+
+def test_deacon_command_forwards_opt_in_pair_validation(tmp_path: Path) -> None:
+    """Only an enabled paired helper command asks Deacon to check names."""
+    r1 = write_fastq(tmp_path / "r1.fastq.gz", ["pair/1"])
+    r2 = write_fastq(tmp_path / "r2.fastq.gz", ["pair/2"])
+    paired = config(tmp_path, r1=(r1,), r2=(r2,), check_pairs=True)
+    unchecked = config(tmp_path, r1=(r1,), r2=(r2,))
+
+    assert "--check-pairs" in deacon_command(
+        paired,
+        (Path("r1.fastq.gz"), Path("r2.fastq.gz")),
+    )
+    assert "--check-pairs" not in deacon_command(
+        unchecked,
+        (Path("r1.fastq.gz"), Path("r2.fastq.gz")),
+    )
+
+
+def test_pair_validation_rejects_single_input_mode(tmp_path: Path) -> None:
+    """The helper cannot silently ignore pair validation on single reads."""
+    reads = write_fastq(tmp_path / "reads.fastq.gz", ["single"])
+
+    with pytest.raises(StreamError, match="check-pairs requires paired input"):
+        run_deacon_stream(
+            config(tmp_path, reads=(reads,), check_pairs=True),
+            runner=copying_deacon_runner(),
+        )
 
 
 def test_paired_gzip_fifo_preserves_record_ordinality_across_lanes(
@@ -562,6 +593,35 @@ def test_cli_list_files_are_supported(
     assert capsys.readouterr().err == ""
 
 
+def test_cli_accepts_pair_validation_for_paired_lists(tmp_path: Path) -> None:
+    """The helper exposes Deacon pair-name validation for its paired path."""
+    r1 = (write_fastq(tmp_path / "r1.fastq.gz", ["pair/1"]),)
+    r2 = (write_fastq(tmp_path / "r2.fastq.gz", ["pair/2"]),)
+    r1_list = write_path_list(tmp_path / "r1.txt", r1)
+    r2_list = write_path_list(tmp_path / "r2.txt", r2)
+    argv = [
+        "--sample-id",
+        "S1",
+        "--index",
+        str(tmp_path / "index.dcn"),
+        "--output",
+        str(tmp_path / "out.fastq.gz"),
+        "--summary",
+        str(tmp_path / "summary.json"),
+        "--r1-list",
+        str(r1_list),
+        "--r2-list",
+        str(r2_list),
+        "--check-pairs",
+    ]
+
+    loaded = config_from_args(parse_args(argv))
+
+    assert loaded.r1 == r1
+    assert loaded.r2 == r2
+    assert loaded.check_pairs is True
+
+
 @pytest.fixture(scope="module")
 def deacon_bin() -> str:
     deacon = shutil.which("deacon")
@@ -643,6 +703,7 @@ def real_deacon_config(  # noqa: PLR0913
     reads: tuple[Path, ...] = (),
     r1: tuple[Path, ...] = (),
     r2: tuple[Path, ...] = (),
+    check_pairs: bool = False,
 ) -> DeaconStreamConfig:
     return DeaconStreamConfig(
         sample_id="real",
@@ -657,6 +718,7 @@ def real_deacon_config(  # noqa: PLR0913
         rel_threshold=0.0,
         deplete=False,
         deacon_bin=deacon,
+        check_pairs=check_pairs,
     )
 
 
@@ -712,6 +774,7 @@ def test_real_deacon_reads_paired_fifo_stream(tmp_path: Path, deacon_bin: str) -
             index,
             r1=(r1_lane1, r1_lane2),
             r2=(r2_lane1, r2_lane2),
+            check_pairs=True,
         ),
     )
 
@@ -721,6 +784,28 @@ def test_real_deacon_reads_paired_fifo_stream(tmp_path: Path, deacon_bin: str) -
     assert output.index("@L1_A/1") < output.index("@L1_A/2")
     assert output.index("@L2_B/1") < output.index("@L2_B/2")
     assert output.index("@L1_A/2") < output.index("@L2_B/1")
+
+
+def test_real_deacon_pair_validation_rejects_mismatched_names(
+    tmp_path: Path,
+    deacon_bin: str,
+) -> None:
+    """Opt-in validation surfaces positional pairs with different names."""
+    index = build_deacon_index(tmp_path, deacon_bin)
+    r1 = write_fastq(tmp_path / "R1.fastq.gz", ["left/1"])
+    r2 = write_fastq(tmp_path / "R2.fastq.gz", ["right/2"])
+
+    with pytest.raises(StreamError, match="deacon filter failed"):
+        run_deacon_stream(
+            real_deacon_config(
+                tmp_path,
+                deacon_bin,
+                index,
+                r1=(r1,),
+                r2=(r2,),
+                check_pairs=True,
+            ),
+        )
 
 
 def test_real_deacon_streams_larger_paired_bundle_in_pair_order(
