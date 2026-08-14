@@ -40,6 +40,7 @@ def run_filter(
     filter_low_complexity_reads: bool,
     read_structure: str = "single",
     min_read_length: int = 50,
+    min_read_entropy: float = 0.5,
 ) -> str:
     """Run the public FILTER_READS Nextflow process and return its FASTQ text."""
     reads = tmp_path / "reads.fastq.gz"
@@ -52,7 +53,7 @@ nextflow.enable.dsl = 2
 
 params.filter_reads = {str(filter_reads).lower()}
 params.filter_low_complexity_reads = {str(filter_low_complexity_reads).lower()}
-params.min_read_entropy = 0.9
+params.min_read_entropy = {min_read_entropy}
 params.min_read_length = {min_read_length}
 params.max_read_length = null
 params.min_read_quality_illumina = 20
@@ -319,8 +320,23 @@ def test_entropy_filter_removes_complete_interleaved_pair(tmp_path: Path) -> Non
     assert output == ""
 
 
-def test_default_entropy_filters_observed_repeat_rich_reads(tmp_path: Path) -> None:
-    """The default rejects seven examples but preserves a mostly complex read."""
+@pytest.mark.parametrize(
+    ("min_read_entropy", "expected_ids"),
+    [
+        (
+            0.5,
+            {"000113", "000139", "000141", "000144", "000146", "control"},
+        ),
+        (0.9, {"000144", "control"}),
+    ],
+    ids=["moderate-default", "strict-compatibility"],
+)
+def test_entropy_thresholds_filter_observed_repeat_rich_reads(
+    tmp_path: Path,
+    min_read_entropy: float,
+    expected_ids: set[str],
+) -> None:
+    """The moderate default removes strong repeats while 0.9 remains available."""
     observed = [
         (
             "000110",
@@ -364,6 +380,7 @@ def test_default_entropy_filters_observed_repeat_rich_reads(tmp_path: Path) -> N
         [(name, sequence, "I" * len(sequence)) for name, sequence in observed],
         filter_reads=False,
         filter_low_complexity_reads=True,
+        min_read_entropy=min_read_entropy,
     )
     retained_ids = {
         line.removeprefix("@")
@@ -371,7 +388,7 @@ def test_default_entropy_filters_observed_repeat_rich_reads(tmp_path: Path) -> N
         if index % 4 == 0
     }
 
-    assert retained_ids == {"000144", "control"}
+    assert retained_ids == expected_ids
 
 
 def test_either_filter_family_schedules_filter_reads() -> None:

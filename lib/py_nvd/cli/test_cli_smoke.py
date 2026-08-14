@@ -216,6 +216,14 @@ def test_run_accepts_low_complexity_read_filter_options(tmp_path: Path) -> None:
     assert "0.65" in result.output
 
 
+def test_run_help_describes_moderate_read_entropy_default() -> None:
+    """CLI help identifies the corrective low-complexity threshold."""
+    result = runner.invoke(app, ["run", "--help"])
+
+    assert result.exit_code == 0, result.output
+    assert "default: 0.5" in result.output
+
+
 def test_samplesheet_generate_sanitizes_illumina_ids(tmp_path: Path) -> None:
     fastq_dir = tmp_path / "fastqs"
     fastq_dir.mkdir()
