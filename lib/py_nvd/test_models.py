@@ -570,7 +570,7 @@ class TestNvdParamsDefaults:
         """Low-complexity read filtering is opt-in with a dormant threshold."""
         params = NvdParams()
         assert params.filter_low_complexity_reads is False
-        assert params.min_read_entropy == 0.9
+        assert params.min_read_entropy == 0.5
 
     def test_default_experimental(self) -> None:
         """Default experimental gate matches nextflow.config."""

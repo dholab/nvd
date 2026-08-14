@@ -291,7 +291,7 @@ class NvdParams(BaseModel):
         json_schema_extra={"category": "Preprocessing"},
     )
     min_read_entropy: float = Field(
-        0.9,
+        0.5,
         description="Minimum normalized 5-mer entropy over 50-base windows (0-1)",
         json_schema_extra={"category": "Preprocessing"},
     )

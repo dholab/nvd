@@ -438,7 +438,7 @@ def run(
     min_read_entropy: float | None = typer.Option(
         None,
         "--min-read-entropy",
-        help="Minimum normalized 5-mer entropy over 50-base windows (default: 0.9)",
+        help="Minimum normalized 5-mer entropy over 50-base windows (default: 0.5)",
         rich_help_panel=PANEL_PREPROCESSING,
     ),
     # -------------------------------------------------------------------------

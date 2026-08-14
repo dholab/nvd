@@ -10,6 +10,7 @@ This directory contains JSON Schema definitions for the NVD pipeline.
 | `nvd-params.v3.1.0.schema.json` | Pipeline parameters schema (version 3.1.0) |
 | `nvd-params.v3.2.0.schema.json` | Pipeline parameters schema (version 3.2.0) |
 | `nvd-params.v3.3.0.schema.json` | Pipeline parameters schema (version 3.3.0) |
+| `nvd-params.v3.3.2.schema.json` | Pipeline parameters schema (version 3.3.2) |
 | `nvd-params.latest.schema.json` | Symlink to the current version |
 
 ## Usage
@@ -72,7 +73,7 @@ points to the current version for users who want to track updates automatically.
 For reproducibility, you can reference a specific version:
 
 ```yaml
-# yaml-language-server: $schema=https://raw.githubusercontent.com/dholab/nvd/main/schemas/nvd-params.v3.3.0.schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dholab/nvd/main/schemas/nvd-params.v3.3.2.schema.json
 ```
 
 ## Validation
