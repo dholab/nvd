@@ -12,6 +12,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 BBMAP_MODULE = ROOT / "modules" / "bbmap"
+PREPROCESS_READS = ROOT / "subworkflows" / "preprocess_reads"
 
 pytestmark = pytest.mark.skipif(
     shutil.which("nextflow") is None or shutil.which("bbduk.sh") is None,
@@ -248,6 +249,110 @@ def test_adapter_trimming_keeps_single_read_batches_unpaired(tmp_path: Path) -> 
 
     assert "@spot.1\n" not in output
     assert "@spot.2\n" in output
+
+
+@pytest.mark.skipif(
+    any(shutil.which(tool) is None for tool in ("clumpify.sh", "deacon")),
+    reason="preprocessing order requires locked Clumpify and Deacon",
+)
+def test_preprocessing_deduplicates_after_adapter_trimming(tmp_path: Path) -> None:
+    """Reads made identical by adapter removal collapse before preprocessing ends."""
+    lib_dir = tmp_path / "lib"
+    lib_dir.mkdir()
+    shutil.copy2(ROOT / "lib" / "NvdUtils.groovy", lib_dir)
+    assets_dir = tmp_path / "assets"
+    assets_dir.mkdir()
+    shutil.copy2(ROOT / "assets" / "empty_deacon.k31w1.idx", assets_dir)
+
+    reads = tmp_path / "reads.fastq.gz"
+    write_fastq(
+        reads,
+        [
+            (
+                "adapter-bearing",
+                HIGH_COMPLEXITY + ILLUMINA_ADAPTER,
+                "I" * (len(HIGH_COMPLEXITY) + len(ILLUMINA_ADAPTER)),
+            ),
+            ("already-trimmed", HIGH_COMPLEXITY, "I" * len(HIGH_COMPLEXITY)),
+        ],
+    )
+
+    workflow = tmp_path / "main.nf"
+    workflow.write_text(
+        f"""\
+nextflow.enable.dsl = 2
+
+params.no_enrichment = true
+params.virus_index = null
+params.virus_index_url = null
+params.virus_reference_fasta = null
+params.virus_abs_threshold = 1
+params.virus_rel_threshold = 0.0
+params.merge_pairs = false
+params.dedup = false
+params.dedup_seq = true
+params.trim_adapters = true
+params.host_index = null
+params.host_index_url = null
+params.host_contaminants_fasta = null
+params.filter_reads = false
+params.filter_low_complexity_reads = false
+params.min_read_quality_illumina = 20
+params.min_read_quality_nanopore = 12
+params.min_read_length = 50
+params.min_consecutive_bases = 200
+
+include {{ PREPROCESS_READS }} from '{PREPROCESS_READS}'
+
+workflow {{
+    PREPROCESS_READS(Channel.of(tuple(
+        [
+            id: 'sample_A',
+            platform: 'illumina',
+            read_mode: 'single',
+            r1_count: 1,
+            deacon_read_structure: 'single',
+        ],
+        [file('{reads}')],
+    )))
+
+    PREPROCESS_READS.out.read_batches.view {{ _id, _platform, _structure, _query_class, output ->
+        "FINAL_READS:${{output.name}}"
+    }}
+}}
+""",
+        encoding="utf-8",
+    )
+
+    environment = os.environ.copy()
+    environment["PATH"] = (
+        f"{ROOT / 'bin'}{os.pathsep}{environment['PATH']}"
+    )
+    environment["NXF_ANSI_LOG"] = "false"
+    completed = subprocess.run(  # noqa: S603
+        ["nextflow", "-C", "/dev/null", "run", str(workflow)],  # noqa: S607
+        cwd=tmp_path,
+        env=environment,
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=90,
+    )
+
+    diagnostics = f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}"
+    assert completed.returncode == 0, diagnostics
+    assert "FINAL_READS:sample_A.single_read.dedup.fastq.gz" in completed.stdout
+    [output] = [
+        path
+        for path in (tmp_path / "work").glob(
+            "**/sample_A.single_read.dedup.fastq.gz",
+        )
+        if not path.is_symlink()
+    ]
+    with gzip.open(output, "rt", encoding="utf-8") as handle:
+        records = handle.read().splitlines()
+    assert len(records) == 4
+    assert records[1] == HIGH_COMPLEXITY
 
 
 def test_entropy_filter_does_not_enable_quality_filtering(tmp_path: Path) -> None:

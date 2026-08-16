@@ -162,20 +162,20 @@ workflow PREPROCESS_READS {
             )
         }
 
-    // 2a. Dedup
-    def should_dedup_seq = params.dedup || params.dedup_seq
-    ch_after_dedup = should_dedup_seq
-        ? DEDUP_WITH_CLUMPIFY(ch_read_batches)
-        : ch_read_batches
-
-    // 2b. Adapter trim (Illumina only)
-    ch_branched_for_trim = ch_after_dedup.branch { meta, _reads ->
+    // 2a. Adapter trim (Illumina only)
+    ch_branched_for_trim = ch_read_batches.branch { meta, _reads ->
         illumina: meta.platform == "illumina"
         other: true
     }
     ch_after_trim = params.trim_adapters
         ? TRIM_ADAPTERS(ch_branched_for_trim.illumina).mix(ch_branched_for_trim.other)
-        : ch_after_dedup
+        : ch_read_batches
+
+    // 2b. Dedup
+    def should_dedup_seq = params.dedup || params.dedup_seq
+    ch_after_dedup = should_dedup_seq
+        ? DEDUP_WITH_CLUMPIFY(ch_after_trim)
+        : ch_after_trim
 
     // 2c. Host/contaminant depletion with deacon (optional). The public
     // parameter names remain host_* for compatibility, but this channel is the
@@ -204,10 +204,10 @@ workflow PREPROCESS_READS {
         ch_depletion_index = DEACON_UNION_INDEXES.out.index
         ch_depletion_index_option = ch_depletion_index.map { idx -> tuple(true, idx) }
 
-        ch_after_scrub = DEACON_DEPLETE(ch_after_trim.combine(ch_depletion_index)).reads
+        ch_after_scrub = DEACON_DEPLETE(ch_after_dedup.combine(ch_depletion_index)).reads
     } else {
         ch_depletion_index_option = Channel.value(tuple(false, file("${projectDir}/assets/README.md")))
-        ch_after_scrub = ch_after_trim
+        ch_after_scrub = ch_after_dedup
     }
 
     // 2d. Independently optional quality/length and low-complexity filters

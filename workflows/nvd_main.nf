@@ -5,7 +5,7 @@
  * preprocessing, SPAdes assembly, and two-phase BLAST verification.
  *
  * Architecture: deacon target enrichment runs first on raw R1/R2 reads
- * (outputting interleaved), then preprocessing (dedup, trim, optional host depletion, filter)
+ * (outputting interleaved), then preprocessing (trim, dedup, optional host depletion, filter)
  * operates on the enriched subset, then SPAdes and BLAST.
  */
 
