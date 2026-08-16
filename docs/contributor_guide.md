@@ -4,33 +4,27 @@ Welcome to the NVD development guide. This document is for people changing the p
 
 ## Quick start
 
-For full-stack development, use Pixi. It installs the Python package, Nextflow, and the bioinformatics tools used by the workflow.
+For full-stack development, use Mise to install the repository's pinned Pixi, uv, and just versions. Install Mise and [activate it for your shell](https://mise.jdx.dev/getting-started.html#activate-mise) first. Pixi then installs the Python package, Nextflow, and the bioinformatics tools used by the workflow.
 
 ```bash
-curl -fsSL https://pixi.sh/install.sh | bash
 git clone https://github.com/dholab/nvd.git
 cd nvd
-pixi install --frozen
+mise trust
+mise install
+just setup
 pixi shell
 ```
 
-For Python-only work, `uv` is faster and usually enough for CLI, params, preset, setup, taxonomy, and helper-script changes.
+Mise adds `.pixi/envs/default/bin` to `PATH` when its shell activation is enabled. It does not install the Pixi environment merely because you enter the repository; run `just setup` after cloning or when the lockfiles change.
+
+For Python-only work, the Mise-provided `uv` is faster and usually enough for CLI, params, preset, setup, taxonomy, and helper-script changes.
 
 ```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
 git clone https://github.com/dholab/nvd.git
 cd nvd
+mise trust
+mise install
 uv sync
-```
-
-The Nix/direnv setup remains available for contributors who want a more portable system shell:
-
-```bash
-curl -L https://nixos.org/nix/install | sh
-curl -sfL https://direnv.net/install.sh | bash
-git clone https://github.com/dholab/nvd.git
-cd nvd
-direnv allow
 ```
 
 ## Current usage model

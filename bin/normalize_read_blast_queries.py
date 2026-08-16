@@ -25,6 +25,9 @@ CASAVA_MATE_COMMENT = re.compile(r"(?P<mate>[12]):[YN]:\d+:\S*")
 CASAVA_CLUSTER_ID = re.compile(
     r"[^:\s]+:\d+:[^:\s]+:\d+:\d+:\d+:\d+(?:/(?P<mate>[12]))?",
 )
+SRA_SPOT_ID = re.compile(r"[SED]RR\d+\.\d+(?:/(?P<mate>[12]))?")
+SRA_READ_COMMENT = re.compile(r"(?P<mate>[12])\s+length=\d+")
+ARCHIVE_ORIGINAL_NAME_MATE = re.compile(r"\S+/(?P<mate>[12])")
 
 
 class ReadQueryNormalizationError(Exception):
@@ -159,14 +162,38 @@ def canonical_source_id(source_label: str) -> str:
 
     casava_match = CASAVA_MATE_COMMENT.fullmatch(comment[0])
     cluster_match = CASAVA_CLUSTER_ID.fullmatch(source_id)
-    if casava_match is None or cluster_match is None:
-        return source_id
+    if casava_match is not None and cluster_match is not None:
+        return source_id_with_mate(
+            source_id,
+            existing_mate=cluster_match.group("mate"),
+            observed_mate=casava_match.group("mate"),
+            source_label=source_label,
+        )
 
-    casava_mate = casava_match.group("mate")
-    existing_mate = cluster_match.group("mate")
+    sra_match = SRA_SPOT_ID.fullmatch(source_id)
+    sra_comment = SRA_READ_COMMENT.fullmatch(
+        comment[0],
+    ) or ARCHIVE_ORIGINAL_NAME_MATE.fullmatch(comment[0])
+    if sra_match is not None and sra_comment is not None:
+        return source_id_with_mate(
+            source_id,
+            existing_mate=sra_match.group("mate"),
+            observed_mate=sra_comment.group("mate"),
+            source_label=source_label,
+        )
+    return source_id
+
+
+def source_id_with_mate(
+    source_id: str,
+    *,
+    existing_mate: str | None,
+    observed_mate: str,
+    source_label: str,
+) -> str:
     if existing_mate is None:
-        return f"{source_id}/{casava_mate}"
-    if existing_mate != casava_mate:
+        return f"{source_id}/{observed_mate}"
+    if existing_mate != observed_mate:
         message = f"conflicting mate annotations in FASTQ label: {source_label!r}"
         raise ReadQueryNormalizationError(message)
     return source_id

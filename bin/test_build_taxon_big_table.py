@@ -22,6 +22,7 @@ QUERY_COLUMNS = [
     "crumbs_score",
     "qlen",
     "assigned_taxid",
+    "who_risk_group",
     "assignment_method",
     "qseqid",
     "best_hit_qcov",
@@ -37,7 +38,15 @@ QUERY_COLUMNS = [
     "mapped_reads",
     "producer",
     "source_id",
+    "best_hit_reference_accession",
+    "best_hit_reference_title",
     "best_hit_alignment_length",
+    "best_hit_query_start_1based",
+    "best_hit_query_end_1based",
+    "best_hit_reference_length",
+    "best_hit_reference_start_1based",
+    "best_hit_reference_end_1based",
+    "best_hit_reference_strand",
     "blast_db_version",
     "virus_index_version",
     "nextflow_run_id",
@@ -73,6 +82,7 @@ EXPECTED_LEFT_TO_RIGHT_COLUMNS = [
     "relative_crumbs_percent",
     "supporting_query_count",
     "taxid",
+    "who_risk_group",
     "total_query_span",
     "total_crumbs_score",
     "strong_query_count",
@@ -107,6 +117,7 @@ def query_row(**overrides: object) -> dict[str, object]:
         "sample_id": "sample-1",
         "assigned_taxid_name": "Alpha virus",
         "assigned_taxid_rank": "species",
+        "who_risk_group": "Risk Group 2",
         "support_tier": "strong",
         "query_class": "long_assembly_contig",
         "crumbs_score": "100",
@@ -127,7 +138,15 @@ def query_row(**overrides: object) -> dict[str, object]:
         "mapped_reads": "10",
         "producer": "spades",
         "source_id": "NODE_1",
+        "best_hit_reference_accession": "NC_000001.1",
+        "best_hit_reference_title": "Alpha virus reference",
         "best_hit_alignment_length": "950",
+        "best_hit_query_start_1based": "1",
+        "best_hit_query_end_1based": "950",
+        "best_hit_reference_length": "10000",
+        "best_hit_reference_start_1based": "101",
+        "best_hit_reference_end_1based": "1050",
+        "best_hit_reference_strand": "plus",
         "blast_db_version": "nt-test",
         "virus_index_version": "virus-test",
         "nextflow_run_id": "run-test",
@@ -192,6 +211,7 @@ def test_taxon_big_table_aggregates_query_support_and_crumbs(tmp_path: Path) -> 
     assert list(row) == EXPECTED_LEFT_TO_RIGHT_COLUMNS
     assert row["taxid"] == "111"
     assert row["taxon_name"] == "Alpha virus"
+    assert row["who_risk_group"] == "Risk Group 2"
     assert row["support_tier"] == "strong"
     assert row["support_tier_rule"] == "multi_query_strong_support"
     assert row["supporting_query_count"] == "2"
@@ -201,7 +221,40 @@ def test_taxon_big_table_aggregates_query_support_and_crumbs(tmp_path: Path) -> 
     assert row["taxon_crumbs"] == "0.1"
     assert row["relative_crumbs_percent"] == "100"
     assert row["support_note"] == (
-        "2 strong query assignments support Alpha virus (species)."
+        "2 strong query assignments support Alpha virus (species). Their "
+        "representative best-hit intervals merge into one region on NC_000001.1, "
+        "totaling 9.5% of the 10000-base reference."
+    )
+
+
+def test_missing_taxon_metadata_does_not_drop_geometry_summary(tmp_path: Path) -> None:
+    query_big_table = tmp_path / "query_big_table.tsv"
+    output = tmp_path / "taxon_big_table.tsv"
+    write_tsv(
+        query_big_table,
+        [
+            query_row(
+                qseqid="q1",
+                assigned_taxid_name="",
+                assigned_taxid_rank="",
+            ),
+            query_row(
+                qseqid="q2",
+                assigned_taxid_name="",
+                assigned_taxid_rank="",
+            ),
+        ],
+        QUERY_COLUMNS,
+    )
+
+    main(["--query-big-table", str(query_big_table), "--output", str(output)])
+
+    [row] = read_tsv(output)
+    assert row["taxid"] == "111"
+    assert row["support_note"] == (
+        "2 strong query assignments support taxid 111 (rank unavailable). Their "
+        "representative best-hit intervals merge into one region on NC_000001.1, "
+        "totaling 9.5% of the 10000-base reference."
     )
 
 
@@ -235,6 +288,222 @@ def test_single_strong_single_read_does_not_become_strong_taxon_support(
     assert row["support_note"] == (
         "1 strong read-derived query assignment supports Alpha virus (species); "
         "no additional query is assigned to this taxon."
+    )
+
+
+def test_single_reference_note_reports_merged_coverage_for_separate_regions(
+    tmp_path: Path,
+) -> None:
+    query_big_table = tmp_path / "query_big_table.tsv"
+    output = tmp_path / "taxon_big_table.tsv"
+    placements = [
+        ("q1", "100", "200"),
+        ("q2", "150", "160"),
+        ("q3", "201", "250"),
+        ("q4", "800", "900"),
+    ]
+    write_tsv(
+        query_big_table,
+        [
+            query_row(
+                qseqid=qseqid,
+                best_hit_reference_length="1000",
+                best_hit_reference_start_1based=start,
+                best_hit_reference_end_1based=end,
+            )
+            for qseqid, start, end in placements
+        ],
+        QUERY_COLUMNS,
+    )
+
+    main(["--query-big-table", str(query_big_table), "--output", str(output)])
+
+    [row] = read_tsv(output)
+    assert row["support_tier"] == "strong"
+    assert row["support_tier_rule"] == "multi_query_strong_support"
+    assert row["support_note"] == (
+        "4 strong query assignments support Alpha virus (species). On NC_000001.1, "
+        "their representative best-hit intervals form 2 separate regions totaling "
+        "25.2% of the reference length."
+    )
+
+
+def test_multiple_reference_note_separates_repeated_and_singleton_placements(
+    tmp_path: Path,
+) -> None:
+    query_big_table = tmp_path / "query_big_table.tsv"
+    output = tmp_path / "taxon_big_table.tsv"
+    placements = [
+        ("q1", "NC_A.1", "100", "200"),
+        ("q2", "NC_A.1", "150", "250"),
+        ("q3", "NC_B.1", "100", "200"),
+        ("q4", "NC_B.1", "800", "900"),
+        ("q5", "NC_C.1", "400", "500"),
+    ]
+    write_tsv(
+        query_big_table,
+        [
+            query_row(
+                qseqid=qseqid,
+                best_hit_reference_accession=accession,
+                best_hit_reference_length="1000",
+                best_hit_reference_start_1based=start,
+                best_hit_reference_end_1based=end,
+            )
+            for qseqid, accession, start, end in placements
+        ],
+        QUERY_COLUMNS,
+    )
+
+    main(["--query-big-table", str(query_big_table), "--output", str(output)])
+
+    [row] = read_tsv(output)
+    assert row["support_tier"] == "strong"
+    assert row["support_tier_rule"] == "multi_query_strong_support"
+    assert row["support_note"] == (
+        "5 strong query assignments support Alpha virus (species). Their best-hit "
+        "placements span 3 references. 2 references have multiple placements, "
+        "forming 3 regions; the remaining reference has one placement."
+    )
+
+
+def test_multiple_reference_note_uses_singular_repeated_reference_wording(
+    tmp_path: Path,
+) -> None:
+    query_big_table = tmp_path / "query_big_table.tsv"
+    output = tmp_path / "taxon_big_table.tsv"
+    placements = [
+        ("q1", "NC_A.1", "100", "200"),
+        ("q2", "NC_A.1", "150", "250"),
+        ("q3", "NC_B.1", "400", "500"),
+    ]
+    write_tsv(
+        query_big_table,
+        [
+            query_row(
+                qseqid=qseqid,
+                best_hit_reference_accession=accession,
+                best_hit_reference_length="1000",
+                best_hit_reference_start_1based=start,
+                best_hit_reference_end_1based=end,
+            )
+            for qseqid, accession, start, end in placements
+        ],
+        QUERY_COLUMNS,
+    )
+
+    main(["--query-big-table", str(query_big_table), "--output", str(output)])
+
+    [row] = read_tsv(output)
+    assert row["support_note"] == (
+        "3 strong query assignments support Alpha virus (species). Their best-hit "
+        "placements span 2 references. 1 reference has multiple placements, "
+        "forming 1 region; the remaining reference has one placement."
+    )
+
+
+def test_multiple_reference_note_summarizes_repeated_placements(
+    tmp_path: Path,
+) -> None:
+    query_big_table = tmp_path / "query_big_table.tsv"
+    output = tmp_path / "taxon_big_table.tsv"
+    placements = [
+        ("q1", "NC_A.1", "100", "200"),
+        ("q2", "NC_A.1", "150", "250"),
+        ("q3", "NC_B.1", "100", "200"),
+        ("q4", "NC_B.1", "800", "900"),
+    ]
+    write_tsv(
+        query_big_table,
+        [
+            query_row(
+                qseqid=qseqid,
+                best_hit_reference_accession=accession,
+                best_hit_reference_length="1000",
+                best_hit_reference_start_1based=start,
+                best_hit_reference_end_1based=end,
+            )
+            for qseqid, accession, start, end in placements
+        ],
+        QUERY_COLUMNS,
+    )
+
+    main(["--query-big-table", str(query_big_table), "--output", str(output)])
+
+    [row] = read_tsv(output)
+    assert row["support_note"] == (
+        "4 strong query assignments support Alpha virus (species). Their best-hit "
+        "placements span 2 references and form 3 regions when resolved separately "
+        "within each reference."
+    )
+
+
+def test_multiple_reference_note_handles_all_singleton_placements(
+    tmp_path: Path,
+) -> None:
+    query_big_table = tmp_path / "query_big_table.tsv"
+    output = tmp_path / "taxon_big_table.tsv"
+    placements = [
+        ("q1", "NC_A.1"),
+        ("q2", "NC_B.1"),
+        ("q3", "NC_C.1"),
+    ]
+    write_tsv(
+        query_big_table,
+        [
+            query_row(
+                qseqid=qseqid,
+                best_hit_reference_accession=accession,
+            )
+            for qseqid, accession in placements
+        ],
+        QUERY_COLUMNS,
+    )
+
+    main(["--query-big-table", str(query_big_table), "--output", str(output)])
+
+    [row] = read_tsv(output)
+    assert row["support_note"] == (
+        "3 strong query assignments support Alpha virus (species). Their best-hit "
+        "placements span 3 references; each reference has one placement."
+    )
+
+
+def test_multiple_reference_note_counts_multiple_singleton_references(
+    tmp_path: Path,
+) -> None:
+    query_big_table = tmp_path / "query_big_table.tsv"
+    output = tmp_path / "taxon_big_table.tsv"
+    placements = [
+        ("q1", "NC_A.1", "100", "200"),
+        ("q2", "NC_A.1", "150", "250"),
+        ("q3", "NC_B.1", "100", "200"),
+        ("q4", "NC_B.1", "800", "900"),
+        ("q5", "NC_C.1", "100", "200"),
+        ("q6", "NC_D.1", "100", "200"),
+    ]
+    write_tsv(
+        query_big_table,
+        [
+            query_row(
+                qseqid=qseqid,
+                best_hit_reference_accession=accession,
+                best_hit_reference_length="1000",
+                best_hit_reference_start_1based=start,
+                best_hit_reference_end_1based=end,
+            )
+            for qseqid, accession, start, end in placements
+        ],
+        QUERY_COLUMNS,
+    )
+
+    main(["--query-big-table", str(query_big_table), "--output", str(output)])
+
+    [row] = read_tsv(output)
+    assert row["support_note"] == (
+        "6 strong query assignments support Alpha virus (species). Their best-hit "
+        "placements span 4 references. 2 references have multiple placements, "
+        "forming 3 regions; 2 references have one placement each."
     )
 
 
@@ -314,7 +583,9 @@ def test_weak_query_does_not_downgrade_strong_long_contig_support(
     assert row["support_tier_rule"] == "strong_long_or_genome_like_query"
     assert row["support_note"] == (
         "1 strong long-contig query assignment supports Alpha virus (species); "
-        "1 additional query is assigned to this taxon."
+        "1 additional query is assigned to this taxon. Their representative best-hit "
+        "intervals merge into one region on NC_000001.1, totaling 9.5% of the "
+        "10000-base reference."
     )
 
 
@@ -337,7 +608,8 @@ def test_all_weak_queries_have_rank_safe_note(tmp_path: Path) -> None:
     assert row["support_tier_rule"] == "all_weak_queries"
     assert row["support_note"] == (
         "All 2 query assignments to Alpha virus (species) have low best-hit "
-        "query coverage."
+        "query coverage. Their representative best-hit intervals merge into one "
+        "region on NC_000001.1, totaling 9.5% of the 10000-base reference."
     )
 
 
@@ -369,7 +641,9 @@ def test_mixed_support_note_reports_strong_and_additional_queries(
     assert row["support_tier"] == "moderate"
     assert row["support_tier_rule"] == "mixed_support_with_strong_query"
     assert row["support_note"] == (
-        "1 strong and 1 additional query assignment support Alpha virus (species)."
+        "1 strong and 1 additional query assignment support Alpha virus (species). "
+        "Their representative best-hit intervals merge into one region on "
+        "NC_000001.1, totaling 9.5% of the 10000-base reference."
     )
 
 

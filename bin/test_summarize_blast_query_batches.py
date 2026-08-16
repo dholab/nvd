@@ -89,3 +89,54 @@ def test_rejects_duplicate_query_class_batches(tmp_path: Path) -> None:
                 str(tmp_path / "summary.tsv"),
             ],
         )
+
+
+def test_rejects_unknown_query_class_batches(tmp_path: Path) -> None:
+    fasta = tmp_path / "sample-1.unknown.blast_queries.fasta"
+    fasta.write_text(">r1\nACGT\n", encoding="utf-8")
+    lookup = tmp_path / "sample-1.unknown.query_sequences.sqlite"
+    lookup.write_bytes(b"sqlite placeholder")
+
+    with pytest.raises(QueryBatchSummaryError, match="unsupported BLAST query classes"):
+        main(
+            [
+                "--sample-id",
+                "sample-1",
+                "--platform",
+                "illumina",
+                "--batch",
+                "unknown",
+                str(fasta),
+                str(lookup),
+                "--output",
+                str(tmp_path / "summary.tsv"),
+            ],
+        )
+
+
+def test_no_batches_emits_explicit_zero_rows_for_every_query_class(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "sample-1.blast_query_batches.tsv"
+
+    main(
+        [
+            "--sample-id",
+            "sample-1",
+            "--platform",
+            "illumina",
+            "--output",
+            str(output),
+        ],
+    )
+
+    rows = read_tsv(output)
+    assert [row["query_class"] for row in rows] == [
+        "short_assembly_contig",
+        "long_assembly_contig",
+        "overlap_merged_pair",
+        "single_read",
+    ]
+    assert all(row["n_query_sequences"] == "0" for row in rows)
+    assert all(row["query_fasta_present"] == "false" for row in rows)
+    assert all(row["query_lookup_present"] == "false" for row in rows)

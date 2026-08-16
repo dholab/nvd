@@ -260,6 +260,7 @@ def test_preprocessing_deduplicates_after_adapter_trimming(tmp_path: Path) -> No
     lib_dir = tmp_path / "lib"
     lib_dir.mkdir()
     shutil.copy2(ROOT / "lib" / "NvdUtils.groovy", lib_dir)
+    shutil.copy2(ROOT / "lib" / "NvdReporting.groovy", lib_dir)
     assets_dir = tmp_path / "assets"
     assets_dir.mkdir()
     shutil.copy2(ROOT / "assets" / "empty_deacon.k31w1.idx", assets_dir)
@@ -305,16 +306,19 @@ params.min_consecutive_bases = 200
 include {{ PREPROCESS_READS }} from '{PREPROCESS_READS}'
 
 workflow {{
-    PREPROCESS_READS(Channel.of(tuple(
-        [
-            id: 'sample_A',
-            platform: 'illumina',
-            read_mode: 'single',
-            r1_count: 1,
-            deacon_read_structure: 'single',
-        ],
-        [file('{reads}')],
-    )))
+    PREPROCESS_READS(
+        Channel.of(tuple(
+            [
+                id: 'sample_A',
+                platform: 'illumina',
+                read_mode: 'single',
+                r1_count: 1,
+                deacon_read_structure: 'single',
+            ],
+            [file('{reads}')],
+        )),
+        Channel.empty(),
+    )
 
     PREPROCESS_READS.out.read_batches.view {{ _id, _platform, _structure, _query_class, output ->
         "FINAL_READS:${{output.name}}"

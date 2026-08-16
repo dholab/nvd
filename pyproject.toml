@@ -7,7 +7,7 @@ authors = [
   { name = "William Gardner", email = "wkgardner@wisc.edu" },
 ]
 requires-python = ">= 3.11, < 3.14"
-version = "3.3.3"
+version = "3.5.0"
 dependencies = [
   "altair>=6.1.0",
   "biopython>=1.85",
@@ -38,39 +38,43 @@ platforms = ["linux-64", "linux-aarch64", "osx-64", "osx-arm64"]
 [tool.pixi.dependencies]
 # Bioinformatics ToolKits
 # ----------------------------------------------------------------------------------- #
+alignoth = ">=1.6.0,<2"
 bbmap = ">=39.19,<40"
 blast = ">=2.16.0,<3"
-deacon = ">=0.15.0,<0.16"
+deacon = ">=0.16.0,<0.17"
 fastp = ">=1.0.1,<2"
+fastqc = "==0.12.1"
 flye = ">=2.9.6,<3"
 metamdbg = ">=1.2,<2"
 minimap2 = ">=2.22,<3"
 mmseqs2 = ">=18.8cc5c,<19"
+multiqc = "==1.35"
 myloasm = ">=0.5.1,<0.7"
-samtools = ">=1.5,<2"
+# BetterPlot currently declares a hard PyPI pyqt5 dependency. Keep PyQt on the
+# conda side so Pixi can use platform packages instead of building PyQt from
+# source for linux-aarch64 and other headless pipeline platforms.
+pyqt = ">=5.15.11,<6"
+rust = ">=1.94.0,<1.95"
+samtools = ">=1.18,<2"
 seqkit = ">=2.10.0,<3"
 spades = ">=4.1.0,<5"
-rust = ">=1.94.0,<1.95"
+sracha = { version = ">=0.5.0", channel = "bioconda" }
+sourmash = ">=4.9.4,<5"
+sourmash_plugin_branchwater = ">=0.9.15,<0.10"
+taxburst = ">=0.3.2,<0.4"
+vsearch = ">=2.31.0,<3"
 
 # System Dependencies
 # ----------------------------------------------------------------------------------- #
 compilers = ">=1.9.0,<2"
+jq = ">=1.8.2,<2"
+nextflow = ">=25.10.2,<26"
 openssl = ">=3.5.0,<4"
 pkg-config = ">=0.29.2,<0.30"
 sqlite = ">=3.49.1,<4"
 unzip = ">=6.0,<7"
 yaml = ">=0.2.5,<0.3"
 zstd = ">=1.5.7,<2"
-nextflow = ">=25.10.2,<26"
-sracha = { version = ">=0.3.10,<0.4", channel = "bioconda" }
-sourmash = ">=4.9.4,<5"
-sourmash_plugin_branchwater = ">=0.9.15,<0.10"
-taxburst = ">=0.3.2,<0.4"
-# BetterPlot currently declares a hard PyPI pyqt5 dependency. Keep PyQt on the
-# conda side so Pixi can use platform packages instead of building PyQt from
-# source for linux-aarch64 and other headless pipeline platforms.
-pyqt = ">=5.15.11,<6"
-vsearch = ">=2.31.0,<3"
 
 # ----------------------------------------------------------------------------------- #
 

@@ -124,12 +124,13 @@ process ADD_READ_COUNTS_TO_BLAST {
   input:
   tuple val(sample_id), val(query_class), path(blast_tsv), val(total_reads), path(contig_count_files), path(query_lookups)
   val run_id
+  val blast_db_version
+  val virus_index_version
 
   output:
   tuple val(sample_id), val(query_class), path("${sample_id}.${query_class}_blast.final.tsv")
 
   script:
-  def virus_index_version = NvdUtils.targetEnrichmentEnabled(params) ? params.virus_index_version : "not_used"
   def count_files = contig_count_files instanceof List ? contig_count_files : [contig_count_files]
   assert count_files.size() <= 1 : "Expected at most one mapped-count file for ${sample_id}, received ${count_files.size()}"
   def count_arg = count_files ? "--contig-counts ${count_files[0]}" : ""
@@ -142,7 +143,7 @@ process ADD_READ_COUNTS_TO_BLAST {
       ${lookup_args} \\
       --output ${sample_id}.${query_class}_blast.final.tsv \\
       --total-reads ${total_reads} \\
-      --blast-db-version '${params.blast_db_version}' \\
+      --blast-db-version '${blast_db_version}' \\
       --virus-index-version '${virus_index_version}' \\
       --run-id '${run_id}'
   """
@@ -263,6 +264,42 @@ process CONCATENATE_QUERY_BIG_TABLE {
   """
 }
 
+process EMIT_BEST_HIT_SEQUENCE_EVIDENCE {
+  /*
+   * Emit query/reference FASTA and BED6 placement evidence for the all-sample
+   * Query Big Table representative best-hit HSP envelopes.
+   */
+
+  label "low"
+
+  input:
+  path query_big_table
+  val query_samples
+  path query_fastas, stageAs: "query_fastas??????/*", arity: '0..*'
+  path blast_db
+
+  output:
+  path "query_sequences.fasta", emit: query_sequences
+  path "selected_references.fasta", emit: selected_references
+  path "best_hit_placements.bed", emit: best_hit_placements
+
+  script:
+  def samples = query_samples instanceof List ? query_samples : [query_samples]
+  def fastas = query_fastas instanceof List ? query_fastas : [query_fastas]
+  assert samples.size() == fastas.size()
+  def query_args = samples.withIndex().collect { sample_id, index ->
+    "--query-fasta '${sample_id}' \"${fastas[index]}\""
+  }.join(" ")
+  """
+  emit_best_hit_sequence_evidence.py \
+      --query-big-table "${query_big_table}" \
+      ${query_args} \
+      --blast-db "${blast_db}" \
+      --blast-db-prefix '${params.blast_db_prefix}' \
+      --output-dir "."
+  """
+}
+
 process CONCATENATE_TAXON_BIG_TABLE {
   /*
    * Concatenate per-sample taxon Big Tables into the featured all-sample artifact.
@@ -321,41 +358,5 @@ process TARGET_ENRICHMENT_REPORT {
   touch target_retained_vs_filtered_stacked.html
   touch target_reads_vs_bases_scatter.png
   touch target_reads_vs_bases_scatter.html
-  """
-}
-
-/*
- * Send a minimal Slack notification for run completion without workflow state.
- */
-process NOTIFY_SLACK {
-
-  tag "${workflow.runName}"
-  label "low"
-  cache false
-
-  errorStrategy 'ignore'
-
-  secret 'SLACK_BOT_TOKEN'
-
-  input:
-  val ready
-  val sample_set_id
-  val labkey_url
-
-  output:
-  val true, emit: done
-
-  when:
-  params.slack_enabled && params.slack_channel
-
-  script:
-  """
-  notify_slack.py \
-      --run-id '${workflow.runName}' \
-      --experiment-id '${params.experiment_id}' \
-      --channel '${params.slack_channel}' \
-      --sample-set-id '${sample_set_id}' \
-      --labkey-url '${labkey_url}' \
-      -v || echo "Slack notification failed (non-fatal)"
   """
 }

@@ -5,42 +5,115 @@ from __future__ import annotations
 
 import argparse
 import csv
-import json
+from enum import StrEnum
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Annotated, Literal, TypeAlias
+
+from pydantic import BaseModel, ConfigDict, Field, NonNegativeInt, StringConstraints
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
-    from typing import Any
+    from collections.abc import Mapping, Sequence
 
 
-ASSEMBLER_THRESHOLDS = {
-    "metamdbg": "metamdbg_min_read_overlap",
-    "myloasm": "myloasm_min_read_length",
-    "metaflye": "metaflye_min_read_length",
-}
-
-REPORT_FIELDS = [
+ASSESSMENT_FIELDS = (
     "sample_id",
     "sequence_count",
     "total_bases",
     "max_read_length",
-    "metamdbg_length_floor",
-    "metamdbg_qualifying_reads",
-    "metamdbg_qualifying_bases",
-    "metamdbg_decision",
-    "metamdbg_reason",
-    "myloasm_length_floor",
-    "myloasm_qualifying_reads",
-    "myloasm_qualifying_bases",
-    "myloasm_decision",
-    "myloasm_reason",
-    "metaflye_length_floor",
-    "metaflye_qualifying_reads",
-    "metaflye_qualifying_bases",
-    "metaflye_decision",
-    "metaflye_reason",
+)
+DECISION_FIELDS = (
+    "length_floor",
+    "qualifying_reads",
+    "qualifying_bases",
+    "decision",
+    "reason",
+)
+Number: TypeAlias = int | float
+TsvCell: TypeAlias = str | int | float | None
+NonEmptyString = Annotated[str, StringConstraints(min_length=1)]
+
+
+class Assembler(StrEnum):
+    METAMDBG = "metamdbg"
+    MYLOASM = "myloasm"
+    METAFLYE = "metaflye"
+
+
+ASSEMBLER_THRESHOLDS = {
+    Assembler.METAMDBG: "metamdbg_min_read_overlap",
+    Assembler.MYLOASM: "myloasm_min_read_length",
+    Assembler.METAFLYE: "metaflye_min_read_length",
+}
+REPORT_FIELDS = [
+    *ASSESSMENT_FIELDS,
+    *(
+        f"{assembler.value}_{field}"
+        for assembler in Assembler
+        for field in DECISION_FIELDS
+    ),
 ]
+
+
+class ProducerProfile(BaseModel):
+    model_config = ConfigDict(extra="ignore", frozen=True, strict=True)
+
+
+class LengthProfile(ProducerProfile):
+    max: NonNegativeInt | None
+
+
+class ThresholdProfile(ProducerProfile):
+    name: NonEmptyString
+    value: Number
+    sequence_count_at_or_above: NonNegativeInt
+
+
+class LengthThresholdProfile(ThresholdProfile):
+    axis: Literal["length"]
+    bases_at_or_above: NonNegativeInt
+
+
+class QualityThresholdProfile(ThresholdProfile):
+    axis: Literal["quality"]
+    bases_at_or_above: None
+
+
+ParsedThreshold: TypeAlias = Annotated[
+    LengthThresholdProfile | QualityThresholdProfile,
+    Field(discriminator="axis"),
+]
+
+
+class FastxProfile(ProducerProfile):
+    sample_id: NonEmptyString
+    sequence_count: NonNegativeInt
+    total_bases: NonNegativeInt
+    length: LengthProfile
+    thresholds: tuple[ParsedThreshold, ...]
+
+
+class AssessmentModel(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+
+class AssemblerDecision(AssessmentModel):
+    producer: Assembler
+    length_floor: Number
+    qualifying_reads: NonNegativeInt
+    qualifying_bases: NonNegativeInt
+    decision: Literal["run", "skip"]
+    reason: Literal["qualifying_reads_present", "no_reads_meet_length_floor"]
+
+
+class LongReadAssemblyAssessment(AssessmentModel):
+    schema_version: Literal["nvd.long-read-assembly-eligibility/v1"] = (
+        "nvd.long-read-assembly-eligibility/v1"
+    )
+    sample_id: NonEmptyString
+    sequence_count: NonNegativeInt
+    total_bases: NonNegativeInt
+    max_read_length: NonNegativeInt | None
+    assemblers: tuple[AssemblerDecision, ...]
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -52,6 +125,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     assess = commands.add_parser("assess")
     assess.add_argument("--profile", type=Path, required=True)
     assess.add_argument("--output", type=Path, required=True)
+    assess.add_argument("--summary-json", type=Path)
     assess.add_argument("--metamdbg-marker", type=Path, required=True)
     assess.add_argument("--myloasm-marker", type=Path, required=True)
     assess.add_argument("--metaflye-marker", type=Path, required=True)
@@ -62,88 +136,131 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def display_number(value: object) -> object:
+def display_number(value: Number) -> Number:
     if isinstance(value, float) and value.is_integer():
         return int(value)
     return value
 
 
-def load_profile(path: Path) -> dict[str, Any]:
-    profile = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(profile, dict):
-        message = f"FASTX profile must contain a JSON object: {path}"
-        raise TypeError(message)
-    return profile
+def parse_profile(path: Path) -> FastxProfile:
+    return FastxProfile.model_validate_json(
+        path.read_text(encoding="utf-8"),
+        strict=True,
+    )
 
 
-def thresholds_by_name(profile: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    thresholds: dict[str, dict[str, Any]] = {}
-    for threshold in profile.get("thresholds", []):
-        name = threshold.get("name")
-        if not isinstance(name, str):
-            message = "FASTX profile threshold is missing a string name."
-            raise TypeError(message)
-        if name in thresholds:
-            message = f"Duplicate FASTX profile threshold: {name}"
+def thresholds_by_name(profile: FastxProfile) -> dict[str, ParsedThreshold]:
+    thresholds: dict[str, ParsedThreshold] = {}
+    for threshold in profile.thresholds:
+        if threshold.name in thresholds:
+            message = f"Duplicate FASTX profile threshold: {threshold.name}"
             raise ValueError(message)
-        thresholds[name] = threshold
+        thresholds[threshold.name] = threshold
     return thresholds
 
 
-def assessment_row(profile: dict[str, Any]) -> dict[str, object]:
+def require_length_threshold(
+    thresholds: Mapping[str, ParsedThreshold],
+    name: str,
+) -> LengthThresholdProfile:
+    if name not in thresholds:
+        message = f"FASTX profile is missing threshold {name!r}."
+        raise ValueError(message)
+    threshold = thresholds[name]
+    if not isinstance(threshold, LengthThresholdProfile):
+        message = f"FASTX profile threshold {name!r} must have axis 'length'."
+        raise TypeError(message)
+    return threshold
+
+
+def assess_profile(profile: FastxProfile) -> LongReadAssemblyAssessment:
     thresholds = thresholds_by_name(profile)
-    row: dict[str, object] = {
-        "sample_id": profile["sample_id"],
-        "sequence_count": profile["sequence_count"],
-        "total_bases": profile["total_bases"],
-        "max_read_length": profile["length"]["max"],
-    }
+    decisions: list[AssemblerDecision] = []
     for assembler, threshold_name in ASSEMBLER_THRESHOLDS.items():
-        if threshold_name not in thresholds:
-            message = f"FASTX profile is missing threshold {threshold_name!r}."
-            raise ValueError(message)
-        threshold = thresholds[threshold_name]
-        qualifying_reads = int(threshold["sequence_count_at_or_above"])
+        threshold = require_length_threshold(thresholds, threshold_name)
+        qualifying_reads = threshold.sequence_count_at_or_above
         decision = "run" if qualifying_reads > 0 else "skip"
-        row.update(
-            {
-                f"{assembler}_length_floor": display_number(threshold["value"]),
-                f"{assembler}_qualifying_reads": qualifying_reads,
-                f"{assembler}_qualifying_bases": threshold["bases_at_or_above"],
-                f"{assembler}_decision": decision,
-                f"{assembler}_reason": (
+        decisions.append(
+            AssemblerDecision(
+                producer=assembler,
+                length_floor=display_number(threshold.value),
+                qualifying_reads=qualifying_reads,
+                qualifying_bases=threshold.bases_at_or_above,
+                decision=decision,
+                reason=(
                     "qualifying_reads_present"
                     if decision == "run"
                     else "no_reads_meet_length_floor"
                 ),
+            ),
+        )
+    return LongReadAssemblyAssessment(
+        sample_id=profile.sample_id,
+        sequence_count=profile.sequence_count,
+        total_bases=profile.total_bases,
+        max_read_length=profile.length.max,
+        assemblers=tuple(decisions),
+    )
+
+
+def assessment_tsv_row(
+    assessment: LongReadAssemblyAssessment,
+) -> dict[str, TsvCell]:
+    row: dict[str, TsvCell] = {
+        "sample_id": assessment.sample_id,
+        "sequence_count": assessment.sequence_count,
+        "total_bases": assessment.total_bases,
+        "max_read_length": assessment.max_read_length,
+    }
+    for assembler in assessment.assemblers:
+        prefix = assembler.producer.value
+        row.update(
+            {
+                f"{prefix}_length_floor": assembler.length_floor,
+                f"{prefix}_qualifying_reads": assembler.qualifying_reads,
+                f"{prefix}_qualifying_bases": assembler.qualifying_bases,
+                f"{prefix}_decision": assembler.decision,
+                f"{prefix}_reason": assembler.reason,
             },
         )
     return row
 
 
-def write_row(path: Path, row: dict[str, object]) -> None:
+def write_assessment_tsv(path: Path, assessment: LongReadAssemblyAssessment) -> None:
     with path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=REPORT_FIELDS, delimiter="\t")
         writer.writeheader()
-        writer.writerow(row)
+        writer.writerow(assessment_tsv_row(assessment))
 
 
-def write_markers(row: dict[str, object], markers: dict[str, Path]) -> None:
+def write_markers(
+    assessment: LongReadAssemblyAssessment,
+    markers: Mapping[Assembler, Path],
+) -> None:
+    decisions = {
+        decision.producer: decision.decision for decision in assessment.assemblers
+    }
     for assembler, marker in markers.items():
         marker.unlink(missing_ok=True)
-        if row[f"{assembler}_decision"] == "run":
+        if decisions[assembler] == "run":
             marker.touch()
 
 
+def write_summary_json(path: Path, assessment: LongReadAssemblyAssessment) -> None:
+    path.write_text(assessment.model_dump_json(indent=2) + "\n", encoding="utf-8")
+
+
 def assess(args: argparse.Namespace) -> None:
-    row = assessment_row(load_profile(args.profile))
-    write_row(args.output, row)
+    assessment = assess_profile(parse_profile(args.profile))
+    write_assessment_tsv(args.output, assessment)
+    if args.summary_json is not None:
+        write_summary_json(args.summary_json, assessment)
     write_markers(
-        row,
+        assessment,
         {
-            "metamdbg": args.metamdbg_marker,
-            "myloasm": args.myloasm_marker,
-            "metaflye": args.metaflye_marker,
+            Assembler.METAMDBG: args.metamdbg_marker,
+            Assembler.MYLOASM: args.myloasm_marker,
+            Assembler.METAFLYE: args.metaflye_marker,
         },
     )
 

@@ -105,22 +105,24 @@ process DEACON_DEPLETE {
     tuple val(meta), path("${meta.id}.${meta.query_class}.deacon.json"), emit: stats
 
     script:
-    def input_stream = meta.read_structure == "interleaved"
-        ? "gzip -dc ${reads} | "
+    def interleaved_arg = meta.read_structure == "interleaved" ? "--interleaved" : ""
+    def check_pairs_arg = meta.read_structure == "interleaved" && params.check_pairs
+        ? "--check-pairs"
         : ""
-    def filter_inputs = meta.read_structure == "interleaved" ? "- -" : "${reads}"
     """
     set -euo pipefail
 
-    ${input_stream}deacon filter \
+    deacon filter \
         --deplete \
+        ${interleaved_arg} \
+        ${check_pairs_arg} \
         --threads ${task.cpus} \
         --abs-threshold ${params.host_abs_threshold} \
         --rel-threshold ${params.host_rel_threshold} \
         --summary ${meta.id}.${meta.query_class}.deacon.json \
         --output ${meta.id}.${meta.query_class}.depleted.fastq.gz \
         ${index} \
-        ${filter_inputs}
+        ${reads}
     """
 }
 
@@ -167,7 +169,7 @@ process DEACON_ENRICH_TARGET_READS {
     tuple val(meta), path(read_files, stageAs: "reads??????/*"), path(deacon_idx), val(target_enrichment_enabled)
 
     output:
-    tuple val(meta.id), val(meta.platform), val(meta.deacon_read_structure), path("${meta.id}.target_enriched.fastq.gz"), emit: reads
+    tuple val(meta.id), val(meta.platform), val(meta.deacon_read_structure), path("${meta.id}.target_enriched.fastq.gz"), env('NVD_INPUT_READ_COUNT'), env('NVD_ENRICHED_READ_COUNT'), emit: reads
     tuple val(meta.id), path("${meta.id}.deacon_filter.json"), emit: stats
 
     script:
@@ -176,6 +178,7 @@ process DEACON_ENRICH_TARGET_READS {
     def r1_files = files.take(r1_count)
     def r2_files = files.drop(r1_count)
     def deplete_arg = target_enrichment_enabled ? "" : "--deplete"
+    def check_pairs_arg = params.check_pairs ? "--check-pairs" : ""
     if (meta.read_mode == "single" && r1_files.size() == 1)
         """
         deacon filter \
@@ -187,11 +190,15 @@ process DEACON_ENRICH_TARGET_READS {
             --output ${meta.id}.target_enriched.fastq.gz \
             ${deacon_idx} \
             ${r1_files[0]}
+
+        NVD_INPUT_READ_COUNT=\$(jq -er '.seqs_in | select(type == "number" and . >= 0 and . == floor)' ${meta.id}.deacon_filter.json)
+        NVD_ENRICHED_READ_COUNT=\$(jq -er '.seqs_out | select(type == "number" and . >= 0 and . == floor)' ${meta.id}.deacon_filter.json)
         """
     else if (meta.read_mode == "paired" && r1_files.size() == 1 && r2_files.size() == 1)
         """
         deacon filter \
             ${deplete_arg} \
+            ${check_pairs_arg} \
             --threads ${task.cpus} \
             --abs-threshold ${params.virus_abs_threshold} \
             --rel-threshold ${params.virus_rel_threshold} \
@@ -199,6 +206,9 @@ process DEACON_ENRICH_TARGET_READS {
             --output ${meta.id}.target_enriched.fastq.gz \
             ${deacon_idx} \
             ${r1_files[0]} ${r2_files[0]}
+
+        NVD_INPUT_READ_COUNT=\$(jq -er '.seqs_in | select(type == "number" and . >= 0 and . == floor)' ${meta.id}.deacon_filter.json)
+        NVD_ENRICHED_READ_COUNT=\$(jq -er '.seqs_out | select(type == "number" and . >= 0 and . == floor)' ${meta.id}.deacon_filter.json)
         """
     else if (meta.read_mode == "single")
         """
@@ -215,6 +225,9 @@ process DEACON_ENRICH_TARGET_READS {
             --rel-threshold ${params.virus_rel_threshold} \
             --summary ${meta.id}.deacon_filter.json \
             --output ${meta.id}.target_enriched.fastq.gz
+
+        NVD_INPUT_READ_COUNT=\$(jq -er '.seqs_in | select(type == "number" and . >= 0 and . == floor)' ${meta.id}.deacon_filter.json)
+        NVD_ENRICHED_READ_COUNT=\$(jq -er '.seqs_out | select(type == "number" and . >= 0 and . == floor)' ${meta.id}.deacon_filter.json)
         """
     else
         """
@@ -226,6 +239,7 @@ process DEACON_ENRICH_TARGET_READS {
             --sample-id ${meta.id} \
             --index ${deacon_idx} \
             ${deplete_arg} \
+            ${check_pairs_arg} \
             --r1-list r1.list \
             --r2-list r2.list \
             --threads ${task.cpus} \
@@ -233,7 +247,144 @@ process DEACON_ENRICH_TARGET_READS {
             --rel-threshold ${params.virus_rel_threshold} \
             --summary ${meta.id}.deacon_filter.json \
             --output ${meta.id}.target_enriched.fastq.gz
+
+        NVD_INPUT_READ_COUNT=\$(jq -er '.seqs_in | select(type == "number" and . >= 0 and . == floor)' ${meta.id}.deacon_filter.json)
+        NVD_ENRICHED_READ_COUNT=\$(jq -er '.seqs_out | select(type == "number" and . >= 0 and . == floor)' ${meta.id}.deacon_filter.json)
         """
+}
+
+process DEACON_REENRICH_POSTMERGE_READS {
+    /* Reapply target enrichment independently to records emitted by pair merging. */
+
+    tag "${meta.id}, ${meta.query_class}"
+    label "medium"
+
+    errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
+    maxRetries 2
+
+    input:
+    tuple val(meta), path(reads), path(deacon_idx)
+
+    output:
+    tuple val(meta), path("${meta.id}.${meta.query_class}.per_read_target_enriched.fastq.gz"), emit: reads
+    tuple val(meta), path("${meta.id}.${meta.query_class}.per_read_deacon.json"), emit: stats
+
+    script:
+    """
+    deacon filter \
+        --threads ${task.cpus} \
+        --abs-threshold ${params.virus_abs_threshold} \
+        --rel-threshold ${params.virus_rel_threshold} \
+        --summary ${meta.id}.${meta.query_class}.per_read_deacon.json \
+        --output ${meta.id}.${meta.query_class}.per_read_target_enriched.fastq.gz \
+        ${deacon_idx} \
+        ${reads}
+    """
+}
+
+process DEACON_ENRICH_SRA_READS {
+    /* Stream one resolved SRA run through deacon without materializing decoded FASTQ files. */
+
+    tag "${id}, ${run_accession}"
+    label "medium"
+
+    errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
+    maxRetries 2
+    maxForks params.max_concurrent_downloads
+
+    input:
+    tuple val(id), val(platform), val(run_accession), path(deacon_idx), val(target_enrichment_enabled)
+
+    output:
+    tuple val(id), val(platform), path("${id}.sra_read_structure.txt"), path("${id}.target_enriched.fastq.gz"), env('NVD_INPUT_READ_COUNT'), env('NVD_ENRICHED_READ_COUNT'), emit: reads
+    tuple val(id), path("${id}.deacon_filter.json"), emit: stats
+
+    script:
+    def cpus = task.cpus as int
+    def sracha_threads = Math.max(1, cpus.intdiv(2))
+    def deacon_threads = Math.max(1, cpus - sracha_threads)
+    def deplete_arg = target_enrichment_enabled ? "" : "--deplete"
+    def check_pairs_arg = params.check_pairs ? "--check-pairs" : ""
+    """
+    set -euo pipefail
+
+    metadata_file='${id}.sracha_info.tsv'
+    sracha info --format tsv '${run_accession}' > "\${metadata_file}"
+
+    metadata_lines=()
+    while IFS= read -r line || [[ -n "\${line}" ]]; do
+        metadata_lines+=("\${line}")
+    done < "\${metadata_file}"
+
+    if [[ \${#metadata_lines[@]} -ne 2 ]]; then
+        printf 'Expected one sracha metadata row for %s, received %s lines\n' \
+            '${run_accession}' "\${#metadata_lines[@]}" >&2
+        exit 1
+    fi
+
+    expected_header=\$'accession\tarchive_type\tlayout\tnreads\tspots\tsize_bytes\tplatform\tmd5'
+    if [[ "\${metadata_lines[0]}" != "\${expected_header}" ]]; then
+        printf 'Unexpected sracha metadata header for %s: %s\n' \
+            '${run_accession}' "\${metadata_lines[0]}" >&2
+        exit 1
+    fi
+
+    IFS=\$'\t' read -r -a metadata_fields <<< "\${metadata_lines[1]}"
+    if [[ \${#metadata_fields[@]} -ne 8 ]]; then
+        printf 'Expected eight sracha metadata fields for %s, received %s\n' \
+            '${run_accession}' "\${#metadata_fields[@]}" >&2
+        exit 1
+    fi
+
+    resolved_accession="\${metadata_fields[0]}"
+    layout="\${metadata_fields[2]}"
+    nreads="\${metadata_fields[3]}"
+
+    if [[ "\${resolved_accession}" != '${run_accession}' ]]; then
+        printf 'Sracha resolved %s while %s was requested\n' \
+            "\${resolved_accession}" '${run_accession}' >&2
+        exit 1
+    fi
+
+    deacon_args=(filter)
+    case "\${layout}/\${nreads}" in
+        SINGLE/1)
+            read_structure='single'
+            ;;
+        PAIRED/2)
+            read_structure='interleaved'
+            deacon_args+=(--interleaved ${check_pairs_arg})
+            ;;
+        *)
+            printf 'Unsupported sracha read layout for %s: layout=%s nreads=%s\n' \
+                '${run_accession}' "\${layout}" "\${nreads}" >&2
+            exit 1
+            ;;
+    esac
+
+    printf '%s\n' "\${read_structure}" > '${id}.sra_read_structure.txt'
+
+    sracha get \
+        --output-dir . \
+        --stdout \
+        --split interleaved \
+        --threads ${sracha_threads} \
+        --no-progress \
+        --yes \
+        '${run_accession}' \
+    | deacon "\${deacon_args[@]}" \
+        ${deplete_arg} \
+        --threads ${deacon_threads} \
+        --abs-threshold ${params.virus_abs_threshold} \
+        --rel-threshold ${params.virus_rel_threshold} \
+        --summary '${id}.deacon_filter.json' \
+        --output '${id}.target_enriched.fastq.gz' \
+        ${deacon_idx} \
+        -
+
+    NVD_INPUT_READ_COUNT=\$(jq -er '.seqs_in | select(type == "number" and . >= 0 and . == floor)' '${id}.deacon_filter.json')
+    NVD_ENRICHED_READ_COUNT=\$(jq -er '.seqs_out | select(type == "number" and . >= 0 and . == floor)' '${id}.deacon_filter.json')
+    """
 }
 
 process DEACON_FILTER_CONTIGS {
@@ -258,31 +409,31 @@ process DEACON_FILTER_CONTIGS {
     maxRetries 2
 
     input:
-    tuple val(sample_id), val(platform), val(read_structure), path(fasta), path(query_lookup), path(deacon_idx), val(use_depletion), path(depletion_idx)
+    tuple val(sample_id), val(platform), val(read_structure), path(fasta), path(query_lookup), path(deacon_idx), val(contig_filter_policy), path(depletion_idx)
 
     output:
     tuple val(sample_id), val(platform), val(read_structure), path("${sample_id}.target_filtered.fasta"), path(query_lookup), emit: contigs
     tuple val(sample_id), path("${sample_id}.contig_target_filtering.tsv"), emit: decisions
 
     script:
-    def target_deplete_arg = NvdUtils.targetEnrichmentEnabled(params) ? "" : "--deplete"
-    if (use_depletion)
+    def target_deplete_arg = contig_filter_policy.target_enrichment_enabled ? "" : "--deplete"
+    if (contig_filter_policy.depletion_enabled)
         """
         set -euo pipefail
 
         deacon filter \
             ${target_deplete_arg} \
             --threads ${task.cpus} \
-            --abs-threshold ${params.virus_abs_threshold} \
-            --rel-threshold ${params.virus_rel_threshold} \
+            --abs-threshold ${contig_filter_policy.target_abs_threshold} \
+            --rel-threshold ${contig_filter_policy.target_rel_threshold} \
             --summary ${sample_id}.target_filter.deacon.json \
             ${deacon_idx} \
             ${fasta} \
         | deacon filter \
             --deplete \
             --threads ${task.cpus} \
-            --abs-threshold ${params.host_abs_threshold} \
-            --rel-threshold ${params.host_rel_threshold} \
+            --abs-threshold ${contig_filter_policy.depletion_abs_threshold} \
+            --rel-threshold ${contig_filter_policy.depletion_rel_threshold} \
             --summary ${sample_id}.host_depletion.deacon.json \
             --output ${sample_id}.target_filtered.fasta \
             ${depletion_idx} \
@@ -299,8 +450,8 @@ process DEACON_FILTER_CONTIGS {
         deacon filter \
             ${target_deplete_arg} \
             --threads ${task.cpus} \
-            --abs-threshold ${params.virus_abs_threshold} \
-            --rel-threshold ${params.virus_rel_threshold} \
+            --abs-threshold ${contig_filter_policy.target_abs_threshold} \
+            --rel-threshold ${contig_filter_policy.target_rel_threshold} \
             --summary ${sample_id}.target_filter.deacon.json \
             --output ${sample_id}.target_filtered.fasta \
             ${deacon_idx} \

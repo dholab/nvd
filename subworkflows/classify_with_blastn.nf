@@ -1,7 +1,6 @@
 include {
   BLASTN_CLASSIFY ;
   ANNOTATE_BLASTN_RESULTS ;
-  FILTER_NON_VIRUS_BLASTN_NODES ;
   COMBINE_BATCH_SEARCH_HITS ;
   SELECT_TOP_BLAST_HITS
 } from "../modules/blast"
@@ -9,7 +8,7 @@ include { ANNOTATE_LEAST_COMMON_ANCESTORS  } from "../modules/utils"
 
 workflow CLASSIFY_WITH_BLASTN {
   take:
-  ch_filtered_megablast
+  ch_megablast_hits
   ch_megablast_query_partition
   ch_blast_db_files
   ch_taxonomy_dir // value channel: taxonomy directory path for taxonomy lookups
@@ -19,7 +18,7 @@ workflow CLASSIFY_WITH_BLASTN {
   // this subworkflow. BLASTN is still skipped when MEGABLAST leaves no candidate
   // query sequences, but the skipped case remains a channel emission instead
   // of disappearing.
-  ch_samples_after_megablast = ch_filtered_megablast
+  ch_samples_after_megablast = ch_megablast_hits
     .join(ch_megablast_query_partition, by: [0, 1])
     .map { sample_id, query_class, megablast_hits, accounted_query_ids, blastn_candidate_fasta, _partition_summary ->
       def needs_blastn = file(blastn_candidate_fasta).size() > 0
@@ -46,11 +45,7 @@ workflow CLASSIFY_WITH_BLASTN {
     ch_taxonomy_dir,
   )
 
-  FILTER_NON_VIRUS_BLASTN_NODES(
-    ANNOTATE_BLASTN_RESULTS.out
-  )
-
-  ch_blastn_terminal = FILTER_NON_VIRUS_BLASTN_NODES.out.hits
+  ch_blastn_hits = ANNOTATE_BLASTN_RESULTS.out
     .join(ch_blastn_context, by: [0, 1])
     .map { sample_id, query_class, blastn_hits, _meta, megablast_hits ->
       tuple(sample_id, query_class, [megablast_hits, blastn_hits])
@@ -62,7 +57,7 @@ workflow CLASSIFY_WITH_BLASTN {
       tuple(meta.id, meta.query_class, [megablast_hits])
     }
 
-  ch_merged_input = ch_blastn_terminal.mix(ch_samples_skipping_blastn)
+  ch_merged_input = ch_blastn_hits.mix(ch_samples_skipping_blastn)
 
   COMBINE_BATCH_SEARCH_HITS(ch_merged_input)
 
@@ -70,5 +65,4 @@ workflow CLASSIFY_WITH_BLASTN {
 
   emit:
   merged_results = ANNOTATE_LEAST_COMMON_ANCESTORS.out   // tuple(sample_id, query_class, batch_lca_tsv)
-  filter_decisions = FILTER_NON_VIRUS_BLASTN_NODES.out.decisions
 }

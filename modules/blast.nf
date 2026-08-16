@@ -55,10 +55,13 @@ process NORMALIZE_READ_BLAST_QUERIES {
 }
 
 process SUMMARIZE_BLAST_QUERY_BATCHES {
-  /* Summarize experimental BLAST query batches, including absent query classes. */
+  /* Summarize prepared BLAST query batches, including absent query classes. */
 
   tag "${sample_id}"
   label "low"
+
+  errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
+  maxRetries 2
 
   input:
   tuple val(sample_id), val(platform), val(query_classes), path(query_fastas, stageAs: "query_fastas??????/*"), path(query_lookups, stageAs: "query_lookups??????/*")
@@ -89,6 +92,9 @@ process SUMMARIZE_EMPTY_BLAST_QUERY_BATCHES {
 
   tag "${sample_id}"
   label "low"
+
+  errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
+  maxRetries 2
 
   input:
   tuple val(sample_id), val(platform)
@@ -126,7 +132,7 @@ process MEGABLAST {
   tuple val(sample_id), val(query_class), path("${sample_id}.${query_class}.megablast.txt")
 
   script:
-  def outfmt = "6 qseqid qlen sseqid stitle length pident evalue bitscore sscinames staxids"
+  def outfmt = "6 qseqid qlen sseqid stitle length pident evalue bitscore sscinames staxids saccver qstart qend slen sstart send sstrand"
   def blast_task = "megablast"
   def index_exists = file("${blast_db}/${params.blast_db_prefix}.00.idx").exists() || file("${blast_db}/${params.blast_db_prefix}.00.00.idx").exists()
   def use_index = blast_task == "megablast" && index_exists ? "-use_index true" : ""
@@ -143,7 +149,7 @@ process MEGABLAST {
   """
 }
 
-//Create file with megablast results annotated with megablast task and full taxonomic rank.
+// Create a TSV with MEGABLAST task metadata and full taxonomic lineages.
 process ANNOTATE_MEGABLAST_RESULTS {
 
   tag "${sample_id}, ${query_class}"
@@ -157,7 +163,7 @@ process ANNOTATE_MEGABLAST_RESULTS {
   val taxonomy_dir
 
   output:
-  tuple val(sample_id), val(query_class), path("${sample_id}.${query_class}.annotated_megablast.txt"), emit: hits
+  tuple val(sample_id), val(query_class), path("${sample_id}.${query_class}.annotated_megablast.tsv"), emit: hits
 
   script:
   def taxonomy_dir_arg = taxonomy_dir ? "--taxonomy-dir '${taxonomy_dir}'" : ""
@@ -166,7 +172,7 @@ process ANNOTATE_MEGABLAST_RESULTS {
   """
   annotate_blast_results.py \
   --input_file ${blast_txt} \
-  --output_file ${sample_id}.${query_class}.annotated_megablast.txt \
+  --output_file ${sample_id}.${query_class}.annotated_megablast.tsv \
   --sample_name ${sample_id} \
   --task 'megablast' \
   ${taxonomy_dir_arg} \
@@ -197,43 +203,6 @@ process SELECT_TOP_BLAST_HITS {
     --blast-retention-count ${params.blast_retention_count}
     """
 }
-/*
-
-Remove any query groups that do not have at least one hit corresponding to viruses.
-
-This rule handles cases where the input file is empty and filters out
-blast query read groups where none of the entries are from superkingdom: Viruses
-or where the only viral hits are phages. This will leave in any query seq that has things that are 
-non virus as long as one of the qseqid reads has a viral hit.
-*/
-process FILTER_NON_VIRUS_MEGABLAST_NODES {
-
-  tag "${sample_id}, ${query_class}"
-  label "low"
-
-  errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
-  maxRetries 2
-
-  input:
-  tuple val(sample_id), val(query_class), path(annotated_blast)
-
-  output:
-  tuple val(sample_id), val(query_class), path("${sample_id}.${query_class}.mb_virus_only.txt"), emit: hits
-  tuple val(sample_id), val(query_class), path("${sample_id}.${query_class}.megablast_query_filtering.tsv"), emit: decisions
-
-  script:
-  """
-    filter_non_virus_blast_nodes.py ${annotated_blast} ${sample_id}.${query_class}.mb_virus_only.txt
-    summarize_blast_filtering.py \
-      --sample-id '${sample_id}' \
-      --query-class '${query_class}' \
-      --stage megablast_virus_filter \
-      --input ${annotated_blast} \
-      --output ${sample_id}.${query_class}.mb_virus_only.txt \
-      --summary ${sample_id}.${query_class}.megablast_query_filtering.tsv
-    """
-}
-
 /*
 Partition queries according to whether MEGABLAST produced any hit.
 
@@ -290,7 +259,7 @@ process BLASTN_CLASSIFY {
   tuple val(sample_id), val(query_class), path("${sample_id}.${query_class}.blastn.txt")
 
   script:
-  def outfmt = "6 qseqid qlen sseqid stitle length pident evalue bitscore sscinames staxids"
+  def outfmt = "6 qseqid qlen sseqid stitle length pident evalue bitscore sscinames staxids saccver qstart qend slen sstart send sstrand"
   def blast_task = "blastn"
   """
     export BLASTDb=${blast_db}/
@@ -304,7 +273,7 @@ process BLASTN_CLASSIFY {
     """
 }
 
-// Create file with blastn results annotated with blastn task and full taxonomic rank.
+// Create a TSV with BLASTN task metadata and full taxonomic lineages.
 process ANNOTATE_BLASTN_RESULTS {
 
   tag "${sample_id}, ${query_class}"
@@ -318,7 +287,7 @@ process ANNOTATE_BLASTN_RESULTS {
   val taxonomy_dir
 
   output:
-  tuple val(sample_id), val(query_class), path("${sample_id}.${query_class}.annotated_blastn.txt")
+  tuple val(sample_id), val(query_class), path("${sample_id}.${query_class}.annotated_blastn.tsv")
 
   script:
   def taxonomy_dir_arg = taxonomy_dir ? "--taxonomy-dir '${taxonomy_dir}'" : ""
@@ -328,47 +297,12 @@ process ANNOTATE_BLASTN_RESULTS {
     annotate_blast_results.py \
     --sample_name ${sample_id} \
     --input_file ${blastn_txt} \
-    --output_file ${sample_id}.${query_class}.annotated_blastn.txt \
+    --output_file ${sample_id}.${query_class}.annotated_blastn.tsv \
     --task 'blastn' \
     ${taxonomy_dir_arg} \
     ${taxonomy_mode_arg} \
     ${taxonomy_max_age_arg}
     """
-}
-
-/*
-Remove any query groups that do not have at least one hit corresponding to viruses.
-
-This rule handles cases where the input file is empty and filters out
-groups where none of the entries are from superkingdom: Viruses
-or where the only viral hits are phages.
-*/
-process FILTER_NON_VIRUS_BLASTN_NODES {
-
-  tag "${sample_id}, ${query_class}"
-  label "low"
-
-  errorStrategy { task.attempt < 3 ? 'retry' : 'ignore' }
-  maxRetries 2
-
-  input:
-  tuple val(sample_id), val(query_class), path(annotated_blast)
-
-  output:
-  tuple val(sample_id), val(query_class), path("${sample_id}.${query_class}.nt_virus_only.txt"), emit: hits
-  tuple val(sample_id), val(query_class), path("${sample_id}.${query_class}.blastn_query_filtering.tsv"), emit: decisions
-
-  script:
-  """
-  filter_non_virus_blast_nodes.py ${annotated_blast} ${sample_id}.${query_class}.nt_virus_only.txt
-  summarize_blast_filtering.py \
-    --sample-id '${sample_id}' \
-    --query-class '${query_class}' \
-    --stage blastn_virus_filter \
-    --input ${annotated_blast} \
-    --output ${sample_id}.${query_class}.nt_virus_only.txt \
-    --summary ${sample_id}.${query_class}.blastn_query_filtering.tsv
-  """
 }
 
 // Combine MEGABLAST and optional BLASTN search hits for one query-class batch.

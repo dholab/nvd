@@ -16,6 +16,8 @@ PROCESS_CONTIGS = ROOT / "subworkflows" / "process_contigs"
 PREPARE_BLAST_QUERIES = ROOT / "subworkflows" / "prepare_blast_queries"
 SHORT_READ_ASSEMBLY = ROOT / "subworkflows" / "short_read_denovo_assembly"
 LONG_READ_ENSEMBLE = ROOT / "subworkflows" / "long_read_denovo_ensembly"
+PREPROCESS_READS = ROOT / "subworkflows" / "preprocess_reads"
+FASTX_MODULE = ROOT / "modules" / "fastx"
 
 
 def write_executable(path: Path, source: str) -> None:
@@ -55,6 +57,57 @@ def run_nextflow(
         capture_output=True,
         check=False,
     )
+
+
+def test_standard_mode_emits_prepared_query_summary_for_no_contig_sample(
+    tmp_path: Path,
+) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    lib = tmp_path / "lib"
+    lib.mkdir()
+    shutil.copy2(ROOT / "lib" / "NvdUtils.groovy", lib / "NvdUtils.groovy")
+    target_index = tmp_path / "target.idx"
+    target_index.touch()
+    depletion_index = tmp_path / "depletion.idx"
+    depletion_index.touch()
+
+    workflow = tmp_path / "main.nf"
+    workflow.write_text(
+        f"""\
+nextflow.enable.dsl = 2
+
+include {{ PREPARE_BLAST_QUERIES }} from '{PREPARE_BLAST_QUERIES}'
+
+params.experimental = false
+
+workflow {{
+    PREPARE_BLAST_QUERIES(
+        Channel.empty(),
+        Channel.of(tuple('sample_A', 'illumina')),
+        Channel.empty(),
+        Channel.empty(),
+        Channel.value(file('{target_index}')),
+        Channel.value(tuple(false, file('{depletion_index}'))),
+    )
+
+    PREPARE_BLAST_QUERIES.out.blast_query_summaries.view {{ sample_id, summary ->
+        "SUMMARY: ${{sample_id}}:${{summary.name}}"
+    }}
+}}
+""",
+        encoding="utf-8",
+    )
+
+    completed = run_nextflow(workflow, bin_dir=bin_dir)
+    diagnostics = f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}"
+    assert completed.returncode == 0, diagnostics
+    assert "SUMMARY: sample_A:sample_A.blast_query_batches.tsv" in completed.stdout
+    summaries = sorted(tmp_path.glob("work/**/sample_A.blast_query_batches.tsv"))
+    assert summaries, diagnostics
+    rows = summaries[-1].read_text(encoding="utf-8").splitlines()
+    assert len(rows) == 5
+    assert all("\t0\tfalse\tfalse\t" in row for row in rows[1:])
 
 
 def write_process_contig_fakes(bin_dir: Path) -> None:
@@ -102,6 +155,38 @@ else:
     shutil.copyfile(values["in"], output)
 """,
     )
+
+
+def test_report_only_assembly_profile_failure_does_not_block_sentinel(tmp_path: Path) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    attempts = tmp_path / "profile_attempts.log"
+    write_executable(
+        bin_dir / "profile_fastx.py",
+        f"#!/bin/sh\nprintf 'attempt\\n' >> {json.dumps(str(attempts))}\nexit 2\n",
+    )
+    fasta = tmp_path / "contigs.fasta"
+    fasta.write_text(">contig\nACGT\n", encoding="utf-8")
+    workflow = tmp_path / "main.nf"
+    workflow.write_text(
+        f"""\
+nextflow.enable.dsl = 2
+
+include {{ PROFILE_ASSEMBLY_FASTA_FOR_REPORT }} from '{FASTX_MODULE}'
+
+workflow {{
+    PROFILE_ASSEMBLY_FASTA_FOR_REPORT(Channel.of(tuple('sample_A', 'illumina', 'single', 'spades', file('{fasta}'))))
+    Channel.value('scientific-sentinel').view {{ value -> "SENTINEL: ${{value}}" }}
+}}
+""",
+        encoding="utf-8",
+    )
+
+    completed = run_nextflow(workflow, bin_dir=bin_dir)
+    diagnostics = f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}"
+    assert completed.returncode == 0, diagnostics
+    assert "SENTINEL: scientific-sentinel" in completed.stdout
+    assert attempts.read_text(encoding="utf-8").count("attempt") == 3
 
 
 def test_contig_processing_stops_at_the_first_empty_checkpoint(tmp_path: Path) -> None:
@@ -224,6 +309,97 @@ summary.write_text(json.dumps({
 }))
 """,
     )
+
+
+def test_empty_target_enrichment_closes_sample_before_preprocessing(
+    tmp_path: Path,
+) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    write_deacon_fake(bin_dir)
+
+    lib = tmp_path / "lib"
+    lib.mkdir()
+    for filename in ("NvdReporting.groovy", "NvdUtils.groovy"):
+        shutil.copy2(ROOT / "lib" / filename, lib / filename)
+
+    reads = write_fastq(tmp_path / "reads.fastq.gz", "source-read")
+    target_index = tmp_path / "target.idx"
+    target_index.touch()
+
+    workflow = tmp_path / "main.nf"
+    workflow.write_text(
+        f"""\
+nextflow.enable.dsl = 2
+
+include {{ PREPROCESS_READS }} from '{PREPROCESS_READS}'
+
+params.skip_fastqc = true
+params.no_enrichment = false
+params.virus_index = '{target_index}'
+params.virus_index_url = null
+params.virus_reference_fasta = null
+params.virus_abs_threshold = 1
+params.virus_rel_threshold = 0.0
+params.merge_pairs = false
+params.dedup = false
+params.dedup_seq = false
+params.trim_adapters = false
+params.host_index = null
+params.host_index_url = null
+params.host_contaminants_fasta = null
+params.filter_reads = false
+params.filter_low_complexity_reads = false
+params.min_read_quality_illumina = 20
+params.min_read_quality_nanopore = 12
+params.min_read_length = 50
+params.min_consecutive_bases = 200
+params.max_concurrent_downloads = 1
+
+workflow {{
+    PREPROCESS_READS(
+        Channel.of(tuple(
+            [
+                id: 'empty_enrichment',
+                platform: 'illumina',
+                read_mode: 'single',
+                r1_count: 1,
+                deacon_read_structure: 'single',
+            ],
+            [file('{reads}')],
+        )),
+        Channel.empty(),
+    )
+
+    PREPROCESS_READS.out.complete_empty_samples.view {{ sample_id, platform ->
+        "COMPLETE_EMPTY: ${{sample_id}}:${{platform}}"
+    }}
+    PREPROCESS_READS.out.read_counts.view {{ sample_id, count ->
+        "INPUT_READS: ${{sample_id}}:${{count}}"
+    }}
+    ch_unexpected_read_outputs = PREPROCESS_READS.out.reads
+        .map {{ sample_id, _platform, _read_structure, _reads -> sample_id }}
+        .mix(PREPROCESS_READS.out.read_batches.map {{ sample_id, _platform, _read_structure, _query_class, _reads -> sample_id }})
+        .mix(PREPROCESS_READS.out.profiled_read_batches.map {{ meta, _reads, _profile, _histogram -> meta.id }})
+        .mix(PREPROCESS_READS.out.profiled_batches_by_sample.map {{ meta, _batches -> meta.id }})
+        .mix(PREPROCESS_READS.out.paired_reads_for_mapback.map {{ sample_id, _platform, _overlap_reads, _single_reads -> sample_id }})
+        .mix(PREPROCESS_READS.out.single_reads_for_mapback.map {{ sample_id, _platform, _read_structure, _reads -> sample_id }})
+
+    ch_unexpected_read_outputs.view {{ sample_id ->
+        "UNEXPECTED_READ_OUTPUT: ${{sample_id}}"
+    }}
+}}
+""",
+        encoding="utf-8",
+    )
+
+    completed = run_nextflow(workflow, bin_dir=bin_dir)
+    diagnostics = f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}"
+
+    assert completed.returncode == 0, diagnostics
+    assert "COMPLETE_EMPTY: empty_enrichment:illumina" in completed.stdout
+    assert "INPUT_READS: empty_enrichment:1" in completed.stdout
+    assert "UNEXPECTED_READ_OUTPUT:" not in completed.stdout
 
 
 def test_no_contig_samples_route_full_reads_without_mapback(tmp_path: Path) -> None:

@@ -23,12 +23,14 @@ include { RAPID_SCREENING         } from "../subworkflows/rapid_screening"
 include { SAMPLE_SIMILARITY_QC    } from "../subworkflows/sample_similarity_qc"
 include { RAPID_SCREENING_EVAL    } from "../subworkflows/rapid_screening_eval"
 include { REPORTING               } from "../subworkflows/reporting"
+include { NOTIFY_RUN_COMPLETION_SLACK } from "../modules/notifications"
 include { COMPUTE_RUN_CONTEXT ; ENSURE_TAXONOMY } from "../modules/utils"
 
 
 workflow NVD_MAIN {
   take:
   ch_samplesheet
+  ch_nvd_version_file
 
   main:
 
@@ -36,7 +38,9 @@ workflow NVD_MAIN {
   // direct-read querying remains enabled while assembly is skipped.
   def requires_blast_db = !params.skip_blast && (!params.skip_assembly || params.experimental)
   def target_enrichment_enabled = NvdUtils.targetEnrichmentEnabled(params)
+  def depletion_enabled = NvdUtils.depletionEnabled(params)
   def has_target_enrichment_index = NvdUtils.hasTargetEnrichmentIndex(params)
+  def rapid_screening_enabled = params.experimental == true && !params.skip_rapid_screen
   assert (!requires_blast_db || (params.blast_db && file(params.blast_db).isDirectory())) && (!target_enrichment_enabled || has_target_enrichment_index) : """
     One or more required parameters are missing or point to non-existent files:
 
@@ -61,18 +65,27 @@ workflow NVD_MAIN {
 
   GATHER_READS(ch_samplesheet)
 
-  PREPROCESS_READS(GATHER_READS.out.reads)
+  PREPROCESS_READS(
+    GATHER_READS.out.reads,
+    GATHER_READS.out.sra_accessions,
+  )
 
   ch_sourmash_gather_csv = channel.empty()
   ch_sourmash_lineages = channel.empty()
   ch_sourmash_tax_reports = channel.empty()
+  ch_risk_group_lookup = Channel.value(file("${projectDir}/assets/human_virus_risk_group_lookup.tsv"))
 
-  if (params.experimental == true) {
-    rapid_screening = RAPID_SCREENING(PREPROCESS_READS.out.profiled_batches_by_sample)
+  if (rapid_screening_enabled) {
+    rapid_screening = RAPID_SCREENING(
+      PREPROCESS_READS.out.profiled_batches_by_sample,
+      ch_risk_group_lookup,
+      PREPROCESS_READS.out.target_enrichment_stats,
+    )
     SAMPLE_SIMILARITY_QC(rapid_screening.query_sketches)
     ch_sourmash_gather_csv = rapid_screening.gather_csv
     ch_sourmash_lineages = rapid_screening.lineages
     ch_sourmash_tax_reports = rapid_screening.tax_reports
+
   }
 
   // Short reads retain their minimum-count gate; experimental long-read
@@ -102,6 +115,7 @@ workflow NVD_MAIN {
     .mix(LONG_READ_DENOVO_ENSEMBLY.out.no_contigs)
     .mix(PROCESS_CONTIGS.out.no_contigs)
     .mix(ch_assembly_disabled)
+    .mix(PREPROCESS_READS.out.complete_empty_samples)
 
   ch_run_context = COMPUTE_RUN_CONTEXT.out.run_context
   ch_taxonomy_dir = ENSURE_TAXONOMY.out.taxonomy_dir
@@ -122,21 +136,19 @@ workflow NVD_MAIN {
   )
 
   CLASSIFY_WITH_BLASTN(
-    CLASSIFY_WITH_MEGABLAST.out.filtered_megablast,
+    CLASSIFY_WITH_MEGABLAST.out.annotated_hits,
     CLASSIFY_WITH_MEGABLAST.out.megablast_query_partition,
     ch_blast_db_files,
     ch_taxonomy_dir,
   )
 
-  ch_sequence_flow_evidence = LONG_READ_DENOVO_ENSEMBLY.out.assembly_eligibility
+  ch_sequence_flow_inputs = LONG_READ_DENOVO_ENSEMBLY.out.assembly_eligibility
     .map { _sample_id, report -> report }
-    .mix(LONG_READ_DENOVO_ENSEMBLY.out.union_provenance.map { _sample_id, _provenance, summary -> summary })
+    .mix(LONG_READ_DENOVO_ENSEMBLY.out.union_summaries.map { _sample_id, summary -> summary })
     .mix(PREPARE_BLAST_QUERIES.out.contig_filter_decisions.map { _sample_id, decision -> decision })
     .mix(PREPARE_BLAST_QUERIES.out.mapback_count_files.map { _sample_id, counts -> counts })
     .mix(PREPARE_BLAST_QUERIES.out.blast_query_summaries.map { _sample_id, summary -> summary })
     .mix(CLASSIFY_WITH_MEGABLAST.out.megablast_query_partition.map { _sample_id, _query_class, _accounted_ids, _blastn_candidates, summary -> summary })
-    .mix(CLASSIFY_WITH_MEGABLAST.out.filter_decisions.map { _sample_id, _query_class, decision -> decision })
-    .mix(CLASSIFY_WITH_BLASTN.out.filter_decisions.map { _sample_id, _query_class, decision -> decision })
 
   REPORTING(
     CLASSIFY_WITH_BLASTN.out.merged_results,
@@ -152,11 +164,31 @@ workflow NVD_MAIN {
     COMPUTE_RUN_CONTEXT.out.ready,
     ch_run_context,
     ch_sourmash_tax_reports,
-    ch_sequence_flow_evidence,
+    ch_risk_group_lookup,
+    ch_sequence_flow_inputs,
+    PREPROCESS_READS.out.raw_fastqc_packages,
+    PREPROCESS_READS.out.raw_fastqc_zips,
+    GATHER_READS.out.resolved_reads,
+    ch_nvd_version_file,
+    PREPROCESS_READS.out.depletion_stats,
+    PREPROCESS_READS.out.processed_read_profiles,
+    PREPROCESS_READS.out.processed_read_quality_histograms,
+    PREPARE_BLAST_QUERIES.out.filtered_contig_profiles,
+    SHORT_READ_DENOVO_ASSEMBLY.out.assembly_profiles.mix(LONG_READ_DENOVO_ENSEMBLY.out.assembly_profiles),
+    SHORT_READ_DENOVO_ASSEMBLY.out.eligibility_decisions.mix(LONG_READ_DENOVO_ENSEMBLY.out.eligibility_decisions),
+    LONG_READ_DENOVO_ENSEMBLY.out.eligibility_summaries,
+    LONG_READ_DENOVO_ENSEMBLY.out.union_summaries,
+    PREPARE_BLAST_QUERIES.out.blast_query_summaries,
+    PREPARE_BLAST_QUERIES.out.queries,
+    CLASSIFY_WITH_MEGABLAST.out.megablast_query_partition.map { sample_id, query_class, _accounted_ids, _blastn_candidates, summary -> tuple(sample_id, query_class, summary) },
+    ch_blast_db_files,
+    channel.value(file("${projectDir}/assets/multiqc_config.yaml")),
     workflow.runName,
   )
 
-  if (params.experimental == true) {
+  ch_run_completed_results = REPORTING.out.completed_results
+
+  if (rapid_screening_enabled) {
     RAPID_SCREENING_EVAL(
       PREPROCESS_READS.out.read_counts,
       ch_sourmash_gather_csv,
@@ -167,13 +199,26 @@ workflow NVD_MAIN {
       REPORTING.out.crumbs_queries,
       workflow.runName,
     )
+
+    ch_run_completed_results = ch_run_completed_results
+      .combine(SAMPLE_SIMILARITY_QC.out.completion)
+      .combine(RAPID_SCREENING_EVAL.out.completion)
+      .map { experiment_results, _sample_similarity_ready, _evaluation_ready -> experiment_results }
   }
 
   ch_completed_sample_ids = REPORTING.out.blast_results
     .map { sample_id, _blast_results -> sample_id }
     .mix(PREPROCESS_READS.out.complete_empty_samples.map { sample_id, _platform -> sample_id })
 
+  NOTIFY_RUN_COMPLETION_SLACK(
+    ch_run_completed_results,
+    ch_run_context,
+    workflow.runName,
+  )
+
   emit:
-  completion = ch_completed_sample_ids.count().map { n -> "NVD main workflow complete: ${n} samples processed" }
+  completion = ch_run_completed_results
+    .combine(ch_completed_sample_ids.count())
+    .map { _results, n -> "NVD main workflow complete: ${n} samples processed" }
   labkey_log = REPORTING.out.labkey_log
 }

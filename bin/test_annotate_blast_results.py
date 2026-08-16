@@ -98,8 +98,8 @@ def blast_input_file(tmp_path: Path) -> Path:
     input_file = tmp_path / "blast_results.txt"
     # Header + one data row with taxid 9606 (Homo sapiens)
     content = """\
-qseqid\tqlen\tsseqid\tstitle\tlength\tpident\tevalue\tbitscore\tsscinames\tstaxids
-contig_1\t500\tref|NC_001\tHuman gene\t450\t99.5\t1e-100\t800\tHomo sapiens\t9606
+qseqid\tqlen\tsseqid\tstitle\tlength\tpident\tevalue\tbitscore\tsscinames\tstaxids\tsaccver\tqstart\tqend\tslen\tsstart\tsend\tsstrand
+contig_1\t500\tref|NC_001.1|\tHuman gene\t450\t99.5\t1e-100\t800\tHomo sapiens\t9606\tNC_001.1\t10\t459\t1000\t900\t451\tminus
 """
     input_file.write_text(content)
     return input_file
@@ -167,6 +167,14 @@ class TestAnnotateBlastResults:
         data = lines[1].split("\t")
         assert data[0] == "megablast"
         assert data[1] == "test_sample"
+        annotated = dict(zip(header, data, strict=True))
+        assert annotated["saccver"] == "NC_001.1"
+        assert annotated["qstart"] == "10"
+        assert annotated["qend"] == "459"
+        assert annotated["slen"] == "1000"
+        assert annotated["sstart"] == "900"
+        assert annotated["send"] == "451"
+        assert annotated["sstrand"] == "minus"
 
         # Check lineage contains expected ranks
         lineage = data[-1]
@@ -219,8 +227,8 @@ class TestAnnotateBlastResults:
         input_file = tmp_path / "multi_taxid.txt"
         # Two taxids separated by semicolon
         content = """\
-qseqid\tqlen\tsseqid\tstitle\tlength\tpident\tevalue\tbitscore\tsscinames\tstaxids
-contig_1\t500\tref|NC_001\tMultiple hits\t450\t99.5\t1e-100\t800\tHomo sapiens;Homo\t9606;9605
+qseqid\tqlen\tsseqid\tstitle\tlength\tpident\tevalue\tbitscore\tsscinames\tstaxids\tsaccver\tqstart\tqend\tslen\tsstart\tsend\tsstrand
+contig_1\t500\tref|NC_001.1|\tMultiple hits\t450\t99.5\t1e-100\t800\tHomo sapiens;Homo\t9606;9605\tNC_001.1\t1\t450\t1000\t100\t549\tplus
 """
         input_file.write_text(content)
 

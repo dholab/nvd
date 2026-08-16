@@ -34,10 +34,18 @@ REQUIRED_BLAST_COLUMNS = {
     "evalue",
     "bitscore",
     "staxids",
+    "saccver",
+    "qstart",
+    "qend",
+    "slen",
+    "sstart",
+    "send",
+    "sstrand",
     "rank",
     "adjusted_taxid",
     "adjusted_taxid_name",
     "adjusted_taxid_rank",
+    "who_risk_group",
     "adjustment_method",
     "query_class",
     "producer",
@@ -57,6 +65,7 @@ OUTPUT_COLUMNS = [
     "crumbs_score",
     "qlen",
     "assigned_taxid",
+    "who_risk_group",
     "assignment_method",
     "qseqid",
     "best_hit_qcov",
@@ -72,7 +81,15 @@ OUTPUT_COLUMNS = [
     "mapped_reads",
     "producer",
     "source_id",
+    "best_hit_reference_accession",
+    "best_hit_reference_title",
     "best_hit_alignment_length",
+    "best_hit_query_start_1based",
+    "best_hit_query_end_1based",
+    "best_hit_reference_length",
+    "best_hit_reference_start_1based",
+    "best_hit_reference_end_1based",
+    "best_hit_reference_strand",
     "blast_db_version",
     "virus_index_version",
     "nextflow_run_id",
@@ -161,6 +178,11 @@ def with_numeric_columns(frame: pl.LazyFrame) -> pl.LazyFrame:
         pl.col("pident").cast(pl.Float64).alias("_pident_num"),
         pl.col("evalue").cast(pl.Float64).alias("_evalue_num"),
         pl.col("bitscore").cast(pl.Float64).alias("_bitscore_num"),
+        pl.col("qstart").cast(pl.Int64).alias("_qstart_num"),
+        pl.col("qend").cast(pl.Int64).alias("_qend_num"),
+        pl.col("slen").cast(pl.Int64).alias("_slen_num"),
+        pl.col("sstart").cast(pl.Int64).alias("_sstart_num"),
+        pl.col("send").cast(pl.Int64).alias("_send_num"),
         pl.when(pl.col("staxids").is_null() | (pl.col("staxids") == ""))
         .then(None)
         .otherwise(pl.col("staxids"))
@@ -178,8 +200,9 @@ def with_score_context(frame: pl.LazyFrame) -> pl.LazyFrame:
                 "_evalue_num",
                 "_pident_num",
                 "_length_num",
+                "sseqid",
             ],
-            descending=[False, False, True, False, True, True],
+            descending=[False, False, True, False, True, True, False],
         )
         .with_columns(
             pl.max("_bitscore_num").over("sample_id", "qseqid").alias("_best_bitscore"),
@@ -238,7 +261,9 @@ def coverage_band(thresholds: Thresholds) -> pl.Expr:
 def support_note() -> pl.Expr:
     alignment = pl.concat_str(
         [
-            pl.lit("The best alignment spans "),
+            pl.lit("The best alignment to "),
+            pl.col("saccver"),
+            pl.lit(" spans "),
             pl.col("length"),
             pl.lit(" of "),
             pl.col("qlen"),
@@ -375,6 +400,18 @@ def assignment_rows(frame: pl.LazyFrame, thresholds: Thresholds) -> pl.LazyFrame
         .join(metrics, on=["sample_id", "qseqid"], how="inner")
         .with_columns(
             (pl.col("_length_num") / pl.col("_qlen_num")).alias("best_hit_qcov"),
+            pl.min_horizontal("_qstart_num", "_qend_num").alias(
+                "best_hit_query_start_1based",
+            ),
+            pl.max_horizontal("_qstart_num", "_qend_num").alias(
+                "best_hit_query_end_1based",
+            ),
+            pl.min_horizontal("_sstart_num", "_send_num").alias(
+                "best_hit_reference_start_1based",
+            ),
+            pl.max_horizontal("_sstart_num", "_send_num").alias(
+                "best_hit_reference_end_1based",
+            ),
         )
         .pipe(with_support_columns, thresholds)
     )
@@ -390,6 +427,7 @@ def select_output_columns(frame: pl.LazyFrame) -> pl.LazyFrame:
         pl.col("crumbs_score"),
         pl.col("qlen"),
         pl.col("adjusted_taxid").alias("assigned_taxid"),
+        pl.col("who_risk_group"),
         pl.col("adjustment_method").alias("assignment_method"),
         "qseqid",
         pl.col("best_hit_qcov"),
@@ -405,7 +443,15 @@ def select_output_columns(frame: pl.LazyFrame) -> pl.LazyFrame:
         pl.col("mapped_reads"),
         pl.col("producer"),
         pl.col("source_id"),
+        pl.col("saccver").alias("best_hit_reference_accession"),
+        pl.col("stitle").alias("best_hit_reference_title"),
         pl.col("length").alias("best_hit_alignment_length"),
+        pl.col("best_hit_query_start_1based"),
+        pl.col("best_hit_query_end_1based"),
+        pl.col("_slen_num").alias("best_hit_reference_length"),
+        pl.col("best_hit_reference_start_1based"),
+        pl.col("best_hit_reference_end_1based"),
+        pl.col("sstrand").alias("best_hit_reference_strand"),
         pl.col("blast_db_version"),
         pl.col("virus_index_version"),
         pl.col("nextflow_run_id"),

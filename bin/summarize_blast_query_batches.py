@@ -99,6 +99,12 @@ def expected_query_classes() -> pl.LazyFrame:
 def validate_unique_query_classes(batches: list[QueryBatch]) -> None:
     if not batches:
         return
+    unexpected = sorted(
+        {batch.query_class for batch in batches} - set(EXPECTED_QUERY_CLASSES),
+    )
+    if unexpected:
+        message = f"unsupported BLAST query classes: {unexpected}"
+        raise QueryBatchSummaryError(message)
     duplicates = (
         pl.DataFrame({"query_class": [batch.query_class for batch in batches]})
         .lazy()
