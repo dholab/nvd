@@ -33,6 +33,12 @@ workflow SAMPLE_SIMILARITY_QC {
 
   PLOT_SAMPLE_ORDINATION(ch_plot_inputs)
 
+  ch_completion = SUMMARIZE_SAMPLE_SIMILARITY.out.evidence
+    .mix(PLOT_SAMPLE_ORDINATION.out.plots)
+    .collect()
+    .ifEmpty { [] }
+    .map { _outputs -> true }
+
   emit:
   query_sketch_collection = SOURMASH_COLLECT_QUERY_SKETCHES.out.collection
   similarity_matrices     = SOURMASH_COMPARE_QUERY_SKETCHES.out.matrices
@@ -41,4 +47,5 @@ workflow SAMPLE_SIMILARITY_QC {
   possible_mixups         = REPORT_POSSIBLE_SAMPLE_MIXUPS.out.reports
   candidate_evidence      = SUMMARIZE_SAMPLE_SIMILARITY.out.evidence
   plots                   = PLOT_SAMPLE_ORDINATION.out.plots
+  completion              = ch_completion
 }

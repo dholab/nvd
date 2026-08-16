@@ -1,8 +1,11 @@
-include { ADD_READ_COUNTS_TO_BLAST; CONCATENATE_SAMPLE_BLAST_RESULTS; BUILD_QUERY_BIG_TABLE; BUILD_TAXON_BIG_TABLE; CONCATENATE_QUERY_BIG_TABLE; CONCATENATE_TAXON_BIG_TABLE; CONCATENATE_EXPERIMENT_BLAST_RESULTS; TARGET_ENRICHMENT_REPORT } from "../modules/utils"
-include { NOTIFY_SLACK } from "../modules/utils"
-include { BUILD_SEQUENCE_FLOW; RENDER_MERGED_TAXON_ABUNDANCE_SUNBURST; RENDER_TAXON_ABUNDANCE_SUNBURST; RENDER_SOURMASH_SANKEY } from "../modules/reporting"
+include { ADD_READ_COUNTS_TO_BLAST; CONCATENATE_SAMPLE_BLAST_RESULTS; BUILD_QUERY_BIG_TABLE; BUILD_TAXON_BIG_TABLE; CONCATENATE_QUERY_BIG_TABLE; EMIT_BEST_HIT_SEQUENCE_EVIDENCE; CONCATENATE_TAXON_BIG_TABLE; CONCATENATE_EXPERIMENT_BLAST_RESULTS; TARGET_ENRICHMENT_REPORT } from "../modules/utils"
+include { BUILD_SEQUENCE_FLOW; RENDER_CONTIG_ALIGNMENT_PLOTS; RENDER_MERGED_TAXON_ABUNDANCE_SUNBURST; RENDER_TAXON_ABUNDANCE_SUNBURST; RENDER_SOURMASH_SANKEY } from "../modules/reporting"
 include { CRUMBS_PROFILING } from "./crumbs_profiling"
 include { LIMS_INTEGRATION } from "./lims_integration"
+include { RENDER_CONTIG_COVERAGE_HISTOGRAM } from "../modules/samtools"
+include { ANNOTATE_BLAST_RISK_GROUPS } from "../modules/risk_groups"
+include { GENERATE_MULTIQC_REPORT } from "../modules/multiqc"
+include { MULTIQC_BUNDLING } from "./multiqc_bundling"
 
 workflow REPORTING {
     take:
@@ -19,16 +22,37 @@ workflow REPORTING {
     ch_run_ready
     ch_run_context
     ch_sourmash_tax_reports
-    ch_sequence_flow_evidence
+    ch_risk_group_lookup
+    ch_sequence_flow_inputs
+    ch_raw_fastqc_packages
+    ch_raw_fastqc_zips
+    ch_resolved_reads
+    ch_nvd_version
+    ch_depletion_stats
+    ch_processed_read_profiles
+    ch_processed_read_quality_histograms
+    ch_filtered_contig_profiles
+    ch_assembly_profiles
+    ch_assembly_eligibility_decisions
+    ch_long_read_eligibility_summaries
+    ch_long_read_union_summaries
+    ch_prepared_query_batch_summaries
+    ch_prepared_query_batches
+    ch_megablast_query_partition_summaries
+    ch_blast_db_files
+    ch_multiqc_config
     run_id
 
     main:
+    def best_hit_sequences_enabled = params.experimental == true && !params.skip_blast
+
     if (params.labkey) {
         NvdUtils.validateLabkeyBlast(params)
     }
 
     ch_contig_sequence_parts = ch_contig_sequences.multiMap { sample_id, _platform, _read_structure, fasta, _lookup ->
         for_lims: tuple(sample_id, fasta)
+        for_alignment_plots: tuple(sample_id, fasta)
     }
 
     // Per-read-type query FASTAs (contig, merged, single) — the sequences
@@ -37,12 +61,22 @@ workflow REPORTING {
         tuple(sample_id, query_class, batch_fasta)
     }
 
+    ch_contig_alignment_plot_inputs = ch_contig_sequence_parts.for_alignment_plots
+        .join(ch_filtered_bam, by: 0)
+        .map { sample_id, fasta, bam, bai -> tuple(sample_id, fasta, bam, bai) }
+
     // Enrich BLAST results with all pipeline metadata (mapped_reads, total_reads,
     // blast_db_version, nextflow_run_id) so the published TSV is complete
     // regardless of whether LabKey is enabled. This now runs per (sample_id,
     // query_class) batch — before batches are stacked — so each read type's
     // hits can be uploaded eagerly downstream.
-    ch_blast_finalize = ch_blast_results
+    ANNOTATE_BLAST_RISK_GROUPS(
+        ch_blast_results,
+        ch_risk_group_lookup,
+        ch_taxonomy_dir,
+    )
+
+    ch_blast_finalize = ANNOTATE_BLAST_RISK_GROUPS.out
         .combine(ch_read_counts, by: 0)
         .combine(ch_contig_read_counts, by: 0)
         .combine(ch_query_lookups, by: 0)
@@ -50,7 +84,17 @@ workflow REPORTING {
             tuple(sample_id, query_class, batch_tsv, total_reads, contig_counts, lookups)
         }
 
-    ADD_READ_COUNTS_TO_BLAST(ch_blast_finalize, run_id)   // -> tuple(sample_id, query_class, batch.final.tsv)
+    def target_enrichment_enabled = NvdUtils.targetEnrichmentEnabled(params)
+    ch_blast_db_version = Channel.value(params.blast_db_version)
+    ch_virus_index_version = Channel.value(
+        target_enrichment_enabled ? params.virus_index_version : "not_used"
+    )
+    ADD_READ_COUNTS_TO_BLAST(
+        ch_blast_finalize,
+        run_id,
+        ch_blast_db_version,
+        ch_virus_index_version,
+    )
 
     // Collapse query-class partitions into the canonical per-sample BLAST result.
     CONCATENATE_SAMPLE_BLAST_RESULTS(
@@ -58,6 +102,9 @@ workflow REPORTING {
             .map { sample_id, _query_class, final_tsv -> tuple(sample_id, final_tsv) }
             .groupTuple()
     )
+
+    RENDER_CONTIG_COVERAGE_HISTOGRAM(ch_filtered_bam)
+    RENDER_CONTIG_ALIGNMENT_PLOTS(ch_contig_alignment_plot_inputs)
 
     ch_sample_blast_results = CONCATENATE_SAMPLE_BLAST_RESULTS.out
         .multiMap { sample_id, blast_tsv ->
@@ -74,7 +121,7 @@ workflow REPORTING {
     )
 
     if (params.experimental == true) {
-        BUILD_SEQUENCE_FLOW(ch_sequence_flow_evidence.collect())
+        BUILD_SEQUENCE_FLOW(ch_sequence_flow_inputs.collect())
 
         CRUMBS_PROFILING(
             ch_sample_blast_results.for_emit,
@@ -93,6 +140,24 @@ workflow REPORTING {
             BUILD_QUERY_BIG_TABLE.out.map { _sample_id, tsv -> tsv }.collect()
         )
 
+        if (best_hit_sequences_enabled) {
+            ch_best_hit_query_samples = ch_prepared_query_batches
+                .map { sample_id, _platform, _query_class, _query_fasta, _query_lookup -> sample_id }
+                .collect()
+                .ifEmpty { [] }
+            ch_best_hit_query_fastas = ch_prepared_query_batches
+                .map { _sample_id, _platform, _query_class, query_fasta, _query_lookup -> query_fasta }
+                .collect()
+                .ifEmpty { [] }
+
+            EMIT_BEST_HIT_SEQUENCE_EVIDENCE(
+                CONCATENATE_QUERY_BIG_TABLE.out.concatenated_tsv,
+                ch_best_hit_query_samples,
+                ch_best_hit_query_fastas,
+                ch_blast_db_files,
+            )
+        }
+
         ch_taxon_big_table_inputs = BUILD_QUERY_BIG_TABLE.out
             .join(CRUMBS_PROFILING.out.taxa, by: 0)
             .map { sample_id, query_big_table, crumbs_taxa_tsv -> tuple(sample_id, query_big_table, crumbs_taxa_tsv) }
@@ -103,6 +168,35 @@ workflow REPORTING {
             BUILD_TAXON_BIG_TABLE.out.map { _sample_id, tsv -> tsv }.collect()
         )
     }
+
+    ch_taxon_big_tables_for_multiqc = params.experimental
+        ? BUILD_TAXON_BIG_TABLE.out
+        : channel.empty()
+
+    MULTIQC_BUNDLING(
+        ch_raw_fastqc_packages,
+        ch_raw_fastqc_zips,
+        ch_resolved_reads,
+        ch_nvd_version,
+        channel.value(params.experimental == true),
+        channel.value(target_enrichment_enabled),
+        channel.value(NvdUtils.depletionEnabled(params)),
+        channel.value(!params.skip_assembly),
+        channel.value(!params.skip_blast),
+        ch_target_enrichment_stats,
+        ch_depletion_stats,
+        ch_processed_read_profiles,
+        ch_processed_read_quality_histograms,
+        ch_filtered_contig_profiles,
+        ch_assembly_profiles,
+        ch_assembly_eligibility_decisions,
+        ch_long_read_eligibility_summaries,
+        ch_long_read_union_summaries,
+        ch_prepared_query_batch_summaries,
+        ch_megablast_query_partition_summaries,
+        ch_taxon_big_tables_for_multiqc,
+        ch_multiqc_config,
+    )
 
     TARGET_ENRICHMENT_REPORT(
         ch_target_enrichment_stats.map { _sample_id, json -> json }.collect()
@@ -139,27 +233,65 @@ workflow REPORTING {
         ch_run_ready,
     )
 
-    ch_labkey_url = channel.value(
-        "https://${params.labkey_server}/${params.labkey_project_name}/list-grid.view?name=${params.labkey_blast_meta_hits_list}"
+    GENERATE_MULTIQC_REPORT(
+        MULTIQC_BUNDLING.out.fastqc_zips,
+        MULTIQC_BUNDLING.out.inputs,
+        MULTIQC_BUNDLING.out.config,
     )
 
-    ch_slack_trigger = params.slack_enabled && params.slack_channel && params.labkey
+    // Completion means every reporting leaf has settled. Keep this terminal
+    // inventory local to REPORTING so adding a report does not spread another
+    // synchronization channel through the composition root.
+    ch_reporting_terminal_outputs = CONCATENATE_EXPERIMENT_BLAST_RESULTS.out.concatenated_tsv
+        .mix(RENDER_CONTIG_COVERAGE_HISTOGRAM.out.histogram)
+        .mix(RENDER_CONTIG_ALIGNMENT_PLOTS.out.plots)
+        .mix(TARGET_ENRICHMENT_REPORT.out.summary_tsv)
+        .mix(GENERATE_MULTIQC_REPORT.out.report)
+
+    if (params.experimental == true) {
+        ch_reporting_terminal_outputs = ch_reporting_terminal_outputs
+            .mix(BUILD_SEQUENCE_FLOW.out.sequence_flow)
+            .mix(CONCATENATE_QUERY_BIG_TABLE.out.concatenated_tsv)
+            .mix(CONCATENATE_TAXON_BIG_TABLE.out.concatenated_tsv)
+            .mix(CRUMBS_PROFILING.out.krona)
+            .mix(CRUMBS_PROFILING.out.taxburst)
+            .mix(CRUMBS_PROFILING.out.merged_taxburst)
+            .mix(RENDER_TAXON_ABUNDANCE_SUNBURST.out.reports)
+            .mix(RENDER_SOURMASH_SANKEY.out.report)
+            .mix(RENDER_MERGED_TAXON_ABUNDANCE_SUNBURST.out.report)
+    }
+    if (best_hit_sequences_enabled) {
+        ch_reporting_terminal_outputs = ch_reporting_terminal_outputs
+            .mix(EMIT_BEST_HIT_SEQUENCE_EVIDENCE.out.best_hit_placements)
+    }
+
+    if (params.labkey) {
+        ch_reporting_terminal_outputs = ch_reporting_terminal_outputs
+            .mix(LIMS_INTEGRATION.out.final_labkey_log)
+    }
+
+    ch_reporting_ready = ch_reporting_terminal_outputs
+        .collect()
+        .map { _outputs -> true }
+    ch_labkey_ready = params.labkey
         ? LIMS_INTEGRATION.out.uploads_done
-        : channel.empty()
-
-    NOTIFY_SLACK(
-        ch_slack_trigger,
-        ch_run_context,
-        ch_labkey_url,
-    )
+        : channel.value(true)
+    ch_completed_results = CONCATENATE_EXPERIMENT_BLAST_RESULTS.out.concatenated_tsv
+        .combine(ch_reporting_ready)
+        .combine(ch_labkey_ready)
+        .map { experiment_results, _reporting_ready, _labkey_ready -> experiment_results }
 
     emit:
     blast_results = ch_sample_blast_results.for_emit
     query_big_tables = params.experimental ? BUILD_QUERY_BIG_TABLE.out : channel.empty()
     query_big_table = params.experimental ? CONCATENATE_QUERY_BIG_TABLE.out.concatenated_tsv : channel.empty()
+    best_hit_query_sequences = best_hit_sequences_enabled ? EMIT_BEST_HIT_SEQUENCE_EVIDENCE.out.query_sequences : channel.empty()
+    best_hit_selected_references = best_hit_sequences_enabled ? EMIT_BEST_HIT_SEQUENCE_EVIDENCE.out.selected_references : channel.empty()
+    best_hit_placements = best_hit_sequences_enabled ? EMIT_BEST_HIT_SEQUENCE_EVIDENCE.out.best_hit_placements : channel.empty()
     taxon_big_tables = params.experimental ? BUILD_TAXON_BIG_TABLE.out : channel.empty()
     taxon_big_table = params.experimental ? CONCATENATE_TAXON_BIG_TABLE.out.concatenated_tsv : channel.empty()
     experiment_blast = CONCATENATE_EXPERIMENT_BLAST_RESULTS.out.concatenated_tsv
+    completed_results = ch_completed_results
     sequence_flow = params.experimental ? BUILD_SEQUENCE_FLOW.out.sequence_flow : channel.empty()
     target_enrichment_report = TARGET_ENRICHMENT_REPORT.out.summary_tsv
     taxon_abundance_sunbursts = params.experimental ? RENDER_TAXON_ABUNDANCE_SUNBURST.out.reports : channel.empty()
@@ -177,4 +309,6 @@ workflow REPORTING {
     crumbs_taxburst = params.experimental ? CRUMBS_PROFILING.out.taxburst : channel.empty()
     merged_crumbs_taxburst = params.experimental ? CRUMBS_PROFILING.out.merged_taxburst : channel.empty()
     crumbs_profile_taxonomy = params.experimental ? CRUMBS_PROFILING.out.profile_taxonomy : channel.empty()
+    multiqc_report = GENERATE_MULTIQC_REPORT.out.report
+    multiqc_data = GENERATE_MULTIQC_REPORT.out.data
 }

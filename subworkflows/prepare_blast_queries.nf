@@ -13,11 +13,42 @@ workflow PREPARE_BLAST_QUERIES {
     ch_depletion_index  // tuple(use_depletion, path): resolved host/contaminant depletion index or sentinel
 
     main:
-    DEACON_FILTER_CONTIGS(
-        ch_contigs
-            .combine(ch_target_index)
-            .combine(ch_depletion_index)
-    )
+    def target_enrichment_enabled = NvdUtils.targetEnrichmentEnabled(params)
+    ch_contig_filter_inputs = ch_contigs
+        .combine(ch_target_index)
+        .combine(ch_depletion_index)
+        .map {
+            sample_id,
+            platform,
+            read_structure,
+            fasta,
+            query_lookup,
+            target_index,
+            use_depletion,
+            depletion_index ->
+
+            def policy = [
+                target_enrichment_enabled: target_enrichment_enabled,
+                target_abs_threshold: params.virus_abs_threshold,
+                target_rel_threshold: params.virus_rel_threshold,
+                depletion_enabled: use_depletion,
+                depletion_abs_threshold: use_depletion ? params.host_abs_threshold : null,
+                depletion_rel_threshold: use_depletion ? params.host_rel_threshold : null,
+            ].asImmutable()
+
+            tuple(
+                sample_id,
+                platform,
+                read_structure,
+                fasta,
+                query_lookup,
+                target_index,
+                policy,
+                depletion_index,
+            )
+        }
+
+    DEACON_FILTER_CONTIGS(ch_contig_filter_inputs)
 
     ch_deacon_by_content = DEACON_FILTER_CONTIGS.out.contigs.branch { _sample_id, _platform, _read_structure, fasta, _lookup ->
         nonempty: file(fasta).size() > 0
@@ -58,6 +89,7 @@ workflow PREPARE_BLAST_QUERIES {
                     read_structure: read_structure,
                     profile_stage: "filtered_contigs",
                     profile_key: "${sample_id}:${platform}:${read_structure}:filtered_contigs",
+                    profile_format: "fasta",
                     profile_prefix: "${sample_id}.filtered_contigs",
                     thresholds: [
                         [name: "min_consecutive_bases", axis: "length", value: params.min_consecutive_bases],
@@ -102,7 +134,6 @@ workflow PREPARE_BLAST_QUERIES {
     ch_contig_query_lookups = ch_filtered_contigs
         .map { sample_id, _platform, _read_structure, _fasta, lookup -> tuple(sample_id, lookup) }
 
-    ch_blast_query_summaries = channel.empty()
     if (params.experimental == true) {
         ch_no_contig_paired = ch_paired_reads
             .combine(ch_no_contig_samples, by: [0, 1])
@@ -143,29 +174,31 @@ workflow PREPARE_BLAST_QUERIES {
         ch_query_lookups = ch_contig_query_lookups
             .mix(ch_read_query_batches.map { sample_id, _platform, _query_class, _fasta, lookup -> tuple(sample_id, lookup) })
             .groupTuple()
-        SUMMARIZE_BLAST_QUERY_BATCHES(
-            ch_query_batches.groupTuple(by: [0, 1])
-        )
-        ch_samples_without_query_batches = ch_filtered_contigs
-            .map { sample_id, platform, _read_structure, _fasta, _lookup -> tuple(sample_id, platform) }
-            .mix(ch_no_contig_samples)
-            .unique()
-            .map { sample_id, platform -> tuple(sample_id, platform, "sample") }
-            .join(
-                ch_query_batches
-                    .map { sample_id, platform, _query_class, _fasta, _lookup -> tuple(sample_id, platform, "batch") }
-                    .unique(),
-                by: [0, 1],
-                remainder: true,
-            )
-            .filter { row -> row.size() == 3 }
-            .map { sample_id, platform, _sample_marker -> tuple(sample_id, platform) }
-        SUMMARIZE_EMPTY_BLAST_QUERY_BATCHES(ch_samples_without_query_batches)
-        ch_blast_query_summaries = SUMMARIZE_BLAST_QUERY_BATCHES.out
-            .mix(SUMMARIZE_EMPTY_BLAST_QUERY_BATCHES.out)
     } else {
         ch_query_lookups = ch_contig_query_lookups.groupTuple()
     }
+
+    SUMMARIZE_BLAST_QUERY_BATCHES(
+        ch_query_batches.groupTuple(by: [0, 1])
+    )
+    ch_samples_without_query_batches = ch_filtered_contigs
+        .map { sample_id, platform, _read_structure, _fasta, _lookup -> tuple(sample_id, platform) }
+        .mix(ch_no_contig_samples)
+        .unique()
+        .map { sample_id, platform -> tuple(sample_id, platform, "sample") }
+        .mix(
+            ch_query_batches
+                .map { sample_id, platform, _query_class, _fasta, _lookup -> tuple(sample_id, platform, "batch") }
+                .unique(),
+        )
+        .groupTuple(by: [0, 1])
+        .filter { _sample_id, _platform, markers ->
+            markers.contains("sample") && !markers.contains("batch")
+        }
+        .map { sample_id, platform, _markers -> tuple(sample_id, platform) }
+    SUMMARIZE_EMPTY_BLAST_QUERY_BATCHES(ch_samples_without_query_batches)
+    ch_blast_query_summaries = SUMMARIZE_BLAST_QUERY_BATCHES.out
+        .mix(SUMMARIZE_EMPTY_BLAST_QUERY_BATCHES.out)
 
     ch_contig_read_counts = CONTIG_READ_MAPBACK.out.contig_read_counts
         .mix(ch_no_contig_samples.map { sample_id, _platform -> tuple(sample_id, []) })
@@ -181,6 +214,7 @@ workflow PREPARE_BLAST_QUERIES {
     unmapped_reads = CONTIG_READ_MAPBACK.out.unmapped_reads
     unmapped_read_counts = CONTIG_READ_MAPBACK.out.unmapped_read_counts
     no_contigs = ch_no_contig_samples
+    filtered_contig_profiles = PROFILE_FILTERED_CONTIGS.out.profiled
     contig_filter_decisions = DEACON_FILTER_CONTIGS.out.decisions
     mapback_count_files = ch_mapback_count_files
     blast_query_summaries = ch_blast_query_summaries

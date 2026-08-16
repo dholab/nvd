@@ -59,6 +59,13 @@ INPUT_COLUMNS = [
     "bitscore",
     "sscinames",
     "staxids",
+    "saccver",
+    "qstart",
+    "qend",
+    "slen",
+    "sstart",
+    "send",
+    "sstrand",
     "rank",
 ]
 LCA_COLUMNS = [

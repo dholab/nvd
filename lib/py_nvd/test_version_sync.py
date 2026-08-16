@@ -48,13 +48,13 @@ def test_read_entropy_defaults_match_runtime_and_schema() -> None:
     assert latest_schema["properties"]["min_read_entropy"]["default"] == 0.5
 
 
-def test_latest_params_schema_points_to_v3_3_2() -> None:
-    """The rolling schema link should expose the corrected v3.3 defaults."""
+def test_latest_params_schema_points_to_v3_4() -> None:
+    """The rolling schema link should expose the v3.4 parameter contract."""
     latest_schema = ROOT / "schemas" / "nvd-params.latest.schema.json"
 
     assert latest_schema.is_symlink()
-    assert latest_schema.readlink() == Path("nvd-params.v3.3.2.schema.json")
-    assert SCHEMA_URL.endswith("/nvd-params.v3.3.2.schema.json")
+    assert latest_schema.readlink() == Path("nvd-params.v3.4.0.schema.json")
+    assert SCHEMA_URL.endswith("/nvd-params.v3.4.0.schema.json")
 
 
 def test_v3_3_2_schema_corrects_only_the_read_entropy_default() -> None:

@@ -82,6 +82,6 @@ workflow GATHER_READS {
 
         emit:
         reads = ch_raw_reads
-        resolved_manifest = RESOLVE_READ_INPUTS.out.jsonl
+        resolved_reads = RESOLVE_READ_INPUTS.out.jsonl
 
 }
