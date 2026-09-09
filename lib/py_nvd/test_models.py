@@ -493,6 +493,10 @@ class TestNvdParamsToNextflowArgs:
         assert cmd[check_pairs_idx + 1] == "true"
         assert "--check-pairs" not in cmd
 
+
+class TestNvdParamsDefaults:
+    """Tests for default values matching nextflow.config."""
+
     def test_default_cutoff_percent(self) -> None:
         """Default cutoff_percent matches nextflow.config."""
         assert NvdParams().cutoff_percent == 0.001
