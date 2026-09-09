@@ -103,7 +103,7 @@
     },
     "virus_index_version": {
       "type": "string",
-      "description": "Virus enrichment index version"
+      "description": "Target-enrichment index version"
     },
     "nvd_files": {
       "type": "string",
@@ -125,7 +125,7 @@
         "null"
       ],
       "default": null,
-      "description": "Path to a prebuilt vertebrate-infecting virus deacon index (.idx file). Providing this enables virus read enrichment."
+      "description": "Path to a prebuilt Deacon target-enrichment index (.idx file). Providing this enables target enrichment."
     },
     "virus_index_url": {
       "type": [
@@ -133,7 +133,7 @@
         "null"
       ],
       "default": null,
-      "description": "URL to download a prebuilt vertebrate-infecting virus deacon index. Providing this enables virus read enrichment when virus_index is not set."
+      "description": "URL to download a prebuilt Deacon target-enrichment index. Providing this enables target enrichment when virus_index is not set."
     },
     "virus_reference_fasta": {
       "type": [
@@ -141,7 +141,7 @@
         "null"
       ],
       "default": null,
-      "description": "Custom vertebrate-infecting virus FASTA to build and union with other virus indexes. Providing this enables virus read enrichment."
+      "description": "Custom target FASTA to build and union with other target-enrichment indexes. Providing this enables target enrichment."
     },
     "no_enrichment": {
       "type": "boolean",
@@ -152,26 +152,26 @@
       "type": "integer",
       "default": 31,
       "minimum": 1,
-      "description": "K-mer size for building a custom virus enrichment index"
+      "description": "K-mer size for building a custom target-enrichment index"
     },
     "virus_window_size": {
       "type": "integer",
       "default": 1,
       "minimum": 1,
-      "description": "Minimizer window size for building a custom virus enrichment index"
+      "description": "Minimizer window size for building a custom target-enrichment index"
     },
     "virus_abs_threshold": {
       "type": "integer",
       "default": 1,
       "minimum": 1,
-      "description": "Minimum absolute minimizer hits for virus read enrichment"
+      "description": "Minimum absolute minimizer hits for target enrichment"
     },
     "virus_rel_threshold": {
       "type": "number",
       "default": 0.0,
       "minimum": 0,
       "maximum": 1,
-      "description": "Minimum relative proportion of minimizers for virus read enrichment (0.0-1.0)"
+      "description": "Minimum relative proportion of minimizers for target enrichment (0.0-1.0)"
     },
     "sourmash_ksize": {
       "type": "integer",
