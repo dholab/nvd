@@ -1,7 +1,6 @@
 include {
     MEGABLAST ;
     ANNOTATE_MEGABLAST_RESULTS ;
-    FILTER_NON_VIRUS_MEGABLAST_NODES ;
     PARTITION_MEGABLAST_QUERIES ;
     SELECT_TOP_BLAST_HITS
 } from "../modules/blast"
@@ -38,18 +37,12 @@ workflow CLASSIFY_WITH_MEGABLAST {
         ch_taxonomy_dir
     )
 
-    // Capture this output for the LabKey table
-    FILTER_NON_VIRUS_MEGABLAST_NODES(
-        ANNOTATE_MEGABLAST_RESULTS.out.hits
-    )
-
     PARTITION_MEGABLAST_QUERIES(
         MEGABLAST.out.join(ch_megablast_candidates.for_partition, by: [0, 1])
     )
 
     emit:
-    filtered_megablast = FILTER_NON_VIRUS_MEGABLAST_NODES.out.hits
-    filter_decisions = FILTER_NON_VIRUS_MEGABLAST_NODES.out.decisions
+    annotated_hits = ANNOTATE_MEGABLAST_RESULTS.out.hits
     megablast_query_partition = PARTITION_MEGABLAST_QUERIES.out
     megablast          = SELECT_TOP_BLAST_HITS.out
 }

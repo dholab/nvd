@@ -16,6 +16,7 @@ PROCESS_CONTIGS = ROOT / "subworkflows" / "process_contigs"
 PREPARE_BLAST_QUERIES = ROOT / "subworkflows" / "prepare_blast_queries"
 SHORT_READ_ASSEMBLY = ROOT / "subworkflows" / "short_read_denovo_assembly"
 LONG_READ_ENSEMBLE = ROOT / "subworkflows" / "long_read_denovo_ensembly"
+PREPROCESS_READS = ROOT / "subworkflows" / "preprocess_reads"
 FASTX_MODULE = ROOT / "modules" / "fastx"
 
 
@@ -308,6 +309,97 @@ summary.write_text(json.dumps({
 }))
 """,
     )
+
+
+def test_empty_target_enrichment_closes_sample_before_preprocessing(
+    tmp_path: Path,
+) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    write_deacon_fake(bin_dir)
+
+    lib = tmp_path / "lib"
+    lib.mkdir()
+    for filename in ("NvdReporting.groovy", "NvdUtils.groovy"):
+        shutil.copy2(ROOT / "lib" / filename, lib / filename)
+
+    reads = write_fastq(tmp_path / "reads.fastq.gz", "source-read")
+    target_index = tmp_path / "target.idx"
+    target_index.touch()
+
+    workflow = tmp_path / "main.nf"
+    workflow.write_text(
+        f"""\
+nextflow.enable.dsl = 2
+
+include {{ PREPROCESS_READS }} from '{PREPROCESS_READS}'
+
+params.skip_fastqc = true
+params.no_enrichment = false
+params.virus_index = '{target_index}'
+params.virus_index_url = null
+params.virus_reference_fasta = null
+params.virus_abs_threshold = 1
+params.virus_rel_threshold = 0.0
+params.merge_pairs = false
+params.dedup = false
+params.dedup_seq = false
+params.trim_adapters = false
+params.host_index = null
+params.host_index_url = null
+params.host_contaminants_fasta = null
+params.filter_reads = false
+params.filter_low_complexity_reads = false
+params.min_read_quality_illumina = 20
+params.min_read_quality_nanopore = 12
+params.min_read_length = 50
+params.min_consecutive_bases = 200
+params.max_concurrent_downloads = 1
+
+workflow {{
+    PREPROCESS_READS(
+        Channel.of(tuple(
+            [
+                id: 'empty_enrichment',
+                platform: 'illumina',
+                read_mode: 'single',
+                r1_count: 1,
+                deacon_read_structure: 'single',
+            ],
+            [file('{reads}')],
+        )),
+        Channel.empty(),
+    )
+
+    PREPROCESS_READS.out.complete_empty_samples.view {{ sample_id, platform ->
+        "COMPLETE_EMPTY: ${{sample_id}}:${{platform}}"
+    }}
+    PREPROCESS_READS.out.read_counts.view {{ sample_id, count ->
+        "INPUT_READS: ${{sample_id}}:${{count}}"
+    }}
+    ch_unexpected_read_outputs = PREPROCESS_READS.out.reads
+        .map {{ sample_id, _platform, _read_structure, _reads -> sample_id }}
+        .mix(PREPROCESS_READS.out.read_batches.map {{ sample_id, _platform, _read_structure, _query_class, _reads -> sample_id }})
+        .mix(PREPROCESS_READS.out.profiled_read_batches.map {{ meta, _reads, _profile, _histogram -> meta.id }})
+        .mix(PREPROCESS_READS.out.profiled_batches_by_sample.map {{ meta, _batches -> meta.id }})
+        .mix(PREPROCESS_READS.out.paired_reads_for_mapback.map {{ sample_id, _platform, _overlap_reads, _single_reads -> sample_id }})
+        .mix(PREPROCESS_READS.out.single_reads_for_mapback.map {{ sample_id, _platform, _read_structure, _reads -> sample_id }})
+
+    ch_unexpected_read_outputs.view {{ sample_id ->
+        "UNEXPECTED_READ_OUTPUT: ${{sample_id}}"
+    }}
+}}
+""",
+        encoding="utf-8",
+    )
+
+    completed = run_nextflow(workflow, bin_dir=bin_dir)
+    diagnostics = f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}"
+
+    assert completed.returncode == 0, diagnostics
+    assert "COMPLETE_EMPTY: empty_enrichment:illumina" in completed.stdout
+    assert "INPUT_READS: empty_enrichment:1" in completed.stdout
+    assert "UNEXPECTED_READ_OUTPUT:" not in completed.stdout
 
 
 def test_no_contig_samples_route_full_reads_without_mapback(tmp_path: Path) -> None:

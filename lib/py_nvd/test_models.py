@@ -1,5 +1,6 @@
 """Tests for retained py_nvd parameter models."""
 
+import json
 from pathlib import Path
 
 import pytest
@@ -12,6 +13,8 @@ from py_nvd.models import (
     trace_merge,
 )
 from py_nvd.params import load_params_file
+
+ROOT = Path(__file__).resolve().parents[2]
 
 
 class TestNvdParamsInstantiation:
@@ -481,6 +484,19 @@ class TestNvdParamsToNextflowArgs:
         assert "--skip-blast" not in cmd
         assert "--skip-fastqc" not in cmd
 
+    def test_check_pairs_param(self) -> None:
+        """Pair validation reaches Nextflow with underscore naming."""
+        p = NvdParams(check_pairs=True)
+        cmd = p.to_nextflow_args(Path("/pipeline"))
+
+        check_pairs_idx = cmd.index("--check_pairs")
+        assert cmd[check_pairs_idx + 1] == "true"
+        assert "--check-pairs" not in cmd
+
+
+class TestNvdParamsDefaults:
+    """Tests for default values matching nextflow.config."""
+
     def test_default_cutoff_percent(self) -> None:
         """Default cutoff_percent matches nextflow.config."""
         assert NvdParams().cutoff_percent == 0.001
@@ -539,6 +555,18 @@ class TestNvdParamsToNextflowArgs:
     def test_default_merge_pairs(self) -> None:
         """Pair merging is on by default; --no-merge-pairs is the opt-out."""
         assert NvdParams().merge_pairs is True
+
+    def test_default_check_pairs(self) -> None:
+        """Model, published schema, and Nextflow keep validation opt-in."""
+        assert NvdParams().check_pairs is False
+        schema = json.loads(
+            (ROOT / "schemas" / "nvd-params.v3.5.0.schema.json").read_text(
+                encoding="utf-8",
+            ),
+        )
+        assert schema["properties"]["check_pairs"]["default"] is False
+        config = (ROOT / "nextflow.config").read_text(encoding="utf-8")
+        assert "check_pairs               = false" in config
 
     def test_default_low_complexity_read_filter(self) -> None:
         """Low-complexity read filtering is opt-in with a dormant threshold."""

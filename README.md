@@ -18,6 +18,12 @@ Many pipelines for classifying mixtures of organisms exist, but none satisfied t
 
 This pipeline in its 3rd major version, which brings with it a helpful CLI and pipeline control system, vast performance improvements over its predecessor, and a tighter focus on BLAST-searching viral hits. This means better and faster results for viruses, but worse results for other taxa like bacteria. We recommend users try [jhuapl-bio/taxtriage](https://github.com/jhuapl-bio/taxtriage) or [nf-core/mag](https://nf-co.re/mag/5.4.2) if they're interested in more than viruses.
 
+### Pipeline subway diagram
+
+![Metro map of the NVD pipeline, from the samplesheet through target enrichment, read preprocessing, assembly and map-back, two-phase BLAST, and reporting](docs/nvd_metro_map.svg)
+
+The map follows the default short-read path: paired Illumina reads with target enrichment on and host depletion off. Reads are enriched, merged, and cleaned on one shared track, then assembled. The track forks at the map-back step. Contigs that pass the filters continue as the assembled route, and reads that map back to no contig continue as the unassembled route. Both routes are searched with megablast and then blastn, and both feed the final tables. Each stop names what happens, with the tool in brackets. Nanopore inputs and LabKey upload are not drawn, and the sample similarity sketch and the big tables only run with `--experimental`.
+
 ## Get Started
 
 NVD set-up has a few phases, including dependency setup, reference database setup, sample data setup, and run command construction. These phases can be handled manually, but we recommend users use our installer script to get started.
@@ -102,11 +108,12 @@ If you download manually, verify the files against the checksum manifest:
 wget https://dholk.primate.wisc.edu/_webdav/dho/projects/lungfish/InfinitePath/public/%40files/release-v3.0.0/v3.0.0/checksums_v3_0.txt
 ```
 
-Also at that endpoint, if desired, is a pre-built Apptainer image file for use on HPC cluster or other linux environments:
 
 ```bash
-wget https://dholk.primate.wisc.edu/_webdav/dho/projects/lungfish/InfinitePath/public/%40files/release-v3.0.0/v3.0.0/nvd-v3.0.0.sif
+apptainer pull nvd-v3.5.0.sif docker://nrminor/nvd:latest
 ```
+
+Image tags match NVD release versions without the leading `v`, and `docker://nrminor/nvd:latest` follows the newest release.
 
 The installer extracts the BLAST tarball for you. If you download manually, extract `blast_db_v3_0.tar.gz` before use and point `blast_db` at the extracted directory. The deacon index is already a single `.idx` file and does not need extraction.
 
@@ -211,6 +218,8 @@ Then generate a samplesheet from that accession list:
 ```bash
 nvd samplesheet generate --from-sra accessions.txt --platform illumina --output samplesheet.csv
 ```
+
+NVD decodes each SRA run as a stream through target enrichment rather than materializing decoded raw FASTQ files. Raw-read FastQC therefore runs only for local FASTQ inputs; the `skip_fastqc` setting controls those local tasks. SRA reads rejoin local reads immediately after target enrichment and receive the same subsequent preprocessing.
 
 If you want to inspect what NVD would write before touching the filesystem, use dry-run mode:
 
@@ -417,16 +426,14 @@ Offline mode requires the taxonomy directory to already contain the expected NCB
 - **Multi-platform sequencing support**: Seamlessly processes both Illumina and Oxford Nanopore data with platform-specific optimizations
 - **Smart contig assembly**: Automatically assembles reads with SPAdes and filters contigs for optimal classification accuracy
 - **Two-phase BLAST verification**: Uses both megablast and blastn with intelligent filtering to minimize false positives
-- **Least Common Ancestor (LCA) resolution**: Resolves ambiguous BLAST hits by computing taxonomic consensus—either using dominant taxid assignment when one organism has strong support (>80% bitscore weight), or calculating the LCA for near-tie cases to avoid over-specificity when multiple closely-scoring hits disagree at the species level
-- **Advanced taxonomic filtering**: Sophisticated lineage-based filtering with adjustable stringency for precise organism identification
+- **Least Common Ancestor (LCA) resolution**: Resolves ambiguous BLAST hits by computing taxonomic consensus. The references scoring at least 95% as highly as the best retained hit decide the assignment: when they agree on one taxid, that taxid is assigned directly, and when they span several taxids, NVD assigns their lowest common ancestor to avoid over-specificity when closely-scoring hits disagree at the species level
 - **Human read scrubbing**: Built-in capability to remove human sequences for privacy-compliant public data sharing
 - **LIMS data integration**: Native LabKey LIMS integration with WebDAV file uploads and structured metadata management
 - **Comprehensive quality control**: Read counting, contig metrics, and BLAST hit validation throughout the pipeline
-- **Flexible workflow orchestration**: Mix-and-match subworkflows (nvd, gottcha, clumpify) based on research needs
 - **Production-ready deployment**: Docker/Apptainer containerization with Pixi environment management for reproducible execution
 - **Intelligent error handling**: Robust retry logic and graceful failure modes for reliable high-throughput processing
 - **SRA integration**: Direct processing of NCBI SRA datasets alongside local FASTQ files
-- **Real-time validation**: Pre-flight checks for database integrity, API connectivity, and experiment ID uniqueness
+- **Real-time validation**: Pre-flight checks for database integrity and API connectivity
 - **Multi-format output**: Generates taxonomic reports, FASTA sequences, and structured CSV files for downstream analysis
 
 ## Citation

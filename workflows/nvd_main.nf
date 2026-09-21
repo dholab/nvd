@@ -62,7 +62,10 @@ workflow NVD_MAIN {
 
   GATHER_READS(ch_samplesheet)
 
-  PREPROCESS_READS(GATHER_READS.out.reads)
+  PREPROCESS_READS(
+    GATHER_READS.out.reads,
+    GATHER_READS.out.sra_accessions,
+  )
 
   ch_risk_group_lookup = Channel.value(file("${projectDir}/assets/human_virus_risk_group_lookup.tsv"))
 
@@ -97,6 +100,7 @@ workflow NVD_MAIN {
     .mix(LONG_READ_DENOVO_ENSEMBLY.out.no_contigs)
     .mix(PROCESS_CONTIGS.out.no_contigs)
     .mix(ch_assembly_disabled)
+    .mix(PREPROCESS_READS.out.complete_empty_samples)
 
   ch_run_context = COMPUTE_RUN_CONTEXT.out.run_context
   ch_taxonomy_dir = ENSURE_TAXONOMY.out.taxonomy_dir
@@ -117,7 +121,7 @@ workflow NVD_MAIN {
   )
 
   CLASSIFY_WITH_BLASTN(
-    CLASSIFY_WITH_MEGABLAST.out.filtered_megablast,
+    CLASSIFY_WITH_MEGABLAST.out.annotated_hits,
     CLASSIFY_WITH_MEGABLAST.out.megablast_query_partition,
     ch_blast_db_files,
     ch_taxonomy_dir,
@@ -130,8 +134,6 @@ workflow NVD_MAIN {
     .mix(PREPARE_BLAST_QUERIES.out.mapback_count_files.map { _sample_id, counts -> counts })
     .mix(PREPARE_BLAST_QUERIES.out.blast_query_summaries.map { _sample_id, summary -> summary })
     .mix(CLASSIFY_WITH_MEGABLAST.out.megablast_query_partition.map { _sample_id, _query_class, _accounted_ids, _blastn_candidates, summary -> summary })
-    .mix(CLASSIFY_WITH_MEGABLAST.out.filter_decisions.map { _sample_id, _query_class, decision -> decision })
-    .mix(CLASSIFY_WITH_BLASTN.out.filter_decisions.map { _sample_id, _query_class, decision -> decision })
 
   REPORTING(
     CLASSIFY_WITH_BLASTN.out.merged_results,
