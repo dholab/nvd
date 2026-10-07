@@ -129,6 +129,16 @@ nvd run --params-file run.yaml --virus-index /path/to/human_infecting_viruses.k3
 
 For the rationale, source STAT database, curated taxid list, conversion script, build parameters, and reproducibility notes, see the [Virus Enrichment Index Guide](./docs/virus_enrichment_index.md).
 
+#### Background depletion instead of enrichment
+
+Step 1 runs exactly one Deacon filter. By default it keeps reads that match the virus enrichment index. Setting `background_index` switches that pass to depletion: reads and later contigs that match the background index, for example a ribosomal RNA index built from SILVA and Rfam, are removed, and everything else continues to assembly and BLAST. NVD does not build or fetch background indexes; supply a prebuilt `.idx` file.
+
+```bash
+nvd run --params-file run.yaml --no-enrichment --background-index /path/to/rrna.k31w15.idx
+```
+
+A background index cannot be combined with an enabled virus index, and the run stops at startup if both are set. A shared preset that carries `virus_index` still works: add `--no-enrichment` to select background mode. `background_abs_threshold` (default 1) and `background_rel_threshold` (default 0.0) tune how many minimizer hits remove a record; the defaults mirror enrichment, so one hit decides either way. Host depletion after deduplication (`host_index`) is independent and may be combined with either mode. In background mode the step-one report counts reads removed as background, and the results stay under `01_target_enrichment/` with their usual file names.
+
 ### NVD setup management
 
 After the initial installer has cloned NVD and installed the Pixi environment, you can re-run the setup portion directly with:

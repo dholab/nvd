@@ -89,6 +89,8 @@ We repeat: most users should not need to rebuild the default index. Rebuilding m
 
 If you rebuild the index, record enough provenance for another user to repeat the build: source STAT database URL and checksum, annotation URL and checksum, source taxid list commit, [bin/stat_to_deacon.rs](../bin/stat_to_deacon.rs) commit, Rust and rust-script versions, full command line, output filename, output checksum, and build date.
 
+Since v3.6.0 the first Deacon pass can also run in the opposite direction. Setting `background_index` to a prebuilt Deacon index removes matching reads and contigs instead of keeping them, which suits a ribosomal RNA index when enrichment is disabled. NVD does not build background indexes; build them with `deacon index build` outside the pipeline and record the same provenance as above.
+
 ## Interpretation caveats
 
 The enrichment index trades breadth, speed, and sensitivity before the final BLAST verification stage. Users should treat it as a recall-oriented prefilter for the viruses represented in the source list, not as a standalone classifier or an exhaustive screen for all viruses.
