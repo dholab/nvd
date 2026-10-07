@@ -157,7 +157,7 @@ process DEACON_BUILD_TARGET_INDEX_FROM_FASTA {
 }
 
 process DEACON_ENRICH_TARGET_READS {
-    /* Extract target reads from resolved read bundles, or pass all reads through when target enrichment is disabled. */
+    /* Run the single step-one Deacon filter on resolved read bundles: target enrichment, background depletion, or an empty-index passthrough, as the filter policy says. */
 
     tag "${meta.id}"
     label "medium"
@@ -166,7 +166,7 @@ process DEACON_ENRICH_TARGET_READS {
     maxRetries 2
 
     input:
-    tuple val(meta), path(read_files, stageAs: "reads??????/*"), path(deacon_idx), val(target_enrichment_enabled)
+    tuple val(meta), path(read_files, stageAs: "reads??????/*"), path(deacon_idx), val(filter_policy)
 
     output:
     tuple val(meta.id), val(meta.platform), val(meta.deacon_read_structure), path("${meta.id}.target_enriched.fastq.gz"), env('NVD_INPUT_READ_COUNT'), env('NVD_ENRICHED_READ_COUNT'), emit: reads
@@ -177,15 +177,17 @@ process DEACON_ENRICH_TARGET_READS {
     def r1_count = meta.r1_count as int
     def r1_files = files.take(r1_count)
     def r2_files = files.drop(r1_count)
-    def deplete_arg = target_enrichment_enabled ? "" : "--deplete"
+    def deplete_arg = filter_policy.target_enrichment_enabled ? "" : "--deplete"
+    def abs_threshold = filter_policy.abs_threshold
+    def rel_threshold = filter_policy.rel_threshold
     def check_pairs_arg = params.check_pairs ? "--check-pairs" : ""
     if (meta.read_mode == "single" && r1_files.size() == 1)
         """
         deacon filter \
             ${deplete_arg} \
             --threads ${task.cpus} \
-            --abs-threshold ${params.virus_abs_threshold} \
-            --rel-threshold ${params.virus_rel_threshold} \
+            --abs-threshold ${abs_threshold} \
+            --rel-threshold ${rel_threshold} \
             --summary ${meta.id}.deacon_filter.json \
             --output ${meta.id}.target_enriched.fastq.gz \
             ${deacon_idx} \
@@ -200,8 +202,8 @@ process DEACON_ENRICH_TARGET_READS {
             ${deplete_arg} \
             ${check_pairs_arg} \
             --threads ${task.cpus} \
-            --abs-threshold ${params.virus_abs_threshold} \
-            --rel-threshold ${params.virus_rel_threshold} \
+            --abs-threshold ${abs_threshold} \
+            --rel-threshold ${rel_threshold} \
             --summary ${meta.id}.deacon_filter.json \
             --output ${meta.id}.target_enriched.fastq.gz \
             ${deacon_idx} \
@@ -221,8 +223,8 @@ process DEACON_ENRICH_TARGET_READS {
             ${deplete_arg} \
             --reads-list reads.list \
             --threads ${task.cpus} \
-            --abs-threshold ${params.virus_abs_threshold} \
-            --rel-threshold ${params.virus_rel_threshold} \
+            --abs-threshold ${abs_threshold} \
+            --rel-threshold ${rel_threshold} \
             --summary ${meta.id}.deacon_filter.json \
             --output ${meta.id}.target_enriched.fastq.gz
 
@@ -243,8 +245,8 @@ process DEACON_ENRICH_TARGET_READS {
             --r1-list r1.list \
             --r2-list r2.list \
             --threads ${task.cpus} \
-            --abs-threshold ${params.virus_abs_threshold} \
-            --rel-threshold ${params.virus_rel_threshold} \
+            --abs-threshold ${abs_threshold} \
+            --rel-threshold ${rel_threshold} \
             --summary ${meta.id}.deacon_filter.json \
             --output ${meta.id}.target_enriched.fastq.gz
 
@@ -293,7 +295,7 @@ process DEACON_ENRICH_SRA_READS {
     maxForks params.max_concurrent_downloads
 
     input:
-    tuple val(id), val(platform), val(run_accession), path(deacon_idx), val(target_enrichment_enabled)
+    tuple val(id), val(platform), val(run_accession), path(deacon_idx), val(filter_policy)
 
     output:
     tuple val(id), val(platform), path("${id}.sra_read_structure.txt"), path("${id}.target_enriched.fastq.gz"), env('NVD_INPUT_READ_COUNT'), env('NVD_ENRICHED_READ_COUNT'), emit: reads
@@ -303,7 +305,9 @@ process DEACON_ENRICH_SRA_READS {
     def cpus = task.cpus as int
     def sracha_threads = Math.max(1, cpus.intdiv(2))
     def deacon_threads = Math.max(1, cpus - sracha_threads)
-    def deplete_arg = target_enrichment_enabled ? "" : "--deplete"
+    def deplete_arg = filter_policy.target_enrichment_enabled ? "" : "--deplete"
+    def abs_threshold = filter_policy.abs_threshold
+    def rel_threshold = filter_policy.rel_threshold
     def check_pairs_arg = params.check_pairs ? "--check-pairs" : ""
     """
     set -euo pipefail
@@ -375,8 +379,8 @@ process DEACON_ENRICH_SRA_READS {
     | deacon "\${deacon_args[@]}" \
         ${deplete_arg} \
         --threads ${deacon_threads} \
-        --abs-threshold ${params.virus_abs_threshold} \
-        --rel-threshold ${params.virus_rel_threshold} \
+        --abs-threshold ${abs_threshold} \
+        --rel-threshold ${rel_threshold} \
         --summary '${id}.deacon_filter.json' \
         --output '${id}.target_enriched.fastq.gz' \
         ${deacon_idx} \
