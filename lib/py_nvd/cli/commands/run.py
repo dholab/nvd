@@ -258,6 +258,27 @@ def run(
         help="Minimum relative minimizer proportion for target enrichment (default: 0.0)",
         rich_help_panel=PANEL_DATABASES,
     ),
+    background_index: Path | None = typer.Option(
+        None,
+        "--background-index",
+        help=(
+            "Prebuilt Deacon background index (.idx). Switches the first Deacon "
+            "pass to depletion; conflicts with an enabled virus index"
+        ),
+        rich_help_panel=PANEL_DATABASES,
+    ),
+    background_abs_threshold: int | None = typer.Option(
+        None,
+        "--background-abs-threshold",
+        help="Minimum absolute minimizer hits to remove a record as background (default: 1)",
+        rich_help_panel=PANEL_DATABASES,
+    ),
+    background_rel_threshold: float | None = typer.Option(
+        None,
+        "--background-rel-threshold",
+        help="Minimum relative minimizer proportion to remove a record as background (default: 0.0)",
+        rich_help_panel=PANEL_DATABASES,
+    ),
     # -------------------------------------------------------------------------
     # Database Versions
     # -------------------------------------------------------------------------
@@ -619,6 +640,9 @@ def run(
         "virus_window_size": virus_window_size,
         "virus_abs_threshold": virus_abs_threshold,
         "virus_rel_threshold": virus_rel_threshold,
+        "background_index": background_index,
+        "background_abs_threshold": background_abs_threshold,
+        "background_rel_threshold": background_rel_threshold,
         "sourmash_ksize": sourmash_ksize,
         "sourmash_scaled": sourmash_scaled,
         # Reference versions

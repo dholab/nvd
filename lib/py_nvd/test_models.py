@@ -884,3 +884,60 @@ class TestNvdParamsSlackChannelValidator:
         """slack_enabled can be set to True."""
         p = NvdParams(slack_enabled=True)
         assert p.slack_enabled is True
+
+
+class TestNvdParamsStepOneFilterConflict:
+    """Step 1 runs one Deacon filter: enrichment or background depletion."""
+
+    def test_background_index_alone_is_accepted(self, tmp_path: Path) -> None:
+        index = tmp_path / "background.idx"
+        p = NvdParams(background_index=index)
+        assert p.background_index == index
+
+    def test_background_index_conflicts_with_enabled_virus_index(
+        self, tmp_path: Path,
+    ) -> None:
+        with pytest.raises(ValidationError) as excinfo:
+            NvdParams(
+                background_index=tmp_path / "background.idx",
+                virus_index=tmp_path / "virus.idx",
+            )
+        message = str(excinfo.value)
+        assert "background_index" in message
+        assert "virus_index" in message
+        assert "--no-enrichment" in message
+
+    def test_background_index_conflicts_with_virus_index_url(
+        self, tmp_path: Path,
+    ) -> None:
+        with pytest.raises(ValidationError, match="virus_index_url"):
+            NvdParams(
+                background_index=tmp_path / "background.idx",
+                virus_index_url="https://example.org/virus.idx",
+            )
+
+    def test_no_enrichment_resolves_the_conflict(self, tmp_path: Path) -> None:
+        """A shared preset may keep its virus index; --no-enrichment selects background mode."""
+        p = NvdParams(
+            background_index=tmp_path / "background.idx",
+            virus_index=tmp_path / "virus.idx",
+            no_enrichment=True,
+        )
+        assert p.background_index is not None
+
+    def test_background_params_reach_nextflow(self, tmp_path: Path) -> None:
+        index = tmp_path / "background.idx"
+        cmd = NvdParams(
+            background_index=index,
+            background_abs_threshold=3,
+            background_rel_threshold=0.05,
+        ).to_nextflow_args(Path("/pipeline"))
+        assert cmd[cmd.index("--background_index") + 1] == str(index)
+        assert cmd[cmd.index("--background_abs_threshold") + 1] == "3"
+        assert cmd[cmd.index("--background_rel_threshold") + 1] == "0.05"
+
+    def test_background_threshold_ranges(self) -> None:
+        with pytest.raises(ValidationError, match="Must be >= 1"):
+            NvdParams(background_abs_threshold=0)
+        with pytest.raises(ValidationError, match="Must be between 0 and 1"):
+            NvdParams(background_rel_threshold=1.5)

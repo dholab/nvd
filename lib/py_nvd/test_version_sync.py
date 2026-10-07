@@ -138,7 +138,9 @@ def test_v3_6_schema_starts_as_the_v3_5_contract() -> None:
     for name, definition in previous["properties"].items():
         assert current["properties"][name] == definition, name
     current_without_id = {key: value for key, value in current.items() if key != "$id"}
-    previous_without_id = {key: value for key, value in previous.items() if key != "$id"}
+    previous_without_id = {
+        key: value for key, value in previous.items() if key != "$id"
+    }
     current_without_id["properties"] = previous["properties"]
     assert current_without_id == previous_without_id
 
@@ -187,3 +189,30 @@ def test_skip_big_tables_is_declared_everywhere() -> None:
     assert config_match.group(1) == "null"
     assert NvdParams().skip_big_tables is False
     assert latest_schema["properties"]["skip_big_tables"]["default"] is False
+
+
+def test_background_depletion_params_are_declared_everywhere() -> None:
+    """background_index and its thresholds exist in Nextflow, the model, and the schema."""
+    nextflow_config = (ROOT / "nextflow.config").read_text(encoding="utf-8")
+    latest_schema = json.loads(
+        (ROOT / "schemas" / "nvd-params.latest.schema.json").read_text(
+            encoding="utf-8",
+        ),
+    )
+    expected = {
+        "background_index": "null",
+        "background_abs_threshold": "1",
+        "background_rel_threshold": "0.0",
+    }
+    for name, value in expected.items():
+        match = re.search(rf"^\s*{name}\s*=\s*(\S+)", nextflow_config, re.MULTILINE)
+        assert match is not None, f"nextflow.config {name} is missing"
+        assert match.group(1) == value, name
+
+    defaults = NvdParams()
+    assert defaults.background_index is None
+    assert defaults.background_abs_threshold == 1
+    assert defaults.background_rel_threshold == 0.0
+    assert latest_schema["properties"]["background_index"]["default"] is None
+    assert latest_schema["properties"]["background_abs_threshold"]["default"] == 1
+    assert latest_schema["properties"]["background_rel_threshold"]["default"] == 0.0

@@ -111,6 +111,25 @@ class NvdParams(BaseModel):
             raise ValueError(msg)
         return data
 
+    @model_validator(mode="after")
+    def reject_conflicting_step_one_filters(self) -> NvdParams:
+        """Step 1 runs one Deacon filter: target enrichment or background depletion."""
+        if self.background_index is None:
+            return self
+        virus_sources = [
+            name
+            for name in ("virus_index", "virus_index_url", "virus_reference_fasta")
+            if getattr(self, name) is not None
+        ]
+        if virus_sources and not self.no_enrichment:
+            msg = (
+                "background_index cannot be combined with target enrichment: "
+                f"{', '.join(virus_sources)} also set. Pass --no-enrichment to "
+                "deplete the background instead, or drop background_index."
+            )
+            raise ValueError(msg)
+        return self
+
     samplesheet: Path | None = Field(
         None,
         description="Path to samplesheet CSV",
@@ -243,6 +262,28 @@ class NvdParams(BaseModel):
     virus_rel_threshold: float = Field(
         0.0,
         description="Minimum relative proportion of minimizers for target enrichment (0.0-1.0)",
+        json_schema_extra={"category": "Databases"},
+    )
+    background_index: Path | None = Field(
+        None,
+        description=(
+            "Path to a prebuilt Deacon background index (.idx file). Setting it "
+            "switches the first Deacon pass from target enrichment to depletion "
+            "against this index; conflicts with an enabled virus index."
+        ),
+        json_schema_extra={"category": "Databases"},
+    )
+    background_abs_threshold: int = Field(
+        1,
+        description="Minimum absolute minimizer hits to remove a record as background",
+        json_schema_extra={"category": "Databases"},
+    )
+    background_rel_threshold: float = Field(
+        0.0,
+        description=(
+            "Minimum relative proportion of a record's minimizers that must hit "
+            "the background index to remove it (0.0-1.0)"
+        ),
         json_schema_extra={"category": "Databases"},
     )
     sourmash_ksize: int = Field(
@@ -511,6 +552,7 @@ class NvdParams(BaseModel):
         "tax_stringency",
         "host_rel_threshold",
         "virus_rel_threshold",
+        "background_rel_threshold",
     )
     @classmethod
     def validate_zero_to_one(cls, v: float) -> float:
@@ -533,6 +575,7 @@ class NvdParams(BaseModel):
         "virus_kmer_size",
         "virus_window_size",
         "virus_abs_threshold",
+        "background_abs_threshold",
         "sourmash_ksize",
         "sourmash_scaled",
         "taxonomy_max_age_days",

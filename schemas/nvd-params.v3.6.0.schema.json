@@ -178,6 +178,27 @@
       "maximum": 1,
       "description": "Minimum relative proportion of minimizers for target enrichment (0.0-1.0)"
     },
+    "background_index": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "default": null,
+      "description": "Path to a prebuilt Deacon background index (.idx file). Setting it switches the first Deacon pass from target enrichment to depletion against this index. Conflicts with an enabled virus index; pass no_enrichment: true to run background mode with a preset that carries virus_index."
+    },
+    "background_abs_threshold": {
+      "type": "integer",
+      "default": 1,
+      "minimum": 1,
+      "description": "Minimum absolute minimizer hits to remove a record as background"
+    },
+    "background_rel_threshold": {
+      "type": "number",
+      "default": 0.0,
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Minimum relative proportion of a record's minimizers that must hit the background index to remove it (0.0-1.0)"
+    },
     "sourmash_ksize": {
       "type": "integer",
       "default": 31,
