@@ -152,3 +152,64 @@ def test_validation_rejects_missing_file(tmp_path: Path) -> None:
     assert completed.returncode != 0
     assert "does not exist" in output
     assert str(missing) in output
+
+
+CONTIG_SCRIPT = """\
+nextflow.enable.dsl = 2
+
+workflow {
+    def policy = NvdUtils.contigFilterPolicy(params, params.use_depletion)
+    println "CONTIG enrich=${policy.target_enrichment_enabled} abs=${policy.target_abs_threshold} rel=${policy.target_rel_threshold} dep=${policy.depletion_enabled} dabs=${policy.depletion_abs_threshold}"
+}
+"""
+
+
+def run_contig_policy(
+    tmp_path: Path, *parameters: str
+) -> subprocess.CompletedProcess[str]:
+    workflow, config = write_harness(tmp_path, CONTIG_SCRIPT)
+    environment = os.environ.copy()
+    environment["NXF_ANSI_LOG"] = "false"
+    return subprocess.run(  # noqa: S603
+        ["nextflow", "-C", str(config), "run", str(workflow), *parameters],  # noqa: S607
+        cwd=tmp_path,
+        env=environment,
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=90,
+    )
+
+
+def test_contig_filter_uses_background_thresholds_in_background_mode(
+    tmp_path: Path,
+) -> None:
+    background = tmp_path / "background.idx"
+    background.touch()
+    completed = run_contig_policy(
+        tmp_path,
+        "--background_index",
+        str(background),
+        "--background_abs_threshold",
+        "4",
+        "--use_depletion",
+        "false",
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert "CONTIG enrich=false abs=4 rel=0.0 dep=false dabs=null" in completed.stdout
+
+
+def test_contig_filter_keeps_virus_thresholds_and_host_depletion_in_enrichment_mode(
+    tmp_path: Path,
+) -> None:
+    virus = tmp_path / "virus.idx"
+    virus.touch()
+    completed = run_contig_policy(
+        tmp_path,
+        "--virus_index",
+        str(virus),
+        "--use_depletion",
+        "true",
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert "CONTIG enrich=true abs=1 rel=0.0 dep=true dabs=2" in completed.stdout

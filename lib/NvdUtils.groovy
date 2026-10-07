@@ -94,6 +94,22 @@ class NvdUtils {
     }
 
     /**
+     * Policy for DEACON_FILTER_CONTIGS: the same step-one filter the reads
+     * saw, plus the optional host/contaminant depletion pass.
+     */
+    public static Map contigFilterPolicy(params, boolean use_depletion) {
+        def step_one = stepOneFilterPolicy(params)
+        return [
+            target_enrichment_enabled: step_one.target_enrichment_enabled,
+            target_abs_threshold: step_one.abs_threshold,
+            target_rel_threshold: step_one.rel_threshold,
+            depletion_enabled: use_depletion,
+            depletion_abs_threshold: use_depletion ? params.host_abs_threshold : null,
+            depletion_rel_threshold: use_depletion ? params.host_rel_threshold : null,
+        ].asImmutable()
+    }
+
+    /**
      * Stop the run when step 1 cannot resolve to one filter.
      *
      * @throws IllegalStateException on a background index alongside enabled

@@ -13,7 +13,6 @@ workflow PREPARE_BLAST_QUERIES {
     ch_depletion_index  // tuple(use_depletion, path): resolved host/contaminant depletion index or sentinel
 
     main:
-    def target_enrichment_enabled = NvdUtils.targetEnrichmentEnabled(params)
     ch_contig_filter_inputs = ch_contigs
         .combine(ch_target_index)
         .combine(ch_depletion_index)
@@ -27,14 +26,7 @@ workflow PREPARE_BLAST_QUERIES {
             use_depletion,
             depletion_index ->
 
-            def policy = [
-                target_enrichment_enabled: target_enrichment_enabled,
-                target_abs_threshold: params.virus_abs_threshold,
-                target_rel_threshold: params.virus_rel_threshold,
-                depletion_enabled: use_depletion,
-                depletion_abs_threshold: use_depletion ? params.host_abs_threshold : null,
-                depletion_rel_threshold: use_depletion ? params.host_rel_threshold : null,
-            ].asImmutable()
+            def policy = NvdUtils.contigFilterPolicy(params, use_depletion as boolean)
 
             tuple(
                 sample_id,
