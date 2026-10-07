@@ -38,6 +38,7 @@ workflow NVD_MAIN {
   def target_enrichment_enabled = NvdUtils.targetEnrichmentEnabled(params)
   def depletion_enabled = NvdUtils.depletionEnabled(params)
   def has_target_enrichment_index = NvdUtils.hasTargetEnrichmentIndex(params)
+  NvdUtils.validateStepOneFilter(params)
   assert (!requires_blast_db || (params.blast_db && file(params.blast_db).isDirectory())) && (!target_enrichment_enabled || has_target_enrichment_index) : """
     One or more required parameters are missing or point to non-existent files:
 

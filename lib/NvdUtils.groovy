@@ -67,6 +67,66 @@ class NvdUtils {
         return params.host_index || params.host_index_url || params.host_contaminants_fasta
     }
 
+    /**
+     * Returns true when a background depletion index is configured. Its
+     * presence switches the first Deacon pass from enrichment to depletion.
+     */
+    public static boolean backgroundDepletionEnabled(params) {
+        return params.background_index ? true : false
+    }
+
+    /**
+     * Resolve the single filter that step 1 (and the contig filter) runs.
+     *
+     * Enrichment wins when enabled; otherwise a configured background index
+     * selects depletion with the background thresholds; otherwise the empty
+     * passthrough index is used and the thresholds are irrelevant.
+     */
+    public static Map stepOneFilterPolicy(params) {
+        def enrichment = targetEnrichmentEnabled(params)
+        def background = !enrichment && backgroundDepletionEnabled(params)
+        return [
+            target_enrichment_enabled: enrichment,
+            background_depletion_enabled: background,
+            abs_threshold: background ? params.background_abs_threshold : params.virus_abs_threshold,
+            rel_threshold: background ? params.background_rel_threshold : params.virus_rel_threshold,
+        ].asImmutable()
+    }
+
+    /**
+     * Stop the run when step 1 cannot resolve to one filter.
+     *
+     * @throws IllegalStateException on a background index alongside enabled
+     *         target enrichment, a bare --background_index flag, or a missing
+     *         index file.
+     */
+    public static void validateStepOneFilter(params) {
+        def background = params.background_index
+        if (background == null || background == false) {
+            return
+        }
+        if (!(background instanceof CharSequence)) {
+            throw new IllegalStateException(
+                "background_index must be a path to a prebuilt Deacon .idx file; received '${background}'. " +
+                "Pass --background_index /path/to/background.idx."
+            )
+        }
+        def path = new File(background.toString())
+        if (!path.isFile()) {
+            throw new IllegalStateException(
+                "background_index points to a file that does not exist: ${background}"
+            )
+        }
+        if (targetEnrichmentEnabled(params)) {
+            def sources = ['virus_index', 'virus_index_url', 'virus_reference_fasta'].findAll { name -> params[name] }
+            throw new IllegalStateException(
+                "background_index cannot be combined with target enrichment (${sources.join(', ')} also set). " +
+                "Step 1 runs one Deacon filter. Pass --no_enrichment true to deplete the background instead, " +
+                "or drop background_index."
+            )
+        }
+    }
+
     // -------------------------------------------------------------------------
     // Private helpers
     // -------------------------------------------------------------------------
