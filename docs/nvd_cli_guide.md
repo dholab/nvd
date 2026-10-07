@@ -193,6 +193,8 @@ CRUMBS profiling, the per-query and per-taxon big tables, the best-hit sequence 
 
 `--background-index` switches the first Deacon pass from target enrichment to depletion against a prebuilt background index. It conflicts with an enabled virus index; `nvd run` and `nvd params check` stop with a message naming both and suggesting `--no-enrichment`, which lets a shared preset keep its `virus_index`. `--background-abs-threshold` and `--background-rel-threshold` default to 1 and 0.0, the same as enrichment.
 
+`--skip-contig-filter` sends every assembled contig to BLAST without screening it against the step-one Deacon index, so a contig assembled from reads that slipped through enrichment is not discarded for lacking a known-virus k-mer. Host depletion of contigs still applies when `host_index` is set.
+
 Preview without writing:
 
 ```bash

@@ -102,6 +102,11 @@
       "default": false,
       "description": "Skip the per-query and per-taxon big tables and the best-hit sequence evidence derived from them. CRUMBS profiles and the sequence-flow table still run."
     },
+    "skip_contig_filter": {
+      "type": "boolean",
+      "default": false,
+      "description": "Send every assembled contig to BLAST without screening it against the step-one Deacon index. Host depletion of contigs still applies."
+    },
     "blast_db_version": {
       "type": "string",
       "description": "BLAST database version identifier"

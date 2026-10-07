@@ -27,6 +27,7 @@ workflow PREPARE_BLAST_QUERIES {
             depletion_index ->
 
             def policy = NvdUtils.contigFilterPolicy(params, use_depletion as boolean)
+            def screening_index = NvdUtils.contigScreeningIndex(params, target_index, projectDir)
 
             tuple(
                 sample_id,
@@ -34,7 +35,7 @@ workflow PREPARE_BLAST_QUERIES {
                 read_structure,
                 fasta,
                 query_lookup,
-                target_index,
+                screening_index,
                 policy,
                 depletion_index,
             )

@@ -216,3 +216,23 @@ def test_background_depletion_params_are_declared_everywhere() -> None:
     assert latest_schema["properties"]["background_index"]["default"] is None
     assert latest_schema["properties"]["background_abs_threshold"]["default"] == 1
     assert latest_schema["properties"]["background_rel_threshold"]["default"] == 0.0
+
+
+def test_skip_contig_filter_is_declared_everywhere() -> None:
+    """The contig-screen skip exists in Nextflow, the model, and the schema."""
+    nextflow_config = (ROOT / "nextflow.config").read_text(encoding="utf-8")
+    config_match = re.search(
+        r"^\s*skip_contig_filter\s*=\s*(\S+)",
+        nextflow_config,
+        re.MULTILINE,
+    )
+    latest_schema = json.loads(
+        (ROOT / "schemas" / "nvd-params.latest.schema.json").read_text(
+            encoding="utf-8",
+        ),
+    )
+
+    assert config_match is not None, "nextflow.config skip_contig_filter is missing"
+    assert config_match.group(1) == "null"
+    assert NvdParams().skip_contig_filter is False
+    assert latest_schema["properties"]["skip_contig_filter"]["default"] is False

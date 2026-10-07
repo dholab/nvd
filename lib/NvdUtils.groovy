@@ -99,14 +99,29 @@ class NvdUtils {
      */
     public static Map contigFilterPolicy(params, boolean use_depletion) {
         def step_one = stepOneFilterPolicy(params)
+        def screen_contigs = !(params.skip_contig_filter ? true : false)
         return [
-            target_enrichment_enabled: step_one.target_enrichment_enabled,
+            // With the screen skipped the process still runs one pass, in
+            // deplete mode against the empty index, so every contig survives
+            // and the decisions TSV is still written.
+            target_enrichment_enabled: screen_contigs && step_one.target_enrichment_enabled,
             target_abs_threshold: step_one.abs_threshold,
             target_rel_threshold: step_one.rel_threshold,
             depletion_enabled: use_depletion,
             depletion_abs_threshold: use_depletion ? params.host_abs_threshold : null,
             depletion_rel_threshold: use_depletion ? params.host_rel_threshold : null,
         ].asImmutable()
+    }
+
+    /**
+     * The index DEACON_FILTER_CONTIGS screens with: the step-one index, or the
+     * committed empty index when skip_contig_filter is set.
+     */
+    public static Object contigScreeningIndex(params, Object step_one_index, Object project_dir) {
+        if (params.skip_contig_filter) {
+            return nextflow.Nextflow.file("${project_dir}/assets/empty_deacon.k31w1.idx")
+        }
+        return step_one_index
     }
 
     /**

@@ -337,6 +337,7 @@ def _generate_yaml_template(path: Path, schema: dict, schema_url: str) -> None:
             "skip_fastqc",
             "skip_unassembled_read_queries",
             "skip_big_tables",
+            "skip_contig_filter",
         ],
         properties,
         subheading="Skip optional or expensive stages for diagnostics or partial runs.",

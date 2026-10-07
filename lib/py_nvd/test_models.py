@@ -551,6 +551,14 @@ class TestNvdParamsDefaults:
         skip_idx = cmd.index("--skip_big_tables")
         assert cmd[skip_idx + 1] == "true"
 
+    def test_skip_contig_filter_reaches_nextflow(self) -> None:
+        """The contig-screen skip is forwarded with Nextflow underscore naming."""
+        p = NvdParams(skip_contig_filter=True)
+        cmd = p.to_nextflow_args(Path("/pipeline"))
+
+        skip_idx = cmd.index("--skip_contig_filter")
+        assert cmd[skip_idx + 1] == "true"
+
     def test_default_sourmash_sketch_params(self) -> None:
         """Sketch parameters survive the rapid-screening removal."""
         assert NvdParams().sourmash_ksize == 31
@@ -895,7 +903,8 @@ class TestNvdParamsStepOneFilterConflict:
         assert p.background_index == index
 
     def test_background_index_conflicts_with_enabled_virus_index(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         with pytest.raises(ValidationError) as excinfo:
             NvdParams(
@@ -908,7 +917,8 @@ class TestNvdParamsStepOneFilterConflict:
         assert "--no-enrichment" in message
 
     def test_background_index_conflicts_with_virus_index_url(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         with pytest.raises(ValidationError, match="virus_index_url"):
             NvdParams(

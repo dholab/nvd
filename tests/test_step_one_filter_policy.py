@@ -40,6 +40,7 @@ params.background_rel_threshold = 0.0
 params.host_abs_threshold = 2
 params.host_rel_threshold = 0.01
 params.no_enrichment = false
+params.skip_contig_filter = null
 params.validate = false
 """
 
@@ -213,3 +214,21 @@ def test_contig_filter_keeps_virus_thresholds_and_host_depletion_in_enrichment_m
     )
     assert completed.returncode == 0, completed.stderr
     assert "CONTIG enrich=true abs=1 rel=0.0 dep=true dabs=2" in completed.stdout
+
+
+def test_skip_contig_filter_turns_the_screen_into_a_passthrough(
+    tmp_path: Path,
+) -> None:
+    virus = tmp_path / "virus.idx"
+    virus.touch()
+    completed = run_contig_policy(
+        tmp_path,
+        "--virus_index",
+        str(virus),
+        "--use_depletion",
+        "true",
+        "--skip_contig_filter",
+        "true",
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert "CONTIG enrich=false abs=1 rel=0.0 dep=true dabs=2" in completed.stdout

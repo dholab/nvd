@@ -197,6 +197,14 @@ class NvdParams(BaseModel):
         ),
         json_schema_extra={"category": "Core"},
     )
+    skip_contig_filter: bool = Field(
+        default=False,
+        description=(
+            "Send every assembled contig to BLAST without screening it against "
+            "the step-one Deacon index. Host depletion of contigs still applies."
+        ),
+        json_schema_extra={"category": "Core"},
+    )
 
     blast_db_version: str | None = Field(
         None,
