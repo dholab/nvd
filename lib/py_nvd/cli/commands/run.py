@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 import typer
+from pydantic import ValidationError
 
 from py_nvd.cli.provenance import nextflow_environment
 from py_nvd.cli.utils import (
@@ -700,7 +701,15 @@ def run(
 
     # Merge with precedence: preset < params_file < CLI
     # NvdParams.merge() filters None values and applies validation
-    params = NvdParams.merge(preset_params, params_file_dict, cli_args)
+    try:
+        params = NvdParams.merge(preset_params, params_file_dict, cli_args)
+    except ValidationError as e:
+        console.print("\n[red]✗ Validation failed:[/red]\n")
+        for err in e.errors():
+            field = ".".join(str(loc) for loc in err["loc"])
+            console.print(f"  • [bold]{field}[/bold]: {err['msg']}")
+        console.print()
+        raise typer.Exit(1) from None
 
     # =========================================================================
     # STEP 3: Post-merge validation
