@@ -8,6 +8,7 @@ workflow MULTIQC_BUNDLING {
     ch_nvd_version
     ch_experimental_enabled
     ch_target_enrichment_enabled
+    ch_background_depletion_enabled
     ch_depletion_enabled
     ch_assembly_enabled
     ch_read_querying_enabled
@@ -124,6 +125,7 @@ workflow MULTIQC_BUNDLING {
         ch_taxonomy_packages,
         ch_experimental_enabled,
         ch_target_enrichment_enabled,
+        ch_background_depletion_enabled,
         ch_depletion_enabled,
         ch_assembly_enabled,
         ch_read_querying_enabled,

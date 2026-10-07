@@ -182,6 +182,7 @@ workflow REPORTING {
         ch_nvd_version,
         channel.value(params.experimental == true),
         channel.value(target_enrichment_enabled),
+        channel.value(NvdUtils.backgroundDepletionEnabled(params)),
         channel.value(NvdUtils.depletionEnabled(params)),
         channel.value(!params.skip_assembly),
         channel.value(!params.skip_unassembled_read_queries),

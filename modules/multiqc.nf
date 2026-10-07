@@ -17,6 +17,7 @@ process BUILD_MULTIQC_INPUTS {
     path "taxonomy_packages/*"
     val experimental_enabled
     val target_enrichment_enabled
+    val background_depletion_enabled
     val depletion_enabled
     val assembly_enabled
     val read_querying_enabled
@@ -42,6 +43,7 @@ process BUILD_MULTIQC_INPUTS {
         --taxonomy-root taxonomy_packages \
         --experimental-enabled '${experimental_enabled}' \
         --target-enrichment-enabled '${target_enrichment_enabled}' \
+        --background-depletion-enabled '${background_depletion_enabled}' \
         --depletion-enabled '${depletion_enabled}' \
         --assembly-enabled '${assembly_enabled}' \
         --read-querying-enabled '${read_querying_enabled}' \

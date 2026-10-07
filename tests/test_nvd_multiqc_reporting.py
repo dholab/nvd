@@ -251,6 +251,7 @@ def bundling_invocation(
     raw_fastqc_zips: str = "Channel.empty()",
     experimental: bool = False,
     target_enrichment: bool = False,
+    background_depletion: bool = False,
     depletion: bool = False,
     assembly: bool = True,
     read_querying: bool = True,
@@ -277,6 +278,7 @@ def bundling_invocation(
         Channel.value(file('{version}')),
         Channel.value({enabled(experimental)}),
         Channel.value({enabled(target_enrichment)}),
+        Channel.value({enabled(background_depletion)}),
         Channel.value({enabled(depletion)}),
         Channel.value({enabled(assembly)}),
         Channel.value({enabled(read_querying)}),
@@ -1089,3 +1091,61 @@ workflow {{
         "compiler",
         "compiler",
     ]
+
+
+def test_background_mode_renders_depletion_counts_not_skip_rows(tmp_path: Path) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    copy_reporting_lib(tmp_path)
+    write_tool_fakes(bin_dir)
+    roster = write_roster(tmp_path / "resolved_reads.jsonl")
+    version = write_version(tmp_path / "nvd_version.txt")
+    config = ROOT / "assets" / "multiqc_config.yaml"
+    stats = tmp_path / "deacon.json"
+    stats.write_text(
+        json.dumps(
+            {
+                "version": "deacon-test",
+                "seqs_in": 10,
+                "seqs_out": 7,
+                "seqs_removed": 3,
+                "seqs_out_proportion": 0.7,
+                "seqs_removed_proportion": 0.3,
+                "bp_in": 1000,
+                "bp_out": 700,
+                "bp_removed": 300,
+                "bp_out_proportion": 0.7,
+                "bp_removed_proportion": 0.3,
+            },
+        ),
+        encoding="utf-8",
+    )
+
+    workflow = tmp_path / "main.nf"
+    target_enrichment_input = f"Channel.of(tuple('sample_A', {nextflow_file(stats)}))"
+    workflow.write_text(
+        f"""\
+nextflow.enable.dsl = 2
+
+include {{ MULTIQC_BUNDLING }} from '{BUNDLING_SUBWORKFLOW}'
+
+params.results = '{tmp_path / "results"}'
+params.experimental = false
+params.skip_unassembled_read_queries = false
+workflow {{
+{bundling_invocation(roster, version, config, target_enrichment=False, background_depletion=True, assembly=False, target_enrichment_stats=target_enrichment_input)}
+}}
+""",
+        encoding="utf-8",
+    )
+
+    completed = run_nextflow(workflow, bin_dir=bin_dir)
+    diagnostics = f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}"
+    assert completed.returncode == 0, diagnostics
+    sections = sorted(tmp_path.glob("work/**/nvd_target_enrichment_mqc.yaml"))
+    assert sections, diagnostics
+    section = yaml.safe_load(sections[-1].read_text(encoding="utf-8"))
+    assert section["section_name"] == "Background Depletion"
+    row = section["data"]["sample_A"]
+    assert row["reads_removed"] == 3
+    assert "reason" not in row

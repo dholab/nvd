@@ -136,6 +136,7 @@ def test_compiler_generates_minimal_manifest_and_custom_content(tmp_path: Path) 
             "schema_version": "nvd.report-plan/v1",
             "experimental_enabled": False,
             "target_enrichment_enabled": True,
+            "background_depletion_enabled": False,
             "depletion_enabled": True,
             "assembly_enabled": True,
             "read_querying_enabled": True,
@@ -925,3 +926,53 @@ def test_experimental_invitation_names_only_remaining_experimental_features(
     assert "long-read assembly" in description
     assert "CRUMBS" not in description
     assert "Big Tables" not in description
+
+
+def test_background_mode_reports_the_step_one_section_as_depletion(
+    tmp_path: Path,
+) -> None:
+    """Background mode must not render target-enrichment skip rows."""
+    fastqc_root = tmp_path / "fastqc_packages"
+    fastqc_root.mkdir()
+    roster = write_roster(tmp_path / "resolved_reads.jsonl")
+    version = write_version(tmp_path / "nvd_version.txt")
+
+    skipped_dir = tmp_path / "skipped"
+    build_multiqc_inputs(
+        CompileRequest(
+            roster_path=roster,
+            version_path=version,
+            fastqc_root=fastqc_root,
+            output_dir=skipped_dir,
+            configuration=ReportConfiguration(
+                experimental_enabled=False,
+                target_enrichment_enabled=False,
+            ),
+        ),
+    )
+    skipped = yaml.safe_load(
+        (skipped_dir / "nvd_target_enrichment_mqc.yaml").read_text(encoding="utf-8"),
+    )
+    assert skipped["section_name"] == "Target Enrichment"
+    assert all(
+        row["reason"] == "target enrichment disabled by configuration"
+        for row in skipped["data"].values()
+    )
+
+    background_dir = tmp_path / "background"
+    build_multiqc_inputs(
+        CompileRequest(
+            roster_path=roster,
+            version_path=version,
+            fastqc_root=fastqc_root,
+            output_dir=background_dir,
+            configuration=ReportConfiguration(
+                experimental_enabled=False,
+                target_enrichment_enabled=False,
+                background_depletion_enabled=True,
+            ),
+        ),
+    )
+    manifest = read_manifest(background_dir)
+    assert manifest["report_plan"]["background_depletion_enabled"] is True
+    assert not (background_dir / "nvd_target_enrichment_mqc.yaml").exists()
