@@ -68,6 +68,7 @@ params.skip_big_tables = false
 params.skip_blast = false
 params.blast_db_prefix = 'mini'
 params.no_enrichment = true
+params.background_index = null
 params.virus_index = null
 params.virus_index_url = null
 params.virus_reference_fasta = null

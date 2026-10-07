@@ -75,6 +75,7 @@ params.skip_unassembled_read_queries = false
 params.skip_big_tables = false
 params.skip_blast = false
 params.no_enrichment = true
+params.background_index = null
 includeConfig 'conf/results.config'
 """,
         encoding="utf-8",

@@ -48,11 +48,11 @@ def test_reporting_subworkflow_only_forwards_experimental_to_multiqc() -> None:
     assert "channel.value(params.experimental == true)," in text
 
 
-def test_only_similarity_qc_and_long_read_assembly_publish_behind_experimental() -> None:
+def test_only_similarity_qc_and_long_read_assembly_publish_behind_experimental() -> (
+    None
+):
     blocks = publish_blocks(RESULTS_CONFIG.read_text(encoding="utf-8"))
-    gated = {
-        name for name, body in blocks.items() if "params.experimental" in body
-    }
+    gated = {name for name, body in blocks.items() if "params.experimental" in body}
     assert gated == STILL_EXPERIMENTAL
 
 
@@ -101,6 +101,7 @@ params.skip_unassembled_read_queries = null
 params.skip_blast = null
 params.skip_big_tables = {skip_big_tables}
 params.no_enrichment = false
+params.background_index = null
 params.virus_index = null
 params.virus_index_url = null
 params.virus_reference_fasta = null
@@ -126,3 +127,55 @@ includeConfig '{RESULTS_CONFIG}'
         if line.startswith("process.'withName:BUILD_QUERY_BIG_TABLE'.publishDir")
     )
     assert line.strip().endswith(expected), line
+
+
+@pytest.mark.skipif(shutil.which("nextflow") is None, reason="needs Nextflow")
+@pytest.mark.parametrize(
+    ("virus_index", "background_index", "expected"),
+    [
+        ("'/refs/virus.idx'", "null", "enabled:true"),
+        ("null", "'/refs/background.idx'", "enabled:true"),
+        ("null", "null", "enabled:false"),
+    ],
+)
+def test_rendered_config_publishes_step_one_outputs_for_either_filter(
+    tmp_path: Path, virus_index: str, background_index: str, expected: str
+) -> None:
+    """Step-one reads, summaries, and the run-level report publish whenever step 1 is a real filter."""
+    config = tmp_path / "render.config"
+    config.write_text(
+        f"""\
+params.results = '{tmp_path / "results"}'
+params.experimental = false
+params.skip_unassembled_read_queries = null
+params.skip_blast = null
+params.skip_big_tables = null
+params.no_enrichment = false
+params.virus_index = {virus_index}
+params.virus_index_url = null
+params.virus_reference_fasta = null
+params.background_index = {background_index}
+includeConfig '{RESULTS_CONFIG}'
+""",
+        encoding="utf-8",
+    )
+    environment = os.environ.copy()
+    environment["NXF_ANSI_LOG"] = "false"
+    completed = subprocess.run(  # noqa: S603
+        ["nextflow", "-C", str(config), "config", "-flat"],  # noqa: S607
+        cwd=ROOT,
+        env=environment,
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=120,
+    )
+    assert completed.returncode == 0, completed.stderr
+    for selector in (
+        "process.'withName:^(DEACON_ENRICH_TARGET_READS|DEACON_ENRICH_SRA_READS)$'.publishDir",
+        "process.'withName:TARGET_ENRICHMENT_REPORT'.publishDir",
+    ):
+        line = next(
+            line for line in completed.stdout.splitlines() if line.startswith(selector)
+        )
+        assert line.count(expected) == 2, line
