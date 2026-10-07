@@ -72,6 +72,8 @@ def copy_results_config(tmp_path: Path) -> None:
 params.results = '{tmp_path / "results"}'
 params.experimental = false
 params.skip_unassembled_read_queries = false
+params.skip_big_tables = false
+params.skip_blast = false
 params.no_enrichment = true
 includeConfig 'conf/results.config'
 """,
@@ -434,6 +436,7 @@ include {{ GENERATE_MULTIQC_REPORT }} from '{MULTIQC_MODULE}'
 params.results = '{tmp_path / "results"}'
 params.experimental = false
 params.skip_unassembled_read_queries = false
+params.skip_big_tables = false
 workflow {{
 {bundling_invocation(roster, version, config, target_enrichment=True, assembly=False, target_enrichment_stats=target_enrichment_input)}
 {renderer_invocation()}
@@ -540,6 +543,7 @@ include {{ GENERATE_MULTIQC_REPORT }} from '{MULTIQC_MODULE}'
 params.results = '{tmp_path / "results"}'
 params.experimental = false
 params.skip_unassembled_read_queries = false
+params.skip_big_tables = false
 workflow {{
 {bundling_invocation(roster, version, config, megablast_query_partition_summaries=megablast_partition_input)}
 {renderer_invocation()}
@@ -599,6 +603,7 @@ include {{ GENERATE_MULTIQC_REPORT }} from '{MULTIQC_MODULE}'
 params.results = '{tmp_path / "results"}'
 params.experimental = true
 params.skip_unassembled_read_queries = false
+params.skip_big_tables = false
 workflow {{
 {bundling_invocation(roster, version, config, experimental=True, taxon_big_tables=taxon_big_table_input)}
 {renderer_invocation()}
@@ -683,6 +688,7 @@ include {{ GENERATE_MULTIQC_REPORT }} from '{MULTIQC_MODULE}'
 params.results = '{tmp_path / "results"}'
 params.experimental = false
 params.skip_unassembled_read_queries = false
+params.skip_big_tables = false
 workflow {{
 {bundling_invocation(roster, version, config, assembly_eligibility_decisions=assembly_decision_input)}
 {renderer_invocation()}
@@ -753,6 +759,7 @@ include {{ FASTQC_RAW }} from '{FASTQC_MODULE}'
 params.results = '{tmp_path / "results"}'
 params.experimental = false
 params.skip_unassembled_read_queries = false
+params.skip_big_tables = false
 
 workflow {{
     reads = Channel.of(tuple(
@@ -853,6 +860,7 @@ include {{ FASTQC_RAW }} from '{FASTQC_MODULE}'
 params.results = '{tmp_path / "results"}'
 params.experimental = false
 params.skip_unassembled_read_queries = false
+params.skip_big_tables = false
 workflow {{
     reads = Channel.of(tuple(
         [id: 'sample_A', platform: 'illumina', source: 'single_file', read_mode: 'single', r1_count: 1],
@@ -920,6 +928,7 @@ include {{ FASTQC_RAW }} from '{FASTQC_MODULE}'
 params.results = '{tmp_path / "results"}'
 params.experimental = false
 params.skip_unassembled_read_queries = false
+params.skip_big_tables = false
 workflow {{
     reads = Channel.of(tuple(
         [id: '{sample_id}', platform: 'illumina', source: 'single_file', read_mode: 'single', r1_count: 1],
@@ -1004,6 +1013,7 @@ include {{ GENERATE_MULTIQC_REPORT }} from '{MULTIQC_MODULE}'
 params.results = '{tmp_path / "results"}'
 params.experimental = false
 params.skip_unassembled_read_queries = false
+params.skip_big_tables = false
 workflow {{
     sentinel = Channel.value('scientific-complete')
 {bundling_invocation(roster, version, config)}
@@ -1059,6 +1069,7 @@ include {{ GENERATE_MULTIQC_REPORT }} from '{MULTIQC_MODULE}'
 params.results = '{tmp_path / "results"}'
 params.experimental = false
 params.skip_unassembled_read_queries = false
+params.skip_big_tables = false
 workflow {{
     sentinel = Channel.value('scientific-complete')
 {bundling_invocation(bad_roster, version, config)}

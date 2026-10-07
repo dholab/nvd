@@ -64,6 +64,7 @@ def run_nextflow(
 params.results = '{tmp_path / "results"}'
 params.experimental = true
 params.skip_unassembled_read_queries = false
+params.skip_big_tables = false
 params.skip_blast = false
 params.blast_db_prefix = 'mini'
 params.no_enrichment = true
