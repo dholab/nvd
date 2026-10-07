@@ -223,6 +223,7 @@ def test_domain_sections_split_length_histograms_by_fastx_stage(
         configuration=DomainConfiguration(
             experimental_enabled=False,
             target_enrichment_enabled=False,
+            background_depletion_enabled=False,
             depletion_enabled=False,
             assembly_enabled=False,
             read_querying_enabled=False,
