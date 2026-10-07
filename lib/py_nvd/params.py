@@ -331,7 +331,7 @@ def _generate_yaml_template(path: Path, schema: dict, schema_url: str) -> None:
     _add_commented_section(
         lines,
         "Execution Controls",
-        ["skip_assembly", "skip_blast", "skip_fastqc", "skip_unassembled_read_queries"],
+        ["skip_assembly", "skip_blast", "skip_fastqc", "skip_unassembled_read_queries", "skip_big_tables"],
         properties,
         subheading="Skip optional or expensive stages for diagnostics or partial runs.",
     )

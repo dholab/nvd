@@ -543,6 +543,14 @@ class TestNvdParamsDefaults:
         skip_idx = cmd.index("--skip_unassembled_read_queries")
         assert cmd[skip_idx + 1] == "true"
 
+    def test_skip_big_tables_reaches_nextflow(self) -> None:
+        """The big-table skip is forwarded with Nextflow underscore naming."""
+        p = NvdParams(skip_big_tables=True)
+        cmd = p.to_nextflow_args(Path("/pipeline"))
+
+        skip_idx = cmd.index("--skip_big_tables")
+        assert cmd[skip_idx + 1] == "true"
+
     def test_default_sourmash_sketch_params(self) -> None:
         """Sketch parameters survive the rapid-screening removal."""
         assert NvdParams().sourmash_ksize == 31

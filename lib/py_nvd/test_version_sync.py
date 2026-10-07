@@ -165,3 +165,25 @@ def test_v3_2_schema_accepts_disabled_optional_read_limits() -> None:
 
     assert schema["properties"]["filter_reads"]["type"] == ["boolean", "null"]
     assert schema["properties"]["max_read_length"]["type"] == ["integer", "null"]
+
+
+def test_skip_big_tables_is_declared_everywhere() -> None:
+    """The big-table skip exists in Nextflow, the model, and the schema."""
+    nextflow_config = (ROOT / "nextflow.config").read_text(encoding="utf-8")
+    config_match = re.search(
+        r"^\s*skip_big_tables\s*=\s*(\S+)",
+        nextflow_config,
+        re.MULTILINE,
+    )
+    latest_schema = json.loads(
+        (ROOT / "schemas" / "nvd-params.latest.schema.json").read_text(
+            encoding="utf-8",
+        ),
+    )
+
+    assert config_match is not None, "nextflow.config skip_big_tables is missing"
+    # null keeps bare `--skip_big_tables` usable as a Nextflow flag, matching
+    # the other skip_* params.
+    assert config_match.group(1) == "null"
+    assert NvdParams().skip_big_tables is False
+    assert latest_schema["properties"]["skip_big_tables"]["default"] is False

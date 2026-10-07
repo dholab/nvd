@@ -169,6 +169,15 @@ class NvdParams(BaseModel):
         ),
         json_schema_extra={"category": "Core"},
     )
+    skip_big_tables: bool = Field(
+        default=False,
+        description=(
+            "Skip the per-query and per-taxon big tables and the best-hit "
+            "sequence evidence derived from them. CRUMBS profiles and the "
+            "sequence-flow table still run."
+        ),
+        json_schema_extra={"category": "Core"},
+    )
 
     blast_db_version: str | None = Field(
         None,

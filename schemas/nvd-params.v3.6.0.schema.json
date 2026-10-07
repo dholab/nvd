@@ -97,6 +97,11 @@
       "default": false,
       "description": "Skip BLAST querying of unassembled reads (overlap-merged pairs and single reads), leaving assembly contigs as the only query classes."
     },
+    "skip_big_tables": {
+      "type": "boolean",
+      "default": false,
+      "description": "Skip the per-query and per-taxon big tables and the best-hit sequence evidence derived from them. CRUMBS profiles and the sequence-flow table still run."
+    },
     "blast_db_version": {
       "type": "string",
       "description": "BLAST database version identifier"

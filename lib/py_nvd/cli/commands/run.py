@@ -177,6 +177,12 @@ def run(
         help="Skip BLAST querying of unassembled reads (contigs only).",
         rich_help_panel=PANEL_CORE,
     ),
+    skip_big_tables: bool | None = typer.Option(
+        None,
+        "--skip-big-tables",
+        help="Skip the big tables and best-hit sequence evidence (CRUMBS still runs).",
+        rich_help_panel=PANEL_CORE,
+    ),
     # -------------------------------------------------------------------------
     # Reference Paths
     # -------------------------------------------------------------------------
@@ -601,6 +607,7 @@ def run(
         "skip_blast": skip_blast,
         "skip_fastqc": skip_fastqc,
         "skip_unassembled_read_queries": skip_unassembled_read_queries,
+        "skip_big_tables": skip_big_tables,
         # Reference paths
         "blast_db": blast_db,
         "blast_db_prefix": blast_db_prefix,
