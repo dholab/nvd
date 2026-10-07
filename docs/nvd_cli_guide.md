@@ -189,6 +189,8 @@ nvd samplesheet generate --from-sra accessions.txt --platform illumina --output 
 
 NVD decodes each SRA run as a stream through target enrichment rather than materializing decoded raw FASTQ files. Raw-read FastQC therefore runs only for local FASTQ inputs; the `skip_fastqc` setting controls those local tasks. SRA reads rejoin local reads immediately after target enrichment and receive the same subsequent preprocessing.
 
+CRUMBS profiling, the per-query and per-taxon big tables, the best-hit sequence evidence, and the sequence-flow table run on every run since v3.6.0. Pass `--skip-big-tables` to leave out the big tables and the best-hit evidence; CRUMBS profiles and the sequence flow still run.
+
 Preview without writing:
 
 ```bash

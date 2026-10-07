@@ -550,7 +550,7 @@ def write_experimental_invitation(path: Path) -> None:
             {
                 "id": "nvd_experimental_capabilities",
                 "section_name": "Experimental Capabilities",
-                "description": "Experimental mode can add CRUMBS profiling, sample-similarity QC, Big Tables, long-read assembly, and related results when enabled.",
+                "description": "Experimental mode adds sample-similarity QC and the myloasm, metaMDBG, and metaFlye long-read assembly ensemble when enabled.",
                 "plot_type": "table",
                 "data": {"experimental_enabled": {"enabled": "false"}},
             },

@@ -900,3 +900,28 @@ def test_compiler_rejects_fastqc_identity_edges(tmp_path: Path) -> None:
             output_dir=tmp_path / "out_of_range_out",
             experimental_enabled=True,
         )
+
+
+def test_experimental_invitation_names_only_remaining_experimental_features(
+    tmp_path: Path,
+) -> None:
+    output_dir = tmp_path / "nvd_inputs"
+    fastqc_root = tmp_path / "fastqc_packages"
+    fastqc_root.mkdir()
+    build_inputs(
+        roster_path=write_roster(tmp_path / "resolved_reads.jsonl"),
+        version_path=write_version(tmp_path / "nvd_version.txt"),
+        fastqc_root=fastqc_root,
+        output_dir=output_dir,
+        experimental_enabled=False,
+    )
+    invitation = yaml.safe_load(
+        (output_dir / "nvd_experimental_capabilities_mqc.yaml").read_text(
+            encoding="utf-8",
+        ),
+    )
+    description = invitation["description"]
+    assert "sample-similarity QC" in description
+    assert "long-read assembly" in description
+    assert "CRUMBS" not in description
+    assert "Big Tables" not in description
