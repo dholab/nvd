@@ -22,7 +22,7 @@ This pipeline in its 3rd major version, which brings with it a helpful CLI and p
 
 ![Metro map of the NVD pipeline, from the samplesheet through target enrichment, read preprocessing, assembly and map-back, two-phase BLAST, and reporting](docs/nvd_metro_map.svg)
 
-The map follows the default short-read path: paired Illumina reads with target enrichment on and host depletion off. Reads are enriched, merged, and cleaned on one shared track, then assembled. The track forks at the map-back step. Contigs that pass the filters continue as the assembled route, and reads that map back to no contig continue as the unassembled route. Both routes are searched with megablast and then blastn, and both feed the final tables. Each stop names what happens, with the tool in brackets. Nanopore inputs and LabKey upload are not drawn, and the sample similarity sketch and the big tables only run with `--experimental`.
+The map follows the default short-read path: paired Illumina reads with target enrichment on and host depletion off. Reads are enriched, merged, and cleaned on one shared track, then assembled. The track forks at the map-back step. Contigs that pass the filters continue as the assembled route, and reads that map back to no contig continue as the unassembled route. Both routes are searched with megablast and then blastn, and both feed the final tables. Each stop names what happens, with the tool in brackets. Nanopore inputs and LabKey upload are not drawn, and the sample similarity sketch only runs with `--experimental`. The big tables run by default and can be turned off with `--skip-big-tables`.
 
 ## Get Started
 

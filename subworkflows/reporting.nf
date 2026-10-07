@@ -43,7 +43,7 @@ workflow REPORTING {
     run_id
 
     main:
-    def best_hit_sequences_enabled = params.experimental == true && !params.skip_blast
+    def best_hit_sequences_enabled = !params.skip_big_tables && !params.skip_blast
 
     if (params.labkey) {
         NvdUtils.validateLabkeyBlast(params)
@@ -119,16 +119,19 @@ workflow REPORTING {
         ch_sample_blast_results.for_summary.map { _sample_id, tsv -> tsv }.collect()
     )
 
-    if (params.experimental == true) {
-        BUILD_SEQUENCE_FLOW(ch_sequence_flow_inputs.collect())
+    BUILD_SEQUENCE_FLOW(ch_sequence_flow_inputs.collect())
 
-        CRUMBS_PROFILING(
-            ch_sample_blast_results.for_emit,
-            ch_filtered_bam,
-            ch_no_contigs,
-            ch_taxonomy_dir,
-        )
+    CRUMBS_PROFILING(
+        ch_sample_blast_results.for_emit,
+        ch_filtered_bam,
+        ch_no_contigs,
+        ch_taxonomy_dir,
+    )
 
+    // The big tables join BLAST results with CRUMBS abundance columns. They are
+    // on by default since v3.6.0; skip_big_tables restores the leaner output set
+    // without touching CRUMBS itself, whose Krona and taxburst exports stand alone.
+    if (!params.skip_big_tables) {
         ch_query_big_table_inputs = ch_sample_blast_results.for_big_table
             .join(CRUMBS_PROFILING.out.queries, by: 0)
             .map { sample_id, blast_tsv, crumbs_tsv -> tuple(sample_id, blast_tsv, crumbs_tsv) }
@@ -168,9 +171,9 @@ workflow REPORTING {
         )
     }
 
-    ch_taxon_big_tables_for_multiqc = params.experimental
-        ? BUILD_TAXON_BIG_TABLE.out
-        : channel.empty()
+    ch_taxon_big_tables_for_multiqc = params.skip_big_tables
+        ? channel.empty()
+        : BUILD_TAXON_BIG_TABLE.out
 
     MULTIQC_BUNDLING(
         ch_raw_fastqc_packages,
@@ -227,14 +230,15 @@ workflow REPORTING {
         .mix(TARGET_ENRICHMENT_REPORT.out.summary_tsv)
         .mix(GENERATE_MULTIQC_REPORT.out.report)
 
-    if (params.experimental == true) {
+    ch_reporting_terminal_outputs = ch_reporting_terminal_outputs
+        .mix(BUILD_SEQUENCE_FLOW.out.sequence_flow)
+        .mix(CRUMBS_PROFILING.out.krona)
+        .mix(CRUMBS_PROFILING.out.taxburst)
+        .mix(CRUMBS_PROFILING.out.merged_taxburst)
+    if (!params.skip_big_tables) {
         ch_reporting_terminal_outputs = ch_reporting_terminal_outputs
-            .mix(BUILD_SEQUENCE_FLOW.out.sequence_flow)
             .mix(CONCATENATE_QUERY_BIG_TABLE.out.concatenated_tsv)
             .mix(CONCATENATE_TAXON_BIG_TABLE.out.concatenated_tsv)
-            .mix(CRUMBS_PROFILING.out.krona)
-            .mix(CRUMBS_PROFILING.out.taxburst)
-            .mix(CRUMBS_PROFILING.out.merged_taxburst)
     }
     if (best_hit_sequences_enabled) {
         ch_reporting_terminal_outputs = ch_reporting_terminal_outputs
@@ -259,29 +263,29 @@ workflow REPORTING {
 
     emit:
     blast_results = ch_sample_blast_results.for_emit
-    query_big_tables = params.experimental ? BUILD_QUERY_BIG_TABLE.out : channel.empty()
-    query_big_table = params.experimental ? CONCATENATE_QUERY_BIG_TABLE.out.concatenated_tsv : channel.empty()
+    query_big_tables = params.skip_big_tables ? channel.empty() : BUILD_QUERY_BIG_TABLE.out
+    query_big_table = params.skip_big_tables ? channel.empty() : CONCATENATE_QUERY_BIG_TABLE.out.concatenated_tsv
     best_hit_query_sequences = best_hit_sequences_enabled ? EMIT_BEST_HIT_SEQUENCE_EVIDENCE.out.query_sequences : channel.empty()
     best_hit_selected_references = best_hit_sequences_enabled ? EMIT_BEST_HIT_SEQUENCE_EVIDENCE.out.selected_references : channel.empty()
     best_hit_placements = best_hit_sequences_enabled ? EMIT_BEST_HIT_SEQUENCE_EVIDENCE.out.best_hit_placements : channel.empty()
-    taxon_big_tables = params.experimental ? BUILD_TAXON_BIG_TABLE.out : channel.empty()
-    taxon_big_table = params.experimental ? CONCATENATE_TAXON_BIG_TABLE.out.concatenated_tsv : channel.empty()
+    taxon_big_tables = params.skip_big_tables ? channel.empty() : BUILD_TAXON_BIG_TABLE.out
+    taxon_big_table = params.skip_big_tables ? channel.empty() : CONCATENATE_TAXON_BIG_TABLE.out.concatenated_tsv
     experiment_blast = CONCATENATE_EXPERIMENT_BLAST_RESULTS.out.concatenated_tsv
     completed_results = ch_completed_results
-    sequence_flow = params.experimental ? BUILD_SEQUENCE_FLOW.out.sequence_flow : channel.empty()
+    sequence_flow = BUILD_SEQUENCE_FLOW.out.sequence_flow
     target_enrichment_report = TARGET_ENRICHMENT_REPORT.out.summary_tsv
     labkey_log = LIMS_INTEGRATION.out.upload_log
     final_labkey_log = LIMS_INTEGRATION.out.final_labkey_log
     labkey_uploads_done = LIMS_INTEGRATION.out.uploads_done
-    crumbs_queries = params.experimental ? CRUMBS_PROFILING.out.queries : channel.empty()
-    crumbs_taxa = params.experimental ? CRUMBS_PROFILING.out.taxa : channel.empty()
-    crumbs_bioboxes_profile = params.experimental ? CRUMBS_PROFILING.out.bioboxes_profile : channel.empty()
-    crumbs_qc = params.experimental ? CRUMBS_PROFILING.out.qc : channel.empty()
-    crumbs_krona = params.experimental ? CRUMBS_PROFILING.out.krona : channel.empty()
-    crumbs_kreport = params.experimental ? CRUMBS_PROFILING.out.kreport : channel.empty()
-    crumbs_taxburst = params.experimental ? CRUMBS_PROFILING.out.taxburst : channel.empty()
-    merged_crumbs_taxburst = params.experimental ? CRUMBS_PROFILING.out.merged_taxburst : channel.empty()
-    crumbs_profile_taxonomy = params.experimental ? CRUMBS_PROFILING.out.profile_taxonomy : channel.empty()
+    crumbs_queries = CRUMBS_PROFILING.out.queries
+    crumbs_taxa = CRUMBS_PROFILING.out.taxa
+    crumbs_bioboxes_profile = CRUMBS_PROFILING.out.bioboxes_profile
+    crumbs_qc = CRUMBS_PROFILING.out.qc
+    crumbs_krona = CRUMBS_PROFILING.out.krona
+    crumbs_kreport = CRUMBS_PROFILING.out.kreport
+    crumbs_taxburst = CRUMBS_PROFILING.out.taxburst
+    merged_crumbs_taxburst = CRUMBS_PROFILING.out.merged_taxburst
+    crumbs_profile_taxonomy = CRUMBS_PROFILING.out.profile_taxonomy
     multiqc_report = GENERATE_MULTIQC_REPORT.out.report
     multiqc_data = GENERATE_MULTIQC_REPORT.out.data
 }
