@@ -112,13 +112,35 @@ def test_preprocess_param_is_gone() -> None:
     assert "preprocess" not in NvdParams.model_fields
 
 
-def test_latest_params_schema_points_to_v3_5() -> None:
-    """The rolling schema link should expose the v3.5 parameter contract."""
+def test_latest_params_schema_points_to_v3_6() -> None:
+    """The rolling schema link should expose the v3.6 parameter contract."""
     latest_schema = ROOT / "schemas" / "nvd-params.latest.schema.json"
 
     assert latest_schema.is_symlink()
-    assert latest_schema.readlink() == Path("nvd-params.v3.5.0.schema.json")
-    assert SCHEMA_URL.endswith("/nvd-params.v3.5.0.schema.json")
+    assert latest_schema.readlink() == Path("nvd-params.v3.6.0.schema.json")
+    assert SCHEMA_URL.endswith("/nvd-params.v3.6.0.schema.json")
+
+
+def test_v3_6_schema_starts_as_the_v3_5_contract() -> None:
+    """Until the release bump, v3.6.0 only adds properties on top of v3.5.0."""
+    previous = json.loads(
+        (ROOT / "schemas" / "nvd-params.v3.5.0.schema.json").read_text(
+            encoding="utf-8",
+        ),
+    )
+    current = json.loads(
+        (ROOT / "schemas" / "nvd-params.v3.6.0.schema.json").read_text(
+            encoding="utf-8",
+        ),
+    )
+
+    assert current["$id"].endswith("/nvd-params.v3.6.0.schema.json")
+    for name, definition in previous["properties"].items():
+        assert current["properties"][name] == definition, name
+    current_without_id = {key: value for key, value in current.items() if key != "$id"}
+    previous_without_id = {key: value for key, value in previous.items() if key != "$id"}
+    current_without_id["properties"] = previous["properties"]
+    assert current_without_id == previous_without_id
 
 
 def test_v3_3_2_schema_corrects_only_the_read_entropy_default() -> None:
