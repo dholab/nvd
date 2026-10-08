@@ -99,6 +99,20 @@ jobs:
           echo "- [Contributor Guide](https://github.com/dholab/nvd/blob/${{ steps.version.outputs.tag }}/docs/contributor_guide.md)" >> release_notes.md
           echo "- [Main README](https://github.com/dholab/nvd/blob/${{ steps.version.outputs.tag }}/README.md)" >> release_notes.md
 
+      - name: Package the source tree
+        id: source
+        run: |
+          # git archive packages exactly the tracked files at the tagged commit,
+          # so the asset is the whole pipeline source rather than a handful of
+          # config files. The prefix unpacks into one versioned directory.
+          TAG="${{ steps.version.outputs.tag }}"
+          ARCHIVE="nvd-${TAG}.tar.gz"
+          git archive --format=tar.gz --prefix="nvd-${TAG}/" -o "${ARCHIVE}" "${TAG}"
+          sha256sum "${ARCHIVE}" > "${ARCHIVE}.sha256"
+          echo "archive=${ARCHIVE}" >> $GITHUB_OUTPUT
+          echo "Packaged $(tar -tzf "${ARCHIVE}" | wc -l) entries into ${ARCHIVE}"
+          cat "${ARCHIVE}.sha256"
+
       - name: Read pyproject.toml version
         id: pyproject_version
         run: |
@@ -127,10 +141,8 @@ jobs:
           prerelease: ${{ steps.version.outputs.prerelease }}
           generate_release_notes: false  # We're generating our own
           files: |
-            pixi.lock
-            uv.lock
-            pyproject.toml
-            nextflow.config
+            ${{ steps.source.outputs.archive }}
+            ${{ steps.source.outputs.archive }}.sha256
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
