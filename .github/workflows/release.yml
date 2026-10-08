@@ -78,11 +78,13 @@ jobs:
           echo "### Using this release with Nextflow:" >> release_notes.md
           echo "\`\`\`bash" >> release_notes.md
           echo "nextflow run dholab/nvd -r ${{ steps.version.outputs.tag }} \\" >> release_notes.md
-          echo "    --tools all \\" >> release_notes.md
           echo "    --samplesheet your_samples.csv \\" >> release_notes.md
           echo "    --experiment_id your_experiment_id \\" >> release_notes.md
           echo "    [other parameters...]" >> release_notes.md
           echo "\`\`\`" >> release_notes.md
+          echo "" >> release_notes.md
+          echo "### Source archive:" >> release_notes.md
+          echo "The release assets below carry the full source tree as \`nvd-${{ steps.version.outputs.tag }}.tar.gz\` with a SHA-256 checksum." >> release_notes.md
           echo "" >> release_notes.md
           echo "### Development setup:" >> release_notes.md
           echo "\`\`\`bash" >> release_notes.md
@@ -95,7 +97,7 @@ jobs:
           
           # Add documentation links
           echo "## Documentation" >> release_notes.md
-          echo "- [Example Commands](https://github.com/dholab/nvd/blob/${{ steps.version.outputs.tag }}/docs/example_commands.md)" >> release_notes.md
+          echo "- [NVD CLI Guide](https://github.com/dholab/nvd/blob/${{ steps.version.outputs.tag }}/docs/nvd_cli_guide.md)" >> release_notes.md
           echo "- [Contributor Guide](https://github.com/dholab/nvd/blob/${{ steps.version.outputs.tag }}/docs/contributor_guide.md)" >> release_notes.md
           echo "- [Main README](https://github.com/dholab/nvd/blob/${{ steps.version.outputs.tag }}/README.md)" >> release_notes.md
 
