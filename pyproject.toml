@@ -91,6 +91,7 @@ nvd = { path = ".", editable = true }
 
 [tool.pixi.feature.dev.dependencies]
 python = "3.12.*"
+insilicoseq = ">=2.0.1,<3"
 
 [tool.pixi.environments]
 dev = { features = ["dev"], solve-group = "default" }
