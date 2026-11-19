@@ -62,7 +62,7 @@ schema-check:
 
 # run the fast pytest suite only
 test:
-    pixi run -e dev pytest -m "not slow and not network"
+    pixi run -e dev fast-test
 
 # run one pytest file or node, e.g. just test-one lib/py_nvd/test_models.py
 test-one path:

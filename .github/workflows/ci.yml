@@ -121,7 +121,7 @@ jobs:
       - name: Run fast pytest suite
         env:
           COLUMNS: "200"
-        run: pixi run -e dev pytest -m "not slow and not network"
+        run: pixi run -e dev fast-test
 
   validate-nextflow-syntax:
     name: Validate Nextflow Config Syntax
