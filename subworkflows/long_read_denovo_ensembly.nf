@@ -98,7 +98,7 @@ workflow LONG_READ_DENOVO_ENSEMBLY {
             ineligible: true
         }
 
-        ch_no_contigs = ch_long_read_assembly_inputs.ineligible.map { meta, _reads, _profile_json, _length_histogram ->
+        ch_no_contigs_from_ineligibility = ch_long_read_assembly_inputs.ineligible.map { meta, _reads, _profile_json, _length_histogram ->
             log.debug "nvd.contig_route sample_id=${meta.id} platform=${meta.platform} outcome=no_contigs stage=long_read_ineligible"
             tuple(meta.id, meta.platform)
         }
@@ -118,6 +118,39 @@ workflow LONG_READ_DENOVO_ENSEMBLY {
         )
         ch_long_read_contigs = ASSEMBLE_WITH_SPADES.out
         ch_profiles_to_report = ASSEMBLE_WITH_SPADES.out
+
+        // Same recovery the experimental ensemble gets above: an ignored assembly
+        // failure emits nothing, so join the attempted samples against the contigs
+        // we actually got and route the unmatched ones to read-level BLAST.
+        ch_attempted_assemblies = ch_long_read_assembly_inputs.eligible.map {
+            meta, _reads, _profile_json, _length_histogram ->
+            tuple(meta.id, meta.platform)
+        }
+
+        ch_assemblies_by_outcome = ch_attempted_assemblies
+            .join(
+                ASSEMBLE_WITH_SPADES.out,
+                by: [0, 1],
+                remainder: true,
+                failOnDuplicate: true,
+            )
+            // Matched samples arrive as the full assembly tuple, unmatched ones as
+            // the key plus a null placeholder, so test the last element instead of
+            // destructuring tuples of two different sizes.
+            .branch { assembly_outcome ->
+                produced_output: assembly_outcome.last() != null
+                produced_nothing: true
+            }
+
+        ch_no_contigs_from_assembly_failure = ch_assemblies_by_outcome.produced_nothing.map { assembly_outcome ->
+            def sample_id = assembly_outcome[0]
+            def platform = assembly_outcome[1]
+            log.warn "Assembly produced no output for sample ${sample_id}; falling back to read-level BLAST queries."
+            log.debug "nvd.contig_route sample_id=${sample_id} platform=${platform} outcome=no_contigs stage=assembly_failed"
+            tuple(sample_id, platform)
+        }
+
+        ch_no_contigs = ch_no_contigs_from_ineligibility.mix(ch_no_contigs_from_assembly_failure)
     }
 
     PROFILE_LONG_READ_ASSEMBLY_REPORT(ch_profiles_to_report)
