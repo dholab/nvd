@@ -89,10 +89,15 @@ def assert_detections_agree_with_the_full_size_run(
 # Both were simulated from the exact accessions in mini_virus_reference.fasta,
 # which holds complete genomes, so reads from anywhere in a genome can be
 # detected rather than only those overlapping a slice.
+# Committed to the repository rather than downloaded or generated on demand, so
+# the end-to-end test runs offline with no network and no build step. They are
+# ~11.2 MB of the repository, which buys the only shotgun metagenomic coverage
+# in the suite. The builder stays available for regeneration, and the pinned
+# checksums below now verify the committed bytes rather than a fresh build.
 SYNTHETIC_FIXTURE_DIR = Path(
     os.environ.get(
         "NVD_SYNTHETIC_FIXTURE_DIR",
-        ROOT / ".scratch" / "e2e-bundle" / "synthetic",
+        DATA,
     ),
 )
 SYNTHETIC_BUILDER = ROOT / "tests" / "scripts" / "build_synthetic_metagenomes.py"
@@ -663,13 +668,14 @@ def synthetic_fixtures_are_current() -> bool:
 
 
 def ensure_synthetic_metagenomes() -> None:
-    """Build the synthetic wastewater fixtures unless they are already cached.
+    """Verify the committed synthetic fixtures, rebuilding only if they are absent.
 
-    These are generated rather than committed, which keeps roughly 11 MB of
-    reads out of the repository. The builder is deterministic, so rebuilding
-    reproduces the pinned checksums byte for byte and the cache can be thrown
-    away at any time. It needs network access to fetch the RefSeq genomes it
-    simulates from, which this test already has.
+    Normally this returns immediately: the fixtures are committed to
+    ``tests/data`` and match their pinned checksums, so the end-to-end test
+    needs neither the network nor a build step. The rebuild path remains for a
+    regeneration or a custom ``NVD_SYNTHETIC_FIXTURE_DIR``, and it does need
+    network access to fetch the RefSeq genomes it simulates from. The builder is
+    deterministic, so a rebuild reproduces the pinned checksums byte for byte.
     """
     if synthetic_fixtures_are_current():
         return
@@ -1766,6 +1772,24 @@ def test_assert_expected_taxa_detected_requires_each_declared_taxon() -> None:
             sample_id="absent_sample",
             expected_taxa=orf_only,
         )
+
+
+def test_synthetic_fixtures_are_committed_so_the_e2e_needs_no_build() -> None:
+    """The fixtures must ship in the repository, so the e2e can run offline.
+
+    This is the test that keeps the end-to-end test offline. If the fixtures
+    ever stop being committed, or one drifts from its pinned checksum, the e2e
+    would quietly fall back to the builder, which needs the network to fetch
+    RefSeq genomes.
+    """
+    assert SYNTHETIC_FIXTURE_DIR == DATA, (
+        "The synthetic fixtures must default to the committed copies in tests/data."
+    )
+    for name in SYNTHETIC_FIXTURE_SHA256:
+        assert (DATA / name).is_file(), f"{name} is not committed to tests/data"
+    assert synthetic_fixtures_are_current(), (
+        "A committed synthetic fixture does not match its pinned sha256."
+    )
 
 
 def test_synthetic_fixtures_are_current_detects_a_corrupt_cache(

@@ -1,0 +1,254 @@
+{
+  "cpus": 4,
+  "description": "Synthetic wastewater metagenome fixtures for the NVD end-to-end test, simulated with InSilicoSeq from published RefSeq genomes.",
+  "samples": [
+    {
+      "complexity": "low",
+      "composition": [
+        {
+          "accession": "NC_000913.3",
+          "expected_coverage": 1.952,
+          "genome_length": 4641652,
+          "read_fraction": 0.6,
+          "reads": 60000,
+          "role": "bacterium",
+          "taxon_name": "Escherichia coli K-12 MG1655"
+        },
+        {
+          "accession": "NC_003630.1",
+          "expected_coverage": 380.053,
+          "genome_length": 6357,
+          "read_fraction": 0.16,
+          "reads": 16000,
+          "role": "plant_virus",
+          "taxon_name": "Pepper mild mottle virus"
+        },
+        {
+          "accession": "NC_024711.1",
+          "expected_coverage": 18.668,
+          "genome_length": 97065,
+          "read_fraction": 0.12,
+          "reads": 12000,
+          "role": "phage",
+          "taxon_name": "Carjivirus communis (crAssphage)"
+        },
+        {
+          "accession": "NC_005336.1",
+          "expected_coverage": 6.473,
+          "genome_length": 139962,
+          "read_fraction": 0.06,
+          "reads": 6000,
+          "role": "target",
+          "taxon_name": "Orf virus"
+        },
+        {
+          "accession": "NC_012920.1",
+          "expected_coverage": 54.68,
+          "genome_length": 16569,
+          "read_fraction": 0.06,
+          "reads": 6000,
+          "role": "host",
+          "taxon_name": "Homo sapiens mitochondrion"
+        }
+      ],
+      "description": "Low-complexity synthetic wastewater: five genomes with Orf virus at about 6x depth, so assembly and contig BLAST are exercised.",
+      "error_model": "NovaSeq",
+      "files": [
+        {
+          "bytes": 2827649,
+          "mate": "R1",
+          "name": "synthetic_ww_lowcx_R1.fastq.gz",
+          "reads": 50000,
+          "sha256": "f5266f2a847596c748f24756aac5044103088859a2da6c9f578600a8d42118f8",
+          "url": null
+        },
+        {
+          "bytes": 2892035,
+          "mate": "R2",
+          "name": "synthetic_ww_lowcx_R2.fastq.gz",
+          "reads": 50000,
+          "sha256": "dc33caffcd6597898dc98fb96a9a0ff8caa3142d06c749b5b64d5a6eb64b5fc3",
+          "url": null
+        }
+      ],
+      "method": "insilicoseq",
+      "platform": "illumina",
+      "read_length": 151,
+      "sample_id": "synthetic_ww_lowcx",
+      "seed": 42,
+      "targets": [
+        {
+          "accession": "NC_005336.1",
+          "expected_coverage": 6.473,
+          "read_fraction": 0.06,
+          "reads": 6000,
+          "taxid": 10258,
+          "taxon_name": "Orf virus"
+        }
+      ],
+      "total_reads": 100000
+    },
+    {
+      "complexity": "high",
+      "composition": [
+        {
+          "accession": "NC_000913.3",
+          "expected_coverage": 1.301,
+          "genome_length": 4641652,
+          "read_fraction": 0.365631,
+          "reads": 40000,
+          "role": "bacterium",
+          "taxon_name": "Escherichia coli K-12 MG1655"
+        },
+        {
+          "accession": "NC_002516.2",
+          "expected_coverage": 0.723,
+          "genome_length": 6264404,
+          "read_fraction": 0.274223,
+          "reads": 30000,
+          "role": "bacterium",
+          "taxon_name": "Pseudomonas aeruginosa PAO1"
+        },
+        {
+          "accession": "NC_003630.1",
+          "expected_coverage": 285.04,
+          "genome_length": 6357,
+          "read_fraction": 0.109689,
+          "reads": 12000,
+          "role": "plant_virus",
+          "taxon_name": "Pepper mild mottle virus"
+        },
+        {
+          "accession": "NC_024711.1",
+          "expected_coverage": 12.445,
+          "genome_length": 97065,
+          "read_fraction": 0.073126,
+          "reads": 8000,
+          "role": "phage",
+          "taxon_name": "Carjivirus communis (crAssphage)"
+        },
+        {
+          "accession": "NC_001367.1",
+          "expected_coverage": 141.673,
+          "genome_length": 6395,
+          "read_fraction": 0.054845,
+          "reads": 6000,
+          "role": "plant_virus",
+          "taxon_name": "Tobacco mosaic virus"
+        },
+        {
+          "accession": "NC_039477.1",
+          "expected_coverage": 59.865,
+          "genome_length": 7567,
+          "read_fraction": 0.027422,
+          "reads": 3000,
+          "role": "enteric_virus",
+          "taxon_name": "Norovirus GII"
+        },
+        {
+          "accession": "NC_012920.1",
+          "expected_coverage": 27.34,
+          "genome_length": 16569,
+          "read_fraction": 0.027422,
+          "reads": 3000,
+          "role": "host",
+          "taxon_name": "Homo sapiens mitochondrion"
+        },
+        {
+          "accession": "NC_001405.1",
+          "expected_coverage": 10.504,
+          "genome_length": 35937,
+          "read_fraction": 0.022852,
+          "reads": 2500,
+          "role": "enteric_virus",
+          "taxon_name": "Human adenovirus C"
+        },
+        {
+          "accession": "NC_001943.1",
+          "expected_coverage": 44.327,
+          "genome_length": 6813,
+          "read_fraction": 0.018282,
+          "reads": 2000,
+          "role": "enteric_virus",
+          "taxon_name": "Human astrovirus"
+        },
+        {
+          "accession": "NC_012800.1",
+          "expected_coverage": 39.57,
+          "genome_length": 7632,
+          "read_fraction": 0.018282,
+          "reads": 2000,
+          "role": "enteric_virus",
+          "taxon_name": "Cosavirus A"
+        },
+        {
+          "accession": "NC_005336.1",
+          "expected_coverage": 0.539,
+          "genome_length": 139962,
+          "read_fraction": 0.00457,
+          "reads": 500,
+          "role": "target",
+          "taxon_name": "Orf virus"
+        },
+        {
+          "accession": "NC_063383.1",
+          "expected_coverage": 0.306,
+          "genome_length": 197209,
+          "read_fraction": 0.003656,
+          "reads": 400,
+          "role": "target",
+          "taxon_name": "Monkeypox virus"
+        }
+      ],
+      "description": "High-complexity synthetic wastewater: twelve genomes modelled on a real NovaSeq X sewage run, with Orf virus and monkeypox at under 0.5% of reads, the level real poxviruses appear at.",
+      "error_model": "NovaSeq",
+      "files": [
+        {
+          "bytes": 3000024,
+          "mate": "R1",
+          "name": "synthetic_ww_highcx_R1.fastq.gz",
+          "reads": 54700,
+          "sha256": "ecef42aada5f84328f0069b91f3e01d5248d2c03e3a4ee7a46dade09b3222156",
+          "url": null
+        },
+        {
+          "bytes": 3071409,
+          "mate": "R2",
+          "name": "synthetic_ww_highcx_R2.fastq.gz",
+          "reads": 54700,
+          "sha256": "656e61b7b1d8041807a2cc9ec15ce530c40f7898e23691822a85c2a9d336eacf",
+          "url": null
+        }
+      ],
+      "method": "insilicoseq",
+      "platform": "illumina",
+      "read_length": 151,
+      "sample_id": "synthetic_ww_highcx",
+      "seed": 42,
+      "targets": [
+        {
+          "accession": "NC_005336.1",
+          "expected_coverage": 0.539,
+          "read_fraction": 0.00457,
+          "reads": 500,
+          "taxid": 10258,
+          "taxon_name": "Orf virus"
+        },
+        {
+          "accession": "NC_063383.1",
+          "expected_coverage": 0.306,
+          "read_fraction": 0.003656,
+          "reads": 400,
+          "taxid": 10244,
+          "taxon_name": "Monkeypox virus"
+        }
+      ],
+      "total_reads": 109400
+    }
+  ],
+  "seed": 42,
+  "tool_versions": {
+    "insilicoseq": "iss version 2.0.1",
+    "numpy": "2.5.2"
+  }
+}
