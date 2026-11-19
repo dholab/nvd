@@ -137,6 +137,38 @@ class NvdUtils {
     }
 
     /**
+     * A run-end warning when tasks failed and the pipeline ignored the failure.
+     *
+     * Nearly every NVD process ends its retry budget at `errorStrategy 'ignore'`,
+     * which is the right policy: a dead FastQC or an unreachable Slack should not
+     * kill a six-hour run. The cost is that Nextflow still reports the run as a
+     * success, so the failure is invisible unless someone opens the report.
+     *
+     * missingSampleIds covers samples that vanished. This covers the rest: a
+     * failure that loses a run-level product rather than a sample, which is what
+     * silently cost the MultiQC report on the scheduled runs and which a
+     * per-sample reconciliation cannot see.
+     *
+     * Returns null when nothing was ignored, which is the normal case.
+     */
+    public static String describeIgnoredFailures(
+        int ignored_task_count,
+        int succeeded_task_count,
+        Object report_file_path
+    ) {
+        if (ignored_task_count < 1) {
+            return null
+        }
+        def task_word = ignored_task_count == 1 ? 'task' : 'tasks'
+        return "nvd.ignored_failures ${ignored_task_count} ${task_word} failed and the " +
+            "failure was ignored (${succeeded_task_count} succeeded). Nextflow reports this " +
+            "run as a success, so these losses are easy to miss: an ignored task emits " +
+            "nothing, which can mean a missing report, a missing QC file, or a sample " +
+            "absent from the results. Open ${report_file_path} and sort by status to see " +
+            "which tasks failed before trusting the outputs."
+    }
+
+    /**
      * The index DEACON_FILTER_CONTIGS screens with: the step-one index, or the
      * committed empty index when skip_contig_filter is set.
      */
