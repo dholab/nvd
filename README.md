@@ -493,9 +493,15 @@ Add `--only synthetic_ww_lowcx` to build a single sample. Reference genomes are
 downloaded from NCBI and cached under `--cache-dir`, so a second run does no
 network I/O.
 
-Reproducibility rests on three things, all enforced by the builder:
+Reproducibility rests on four things, all enforced by the builder:
 
 - **Seed 42** is passed to InSilicoSeq, which fixes the reads.
+- **The worker count is fixed at 4.** InSilicoSeq splits a run into one chunk
+  per CPU and seeds each worker from the base seed, so the worker count is part
+  of the random stream: the same seed at a different `--cpus` produces different
+  reads. It is therefore a reproducibility parameter rather than a performance
+  knob. It is recorded in the manifest, and `--cpus` should be left alone when
+  reproducing a published checksum.
 - **Compression is normalised.** A gzip header carries both a modification time
   and the original filename, either of which changes the compressed bytes while
   the reads stay identical. The builder therefore writes plain FASTQ from
@@ -523,7 +529,9 @@ PY
 ```
 
 Tooling is pinned in the `dev` Pixi environment: `insilicoseq` 2.0.1, error
-model `NovaSeq`, 151 bp reads. Note that InSilicoSeq's `--readcount_file` counts
+model `NovaSeq`, 151 bp reads. The manifest also records the NumPy version,
+because NumPy supplies the random stream InSilicoSeq draws from and an upgrade
+can change the reads even when the InSilicoSeq version has not moved. Note that InSilicoSeq's `--readcount_file` counts
 **total reads**, not pairs, so `6000` means 3,000 pairs.
 
 #### Ground truth

@@ -82,6 +82,14 @@ DEFAULT_SEED = 42
 
 #: InSilicoSeq error model. The real run this is modelled on was NovaSeq X.
 DEFAULT_ERROR_MODEL = "NovaSeq"
+# InSilicoSeq splits a run into one chunk per CPU and seeds each worker from the
+# base seed, so the worker count is part of the random stream: the same seed at
+# a different --cpus produces different reads. That makes this a reproducibility
+# parameter rather than a performance knob, which is why it has a name, gets
+# recorded in the manifest, and must match whatever a published checksum was
+# built with. Verified: two runs agree at a fixed value, and cpus=1 and cpus=4
+# disagree with each other.
+REPRODUCIBLE_CPUS = 4
 
 #: Read length the NovaSeq error model emits, used for the coverage arithmetic.
 NOVASEQ_READ_LENGTH = 151
@@ -452,7 +460,7 @@ def build_iss_command(  # noqa: PLR0913
     *,
     seed: int = DEFAULT_SEED,
     error_model: str = DEFAULT_ERROR_MODEL,
-    cpus: int = 4,
+    cpus: int = REPRODUCIBLE_CPUS,
 ) -> list[str]:
     """Return the InSilicoSeq command line, with every path made absolute.
 
@@ -487,7 +495,7 @@ def simulate_community_reads(  # noqa: PLR0913
     *,
     seed: int = DEFAULT_SEED,
     error_model: str = DEFAULT_ERROR_MODEL,
-    cpus: int = 4,
+    cpus: int = REPRODUCIBLE_CPUS,
 ) -> tuple[Path, Path]:
     """Run InSilicoSeq and return the plain R1/R2 FASTQ paths.
 
@@ -578,6 +586,14 @@ def count_fastq_reads(path: Path) -> int:
 def tool_versions() -> dict[str, str]:
     """Record the versions that produced the reads, for the manifest."""
     versions: dict[str, str] = {}
+    # numpy supplies the random stream iss draws from, so a numpy upgrade can
+    # change the reads even when the iss version is unchanged. Record it.
+    try:
+        import numpy
+    except ImportError:  # pragma: no cover - numpy ships with insilicoseq
+        versions["numpy"] = "unknown"
+    else:
+        versions["numpy"] = numpy.__version__
     for name, command in (("insilicoseq", ["iss", "--version"]),):
         try:
             completed = subprocess.run(  # noqa: S603
@@ -607,7 +623,7 @@ def build_community(  # noqa: PLR0913
     out_dir: Path,
     work_dir: Path,
     seed: int = DEFAULT_SEED,
-    cpus: int = 4,
+    cpus: int = REPRODUCIBLE_CPUS,
 ) -> dict[str, Any]:
     """Simulate one community and return its manifest entry."""
     accessions = sorted(community.read_counts)
@@ -724,7 +740,15 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="Scratch space for multi-FASTAs and uncompressed reads.",
     )
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
-    parser.add_argument("--cpus", type=int, default=4)
+    parser.add_argument(
+        "--cpus",
+        type=int,
+        default=REPRODUCIBLE_CPUS,
+        help=(
+            "Simulation workers. This changes the generated reads, so leave it "
+            "alone to reproduce a published checksum."
+        ),
+    )
     parser.add_argument(
         "--only",
         action="append",
@@ -766,6 +790,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "test, simulated with InSilicoSeq from published RefSeq genomes."
         ),
         "seed": args.seed,
+        "cpus": args.cpus,
         "tool_versions": tool_versions(),
         "samples": entries,
     }
