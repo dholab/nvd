@@ -97,9 +97,14 @@ insilicoseq = ">=2.0.1,<3"
 dev = { features = ["dev"], solve-group = "default" }
 
 [tool.pixi.tasks]
-e2e-test = "NVD_E2E_SHOW_PROGRESS=1 pytest tests/test_nextflow_integration.py -m 'slow and network and not labkey' -q -s"
-e2e-test-ci = "pytest tests/test_nextflow_integration.py -m 'slow and network and not labkey' -q"
-e2e-labkey-test = "NVD_E2E_SHOW_PROGRESS=1 pytest tests/test_nextflow_integration.py -m 'slow and network and labkey' -q -s"
+# "-n 0" turns off the parallelism that pytest's addopts switches on for the
+# fast suite. These end-to-end runs each drive a whole Nextflow pipeline over
+# downloaded SRA data, so they are bound by network and pipeline time rather
+# than by pytest, and the two progress-streaming variants need "-s", which
+# xdist does not support.
+e2e-test = "NVD_E2E_SHOW_PROGRESS=1 pytest tests/test_nextflow_integration.py -m 'slow and network and not labkey' -q -s -n 0"
+e2e-test-ci = "pytest tests/test_nextflow_integration.py -m 'slow and network and not labkey' -q -n 0"
+e2e-labkey-test = "NVD_E2E_SHOW_PROGRESS=1 pytest tests/test_nextflow_integration.py -m 'slow and network and labkey' -q -s -n 0"
 
 [dependency-groups]
 dev = [
@@ -111,6 +116,7 @@ dev = [
   "pre-commit>=4.5.1",
   "pyarrow>=19.0.1",
   "pytest>=8.3.5",
+  "pytest-xdist>=3.6.1",
   "ruff>=0.15.0",
   "tox>=4.24.2",
   "ty>=0.0.15",
@@ -150,6 +156,15 @@ ignore = ["D", "S101", "E501", "PTH", "TD003", "G004", "TRY300"]
 [tool.pytest.ini_options]
 pythonpath = ["bin", "lib"]
 testpaths = ["lib/py_nvd", "bin", "tests"]
+# Most of this suite spawns a real Nextflow/JVM process or a MultiQC render per
+# test, so it waits on subprocess startup far more than it uses CPU. Running
+# eight tests at once turns that waiting into overlap: measured 5m10s -> 1m09s.
+# Eight is deliberate rather than "auto": at sixteen workers the suite saves
+# only four more seconds, and the extra CPU contention makes the timing-based
+# test_concurrent_readers_do_not_block flake. Eight also leaves most of a
+# shared host's cores for other people. Override per-run with "-n 0" (serial,
+# useful when debugging a failure) or "-n <N>".
+addopts = ["-n", "8"]
 markers = [
   "slow: marks tests as slow (deselect with '-m \"not slow\"')",
   "network: marks tests as requiring network access (deselect with '-m \"not network\"')",

@@ -15,7 +15,40 @@ from py_nvd.paths import (
 if TYPE_CHECKING:
     from pathlib import Path
 
-    import pytest
+import pytest
+
+# Every environment variable that path resolution consults. A developer machine
+# with a real NVD install exports several of these, and they would otherwise
+# override the values a test monkeypatches in.
+PATH_RESOLUTION_ENV_VARS = (
+    "NVD_CONFIG",
+    "NVD_CONFIG_DIR",
+    "NVD_PRESET_STORE",
+    "NVD_STATE_DIR",
+    "NVD_TAXONOMY_DB",
+)
+
+
+@pytest.fixture(autouse=True)
+def isolate_path_resolution_from_the_developer_machine(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Make these tests depend only on what each one sets for itself.
+
+    Two things on a real machine leak into path resolution. The first is the
+    environment: a developer who actually runs NVD exports NVD_TAXONOMY_DB and
+    friends, which outrank a monkeypatched NVD_CONFIG_DIR. The second is the
+    legacy home directory: ``get_config_path`` falls back to
+    ``~/.nvd/user.config`` whenever that file exists and the configured one does
+    not, so anyone upgraded from an older NVD gets the legacy path instead of
+    the one under test. Pointing the legacy home at an empty temporary
+    directory switches that fallback off without disabling the code path, which
+    ``test_legacy_config_is_used_when_no_configured_file_exists`` still covers.
+    """
+    for variable_name in PATH_RESOLUTION_ENV_VARS:
+        monkeypatch.delenv(variable_name, raising=False)
+    monkeypatch.setattr("py_nvd.paths.LEGACY_NVD_HOME", tmp_path / "absent-legacy-home")
 
 
 def test_config_dir_env_sets_config_root(
@@ -23,8 +56,6 @@ def test_config_dir_env_sets_config_root(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("NVD_CONFIG_DIR", str(tmp_path))
-    monkeypatch.delenv("NVD_CONFIG", raising=False)
-    monkeypatch.delenv("NVD_PRESET_STORE", raising=False)
 
     assert get_config_dir() == tmp_path
     assert get_config_path() == tmp_path / "user.config"
@@ -96,3 +127,31 @@ def test_taxonomy_env_wins_over_config_dir(
     monkeypatch.setenv("NVD_CONFIG_DIR", str(tmp_path / "config"))
     monkeypatch.setenv("NVD_TAXONOMY_DB", str(taxonomy_dir))
     assert get_taxdump_dir() == taxonomy_dir
+
+
+def test_legacy_config_is_used_when_no_configured_file_exists(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An upgraded install keeps reading ~/.nvd/user.config until it moves.
+
+    This is the fallback that the autouse fixture switches off for every other
+    test in this file, so it is pinned here explicitly.
+    """
+    legacy_home = tmp_path / "legacy-home"
+    legacy_home.mkdir()
+    legacy_config = legacy_home / "user.config"
+    legacy_config.write_text("params {}\n", encoding="utf-8")
+    monkeypatch.setattr("py_nvd.paths.LEGACY_NVD_HOME", legacy_home)
+
+    configured_root = tmp_path / "config"
+    monkeypatch.setenv("NVD_CONFIG_DIR", str(configured_root))
+
+    assert get_config_path() == legacy_config
+
+    # Once the configured file exists it wins, so the fallback is not sticky.
+    # The directory is already there: get_config_dir() creates it as a side
+    # effect of the call above, which is why exist_ok is needed here.
+    configured_root.mkdir(exist_ok=True)
+    (configured_root / "user.config").write_text("params {}\n", encoding="utf-8")
+    assert get_config_path() == configured_root / "user.config"
