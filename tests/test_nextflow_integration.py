@@ -15,6 +15,7 @@ from typing import Any
 
 import pytest
 
+from tests.e2e_parity import find_parity_violations, load_parity, summarize_detections
 from tests.scripts.build_synthetic_metagenomes import REPRODUCIBLE_CPUS
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -38,6 +39,45 @@ WHO_RISK_GROUP_BY_ORGANISM = {
     "Orf virus": "RG2",
     "Monkeypox virus": "RG3",
 }
+
+
+def assert_detections_agree_with_the_full_size_run(
+    experiment_rows: list[dict[str, str]],
+    selected_sra_runs: list[dict[str, Any]],
+) -> None:
+    """Check the reduced samplesheet still detects what all five runs detected.
+
+    The samplesheet keeps one SRA run per distinct code path rather than the
+    original five. The per-sample assertions above prove each remaining run
+    finds the organism it must; this proves the reduction did not *add* a
+    detection, which would mean the pipeline behaves differently on the smaller
+    input. Detecting less is expected and allowed -- see tests/e2e_parity.py.
+
+    Only the SRA rows are compared. The synthetic metagenomes have no
+    counterpart in the recording (they were added after it) and carry their own
+    assertions, so including them would be an unmapped-sample error.
+    """
+    recorded_detections = load_parity()["detections"]
+    sra_sample_ids = {str(run_info["sample_id"]) for run_info in selected_sra_runs}
+    observed_detections = {
+        sample_id: detection
+        for sample_id, detection in summarize_detections(experiment_rows).items()
+        if sample_id in sra_sample_ids
+    }
+    # The reduction kept the samplesheet's sample ids, so the recording is keyed
+    # by the same names and the mapping is the identity.
+    sample_map = {sample_id: sample_id for sample_id in sra_sample_ids}
+
+    errors, warnings = find_parity_violations(
+        observed_detections,
+        recorded_detections,
+        sample_map,
+    )
+    for warning in warnings:
+        print(f"PARITY WARNING: {warning}")  # noqa: T201
+    assert not errors, "Detections disagree with the recorded full-size run:\n" + "\n".join(
+        errors,
+    )
 
 # The synthetic wastewater metagenomes. Unlike the SRA rows these are built
 # locally rather than downloaded, so they cost no network transfer, and unlike
@@ -1527,6 +1567,11 @@ def test_mini_sra_viral_pipeline_completes() -> None:
                 sample_id=str(sample["sample_id"]),
                 expected_taxa=sample["expected_taxa"],
             )
+
+        assert_detections_agree_with_the_full_size_run(
+            experiment_rows,
+            selected_sra_runs,
+        )
 
         for organism in expected_organism_names(selected_sra_runs):
             assert organism in final_text

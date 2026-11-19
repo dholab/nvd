@@ -1,0 +1,70 @@
+{
+  "detections": {
+    "monkeypox_pt1020_2026": {
+      "references": [
+        "NC_003310.1",
+        "NC_005336.1",
+        "NC_063383.1"
+      ],
+      "taxids": [
+        "10244"
+      ]
+    },
+    "nigerian_orf_srr38321624": {
+      "references": [
+        "NC_003310.1",
+        "NC_005336.1",
+        "NC_063383.1"
+      ],
+      "taxids": [
+        "10240",
+        "10244",
+        "10258"
+      ]
+    },
+    "orf_virus_hs_pt001_2025": {
+      "references": [
+        "NC_003310.1",
+        "NC_005336.1",
+        "NC_063383.1"
+      ],
+      "taxids": [
+        "10244",
+        "10258"
+      ]
+    },
+    "orf_virus_ov_pt001_2024": {
+      "references": [
+        "NC_003310.1",
+        "NC_005336.1",
+        "NC_063383.1"
+      ],
+      "taxids": [
+        "10258"
+      ]
+    },
+    "sample_ont_srr27720442": {
+      "references": [
+        "NC_003310.1",
+        "NC_005336.1",
+        "NC_063383.1"
+      ],
+      "taxids": [
+        "10258"
+      ]
+    }
+  },
+  "recorded_from": {
+    "blast_result_rows": 32862,
+    "git_commit": "6b4cf1aed48499acc8722efa349ef54cad5c1050",
+    "recorded_at": "2026-11-19T18:05:58Z",
+    "results_root": "/home/wkgardner/nvd/.e2e/runs/20260924T214123Z-pid315941/results/nvd",
+    "samples": [
+      "monkeypox_pt1020_2026",
+      "nigerian_orf_srr38321624",
+      "orf_virus_hs_pt001_2025",
+      "orf_virus_ov_pt001_2024",
+      "sample_ont_srr27720442"
+    ]
+  }
+}
