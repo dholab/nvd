@@ -22,6 +22,10 @@ ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "tests" / "data"
 MANIFEST = DATA / "reference.manifest.json"
 SAMPLESHEET = DATA / "integration_sra_samplesheet.csv"
+# Provenance for the committed downsamples that stand in for the SRA rows when
+# the e2e runs offline, which is the default. Keyed on the same sample ids as
+# SAMPLESHEET, so switching between the two changes only where reads come from.
+OFFLINE_SRA_MANIFEST_PATH = DATA / "e2e_sra_fixtures.manifest.json"
 DEACON_INDEX = DATA / "mini_virus_deacon.k31w1.idx"
 BLAST_DB_PREFIX = "mini_virus_blast"
 BLAST_DB = DATA
@@ -56,7 +60,28 @@ def assert_detections_agree_with_the_full_size_run(
     Only the SRA rows are compared. The synthetic metagenomes have no
     counterpart in the recording (they were added after it) and carry their own
     assertions, so including them would be an unmapped-sample error.
+
+    This runs only in the full tier, because only there are the reads the same
+    ones the recording was made from. The offline tier reads *downsampled*
+    copies, and fewer reads mean less assembly, which pushes more sequences onto
+    the read-level BLAST route where short spurious hits surface. A measured
+    example: the offline ONT fixture reports taxid 10244 on six rows out of 716,
+    every one a 31 bp alignment against a conserved poxvirus region, which the
+    full run does not report. Raising that fixture's fraction 2.5x did not
+    remove it, so it is a property of comparing unlike inputs rather than
+    something a bigger fixture fixes. Comparing a downsampled run against a
+    full-read recording would therefore fail for a reason that is not a
+    behaviour change, so the comparison belongs where it is like-for-like.
     """
+    if not integration_sra_downloads_enabled():
+        print(  # noqa: T201
+            "PARITY SKIPPED: the offline tier reads downsampled fixtures, which "
+            "are not the reads the recording was made from. Run `just e2e-full` "
+            "to compare against it.",
+            flush=True,
+        )
+        return
+
     recorded_detections = load_parity()["detections"]
     sra_sample_ids = {str(run_info["sample_id"]) for run_info in selected_sra_runs}
     observed_detections = {
@@ -614,6 +639,16 @@ def integration_experimental_enabled() -> bool:
     return os.environ.get("NVD_INTEGRATION_EXPERIMENTAL") == "1"
 
 
+def integration_sra_downloads_enabled() -> bool:
+    """Whether to fetch the virus samples from SRA instead of using the fixtures.
+
+    Off by default, which is what makes the e2e offline. The full tier turns it
+    on so the FETCH_FASTQ/sracha download path stays covered; nothing else
+    exercises it, because every other row is a local file.
+    """
+    return os.environ.get("NVD_E2E_USE_SRA") == "1"
+
+
 def integration_skip_assembly_enabled() -> bool:
     return os.environ.get("NVD_INTEGRATION_SKIP_ASSEMBLY") == "1"
 
@@ -719,7 +754,10 @@ def local_sample_row(sample: dict[str, Any], local_fastq_dir: Path) -> dict[str,
     return {
         "sample_id": str(sample["sample_id"]),
         "srr": "",
-        "platform": "illumina",
+        # Defaults to illumina for the local fixtures that predate this
+        # argument. The offline SRA rows set it explicitly, and the ONT one must
+        # keep its platform or the long-read route would never be exercised.
+        "platform": str(sample.get("platform", "illumina")),
         "fastq1": str(fastq1.resolve()) if isinstance(fastq1, Path) else "",
         "fastq2": str(fastq2.resolve()) if isinstance(fastq2, Path) else "",
         "fastq1_glob": str(local_fastq_dir / fastq1_glob)
@@ -731,8 +769,41 @@ def local_sample_row(sample: dict[str, Any], local_fastq_dir: Path) -> dict[str,
     }
 
 
+def load_offline_sra_manifest() -> dict[str, Any]:
+    """Read the provenance manifest for the committed SRA downsamples."""
+    with OFFLINE_SRA_MANIFEST_PATH.open(encoding="utf-8") as handle:
+        return json.load(handle)
+
+
+def offline_sra_sample_rows() -> list[dict[str, Any]]:
+    """Build local-FASTQ rows from the committed downsamples of the SRA runs.
+
+    Sample ids match the full runs', so the parity comparison stays an identity
+    map and every downstream assertion keeps working; only the file names carry
+    the _s42 provenance marker. See the manifest's maintainer_note.
+    """
+    rows: list[dict[str, Any]] = []
+    for fixture in load_offline_sra_manifest()["fixtures"]:
+        file_names = [file_entry["name"] for file_entry in fixture["files"]]
+        row: dict[str, Any] = {
+            "sample_id": fixture["sample_id"],
+            "platform": fixture["platform"],
+            "fastq1": DATA / file_names[0],
+        }
+        if len(file_names) > 1:
+            row["fastq2"] = DATA / file_names[1]
+        rows.append(row)
+    return rows
+
+
 def write_augmented_samplesheet(run_dir: Path) -> Path:
-    """Write the e2e samplesheet with portable SRA rows plus absolute local FASTQs."""
+    """Write the e2e samplesheet: local FASTQ rows, or SRA accessions on request.
+
+    By default every row points at a committed fixture, so the run needs no
+    network. With NVD_E2E_USE_SRA=1 the three virus samples become SRA
+    accession rows instead, which is what keeps the FETCH_FASTQ/sracha download
+    path under test in the full tier.
+    """
     ensure_synthetic_metagenomes()
     local_fastq_dir = run_dir / "local_fastqs"
     local_fastq_dir.mkdir(parents=True, exist_ok=True)
@@ -760,10 +831,16 @@ def write_augmented_samplesheet(run_dir: Path) -> Path:
         "fastq2_glob",
     ]
     rows: list[dict[str, str]] = []
-    with SAMPLESHEET.open(newline="", encoding="utf-8") as handle:
+    if integration_sra_downloads_enabled():
+        with SAMPLESHEET.open(newline="", encoding="utf-8") as handle:
+            rows.extend(
+                {column: row.get(column, "") for column in fieldnames}
+                for row in csv.DictReader(handle)
+            )
+    else:
         rows.extend(
-            {column: row.get(column, "") for column in fieldnames}
-            for row in csv.DictReader(handle)
+            local_sample_row(sample, local_fastq_dir)
+            for sample in offline_sra_sample_rows()
         )
 
     rows.extend(
@@ -1772,6 +1849,81 @@ def test_assert_expected_taxa_detected_requires_each_declared_taxon() -> None:
             sample_id="absent_sample",
             expected_taxa=orf_only,
         )
+
+
+def test_offline_sra_rows_point_at_committed_files_and_keep_their_platform() -> None:
+    """The offline rows must be local files, and the ONT row must stay ONT.
+
+    local_sample_row used to hardcode illumina, which would have processed the
+    ONT fixture as a short-read sample and quietly skipped the long-read
+    assembly route the fixture exists to cover.
+    """
+    rows = offline_sra_sample_rows()
+    assert len(rows) == len(load_offline_sra_manifest()["fixtures"])
+
+    platforms = {}
+    for sample in rows:
+        row = local_sample_row(sample, Path("/unused"))
+        assert not row["srr"], (
+            f"{row['sample_id']} still carries an SRA accession, so the offline "
+            "run would try to download it"
+        )
+        assert Path(row["fastq1"]).is_file(), (
+            f"{row['sample_id']} points at a missing file: {row['fastq1']}"
+        )
+        platforms[row["sample_id"]] = row["platform"]
+
+    assert "ont" in platforms.values(), (
+        f"No offline row is ONT, so the long-read route is uncovered: {platforms}"
+    )
+
+
+def test_the_offline_samplesheet_matches_the_sra_samplesheet_sample_ids() -> None:
+    """Switching tiers must change only where reads come from, not which samples.
+
+    The parity check compares against a recording keyed on these ids, so a
+    mismatch here would silently turn that comparison into a no-op.
+    """
+    with SAMPLESHEET.open(newline="", encoding="utf-8") as handle:
+        sra_sample_ids = {row["sample_id"] for row in csv.DictReader(handle)}
+    offline_sample_ids = {str(row["sample_id"]) for row in offline_sra_sample_rows()}
+    assert offline_sample_ids == sra_sample_ids
+
+
+def test_parity_runs_in_the_full_tier_and_is_skipped_offline(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Parity must still run somewhere, and say so when it does not.
+
+    The skip exists because the offline tier reads downsampled fixtures rather
+    than the reads the recording was made from. If NVD_E2E_USE_SRA ever stopped
+    enabling the comparison, the check would be dead rather than deferred, and
+    nothing else would notice.
+    """
+    # A detection the recording cannot contain, so parity must object when it runs.
+    impossible_rows = [
+        {"sample": "orf_virus_ov_pt001_2024", "adjusted_taxid": "999999", "saccver": "X"},
+    ]
+    selected = [{"sample_id": "orf_virus_ov_pt001_2024"}]
+
+    monkeypatch.delenv("NVD_E2E_USE_SRA", raising=False)
+    assert_detections_agree_with_the_full_size_run(impossible_rows, selected)
+    assert "PARITY SKIPPED" in capsys.readouterr().out
+
+    monkeypatch.setenv("NVD_E2E_USE_SRA", "1")
+    with pytest.raises(AssertionError, match="Detections disagree"):
+        assert_detections_agree_with_the_full_size_run(impossible_rows, selected)
+
+
+def test_sra_downloads_are_off_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The e2e must be offline unless explicitly asked for the full tier."""
+    monkeypatch.delenv("NVD_E2E_USE_SRA", raising=False)
+    assert not integration_sra_downloads_enabled()
+    monkeypatch.setenv("NVD_E2E_USE_SRA", "1")
+    assert integration_sra_downloads_enabled()
 
 
 def test_synthetic_fixtures_are_committed_so_the_e2e_needs_no_build() -> None:

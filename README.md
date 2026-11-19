@@ -420,12 +420,75 @@ Offline mode requires the taxonomy directory to already contain the expected NCB
 
 ## Testing
 
+### Test tiers
+
+| Command | What it runs | Network | When |
+|---|---|---|---|
+| `just test` | Pure Python and Nextflow-backed unit tests | none | Every save |
+| `just e2e` | The whole pipeline on the committed fixtures | **none** | Every PR, in CI |
+| `just e2e-full` | The same pipeline on the **full SRA runs** | ~190 MB download | Before tagging a release |
+
+`just e2e` is **offline**. Every read it processes is committed to
+`tests/data`, so it needs no network, no credentials and no download cache, and
+it cannot be broken by an SRA outage.
+
+> **`just e2e-full` is not redundant.** Because the default tier reads only
+> local files, it never exercises `FETCH_FASTQ`/`sracha` - the code path that
+> resolves an accession and streams it into Deacon. `just e2e-full` sets
+> `NVD_E2E_USE_SRA=1`, which swaps the three committed downsamples for their
+> source accessions and proves that path still works. It is the only tier that
+> does, so run it before tagging a release. Both tiers run the same samples with
+> the same sample ids and the same assertions; only the origin of the reads
+> differs.
+
 ### Test dataset
 
 NVD's end-to-end test runs the whole pipeline on a small, fully documented
-dataset. Part of that dataset is **simulated**, on purpose, and this section
-explains exactly how it is built so that anyone can rebuild it and get the same
-bytes back.
+dataset. It has two parts: **downsampled copies of real SRA runs**, and samples
+that are **simulated** on purpose. This section explains exactly how both are
+built, so that anyone can rebuild them and get the same bytes back.
+
+#### The downsampled real samples
+
+Three real runs cover the code paths that simulated data cannot: real sequencer
+error profiles, a real hybrid-capture library, and the long-read route. Each is
+a seeded subsample of the full run, small enough to commit:
+
+| Sample | Source | Platform | Fraction | Reads | Viral reads | Size | What it covers |
+|---|---|---|---|---|---|---|---|
+| `orf_virus_ov_pt001_2024` | ERR17363849 | Illumina | 0.05 | 7,759 pairs | 7,578 | 2.28 MB | Paired Illumina capture; assembles to contigs |
+| `monkeypox_pt1020_2026` | ERR17356125 | Illumina | 0.02 | 16,184 pairs | 16,157 | 2.04 MB | The only real-library monkeypox sample |
+| `sample_ont_srr27720442` | SRR27720442 | ONT | 0.1 | 6,035 reads | 4,823 | 3.47 MB | **The only long-read sample**; covers the long-read assembly route |
+
+"Viral reads" is measured, not assumed: `deacon filter -a 1 -r 0` against
+`tests/data/mini_virus_deacon.k31w1.idx`. Every fixture keeps thousands of
+target reads, far above the measured assembly floor of roughly 1,000 viral
+pairs, so the fractions have real headroom. **Do not lower a fraction** without
+re-measuring: a fixture that loses its virus makes the test assert nothing.
+
+The sample ids deliberately match the full runs' rather than carrying an `_s42`
+suffix. The parity check compares a reduced run against a recording keyed on
+full-run sample ids, so matching ids keep that comparison meaningful. The `_s42`
+provenance marker lives in the file names instead.
+
+Rebuild any of them - the downsample is byte-reproducible with seqkit 2.13.0:
+
+```bash
+# fetch the source run
+pixi run -e dev sracha get --split split-3 --gzip-level 1 --threads 4 \
+    --no-progress --yes --output-dir . ERR17363849
+
+# downsample; give R1 and R2 the same seed so mates stay in sync
+pixi run -e dev seqkit sample -s 42 -p 0.05 \
+    -o tests/data/orf_virus_ov_pt001_2024_s42_R1.fastq.gz ERR17363849_1.fastq.gz
+pixi run -e dev seqkit sample -s 42 -p 0.05 \
+    -o tests/data/orf_virus_ov_pt001_2024_s42_R2.fastq.gz ERR17363849_2.fastq.gz
+```
+
+Per-file sizes, sha256s, source accessions and measured viral counts are in
+`tests/data/e2e_sra_fixtures.manifest.json`. `tests/test_e2e_sra_fixtures.py`
+checks the committed bytes against it, and fails if a FASTQ appears in
+`tests/data` that the manifest does not document.
 
 #### Why some of the test data is synthetic
 
@@ -486,8 +549,13 @@ alongside the reads.
 
 ```bash
 pixi run -e dev python tests/scripts/build_synthetic_metagenomes.py \
-    --out-dir .scratch/e2e-bundle/synthetic
+    --out-dir tests/data --seed 42 --cpus 4
 ```
+
+The reads are committed, so a rebuild is only needed to change the recipe or to
+verify reproducibility; the end-to-end test never builds them. Rebuilding in
+place overwrites the committed files, so check `git diff --stat` afterwards: a
+faithful rebuild changes nothing.
 
 Add `--only synthetic_ww_lowcx` to build a single sample. Reference genomes are
 downloaded from NCBI and cached under `--cache-dir`, so a second run does no
@@ -519,11 +587,11 @@ Verify a rebuild against the published checksums:
 sha256sum -c <(python - <<'PY'
 import json, pathlib
 manifest = json.loads(pathlib.Path(
-    ".scratch/e2e-bundle/synthetic/synthetic_metagenomes.manifest.json"
+    "tests/data/synthetic_metagenomes.manifest.json"
 ).read_text())
 for sample in manifest["samples"]:
     for item in sample["files"]:
-        print(f"{item['sha256']}  .scratch/e2e-bundle/synthetic/{item['name']}")
+        print(f"{item['sha256']}  tests/data/{item['name']}")
 PY
 )
 ```
