@@ -159,6 +159,12 @@ SYNTHETIC_METAGENOME_SAMPLES = (
         # this sample exercises detection from unassembled reads instead. That
         # is the abundance real wastewater shows: the modelled run found
         # Poxviridae on 21 reads across 18 samples.
+        #
+        # Read-level BLAST is therefore this sample's ONLY detection route, so
+        # the skip_unassembled_read_queries variant necessarily finds nothing
+        # here. That is the variant working, not a regression, and the flag is
+        # what keeps the two facts coupled in one place.
+        "detects_only_from_unassembled_reads": True,
         "expected_taxa": (
             {"expected_organism": "Orf virus", "taxid": 10258},
             {"expected_organism": "Monkeypox virus", "taxid": 10244},
@@ -462,6 +468,56 @@ def expected_organism_names(
         for sample in SYNTHETIC_METAGENOME_SAMPLES
         for taxon in sample["expected_taxa"]
     }
+
+
+def assert_synthetic_metagenome_taxa_detected(
+    experiment_rows: list[dict[str, str]],
+) -> None:
+    """Assert each synthetic metagenome reports the taxa buried in it.
+
+    These are the suite's only shotgun samples, and the point of including them
+    is that a target virus inside a real community is still found. Checked per
+    expected taxon, because a metagenome carries several rather than the one an
+    SRA row declares.
+
+    A sample whose only detection route is read-level BLAST is checked the
+    opposite way when that route is switched off, so the
+    skip_unassembled_read_queries variant stays meaningful instead of failing on
+    a sample it deliberately silenced.
+    """
+    for sample in SYNTHETIC_METAGENOME_SAMPLES:
+        sample_id = str(sample["sample_id"])
+        reads_only = bool(sample.get("detects_only_from_unassembled_reads"))
+        if reads_only and integration_skip_unassembled_read_queries_enabled():
+            assert_reads_only_sample_is_silenced(experiment_rows, sample_id=sample_id)
+            continue
+        assert_expected_taxa_detected(
+            experiment_rows,
+            sample_id=sample_id,
+            expected_taxa=sample["expected_taxa"],
+        )
+
+
+def assert_reads_only_sample_is_silenced(
+    experiment_rows: list[dict[str, str]],
+    *,
+    sample_id: str,
+) -> None:
+    """Assert a reads-only sample reports nothing when read queries are skipped.
+
+    Deliberately an assertion rather than a skip. The variant removed this
+    sample's only detection route, so finding nothing is the expected result,
+    and checking for it proves the flag took effect instead of letting the
+    sample pass for some unrelated reason.
+    """
+    silenced_rows = [row for row in experiment_rows if row.get("sample") == sample_id]
+
+    assert not silenced_rows, (
+        f"{sample_id} detects only from unassembled reads, but the "
+        f"skip_unassembled_read_queries run still reported {len(silenced_rows)} "
+        "rows for it, so the flag did not take effect."
+    )
+    print(f"READS-ONLY SAMPLE SILENCED AS EXPECTED: {sample_id}")
 
 
 def assert_expected_taxa_detected(
@@ -1646,16 +1702,7 @@ def test_viral_pipeline_completes_end_to_end() -> None:
                 f"expected {sorted(expected_tasks)}, observed {sorted(observed_tasks)}"
             )
 
-        # The synthetic metagenomes are the suite's only shotgun samples, and
-        # the point of including them is that a target virus buried in a real
-        # community is still found. Assert that per expected taxon, because a
-        # metagenome carries several rather than the one an SRA row declares.
-        for sample in SYNTHETIC_METAGENOME_SAMPLES:
-            assert_expected_taxa_detected(
-                experiment_rows,
-                sample_id=str(sample["sample_id"]),
-                expected_taxa=sample["expected_taxa"],
-            )
+        assert_synthetic_metagenome_taxa_detected(experiment_rows)
 
         assert_detections_agree_with_the_full_size_run(
             experiment_rows,
@@ -1819,6 +1866,32 @@ def test_synthetic_sample_rows_carry_absolute_paired_paths(tmp_path: Path) -> No
         assert Path(row["fastq1"]).is_absolute()
         assert Path(row["fastq2"]).is_absolute()
         assert row["fastq1_glob"] == ""
+
+
+def test_exactly_the_trace_level_metagenome_is_flagged_as_reads_only() -> None:
+    """The reads-only flag must stay pinned to the sample whose biology earns it.
+
+    The flag is what lets the skip_unassembled_read_queries variant pass, so a
+    fixture edit that spread it to an assembling sample would silently stop
+    checking that sample's taxa. Pin both directions.
+    """
+    flagged = {
+        str(sample["sample_id"])
+        for sample in SYNTHETIC_METAGENOME_SAMPLES
+        if sample.get("detects_only_from_unassembled_reads")
+    }
+
+    assert flagged == {"synthetic_ww_highcx"}, (
+        "Only the trace-level metagenome detects solely from unassembled reads. "
+        f"Flagged: {sorted(flagged)}"
+    )
+    # The low-coverage sample assembles, so it must keep its taxa assertions in
+    # every variant. This is the half that a careless edit would break.
+    assert not any(
+        sample.get("detects_only_from_unassembled_reads")
+        for sample in SYNTHETIC_METAGENOME_SAMPLES
+        if sample["sample_id"] == "synthetic_ww_lowcx"
+    )
 
 
 def test_assert_expected_taxa_detected_requires_each_declared_taxon() -> None:
