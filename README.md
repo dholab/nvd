@@ -440,6 +440,11 @@ it cannot be broken by an SRA outage.
 > does, so run it before tagging a release. Both tiers run the same samples with
 > the same sample ids and the same assertions; only the origin of the reads
 > differs.
+>
+> In CI the offline tier is the `offline-nextflow` job and runs on every push and
+> pull request. The full tier is the `full-sra-nextflow` job and runs only on
+> `workflow_dispatch`, so it is there when you want it without putting an SRA
+> download on the critical path of every PR.
 
 ### Test dataset
 

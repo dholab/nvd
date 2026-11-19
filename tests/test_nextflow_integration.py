@@ -1512,9 +1512,15 @@ def test_lims_enabled_real_labkey_uploads_and_dedups() -> None:
 
 
 @pytest.mark.slow
-@pytest.mark.network
-def test_mini_sra_viral_pipeline_completes() -> None:
-    """Tiny SRA runs should complete through enrichment, assembly, and BLAST."""
+@pytest.mark.e2e
+def test_viral_pipeline_completes_end_to_end() -> None:
+    """The whole pipeline should run through enrichment, assembly and BLAST.
+
+    Not marked `network`: by default every read comes from a committed fixture
+    and the run needs none, which `unshare -rn` verifies. `just e2e-full` sets
+    NVD_E2E_USE_SRA=1 to fetch the source accessions instead, and that tier is
+    the only thing covering FETCH_FASTQ/sracha.
+    """
     manifest = load_manifest()
     verify_fixture_files(manifest)
     selected_sra_runs = selected_manifest_sra_runs(manifest)

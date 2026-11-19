@@ -107,8 +107,8 @@ dev = { features = ["dev"], solve-group = "default" }
 # and the networked e2e keep Nextflow's normal behaviour.
 fast-test = { cmd = "pytest -m 'not slow and not network'", env = { NXF_OFFLINE = "true", NXF_ANSI_LOG = "false", NXF_OPTS = "-XX:TieredStopAtLevel=1 -XX:+UseSerialGC" } }
 
-e2e-test = "NVD_E2E_SHOW_PROGRESS=1 pytest tests/test_nextflow_integration.py -m 'slow and network and not labkey' -q -s"
-e2e-test-ci = "pytest tests/test_nextflow_integration.py -m 'slow and network and not labkey' -q"
+e2e-test = "NVD_E2E_SHOW_PROGRESS=1 pytest tests/test_nextflow_integration.py -m 'e2e and not labkey' -q -s"
+e2e-test-ci = "pytest tests/test_nextflow_integration.py -m 'e2e and not labkey' -q"
 e2e-labkey-test = "NVD_E2E_SHOW_PROGRESS=1 pytest tests/test_nextflow_integration.py -m 'slow and network and labkey' -q -s"
 
 [dependency-groups]
@@ -163,6 +163,7 @@ testpaths = ["lib/py_nvd", "bin", "tests"]
 markers = [
   "slow: marks tests as slow (deselect with '-m \"not slow\"')",
   "network: marks tests as requiring network access (deselect with '-m \"not network\"')",
+  "e2e: the whole-pipeline end-to-end run; offline by default, set NVD_E2E_USE_SRA=1 for the SRA tier via 'just e2e-full'",
   "labkey: LIMS/LabKey end-to-end tests; run via 'just e2e-labkey', excluded from 'just e2e' and CI (which have no LabKey credentials)",
 ]
 
