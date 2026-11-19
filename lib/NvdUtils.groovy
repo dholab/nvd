@@ -114,6 +114,29 @@ class NvdUtils {
     }
 
     /**
+     * Sample ids on the samplesheet that produced nothing in the run's results.
+     *
+     * Nothing else in the pipeline reconciles input against output. Several
+     * processes use `errorStrategy 'ignore'`, and an ignored Nextflow task emits
+     * nothing into its output channel, so a sample can disappear between the
+     * samplesheet and the results while the run still reports success.
+     * FETCH_FASTQ and the assemblers both behave that way today.
+     *
+     * Returns the ids sorted, so the warning text is stable between runs.
+     */
+    public static List<String> missingSampleIds(
+        Collection expected_sample_ids,
+        Collection observed_sample_ids
+    ) {
+        def observed = observed_sample_ids.collect { id -> id.toString() } as Set
+        return expected_sample_ids
+            .collect { id -> id.toString() }
+            .unique()
+            .findAll { sample_id -> !observed.contains(sample_id) }
+            .sort()
+    }
+
+    /**
      * The index DEACON_FILTER_CONTIGS screens with: the step-one index, or the
      * committed empty index when skip_contig_filter is set.
      */

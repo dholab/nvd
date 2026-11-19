@@ -59,9 +59,14 @@ workflow GATHER_READS {
                 tuple(meta, r1 + r2)
             }
 
+        // Every samplesheet row, SRA and local alike. This is the roster the
+        // end-of-run completeness check reconciles the results against.
+        ch_input_sample_ids = ch_resolved_reads.map { rec -> rec.sample_id.toString() }
+
         emit:
         reads = ch_local_bundles
         sra_accessions = ch_sra_accessions
         resolved_reads = RESOLVE_READ_INPUTS.out.jsonl
+        input_sample_ids = ch_input_sample_ids
 
 }

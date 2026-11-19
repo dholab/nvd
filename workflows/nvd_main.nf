@@ -183,6 +183,33 @@ workflow NVD_MAIN {
     .map { sample_id, _blast_results -> sample_id }
     .mix(PREPROCESS_READS.out.complete_empty_samples.map { sample_id, _platform -> sample_id })
 
+  // Reconcile the samplesheet against the results. Nothing else does, and a
+  // process using `errorStrategy 'ignore'` emits nothing when it fails, so a
+  // sample can vanish between input and output while the run still reports
+  // success. Both collected lists are wrapped in a one-element list, because
+  // `combine` otherwise flattens the two rosters into a single undiffable list.
+  // This warns rather than fails: a partial run is still worth publishing, and
+  // the point is that the loss is never silent again.
+  GATHER_READS.out.input_sample_ids
+    .collect()
+    .map { sample_ids -> [sample_ids] }
+    .combine(
+      ch_completed_sample_ids.collect().ifEmpty([]).map { sample_ids -> [sample_ids] }
+    )
+    .subscribe { expected_sample_ids, observed_sample_ids ->
+      def missing = NvdUtils.missingSampleIds(expected_sample_ids, observed_sample_ids)
+      if (missing) {
+        log.warn(
+          "nvd.run_completeness ${missing.size()} of ${expected_sample_ids.size()} samples " +
+          "produced no results: ${missing.join(', ')}. Each was on the samplesheet but is " +
+          "absent from the final outputs, which means a task failed and its error was " +
+          "ignored. Check the run report for FAILED tasks for these samples."
+        )
+      } else {
+        log.debug "nvd.run_completeness all ${expected_sample_ids.size()} samples produced results"
+      }
+    }
+
   NOTIFY_RUN_COMPLETION_SLACK(
     ch_run_completed_results,
     ch_run_context,
