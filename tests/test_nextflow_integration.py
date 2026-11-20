@@ -35,6 +35,9 @@ LOCAL_FASTQ_FIXTURES = {
     "hits_r2": DATA / "hits_only_R2.fastq.gz",
     "water_plus_hits_r1": DATA / "water_plus_hits_R1.fastq.gz",
     "water_plus_hits_r2": DATA / "water_plus_hits_R2.fastq.gz",
+    # A pure blank: 36,926 read pairs of background with no target virus at all.
+    "water_r1": DATA / "water_R1.fastq.gz",
+    "water_r2": DATA / "water_R2.fastq.gz",
 }
 # WHO risk groups the mini BLAST fixtures can report. Kept here as a named
 # constant so a new expected_organism fails with a clear lookup error instead
@@ -190,6 +193,23 @@ LOCAL_E2E_SAMPLES = (
         "source": "paired_globs",
         "fastq1_glob": "local_hits_glob_L*_R1_001.fastq.gz",
         "fastq2_glob": "local_hits_glob_L*_R2_001.fastq.gz",
+    },
+    {
+        # A negative control, which is the normal case on every real run and
+        # which must finish quietly. Deacon retains 0 of its 73,852 reads, so
+        # the sample legitimately produces no results at all.
+        #
+        # The run-level completeness check exists to name samples that vanish,
+        # and a control that correctly found nothing must never be reported as
+        # one of them, or the warning becomes noise on every run and gets
+        # ignored. preprocess_reads.nf routes a zero-retention sample to
+        # `complete_empty`, and nvd_main.nf mixes that into the completed
+        # roster, which is the wiring this row keeps honest.
+        "sample_id": "negative_control_water",
+        "is_negative_control": True,
+        "source": "paired_files",
+        "fastq1": LOCAL_FASTQ_FIXTURES["water_r1"],
+        "fastq2": LOCAL_FASTQ_FIXTURES["water_r2"],
     },
 )
 
@@ -468,6 +488,32 @@ def expected_organism_names(
         for sample in SYNTHETIC_METAGENOME_SAMPLES
         for taxon in sample["expected_taxa"]
     }
+
+
+def assert_negative_controls_report_nothing(
+    experiment_rows: list[dict[str, str]],
+) -> None:
+    """Assert every negative control finds nothing, in every tier.
+
+    A blank that reports a detection is a contamination or index-hopping
+    failure and matters more than almost anything else the suite checks, so
+    this runs unconditionally rather than under any variant.
+    """
+    control_sample_ids = {
+        str(sample["sample_id"])
+        for sample in LOCAL_E2E_SAMPLES
+        if sample.get("is_negative_control")
+    }
+    assert control_sample_ids, "No negative control is on the samplesheet"
+
+    for sample_id in sorted(control_sample_ids):
+        rows = [row for row in experiment_rows if row.get("sample") == sample_id]
+        assert not rows, (
+            f"Negative control {sample_id} reported {len(rows)} BLAST rows "
+            f"(taxids {sorted({row.get('staxids', '') for row in rows})}). "
+            "A blank must find nothing."
+        )
+    print(f"NEGATIVE CONTROLS CLEAN: {', '.join(sorted(control_sample_ids))}")
 
 
 def assert_synthetic_metagenome_taxa_detected(
@@ -1719,6 +1765,7 @@ def test_viral_pipeline_completes_end_to_end() -> None:
             )
 
         assert_synthetic_metagenome_taxa_detected(experiment_rows)
+        assert_negative_controls_report_nothing(experiment_rows)
 
         assert_detections_agree_with_the_full_size_run(
             experiment_rows,
