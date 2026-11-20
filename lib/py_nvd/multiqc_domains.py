@@ -134,6 +134,10 @@ ReportSection: TypeAlias = TableSection | LineGraphSection
 class DomainConfiguration:
     experimental_enabled: bool
     target_enrichment_enabled: bool
+    # True when background_index replaced target enrichment in step 1. The
+    # step-one Deacon stats are then depletion counts, and the section must
+    # not render as a configured skip.
+    background_depletion_enabled: bool
     depletion_enabled: bool
     assembly_enabled: bool
     # Paired with assembly_enabled: together they say which query sources the
@@ -394,10 +398,15 @@ def build_domain_sections(
     for domain, enabled, section_id, name, description in (
         (
             "target_enrichment",
-            configuration.target_enrichment_enabled,
+            configuration.target_enrichment_enabled
+            or configuration.background_depletion_enabled,
             "nvd_target_enrichment",
-            "Target Enrichment",
-            "Target enrichment reads and bases retained or removed.",
+            "Background Depletion"
+            if configuration.background_depletion_enabled
+            else "Target Enrichment",
+            "Background depletion reads and bases removed or retained."
+            if configuration.background_depletion_enabled
+            else "Target enrichment reads and bases retained or removed.",
         ),
         (
             "depletion",

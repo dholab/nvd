@@ -1,0 +1,85 @@
+{
+  "description": "Downsampled copies of the SRA runs the end-to-end test uses, committed so the default e2e runs offline with no downloads. Each is a seeded subsample of the full run the e2e used to fetch at runtime. The full runs are still exercised by the e2e_full tier (NVD_E2E_USE_SRA=1), which keeps the FETCH_FASTQ/sracha download path under test. Re-create any file with the commands below: the downsample is byte-reproducible with seqkit 2.13.0.",
+  "maintainer_note": "sample_id deliberately matches the FULL run's sample id rather than carrying an _s42 suffix. The parity check compares the reduced run against a recording keyed on full-run sample ids, so matching ids keep that comparison an identity map and keep every downstream assertion working unchanged. The _s42 provenance marker lives in the file names instead. Fractions were chosen so each fixture keeps thousands of target-virus reads, well above the measured assembly floor of roughly 1,000 viral pairs. Do NOT lower them without re-checking viral_reads_deacon: a fixture that loses its virus would make the e2e assert nothing. Mates stay in sync because R1 and R2 are given the same seed, which a test verifies rather than assumes.",
+  "seed": 42,
+  "tool_versions": {
+    "seqkit": "seqkit v2.13.0",
+    "sracha": "sracha 0.5.0"
+  },
+  "commands": {
+    "fetch": "sracha get --split split-3 --gzip-level 1 --threads 4 --no-progress --yes --output-dir . <accession>",
+    "downsample_paired": "seqkit sample -s 42 -p <fraction> -o <sample_id>_R1.fastq.gz <accession>_1.fastq.gz   # and again for _2/_R2",
+    "downsample_single": "seqkit sample -s 42 -p <fraction> -o <sample_id>.fastq.gz <accession>.fastq.gz",
+    "verify_virus": "deacon filter -a 1 -r 0 tests/data/mini_virus_deacon.k31w1.idx <fixture>"
+  },
+  "created_at": "2026-11-19",
+  "fixtures": [
+    {
+      "sample_id": "orf_virus_ov_pt001_2024",
+      "source_accession": "ERR17363849",
+      "platform": "illumina",
+      "read_structure": "paired",
+      "expected_organism": "Orf virus",
+      "taxid": 10258,
+      "fraction": 0.05,
+      "reads": 7759,
+      "viral_reads_deacon": 7578,
+      "code_path": "paired Illumina, hybrid capture, assembles to contigs",
+      "files": [
+        {
+          "name": "orf_virus_ov_pt001_2024_s42_R1.fastq.gz",
+          "bytes": 1161826,
+          "sha256": "4b90474d522338be23072e905d6474bfcc2386cbf9ba3f7a13e5fc0b46d1d1c4"
+        },
+        {
+          "name": "orf_virus_ov_pt001_2024_s42_R2.fastq.gz",
+          "bytes": 1120420,
+          "sha256": "4d3a3bce7bd5e29549b6c36a997d61acf1eed29cc775b15c7560585fb242e9b3"
+        }
+      ]
+    },
+    {
+      "sample_id": "monkeypox_pt1020_2026",
+      "source_accession": "ERR17356125",
+      "platform": "illumina",
+      "read_structure": "paired",
+      "expected_organism": "Monkeypox virus",
+      "taxid": 10244,
+      "fraction": 0.02,
+      "reads": 16184,
+      "viral_reads_deacon": 16157,
+      "code_path": "paired Illumina, the only real-library Mpox sample",
+      "files": [
+        {
+          "name": "monkeypox_pt1020_2026_s42_R1.fastq.gz",
+          "bytes": 995846,
+          "sha256": "791d5532b93e0e4b03f4d3f411738bc4e926dcfaf78d424b6892f84e662d7e40"
+        },
+        {
+          "name": "monkeypox_pt1020_2026_s42_R2.fastq.gz",
+          "bytes": 1047359,
+          "sha256": "e3b7be19ea60d4cd29512d7fc081c6c43622475cac6aa341f8299244217d77ce"
+        }
+      ]
+    },
+    {
+      "sample_id": "sample_ont_srr27720442",
+      "source_accession": "SRR27720442",
+      "platform": "ont",
+      "read_structure": "single",
+      "expected_organism": "Orf virus",
+      "taxid": 10258,
+      "fraction": 0.1,
+      "reads": 6035,
+      "viral_reads_deacon": 4823,
+      "code_path": "the ONLY long-read sample: covers the long-read assembly route",
+      "files": [
+        {
+          "name": "sample_ont_srr27720442_s42.fastq.gz",
+          "bytes": 3469094,
+          "sha256": "92e0920d4feb9bc8d802340ef0be65941e2f634fef9d4f03ad83b010361102cb"
+        }
+      ]
+    }
+  ]
+}

@@ -112,13 +112,39 @@ def test_preprocess_param_is_gone() -> None:
     assert "preprocess" not in NvdParams.model_fields
 
 
-def test_latest_params_schema_points_to_v3_5() -> None:
-    """The rolling schema link should expose the v3.5 parameter contract."""
+def test_latest_params_schema_points_to_v3_6() -> None:
+    """The rolling schema link should expose the v3.6 parameter contract."""
     latest_schema = ROOT / "schemas" / "nvd-params.latest.schema.json"
 
     assert latest_schema.is_symlink()
-    assert latest_schema.readlink() == Path("nvd-params.v3.5.0.schema.json")
-    assert SCHEMA_URL.endswith("/nvd-params.v3.5.0.schema.json")
+    assert latest_schema.readlink() == Path("nvd-params.v3.6.0.schema.json")
+    assert SCHEMA_URL.endswith("/nvd-params.v3.6.0.schema.json")
+
+
+def test_v3_6_schema_adds_only_the_release_params() -> None:
+    """The v3.6.0 contract is v3.5.0 plus the five params added this release."""
+    previous = json.loads(
+        (ROOT / "schemas" / "nvd-params.v3.5.0.schema.json").read_text(
+            encoding="utf-8",
+        ),
+    )
+    current = json.loads(
+        (ROOT / "schemas" / "nvd-params.v3.6.0.schema.json").read_text(
+            encoding="utf-8",
+        ),
+    )
+
+    added = set(current["properties"]) - set(previous["properties"])
+    assert added == {
+        "skip_big_tables",
+        "skip_contig_filter",
+        "background_index",
+        "background_abs_threshold",
+        "background_rel_threshold",
+    }
+    assert set(previous["properties"]) <= set(current["properties"])
+    for name, definition in previous["properties"].items():
+        assert current["properties"][name] == definition, name
 
 
 def test_v3_3_2_schema_corrects_only_the_read_entropy_default() -> None:
@@ -143,3 +169,72 @@ def test_v3_2_schema_accepts_disabled_optional_read_limits() -> None:
 
     assert schema["properties"]["filter_reads"]["type"] == ["boolean", "null"]
     assert schema["properties"]["max_read_length"]["type"] == ["integer", "null"]
+
+
+def test_skip_big_tables_is_declared_everywhere() -> None:
+    """The big-table skip exists in Nextflow, the model, and the schema."""
+    nextflow_config = (ROOT / "nextflow.config").read_text(encoding="utf-8")
+    config_match = re.search(
+        r"^\s*skip_big_tables\s*=\s*(\S+)",
+        nextflow_config,
+        re.MULTILINE,
+    )
+    latest_schema = json.loads(
+        (ROOT / "schemas" / "nvd-params.latest.schema.json").read_text(
+            encoding="utf-8",
+        ),
+    )
+
+    assert config_match is not None, "nextflow.config skip_big_tables is missing"
+    # null keeps bare `--skip_big_tables` usable as a Nextflow flag, matching
+    # the other skip_* params.
+    assert config_match.group(1) == "null"
+    assert NvdParams().skip_big_tables is False
+    assert latest_schema["properties"]["skip_big_tables"]["default"] is False
+
+
+def test_background_depletion_params_are_declared_everywhere() -> None:
+    """background_index and its thresholds exist in Nextflow, the model, and the schema."""
+    nextflow_config = (ROOT / "nextflow.config").read_text(encoding="utf-8")
+    latest_schema = json.loads(
+        (ROOT / "schemas" / "nvd-params.latest.schema.json").read_text(
+            encoding="utf-8",
+        ),
+    )
+    expected = {
+        "background_index": "null",
+        "background_abs_threshold": "1",
+        "background_rel_threshold": "0.0",
+    }
+    for name, value in expected.items():
+        match = re.search(rf"^\s*{name}\s*=\s*(\S+)", nextflow_config, re.MULTILINE)
+        assert match is not None, f"nextflow.config {name} is missing"
+        assert match.group(1) == value, name
+
+    defaults = NvdParams()
+    assert defaults.background_index is None
+    assert defaults.background_abs_threshold == 1
+    assert defaults.background_rel_threshold == 0.0
+    assert latest_schema["properties"]["background_index"]["default"] is None
+    assert latest_schema["properties"]["background_abs_threshold"]["default"] == 1
+    assert latest_schema["properties"]["background_rel_threshold"]["default"] == 0.0
+
+
+def test_skip_contig_filter_is_declared_everywhere() -> None:
+    """The contig-screen skip exists in Nextflow, the model, and the schema."""
+    nextflow_config = (ROOT / "nextflow.config").read_text(encoding="utf-8")
+    config_match = re.search(
+        r"^\s*skip_contig_filter\s*=\s*(\S+)",
+        nextflow_config,
+        re.MULTILINE,
+    )
+    latest_schema = json.loads(
+        (ROOT / "schemas" / "nvd-params.latest.schema.json").read_text(
+            encoding="utf-8",
+        ),
+    )
+
+    assert config_match is not None, "nextflow.config skip_contig_filter is missing"
+    assert config_match.group(1) == "null"
+    assert NvdParams().skip_contig_filter is False
+    assert latest_schema["properties"]["skip_contig_filter"]["default"] is False

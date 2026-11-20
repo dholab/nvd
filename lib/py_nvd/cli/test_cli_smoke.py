@@ -391,3 +391,40 @@ def test_samplesheet_validation_subcommands_use_same_read_preflight(
 
         assert result.exit_code != 0
         assert "FASTQ paths and glob patterns must be absolute" in result.output
+
+
+def test_run_reports_step_one_conflict_as_a_message_not_a_traceback(
+    tmp_path: Path,
+) -> None:
+    """A preset-style params file with virus_index plus --background-index stops cleanly."""
+    samplesheet = tmp_path / "samples.csv"
+    samplesheet.write_text("sample_id,srr,platform,fastq1,fastq2\n", encoding="utf-8")
+    virus_index = tmp_path / "virus.idx"
+    virus_index.touch()
+    background_index = tmp_path / "background.idx"
+    background_index.touch()
+    params_file = tmp_path / "shared.json"
+    params_file.write_text(
+        json.dumps({"virus_index": str(virus_index)}),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "run",
+            "--samplesheet",
+            str(samplesheet),
+            "--params-file",
+            str(params_file),
+            "--background-index",
+            str(background_index),
+            "--dry-run",
+        ],
+    )
+
+    assert result.exit_code == 1, result.output
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+    assert "Validation failed" in result.output
+    assert "--no-enrichment" in result.output
+    assert "Traceback" not in result.output

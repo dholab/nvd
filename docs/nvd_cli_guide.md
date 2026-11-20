@@ -189,6 +189,12 @@ nvd samplesheet generate --from-sra accessions.txt --platform illumina --output 
 
 NVD decodes each SRA run as a stream through target enrichment rather than materializing decoded raw FASTQ files. Raw-read FastQC therefore runs only for local FASTQ inputs; the `skip_fastqc` setting controls those local tasks. SRA reads rejoin local reads immediately after target enrichment and receive the same subsequent preprocessing.
 
+CRUMBS profiling, the per-query and per-taxon big tables, the best-hit sequence evidence, and the sequence-flow table run on every run since v3.6.0. Pass `--skip-big-tables` to leave out the big tables and the best-hit evidence; CRUMBS profiles and the sequence flow still run.
+
+`--background-index` switches the first Deacon pass from target enrichment to depletion against a prebuilt background index. It conflicts with an enabled virus index; `nvd run` and `nvd params check` stop with a message naming both and suggesting `--no-enrichment`, which lets a shared preset keep its `virus_index`. `--background-abs-threshold` and `--background-rel-threshold` default to 1 and 0.0, the same as enrichment.
+
+`--skip-contig-filter` sends every assembled contig to BLAST without screening it against the step-one Deacon index, so a contig assembled from reads that slipped through enrichment is not discarded for lacking a known-virus k-mer. Host depletion of contigs still applies when `host_index` is set.
+
 Preview without writing:
 
 ```bash

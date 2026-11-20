@@ -136,7 +136,7 @@ workflow {{
         ],
         [file('{reads}')],
         file('{target_index}'),
-        true,
+        [target_enrichment_enabled: true, background_depletion_enabled: false, abs_threshold: 1, rel_threshold: 0.0],
     )))
 }}
 """,
@@ -225,7 +225,7 @@ workflow {{
         ],
         [file('{r1}'), file('{r2}')],
         file('{target_index}'),
-        true,
+        [target_enrichment_enabled: true, background_depletion_enabled: false, abs_threshold: 1, rel_threshold: 0.0],
     )))
 }}
 """,
@@ -285,7 +285,7 @@ workflow {{
         'illumina',
         'SRR_TEST',
         file('{target_index}'),
-        true,
+        [target_enrichment_enabled: true, background_depletion_enabled: false, abs_threshold: 1, rel_threshold: 0.0],
     )))
 }}
 """,
@@ -343,7 +343,7 @@ include {{ DEACON_ENRICH_SRA_READS }} from '{DEACON_MODULE}'
 
 workflow {{
     DEACON_ENRICH_SRA_READS(Channel.of(tuple(
-        'sample_A', 'illumina', 'SRR_TEST', file('{target_index}'), true,
+        'sample_A', 'illumina', 'SRR_TEST', file('{target_index}'), [target_enrichment_enabled: true, background_depletion_enabled: false, abs_threshold: 1, rel_threshold: 0.0],
     )))
 }}
 """,
@@ -417,7 +417,7 @@ workflow {{
         ],
         [{staged_reads}],
         file('{target_index}'),
-        true,
+        [target_enrichment_enabled: true, background_depletion_enabled: false, abs_threshold: 1, rel_threshold: 0.0],
     )))
 }}
 """,
@@ -541,3 +541,127 @@ workflow {{
     assert "INPUT_READS:sample_A:1" in completed.stdout
     assert "COMPLETE_EMPTY:sample_A:illumina" in completed.stdout
     assert "READ_OUTPUT:sample_A" not in completed.stdout
+
+
+def test_background_mode_depletes_local_reads_with_background_thresholds(
+    tmp_path: Path,
+) -> None:
+    """A background policy runs one --deplete pass against the background index."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    write_fake_deacon(bin_dir)
+
+    reads = tmp_path / "reads.fastq.gz"
+    with gzip.open(reads, "wt", encoding="utf-8") as handle:
+        handle.write("@source\nACGT\n+\nIIII\n")
+    background_index = tmp_path / "background.idx"
+    background_index.touch()
+
+    workflow = tmp_path / "main.nf"
+    workflow.write_text(
+        f"""\
+nextflow.enable.dsl = 2
+
+params.check_pairs = false
+
+include {{ DEACON_ENRICH_TARGET_READS }} from '{DEACON_MODULE}'
+
+workflow {{
+    DEACON_ENRICH_TARGET_READS(Channel.of(tuple(
+        [
+            id: 'sample_A',
+            platform: 'illumina',
+            read_mode: 'single',
+            r1_count: 1,
+            deacon_read_structure: 'single',
+        ],
+        [file('{reads}')],
+        file('{background_index}'),
+        [target_enrichment_enabled: false, background_depletion_enabled: true, abs_threshold: 1, rel_threshold: 0.0],
+    )))
+}}
+""",
+        encoding="utf-8",
+    )
+
+    environment = os.environ.copy()
+    environment["PATH"] = f"{bin_dir}:{environment['PATH']}"
+    environment["NXF_ANSI_LOG"] = "false"
+    completed = subprocess.run(  # noqa: S603
+        ["nextflow", "-C", "/dev/null", "run", str(workflow)],  # noqa: S607
+        cwd=tmp_path,
+        env=environment,
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=45,
+    )
+
+    diagnostics = f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}"
+    assert completed.returncode == 0, diagnostics
+    argument_files = list((tmp_path / "work").glob("**/deacon.args"))
+    assert len(argument_files) == 1, argument_files
+    arguments = argument_files[0].read_text(encoding="utf-8").splitlines()
+    assert "--deplete" in arguments
+    assert arguments[arguments.index("--abs-threshold") + 1] == "1"
+    assert arguments[arguments.index("--rel-threshold") + 1] == "0.0"
+    assert arguments[-2] == "background.idx"
+    # Read bundles are staged under reads??????/ so multi-file inputs keep order.
+    assert arguments[-1].endswith("/reads.fastq.gz")
+
+
+def test_background_mode_depletes_streamed_sra_reads(tmp_path: Path) -> None:
+    """The SRA stream also runs the single background --deplete pass."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    write_fake_deacon(bin_dir)
+    write_fake_sracha(bin_dir)
+    background_index = tmp_path / "background.idx"
+    background_index.touch()
+
+    workflow = tmp_path / "main.nf"
+    workflow.write_text(
+        f"""\
+nextflow.enable.dsl = 2
+
+params.check_pairs = false
+params.max_concurrent_downloads = 1
+
+include {{ DEACON_ENRICH_SRA_READS }} from '{DEACON_MODULE}'
+
+workflow {{
+    DEACON_ENRICH_SRA_READS(Channel.of(tuple(
+        'sample_A',
+        'illumina',
+        'SRR_TEST',
+        file('{background_index}'),
+        [target_enrichment_enabled: false, background_depletion_enabled: true, abs_threshold: 1, rel_threshold: 0.0],
+    )))
+}}
+""",
+        encoding="utf-8",
+    )
+
+    environment = os.environ.copy()
+    environment["PATH"] = f"{bin_dir}:{environment['PATH']}"
+    environment["NXF_ANSI_LOG"] = "false"
+    completed = subprocess.run(  # noqa: S603
+        ["nextflow", "-C", "/dev/null", "run", str(workflow)],  # noqa: S607
+        cwd=tmp_path,
+        env=environment,
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=45,
+    )
+
+    diagnostics = f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}"
+    assert completed.returncode == 0, diagnostics
+    argument_files = list((tmp_path / "work").glob("**/deacon.args"))
+    assert len(argument_files) == 1, argument_files
+    arguments = argument_files[0].read_text(encoding="utf-8").splitlines()
+    assert "--deplete" in arguments
+    assert "--interleaved" in arguments
+    assert arguments[arguments.index("--abs-threshold") + 1] == "1"
+    assert arguments[arguments.index("--rel-threshold") + 1] == "0.0"
+    assert "background.idx" in arguments

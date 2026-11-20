@@ -30,11 +30,13 @@ workflow PREPROCESS_READS {
     // Step 1: Resolve target index and frontloaded extraction
     // -------------------------------------------------------------------------
     // Priority when target enrichment is enabled: explicit local path → URL
-    // download → build from reference FASTA. When target enrichment is disabled,
-    // use a committed empty index in deplete mode so deacon keeps all records
-    // while preserving the existing one-FASTQ downstream contract.
+    // download → build from reference FASTA. Otherwise step 1 depletes against
+    // the background index when one is configured, or against a committed
+    // empty index so deacon keeps all records while preserving the existing
+    // one-FASTQ downstream contract.
     def target_enrichment_enabled = NvdUtils.targetEnrichmentEnabled(params)
-    ch_target_enrichment_enabled = Channel.value(target_enrichment_enabled)
+    def step_one_policy = NvdUtils.stepOneFilterPolicy(params)
+    ch_step_one_policy = Channel.value(step_one_policy)
     ch_local_target_index = target_enrichment_enabled && params.virus_index
         ? Channel.fromPath(params.virus_index)
         : Channel.empty()
@@ -44,9 +46,11 @@ workflow PREPROCESS_READS {
     ch_target_ref_fasta = (target_enrichment_enabled && !params.virus_index && !params.virus_index_url && params.virus_reference_fasta)
         ? Channel.fromPath(params.virus_reference_fasta)
         : Channel.empty()
-    ch_empty_target_index = target_enrichment_enabled
+    ch_fallback_step_one_index = target_enrichment_enabled
         ? Channel.empty()
-        : Channel.fromPath("${projectDir}/assets/empty_deacon.k31w1.idx")
+        : (step_one_policy.background_depletion_enabled
+            ? Channel.fromPath(params.background_index)
+            : Channel.fromPath("${projectDir}/assets/empty_deacon.k31w1.idx"))
 
     DEACON_FETCH_TARGET_INDEX(ch_target_fetch_url)
     DEACON_BUILD_TARGET_INDEX_FROM_FASTA(ch_target_ref_fasta)
@@ -54,18 +58,19 @@ workflow PREPROCESS_READS {
     ch_target_index = ch_local_target_index
         .mix(DEACON_FETCH_TARGET_INDEX.out.index)
         .mix(DEACON_BUILD_TARGET_INDEX_FROM_FASTA.out.index)
-        .mix(ch_empty_target_index)
+        .mix(ch_fallback_step_one_index)
 
-    // Extract target reads — runs BEFORE any preprocessing. For paired reads,
-    // deacon takes R1/R2 and outputs interleaved FASTQ in one step. When target
-    // enrichment is disabled, the empty-index deplete mode retains all reads.
+    // Run the step-one filter — BEFORE any preprocessing. For paired reads,
+    // deacon takes R1/R2 and outputs interleaved FASTQ in one step. The policy
+    // says whether that pass enriches for targets, depletes the background, or
+    // passes every record through.
     DEACON_ENRICH_TARGET_READS(
         ch_read_bundles.combine(ch_target_index)
-            .combine(ch_target_enrichment_enabled)
+            .combine(ch_step_one_policy)
     )
     DEACON_ENRICH_SRA_READS(
         ch_sra_accessions.combine(ch_target_index)
-            .combine(ch_target_enrichment_enabled)
+            .combine(ch_step_one_policy)
     )
 
     // -------------------------------------------------------------------------

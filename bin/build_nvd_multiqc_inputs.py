@@ -38,6 +38,11 @@ def main() -> None:
         required=True,
     )
     parser.add_argument(
+        "--background-depletion-enabled",
+        choices=("true", "false"),
+        required=True,
+    )
+    parser.add_argument(
         "--depletion-enabled",
         choices=("true", "false"),
         required=True,
@@ -68,6 +73,8 @@ def main() -> None:
             configuration=ReportConfiguration(
                 experimental_enabled=args.experimental_enabled == "true",
                 target_enrichment_enabled=args.target_enrichment_enabled == "true",
+                background_depletion_enabled=args.background_depletion_enabled
+                == "true",
                 depletion_enabled=args.depletion_enabled == "true",
                 assembly_enabled=args.assembly_enabled == "true",
                 read_querying_enabled=args.read_querying_enabled == "true",

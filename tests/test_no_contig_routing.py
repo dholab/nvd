@@ -730,3 +730,145 @@ workflow {{
     assert completed.stdout.count("READS_ONLY: eligible") == 1
     assert completed.stdout.count("CONTIGS: assembled") == 1
     assert "READS_ONLY: assembled" not in completed.stdout
+
+
+def test_short_read_assembly_failure_routes_to_reads_only(tmp_path: Path) -> None:
+    """A crashed assembler must still reach the read-level query route.
+
+    ``ASSEMBLE_WITH_SPADES`` retries twice and then ignores the failure, and an
+    ignored task emits nothing. Without an explicit roster of attempted samples
+    the crashed sample disappears from both ``contigs`` and ``no_contigs``, so it
+    gets no BLAST queries at all.
+    """
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    write_executable(
+        bin_dir / "spades.py",
+        """#!/bin/sh
+case "$*" in
+    *crashed*)
+        echo "ERROR General (kmer_coverage_model.cpp : 188)" >&2
+        exit 64
+        ;;
+esac
+mkdir -p output
+printf '>contig\nACGTACGTACGT\n' > output/contigs.fasta
+""",
+    )
+    crashed_reads = write_fastq(tmp_path / "crashed.fastq.gz", "crashed")
+    assembled_reads = write_fastq(tmp_path / "assembled.fastq.gz", "assembled")
+
+    workflow = tmp_path / "main.nf"
+    workflow.write_text(
+        f"""\
+nextflow.enable.dsl = 2
+
+include {{ SHORT_READ_DENOVO_ASSEMBLY }} from '{SHORT_READ_ASSEMBLY}'
+
+workflow {{
+    SHORT_READ_DENOVO_ASSEMBLY(Channel.of(
+        tuple(
+            [id: 'crashed', platform: 'illumina', read_structure: 'interleaved', sequence_count: 895],
+            [[reads: file('{crashed_reads}')]],
+        ),
+        tuple(
+            [id: 'assembled', platform: 'illumina', read_structure: 'interleaved', sequence_count: 5988],
+            [[reads: file('{assembled_reads}')]],
+        ),
+    ))
+
+    SHORT_READ_DENOVO_ASSEMBLY.out.no_contigs.view {{ sample ->
+        "READS_ONLY: ${{sample[0]}}"
+    }}
+    SHORT_READ_DENOVO_ASSEMBLY.out.contigs.view {{ sample ->
+        "CONTIGS: ${{sample[0]}}"
+    }}
+}}
+""",
+        encoding="utf-8",
+    )
+
+    completed = run_nextflow(workflow, bin_dir=bin_dir)
+    diagnostics = f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}"
+
+    assert completed.returncode == 0, diagnostics
+    assert completed.stdout.count("READS_ONLY: crashed") == 1, diagnostics
+    assert completed.stdout.count("CONTIGS: assembled") == 1, diagnostics
+    assert "READS_ONLY: assembled" not in completed.stdout, diagnostics
+    assert "CONTIGS: crashed" not in completed.stdout, diagnostics
+
+
+def test_non_experimental_long_read_assembly_failure_routes_to_reads_only(
+    tmp_path: Path,
+) -> None:
+    """The standard long-read branch needs the same recovery as the short-read one.
+
+    The experimental ensemble already joins its attempts against its contigs; the
+    single-assembler branch used only the eligibility gate, so an ignored SPAdes
+    failure dropped the sample from every output.
+    """
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    write_executable(
+        bin_dir / "spades.py",
+        """#!/bin/sh
+case "$*" in
+    *crashed*)
+        echo "ERROR General (kmer_coverage_model.cpp : 188)" >&2
+        exit 64
+        ;;
+esac
+mkdir -p output
+printf '>contig\nACGTACGTACGT\n' > output/contigs.fasta
+""",
+    )
+    crashed_reads = write_fastq(tmp_path / "crashed.fastq.gz", "crashed")
+    assembled_reads = write_fastq(tmp_path / "assembled.fastq.gz", "assembled")
+    profile = write_long_read_profile(tmp_path / "profile.json", eligible=True)
+
+    workflow = tmp_path / "main.nf"
+    workflow.write_text(
+        f"""\
+nextflow.enable.dsl = 2
+
+include {{ LONG_READ_DENOVO_ENSEMBLY }} from '{LONG_READ_ENSEMBLE}'
+
+workflow {{
+    LONG_READ_DENOVO_ENSEMBLY(Channel.of(
+        tuple(
+            [id: 'crashed', platform: 'ont', read_structure: 'single', sequence_count: 895],
+            file('{crashed_reads}'),
+            file('{profile}'),
+            file('{profile}'),
+        ),
+        tuple(
+            [id: 'assembled', platform: 'ont', read_structure: 'single', sequence_count: 5988],
+            file('{assembled_reads}'),
+            file('{profile}'),
+            file('{profile}'),
+        ),
+    ))
+
+    LONG_READ_DENOVO_ENSEMBLY.out.no_contigs.view {{ sample ->
+        "READS_ONLY: ${{sample[0]}}"
+    }}
+    LONG_READ_DENOVO_ENSEMBLY.out.contigs.view {{ sample ->
+        "CONTIGS: ${{sample[0]}}"
+    }}
+}}
+""",
+        encoding="utf-8",
+    )
+
+    completed = run_nextflow(
+        workflow,
+        bin_dir=bin_dir,
+        parameters=["--experimental", "false"],
+    )
+    diagnostics = f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}"
+
+    assert completed.returncode == 0, diagnostics
+    assert completed.stdout.count("READS_ONLY: crashed") == 1, diagnostics
+    assert completed.stdout.count("CONTIGS: assembled") == 1, diagnostics
+    assert "READS_ONLY: assembled" not in completed.stdout, diagnostics
+    assert "CONTIGS: crashed" not in completed.stdout, diagnostics

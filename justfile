@@ -62,7 +62,7 @@ schema-check:
 
 # run the fast pytest suite only
 test:
-    pixi run -e dev pytest -m "not slow and not network"
+    pixi run -e dev fast-test
 
 # run one pytest file or node, e.g. just test-one lib/py_nvd/test_models.py
 test-one path:
@@ -89,9 +89,15 @@ config-check:
 
 # === End-to-end Integration ===
 
-# run the slow mini SRA end-to-end test with progress output
+# run the slow end-to-end test on the committed fixtures, offline, with progress output
 e2e profile="test":
     NVD_INTEGRATION_PROFILE="{{ profile }}" pixi run -e dev e2e-test
+
+# run the end-to-end test against the full SRA runs instead of the committed
+# downsamples. The only tier that exercises FETCH_FASTQ/sracha, so run it before
+# tagging a release; it downloads roughly 190 MB.
+e2e-full profile="test":
+    NVD_INTEGRATION_PROFILE="{{ profile }}" NVD_E2E_USE_SRA=1 pixi run -e dev e2e-test
 
 # run the slow mini SRA end-to-end test with experimental features enabled
 e2e-experimental profile="test":

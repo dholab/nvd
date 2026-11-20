@@ -22,7 +22,7 @@ import yaml
 SCHEMA_FILENAME = "nvd-params.latest.schema.json"
 
 # GitHub raw URL for schema (fallback and for generated templates)
-SCHEMA_URL = "https://raw.githubusercontent.com/dholab/nvd/main/schemas/nvd-params.v3.5.0.schema.json"
+SCHEMA_URL = "https://raw.githubusercontent.com/dholab/nvd/main/schemas/nvd-params.v3.6.0.schema.json"
 
 
 def _find_schema_path() -> Path:
@@ -331,7 +331,14 @@ def _generate_yaml_template(path: Path, schema: dict, schema_url: str) -> None:
     _add_commented_section(
         lines,
         "Execution Controls",
-        ["skip_assembly", "skip_blast", "skip_fastqc", "skip_unassembled_read_queries"],
+        [
+            "skip_assembly",
+            "skip_blast",
+            "skip_fastqc",
+            "skip_unassembled_read_queries",
+            "skip_big_tables",
+            "skip_contig_filter",
+        ],
         properties,
         subheading="Skip optional or expensive stages for diagnostics or partial runs.",
     )
@@ -368,6 +375,9 @@ def _generate_yaml_template(path: Path, schema: dict, schema_url: str) -> None:
             "virus_window_size",
             "virus_abs_threshold",
             "virus_rel_threshold",
+            "background_index",
+            "background_abs_threshold",
+            "background_rel_threshold",
             "sourmash_ksize",
             "sourmash_scaled",
             "nvd_files",

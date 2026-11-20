@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 import typer
+from pydantic import ValidationError
 
 from py_nvd.cli.provenance import nextflow_environment
 from py_nvd.cli.utils import (
@@ -177,6 +178,18 @@ def run(
         help="Skip BLAST querying of unassembled reads (contigs only).",
         rich_help_panel=PANEL_CORE,
     ),
+    skip_big_tables: bool | None = typer.Option(
+        None,
+        "--skip-big-tables",
+        help="Skip the big tables and best-hit sequence evidence (CRUMBS still runs).",
+        rich_help_panel=PANEL_CORE,
+    ),
+    skip_contig_filter: bool | None = typer.Option(
+        None,
+        "--skip-contig-filter",
+        help="Send every assembled contig to BLAST without the step-one Deacon screen.",
+        rich_help_panel=PANEL_CORE,
+    ),
     # -------------------------------------------------------------------------
     # Reference Paths
     # -------------------------------------------------------------------------
@@ -250,6 +263,27 @@ def run(
         None,
         "--virus-rel-threshold",
         help="Minimum relative minimizer proportion for target enrichment (default: 0.0)",
+        rich_help_panel=PANEL_DATABASES,
+    ),
+    background_index: Path | None = typer.Option(
+        None,
+        "--background-index",
+        help=(
+            "Prebuilt Deacon background index (.idx). Switches the first Deacon "
+            "pass to depletion; conflicts with an enabled virus index"
+        ),
+        rich_help_panel=PANEL_DATABASES,
+    ),
+    background_abs_threshold: int | None = typer.Option(
+        None,
+        "--background-abs-threshold",
+        help="Minimum absolute minimizer hits to remove a record as background (default: 1)",
+        rich_help_panel=PANEL_DATABASES,
+    ),
+    background_rel_threshold: float | None = typer.Option(
+        None,
+        "--background-rel-threshold",
+        help="Minimum relative minimizer proportion to remove a record as background (default: 0.0)",
         rich_help_panel=PANEL_DATABASES,
     ),
     # -------------------------------------------------------------------------
@@ -601,6 +635,8 @@ def run(
         "skip_blast": skip_blast,
         "skip_fastqc": skip_fastqc,
         "skip_unassembled_read_queries": skip_unassembled_read_queries,
+        "skip_big_tables": skip_big_tables,
+        "skip_contig_filter": skip_contig_filter,
         # Reference paths
         "blast_db": blast_db,
         "blast_db_prefix": blast_db_prefix,
@@ -612,6 +648,9 @@ def run(
         "virus_window_size": virus_window_size,
         "virus_abs_threshold": virus_abs_threshold,
         "virus_rel_threshold": virus_rel_threshold,
+        "background_index": background_index,
+        "background_abs_threshold": background_abs_threshold,
+        "background_rel_threshold": background_rel_threshold,
         "sourmash_ksize": sourmash_ksize,
         "sourmash_scaled": sourmash_scaled,
         # Reference versions
@@ -662,7 +701,15 @@ def run(
 
     # Merge with precedence: preset < params_file < CLI
     # NvdParams.merge() filters None values and applies validation
-    params = NvdParams.merge(preset_params, params_file_dict, cli_args)
+    try:
+        params = NvdParams.merge(preset_params, params_file_dict, cli_args)
+    except ValidationError as e:
+        console.print("\n[red]✗ Validation failed:[/red]\n")
+        for err in e.errors():
+            field = ".".join(str(loc) for loc in err["loc"])
+            console.print(f"  • [bold]{field}[/bold]: {err['msg']}")
+        console.print()
+        raise typer.Exit(1) from None
 
     # =========================================================================
     # STEP 3: Post-merge validation

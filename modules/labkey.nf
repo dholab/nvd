@@ -52,7 +52,7 @@ process LABKEY_WEBDAV_UPLOAD_BLAST {
     secret 'LABKEY_API_KEY'
 
     input:
-    tuple val(sample_id), path(blast_csv), path(fasta)
+    tuple val(sample_id), path(blast_csv)
     val validation_complete
 
     output:
@@ -60,18 +60,12 @@ process LABKEY_WEBDAV_UPLOAD_BLAST {
 
     script:
     """
-    gzip -c ${fasta} > ${fasta}.gz
     gzip -c ${blast_csv} > ${blast_csv}.gz
 
     webdav_CLIent.py \
         --password \$LABKEY_API_KEY \
         --server ${params.labkey_webdav} \
         upload ${blast_csv}.gz ${params.experiment_id}/${sample_id}/nvd/${blast_csv}.gz
-
-    webdav_CLIent.py \
-        --password \$LABKEY_API_KEY \
-        --server ${params.labkey_webdav} \
-        upload ${fasta}.gz ${params.experiment_id}/${sample_id}/nvd/${fasta}.gz
     """
 }
 

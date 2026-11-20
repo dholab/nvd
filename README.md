@@ -22,7 +22,7 @@ This pipeline in its 3rd major version, which brings with it a helpful CLI and p
 
 ![Metro map of the NVD pipeline, from the samplesheet through target enrichment, read preprocessing, assembly and map-back, two-phase BLAST, and reporting](docs/nvd_metro_map.svg)
 
-The map follows the default short-read path: paired Illumina reads with target enrichment on and host depletion off. Reads are enriched, merged, and cleaned on one shared track, then assembled. The track forks at the map-back step. Contigs that pass the filters continue as the assembled route, and reads that map back to no contig continue as the unassembled route. Both routes are searched with megablast and then blastn, and both feed the final tables. Each stop names what happens, with the tool in brackets. Nanopore inputs and LabKey upload are not drawn, and the sample similarity sketch and the big tables only run with `--experimental`.
+The map follows the default short-read path: paired Illumina reads with target enrichment on and host depletion off. Reads are enriched, merged, and cleaned on one shared track, then assembled. The track forks at the map-back step. Contigs that pass the filters continue as the assembled route, and reads that map back to no contig continue as the unassembled route. Both routes are searched with megablast and then blastn, and both feed the final tables. Each stop names what happens, with the tool in brackets. Nanopore inputs and LabKey upload are not drawn, and the sample similarity sketch only runs with `--experimental`. The big tables run by default and can be turned off with `--skip-big-tables`.
 
 ## Get Started
 
@@ -128,6 +128,16 @@ nvd run --params-file run.yaml --virus-index /path/to/human_infecting_viruses.k3
 ```
 
 For the rationale, source STAT database, curated taxid list, conversion script, build parameters, and reproducibility notes, see the [Virus Enrichment Index Guide](./docs/virus_enrichment_index.md).
+
+#### Background depletion instead of enrichment
+
+Step 1 runs exactly one Deacon filter. By default it keeps reads that match the virus enrichment index. Setting `background_index` switches that pass to depletion: reads and later contigs that match the background index, for example a ribosomal RNA index built from SILVA and Rfam, are removed, and everything else continues to assembly and BLAST. NVD does not build or fetch background indexes; supply a prebuilt `.idx` file.
+
+```bash
+nvd run --params-file run.yaml --no-enrichment --background-index /path/to/rrna.k31w15.idx
+```
+
+A background index cannot be combined with an enabled virus index, and the run stops at startup if both are set. A shared preset that carries `virus_index` still works: add `--no-enrichment` to select background mode. `background_abs_threshold` (default 1) and `background_rel_threshold` (default 0.0) tune how many minimizer hits remove a record; the defaults mirror enrichment, so one hit decides either way. Host depletion after deduplication (`host_index`) is independent and may be combined with either mode. In background mode the step-one report counts reads removed as background, and the results stay under `01_target_enrichment/` with their usual file names.
 
 ### NVD setup management
 
@@ -407,6 +417,209 @@ export NVD_TAXONOMY_OFFLINE=1
 ```
 
 Offline mode requires the taxonomy directory to already contain the expected NCBI taxdump files.
+
+## Testing
+
+### Test tiers
+
+| Command | What it runs | Network | When |
+|---|---|---|---|
+| `just test` | Pure Python and Nextflow-backed unit tests | none | Every save |
+| `just e2e` | The whole pipeline on the committed fixtures | **none** | Every PR, in CI |
+| `just e2e-full` | The same pipeline on the **full SRA runs** | ~190 MB download | Before tagging a release |
+
+`just e2e` is **offline**. Every read it processes is committed to
+`tests/data`, so it needs no network, no credentials and no download cache, and
+it cannot be broken by an SRA outage.
+
+> **`just e2e-full` is not redundant.** Because the default tier reads only
+> local files, it never exercises `FETCH_FASTQ`/`sracha` - the code path that
+> resolves an accession and streams it into Deacon. `just e2e-full` sets
+> `NVD_E2E_USE_SRA=1`, which swaps the three committed downsamples for their
+> source accessions and proves that path still works. It is the only tier that
+> does, so run it before tagging a release. Both tiers run the same samples with
+> the same sample ids and the same assertions; only the origin of the reads
+> differs.
+>
+> In CI the offline tier is the `offline-nextflow` job and runs on every push and
+> pull request. The full tier is the `full-sra-nextflow` job and runs only on
+> `workflow_dispatch`, so it is there when you want it without putting an SRA
+> download on the critical path of every PR.
+
+### Test dataset
+
+NVD's end-to-end test runs the whole pipeline on a small, fully documented
+dataset. It has two parts: **downsampled copies of real SRA runs**, and samples
+that are **simulated** on purpose. This section explains exactly how both are
+built, so that anyone can rebuild them and get the same bytes back.
+
+#### The downsampled real samples
+
+Three real runs cover the code paths that simulated data cannot: real sequencer
+error profiles, a real hybrid-capture library, and the long-read route. Each is
+a seeded subsample of the full run, small enough to commit:
+
+| Sample | Source | Platform | Fraction | Reads | Viral reads | Size | What it covers |
+|---|---|---|---|---|---|---|---|
+| `orf_virus_ov_pt001_2024` | ERR17363849 | Illumina | 0.05 | 7,759 pairs | 7,578 | 2.28 MB | Paired Illumina capture; assembles to contigs |
+| `monkeypox_pt1020_2026` | ERR17356125 | Illumina | 0.02 | 16,184 pairs | 16,157 | 2.04 MB | The only real-library monkeypox sample |
+| `sample_ont_srr27720442` | SRR27720442 | ONT | 0.1 | 6,035 reads | 4,823 | 3.47 MB | **The only long-read sample**; covers the long-read assembly route |
+
+"Viral reads" is measured, not assumed: `deacon filter -a 1 -r 0` against
+`tests/data/mini_virus_deacon.k31w1.idx`. Every fixture keeps thousands of
+target reads, far above the measured assembly floor of roughly 1,000 viral
+pairs, so the fractions have real headroom. **Do not lower a fraction** without
+re-measuring: a fixture that loses its virus makes the test assert nothing.
+
+The sample ids deliberately match the full runs' rather than carrying an `_s42`
+suffix. The parity check compares a reduced run against a recording keyed on
+full-run sample ids, so matching ids keep that comparison meaningful. The `_s42`
+provenance marker lives in the file names instead.
+
+Rebuild any of them - the downsample is byte-reproducible with seqkit 2.13.0:
+
+```bash
+# fetch the source run
+pixi run -e dev sracha get --split split-3 --gzip-level 1 --threads 4 \
+    --no-progress --yes --output-dir . ERR17363849
+
+# downsample; give R1 and R2 the same seed so mates stay in sync
+pixi run -e dev seqkit sample -s 42 -p 0.05 \
+    -o tests/data/orf_virus_ov_pt001_2024_s42_R1.fastq.gz ERR17363849_1.fastq.gz
+pixi run -e dev seqkit sample -s 42 -p 0.05 \
+    -o tests/data/orf_virus_ov_pt001_2024_s42_R2.fastq.gz ERR17363849_2.fastq.gz
+```
+
+Per-file sizes, sha256s, source accessions and measured viral counts are in
+`tests/data/e2e_sra_fixtures.manifest.json`. `tests/test_e2e_sra_fixtures.py`
+checks the committed bytes against it, and fails if a FASTQ appears in
+`tests/data` that the manifest does not document.
+
+#### Why some of the test data is synthetic
+
+NVD exists to find a **low-abundance** virus inside a **large** environmental
+metagenome. Public data cannot give us that in a file small enough to test with,
+for two independent reasons:
+
+1. **Hybrid-capture libraries are not representative.** Every SRA run the test
+   suite originally used was a probe-capture library in which 97-100% of reads
+   are the target virus. Those runs confirm the pipeline's steps connect, but
+   they never exercise the needle-in-a-haystack problem.
+2. **A realistic low-abundance sample is inherently large.** Assembly needs
+   roughly 10-30x depth, so the number of target reads required scales with the
+   target's genome length, while the total read count scales as
+   `target reads / target fraction`. Orf virus is 139,962 bp and monkeypox is
+   about 197,000 bp, so a 1%-abundance Orf sample needs on the order of a
+   million read pairs - over 100 MB for one sample.
+
+Simulation removes both problems at once. We choose the abundance, we know the
+ground truth exactly, and the sample is defined by a short recipe in version
+control rather than by opaque FASTQ bytes.
+
+#### What the simulated samples look like
+
+Composition is modelled on a real 18-sample Illumina NovaSeq X wastewater run
+(`rapid-ww-metagenomics` run `rww_20261029_32720`). The properties reproduced
+are the ones that matter for this pipeline:
+
+- Plant viruses dominate the sewage virome; tobamoviruses (pepper mild mottle
+  virus, tobacco mosaic virus) were the most abundant and most frequently
+  detected species in that run.
+- Human enteric viruses sit below them: astrovirus, cosavirus, norovirus and
+  mastadenovirus were all called repeatedly.
+- crAssphage-type gut phage is a reliable sewage component.
+- Bacteria make up the bulk of what survives host and rRNA depletion.
+- **Large DNA viruses appear only as traces.** That run detected Poxviridae
+  (molluscum contagiosum virus) in 6 of 18 samples on **21 reads in total**,
+  covering at most **0.4%** of the genome.
+
+Two samples are generated, deliberately on opposite sides of the assembly
+threshold:
+
+| Sample | Complexity | Genomes | Reads | Size | Targets | What it covers |
+|---|---|---|---|---|---|---|
+| `synthetic_ww_lowcx` | low | 5 | 100,000 (50,000 pairs) | 5.45 MB | Orf virus, 6.00% of reads, 6.5x depth | The assembly route: SPAdes builds 17 contigs >=200 bp, 135,712 bp total, N50 10,442 bp, longest 23,779 bp |
+| `synthetic_ww_highcx` | high | 12 | 109,400 (54,700 pairs) | 5.79 MB | Orf virus 0.46% (0.54x), monkeypox 0.37% (0.31x) | The unassembled-read route: too shallow to assemble, exactly like a real sewage poxvirus, but still detected by BLAST on reads |
+
+The high-complexity sample **cannot** assemble its targets, and that is the
+point: at 0.3-0.5x depth SPAdes exits without writing contigs, so the sample
+pins the behaviour NVD relies on when a large DNA virus shows up in sewage at
+trace level.
+
+Full per-genome composition, read counts, achieved fractions, expected coverage
+and file checksums are written to `synthetic_metagenomes.manifest.json`
+alongside the reads.
+
+#### Rebuilding the simulated samples
+
+```bash
+pixi run -e dev python tests/scripts/build_synthetic_metagenomes.py \
+    --out-dir tests/data --seed 42 --cpus 4
+```
+
+The reads are committed, so a rebuild is only needed to change the recipe or to
+verify reproducibility; the end-to-end test never builds them. Rebuilding in
+place overwrites the committed files, so check `git diff --stat` afterwards: a
+faithful rebuild changes nothing.
+
+Add `--only synthetic_ww_lowcx` to build a single sample. Reference genomes are
+downloaded from NCBI and cached under `--cache-dir`, so a second run does no
+network I/O.
+
+Reproducibility rests on four things, all enforced by the builder:
+
+- **Seed 42** is passed to InSilicoSeq, which fixes the reads.
+- **The worker count is fixed at 4.** InSilicoSeq splits a run into one chunk
+  per CPU and seeds each worker from the base seed, so the worker count is part
+  of the random stream: the same seed at a different `--cpus` produces different
+  reads. It is therefore a reproducibility parameter rather than a performance
+  knob. It is recorded in the manifest, and `--cpus` should be left alone when
+  reproducing a published checksum.
+- **Compression is normalised.** A gzip header carries both a modification time
+  and the original filename, either of which changes the compressed bytes while
+  the reads stay identical. The builder therefore writes plain FASTQ from
+  InSilicoSeq and compresses it itself with the timestamp zeroed and the
+  filename blank - the library equivalent of `gzip -n`. One sha256 then serves
+  both download integrity and rebuild verification.
+- **Genome lengths are re-checked** against NCBI on every build. The coverage
+  arithmetic, and therefore the whole design, depends on them, so a revised
+  RefSeq record fails the build loudly instead of silently shifting an
+  abundance.
+
+Verify a rebuild against the published checksums:
+
+```bash
+sha256sum -c <(python - <<'PY'
+import json, pathlib
+manifest = json.loads(pathlib.Path(
+    "tests/data/synthetic_metagenomes.manifest.json"
+).read_text())
+for sample in manifest["samples"]:
+    for item in sample["files"]:
+        print(f"{item['sha256']}  tests/data/{item['name']}")
+PY
+)
+```
+
+Tooling is pinned in the `dev` Pixi environment: `insilicoseq` 2.0.1, error
+model `NovaSeq`, 151 bp reads. The manifest also records the NumPy version,
+because NumPy supplies the random stream InSilicoSeq draws from and an upgrade
+can change the reads even when the InSilicoSeq version has not moved. Note that InSilicoSeq's `--readcount_file` counts
+**total reads**, not pairs, so `6000` means 3,000 pairs.
+
+#### Ground truth
+
+Because the reads are simulated from known genomes, every count is exact. The
+built samples were checked against the pipeline's own tools:
+
+- `deacon filter -a 1 -r 0` against the test virus index retains
+  **6,000 / 100,000** reads for `synthetic_ww_lowcx` (6.000%, i.e. precisely the
+  Orf reads) and **900 / 109,400** for `synthetic_ww_highcx` (0.823%, precisely
+  500 Orf + 400 monkeypox), with **no** false positives from the ten background
+  genomes.
+- `blastn -task megablast` against the test database assigns 3,221 enriched
+  reads to taxid 10258 (Orf virus) in the low-complexity sample, and 272 to
+  10258 plus 221 to 10244 (monkeypox) in the high-complexity sample.
 
 ## Further Documentation
 

@@ -334,5 +334,5 @@ searches" data-section-id="blast" data-section-name="Two-phase BLAST" />
 <path d="M24.19999999999999,684.1 L48.19999999999999,684.1" stroke="#f5c542" stroke-width="3.0" stroke-linecap="round" stroke-dasharray="8,4" />
 <text x="60.19999999999999" y="684.1" font-size="18.900000000000002" fill="#e0e0e0" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif" dy="0.3em" class="nf-metro-legend-text">QC side branches (FastQC, sample similarity)</text>
 <text x="2020.0" y="724.0" font-size="8" fill="rgba(150, 150, 150, 0.6)" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif" text-anchor="end">created with nf-metro v2.1.0</text>
-<text x="30.0" y="724.0" font-size="11" fill="rgba(200, 200, 200, 0.85)" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif" text-anchor="start">Default short-read path: paired Illumina reads, Deacon target enrichment on, host depletion off, experimental features on</text>
+<text x="30.0" y="724.0" font-size="11" fill="rgba(200, 200, 200, 0.85)" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif" text-anchor="start">Default short-read path: paired Illumina reads, Deacon target enrichment on, host depletion off, big tables on</text>
 </svg>

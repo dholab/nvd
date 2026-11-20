@@ -120,6 +120,7 @@ class ReportPlan(FrozenModel):
     schema_version: Literal["nvd.report-plan/v1"] = REPORT_PLAN_SCHEMA
     experimental_enabled: bool
     target_enrichment_enabled: bool = True
+    background_depletion_enabled: bool = False
     depletion_enabled: bool = True
     assembly_enabled: bool = True
     read_querying_enabled: bool = True
@@ -161,6 +162,7 @@ class ReportRoots:
 class ReportConfiguration:
     experimental_enabled: bool
     target_enrichment_enabled: bool = True
+    background_depletion_enabled: bool = False
     depletion_enabled: bool = True
     assembly_enabled: bool = True
     read_querying_enabled: bool = True
@@ -212,6 +214,7 @@ def build_multiqc_inputs(request: CompileRequest) -> Path:
         configuration=DomainConfiguration(
             experimental_enabled=request.configuration.experimental_enabled,
             target_enrichment_enabled=request.configuration.target_enrichment_enabled,
+            background_depletion_enabled=request.configuration.background_depletion_enabled,
             depletion_enabled=request.configuration.depletion_enabled,
             assembly_enabled=request.configuration.assembly_enabled,
             read_querying_enabled=request.configuration.read_querying_enabled,
@@ -229,6 +232,7 @@ def build_multiqc_inputs(request: CompileRequest) -> Path:
         report_plan=ReportPlan(
             experimental_enabled=request.configuration.experimental_enabled,
             target_enrichment_enabled=request.configuration.target_enrichment_enabled,
+            background_depletion_enabled=request.configuration.background_depletion_enabled,
             depletion_enabled=request.configuration.depletion_enabled,
             assembly_enabled=request.configuration.assembly_enabled,
             read_querying_enabled=request.configuration.read_querying_enabled,
@@ -550,7 +554,7 @@ def write_experimental_invitation(path: Path) -> None:
             {
                 "id": "nvd_experimental_capabilities",
                 "section_name": "Experimental Capabilities",
-                "description": "Experimental mode can add CRUMBS profiling, sample-similarity QC, Big Tables, long-read assembly, and related results when enabled.",
+                "description": "Experimental mode adds sample-similarity QC and the myloasm, metaMDBG, and metaFlye long-read assembly ensemble when enabled.",
                 "plot_type": "table",
                 "data": {"experimental_enabled": {"enabled": "false"}},
             },

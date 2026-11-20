@@ -67,6 +67,152 @@ class NvdUtils {
         return params.host_index || params.host_index_url || params.host_contaminants_fasta
     }
 
+    /**
+     * Returns true when a background depletion index is configured. Its
+     * presence switches the first Deacon pass from enrichment to depletion.
+     */
+    public static boolean backgroundDepletionEnabled(params) {
+        return params.background_index ? true : false
+    }
+
+    /**
+     * Resolve the single filter that step 1 (and the contig filter) runs.
+     *
+     * Enrichment wins when enabled; otherwise a configured background index
+     * selects depletion with the background thresholds; otherwise the empty
+     * passthrough index is used and the thresholds are irrelevant.
+     */
+    public static Map stepOneFilterPolicy(params) {
+        def enrichment = targetEnrichmentEnabled(params)
+        def background = !enrichment && backgroundDepletionEnabled(params)
+        return [
+            target_enrichment_enabled: enrichment,
+            background_depletion_enabled: background,
+            abs_threshold: background ? params.background_abs_threshold : params.virus_abs_threshold,
+            rel_threshold: background ? params.background_rel_threshold : params.virus_rel_threshold,
+        ].asImmutable()
+    }
+
+    /**
+     * Policy for DEACON_FILTER_CONTIGS: the same step-one filter the reads
+     * saw, plus the optional host/contaminant depletion pass.
+     */
+    public static Map contigFilterPolicy(params, boolean use_depletion) {
+        def step_one = stepOneFilterPolicy(params)
+        def screen_contigs = !(params.skip_contig_filter ? true : false)
+        return [
+            // With the screen skipped the process still runs one pass, in
+            // deplete mode against the empty index, so every contig survives
+            // and the decisions TSV is still written.
+            target_enrichment_enabled: screen_contigs && step_one.target_enrichment_enabled,
+            target_abs_threshold: step_one.abs_threshold,
+            target_rel_threshold: step_one.rel_threshold,
+            depletion_enabled: use_depletion,
+            depletion_abs_threshold: use_depletion ? params.host_abs_threshold : null,
+            depletion_rel_threshold: use_depletion ? params.host_rel_threshold : null,
+        ].asImmutable()
+    }
+
+    /**
+     * Sample ids on the samplesheet that produced nothing in the run's results.
+     *
+     * Nothing else in the pipeline reconciles input against output. Several
+     * processes use `errorStrategy 'ignore'`, and an ignored Nextflow task emits
+     * nothing into its output channel, so a sample can disappear between the
+     * samplesheet and the results while the run still reports success.
+     * FETCH_FASTQ and the assemblers both behave that way today.
+     *
+     * Returns the ids sorted, so the warning text is stable between runs.
+     */
+    public static List<String> missingSampleIds(
+        Collection expected_sample_ids,
+        Collection observed_sample_ids
+    ) {
+        def observed = observed_sample_ids.collect { id -> id.toString() } as Set
+        return expected_sample_ids
+            .collect { id -> id.toString() }
+            .unique()
+            .findAll { sample_id -> !observed.contains(sample_id) }
+            .sort()
+    }
+
+    /**
+     * A run-end warning when tasks failed and the pipeline ignored the failure.
+     *
+     * Nearly every NVD process ends its retry budget at `errorStrategy 'ignore'`,
+     * which is the right policy: a dead FastQC or an unreachable Slack should not
+     * kill a six-hour run. The cost is that Nextflow still reports the run as a
+     * success, so the failure is invisible unless someone opens the report.
+     *
+     * missingSampleIds covers samples that vanished. This covers the rest: a
+     * failure that loses a run-level product rather than a sample, which is what
+     * silently cost the MultiQC report on the scheduled runs and which a
+     * per-sample reconciliation cannot see.
+     *
+     * Returns null when nothing was ignored, which is the normal case.
+     */
+    public static String describeIgnoredFailures(
+        int ignored_task_count,
+        int succeeded_task_count,
+        Object report_file_path
+    ) {
+        if (ignored_task_count < 1) {
+            return null
+        }
+        def task_word = ignored_task_count == 1 ? 'task' : 'tasks'
+        return "nvd.ignored_failures ${ignored_task_count} ${task_word} failed and the " +
+            "failure was ignored (${succeeded_task_count} succeeded). Nextflow reports this " +
+            "run as a success, so these losses are easy to miss: an ignored task emits " +
+            "nothing, which can mean a missing report, a missing QC file, or a sample " +
+            "absent from the results. Open ${report_file_path} and sort by status to see " +
+            "which tasks failed before trusting the outputs."
+    }
+
+    /**
+     * The index DEACON_FILTER_CONTIGS screens with: the step-one index, or the
+     * committed empty index when skip_contig_filter is set.
+     */
+    public static Object contigScreeningIndex(params, Object step_one_index, Object project_dir) {
+        if (params.skip_contig_filter) {
+            return nextflow.Nextflow.file("${project_dir}/assets/empty_deacon.k31w1.idx")
+        }
+        return step_one_index
+    }
+
+    /**
+     * Stop the run when step 1 cannot resolve to one filter.
+     *
+     * @throws IllegalStateException on a background index alongside enabled
+     *         target enrichment, a bare --background_index flag, or a missing
+     *         index file.
+     */
+    public static void validateStepOneFilter(params) {
+        def background = params.background_index
+        if (background == null || background == false) {
+            return
+        }
+        if (!(background instanceof CharSequence)) {
+            throw new IllegalStateException(
+                "background_index must be a path to a prebuilt Deacon .idx file; received '${background}'. " +
+                "Pass --background_index /path/to/background.idx."
+            )
+        }
+        def path = new File(background.toString())
+        if (!path.isFile()) {
+            throw new IllegalStateException(
+                "background_index points to a file that does not exist: ${background}"
+            )
+        }
+        if (targetEnrichmentEnabled(params)) {
+            def sources = ['virus_index', 'virus_index_url', 'virus_reference_fasta'].findAll { name -> params[name] }
+            throw new IllegalStateException(
+                "background_index cannot be combined with target enrichment (${sources.join(', ')} also set). " +
+                "Step 1 runs one Deacon filter. Pass --no_enrichment true to deplete the background instead, " +
+                "or drop background_index."
+            )
+        }
+    }
+
     // -------------------------------------------------------------------------
     // Private helpers
     // -------------------------------------------------------------------------

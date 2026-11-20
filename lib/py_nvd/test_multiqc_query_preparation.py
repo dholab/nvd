@@ -158,6 +158,7 @@ def test_default_run_reports_read_queries_without_experimental(
             experimental_enabled=False,
             read_querying_enabled=True,
             target_enrichment_enabled=True,
+            background_depletion_enabled=False,
             depletion_enabled=False,
             assembly_enabled=True,
             blast_enabled=True,
