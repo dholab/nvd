@@ -15,7 +15,6 @@ workflow LIMS_INTEGRATION {
     take:
     blast_results         // queue channel: [ sample_id, query_class, batch_final_tsv ] — enriched with mapped_reads, total_reads, blast_db_version, nextflow_run_id; per (sample_id, query_class) batch
     sample_blast_results  // queue channel: [ sample_id, blast_tsv ] - per-sample stack of every query_class batch; one per sample
-    contig_sequences      // queue channel: [ sample_id, fasta ] - one per sample
     query_fastas          // queue channel: [ sample_id, query_class, batch_fasta ] - per-read-type query FASTAs actually BLASTed; per (sample_id, query_class) batch
     experiment_id         // value channel: experiment ID (the one LabKey-specific field)
     run_id                // value channel: workflow run ID (needed for FASTA prep and uploads)
@@ -27,9 +26,6 @@ workflow LIMS_INTEGRATION {
         : channel.empty()
     ch_labkey_sample_blast_results = params.labkey
         ? sample_blast_results
-        : channel.empty()
-    ch_labkey_contigs = params.labkey
-        ? contig_sequences
         : channel.empty()
     ch_labkey_query_fastas = params.labkey
         ? query_fastas
@@ -60,12 +56,17 @@ workflow LIMS_INTEGRATION {
         tuple(sample_id, query_class, blast_tsv)
     }
 
-    // The combined WebDAV upload pairs a sample's stacked BLAST TSV with its
-    // contig FASTA, so it keeps this inner join: both sides are per-sample, and
-    // a sample with no contigs has nothing to combine. LabKey FASTA rows no
-    // longer come through here — see ch_query_fasta_split below.
+    // This upload now carries the stacked BLAST TSV alone. It used to send the
+    // contig FASTA alongside it, which was redundant: the per-query-class
+    // FASTAs uploaded below are built by partitioning those same contigs, with
+    // no filtering, so for a single-platform Illumina sample the two files were
+    // byte-identical and LIMS received the same contigs twice.
+    //
+    // Dropping the FASTA also drops the inner join this used to need, which is
+    // a second fix: that join silently excluded read-only samples, since a
+    // sample with no contigs had nothing to join against and so never had its
+    // BLAST TSV uploaded at all. Every sample with results now gets one.
     ch_webdav_upload = ch_labkey_sample_blast_results
-        .join(ch_labkey_contigs, by: 0)
 
     // FASTA rows now follow the BLAST hits pattern: one batch per
     // (sample_id, query_class), covering every class that was actually

@@ -49,9 +49,12 @@ workflow REPORTING {
         NvdUtils.validateLabkeyBlast(params)
     }
 
-    ch_contig_sequence_parts = ch_contig_sequences.multiMap { sample_id, _platform, _read_structure, fasta, _lookup ->
-        for_lims: tuple(sample_id, fasta)
-        for_alignment_plots: tuple(sample_id, fasta)
+    // Contig FASTAs no longer go to LIMS from here: the per-query-class FASTAs
+    // below are a partition of these same contigs, so sending both uploaded the
+    // identical sequences twice. Alignment plots are the only consumer left,
+    // which is why this is a plain map rather than a multiMap.
+    ch_contig_sequences_for_plots = ch_contig_sequences.map { sample_id, _platform, _read_structure, fasta, _lookup ->
+        tuple(sample_id, fasta)
     }
 
     // Per-read-type query FASTAs (contig, merged, single) — the sequences
@@ -60,7 +63,7 @@ workflow REPORTING {
         tuple(sample_id, query_class, batch_fasta)
     }
 
-    ch_contig_alignment_plot_inputs = ch_contig_sequence_parts.for_alignment_plots
+    ch_contig_alignment_plot_inputs = ch_contig_sequences_for_plots
         .join(ch_filtered_bam, by: 0)
         .map { sample_id, fasta, bam, bai -> tuple(sample_id, fasta, bam, bai) }
 
@@ -209,7 +212,6 @@ workflow REPORTING {
     LIMS_INTEGRATION(
         ADD_READ_COUNTS_TO_BLAST.out,
         ch_sample_blast_results.for_lims,
-        ch_contig_sequence_parts.for_lims,
         ch_query_fastas_for_lims,
         params.experiment_id,
         run_id,

@@ -490,6 +490,49 @@ def expected_organism_names(
     }
 
 
+def assert_no_redundant_fasta_uploads(uploaded_paths: list[str]) -> None:
+    """Assert LIMS receives each contig FASTA once rather than twice.
+
+    The WebDAV uploads were never asserted on, which is how this went unnoticed:
+    the per-sample BLAST upload used to carry `<sample>.target_filtered.fasta`
+    alongside the BLAST TSV, while the query-batch upload sent
+    `<sample>.<query_class>.blast_queries.fasta`. The second is a partition of
+    the first with no filtering, so a single-platform Illumina sample uploaded
+    byte-identical contigs twice.
+    """
+    assert uploaded_paths, "no WebDAV uploads were recorded at all"
+
+    # Printed before the assertions so a failing run still shows the inventory
+    # it failed on. The uploads were previously unasserted and uninspectable,
+    # which is how a duplicate FASTA upload survived unnoticed.
+    print(f"LIMS WebDAV uploads ({len(uploaded_paths)} total):")
+    for path in sorted(uploaded_paths):
+        print(f"  {path}")
+
+    filtered_contig_uploads = [
+        path for path in uploaded_paths if "target_filtered.fasta" in path
+    ]
+    assert not filtered_contig_uploads, (
+        "target_filtered.fasta was uploaded to LIMS, duplicating the contigs "
+        f"already sent as query batches: {filtered_contig_uploads}"
+    )
+
+    query_fasta_uploads = [
+        path for path in uploaded_paths if "blast_queries.fasta" in path
+    ]
+    assert query_fasta_uploads, (
+        "no query-batch FASTA reached LIMS, so the contigs are now missing "
+        f"entirely rather than duplicated. Uploads seen: {uploaded_paths}"
+    )
+
+    duplicated = sorted(
+        {path for path in query_fasta_uploads if query_fasta_uploads.count(path) > 1},
+    )
+    assert not duplicated, f"the same query FASTA was uploaded twice: {duplicated}"
+
+    print(f"LIMS FASTA uploads, one per query batch: {len(query_fasta_uploads)}")
+
+
 def assert_negative_controls_report_nothing(
     experiment_rows: list[dict[str, str]],
 ) -> None:
@@ -1345,6 +1388,8 @@ def test_lims_enabled_pipeline_uploads_eagerly_and_dedups() -> None:
                 "expected read-derived query classes too (queries are split by "
                 f"read type by default); observed {sorted(observed_classes)}"
             )
+
+            assert_no_redundant_fasta_uploads(list(mock.webdav_puts))
 
             before = len(first_hits)
             second, second_dir = run_labkey_nextflow(
