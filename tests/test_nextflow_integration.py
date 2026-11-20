@@ -480,16 +480,20 @@ def assert_synthetic_metagenome_taxa_detected(
     expected taxon, because a metagenome carries several rather than the one an
     SRA row declares.
 
-    A sample whose only detection route is read-level BLAST is checked the
-    opposite way when that route is switched off, so the
-    skip_unassembled_read_queries variant stays meaningful instead of failing on
-    a sample it deliberately silenced.
+    Every tier asserts every sample's taxa in full. The single exception is the
+    opt-in skip_unassembled_read_queries variant, which turns off read-level
+    querying: a sample whose only detection route is read-level BLAST is then
+    checked the opposite way, because the variant removed the route rather than
+    the pipeline failing to use it.
     """
     for sample in SYNTHETIC_METAGENOME_SAMPLES:
         sample_id = str(sample["sample_id"])
         reads_only = bool(sample.get("detects_only_from_unassembled_reads"))
         if reads_only and integration_skip_unassembled_read_queries_enabled():
-            assert_reads_only_sample_is_silenced(experiment_rows, sample_id=sample_id)
+            assert_sample_reports_nothing_without_read_queries(
+                experiment_rows,
+                sample_id=sample_id,
+            )
             continue
         assert_expected_taxa_detected(
             experiment_rows,
@@ -498,26 +502,38 @@ def assert_synthetic_metagenome_taxa_detected(
         )
 
 
-def assert_reads_only_sample_is_silenced(
+def assert_sample_reports_nothing_without_read_queries(
     experiment_rows: list[dict[str, str]],
     *,
     sample_id: str,
 ) -> None:
-    """Assert a reads-only sample reports nothing when read queries are skipped.
+    """Assert a reads-only sample finds nothing once read querying is turned off.
 
-    Deliberately an assertion rather than a skip. The variant removed this
-    sample's only detection route, so finding nothing is the expected result,
-    and checking for it proves the flag took effect instead of letting the
-    sample pass for some unrelated reason.
+    Two different things in this suite both talk about unassembled reads, and
+    confusing them is easy. This sample *detects from* unassembled reads, which
+    is its only route. The --skip_unassembled_read_queries flag *turns off*
+    querying unassembled reads. So that one opt-in variant removes this sample's
+    only route, and finding nothing is the flag working.
+
+    This runs ONLY under that variant. Every other tier, the default e2e
+    included, asserts this sample's taxa in full: the normal run finds it on
+    1,279 single-read queries carrying both expected taxids.
+
+    Deliberately an assertion rather than a skip, so it proves the flag took
+    effect instead of letting the sample pass for some unrelated reason.
     """
-    silenced_rows = [row for row in experiment_rows if row.get("sample") == sample_id]
+    unexpected_rows = [row for row in experiment_rows if row.get("sample") == sample_id]
 
-    assert not silenced_rows, (
+    assert not unexpected_rows, (
         f"{sample_id} detects only from unassembled reads, but the "
-        f"skip_unassembled_read_queries run still reported {len(silenced_rows)} "
+        f"skip_unassembled_read_queries run still reported {len(unexpected_rows)} "
         "rows for it, so the flag did not take effect."
     )
-    print(f"READS-ONLY SAMPLE SILENCED AS EXPECTED: {sample_id}")
+    print(
+        "READ-LEVEL QUERYING IS OFF IN THIS VARIANT, SO "
+        f"{sample_id} CORRECTLY REPORTED NO ROWS (its taxa are asserted in full "
+        "by every other tier)",
+    )
 
 
 def assert_expected_taxa_detected(
